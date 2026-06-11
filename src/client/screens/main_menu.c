@@ -22,7 +22,6 @@ static void MainMenuDraw(ShroomScreenManager* manager) {
   ClearBackground((Color){20, 20, 40, 255});
 
   int screen_width = GetScreenWidth();
-  int screen_height = GetScreenHeight();
 
   int button_width = 250;
   int button_height = 50;
