@@ -28,8 +28,15 @@ jobs:
             libxrandr-dev \
             make
 
+      - name: Download ENet
+        run: |
+          mkdir -p vendor
+          curl -L https://github.com/lsalzman/enet/archive/refs/tags/v1.3.18.tar.gz -o /tmp/enet.tar.gz
+          tar -xzf /tmp/enet.tar.gz -C vendor
+          mv vendor/enet-1.3.18 vendor/enet
+
       - name: Lint with cppcheck
-        run: cppcheck --enable=warning,style,performance,portability --error-exitcode=1 src/
+        run: cppcheck --enable=warning,style,performance,portability --error-exitcode=1 --include=src/shared/config.h src/
 
       - name: Build Linux client
         run: make linux
