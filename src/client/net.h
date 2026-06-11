@@ -27,7 +27,9 @@ typedef struct ClientNetState {
   uint32_t last_input_sequence;
   uint64_t last_snapshot_tick;
   uint16_t snapshot_player_count;
+  uint16_t spore_count;
   ShroomSnapshotPlayerState snapshot_players[SHROOM_MAX_SNAPSHOT_PLAYERS];
+  ShroomSnapshotSporeState snapshot_spores[SHROOM_MAX_SPORES];
   float input_send_accumulator;
   char status_text[64];
 } ClientNetState;

@@ -27,7 +27,7 @@ static void ApplyNetworkSnapshot(Game* game) {
 
   game->world.tick = game->net.last_snapshot_tick;
   game->world.player_count = game->net.snapshot_player_count;
-  game->world.spore_count = 0;
+  game->world.spore_count = game->net.spore_count;
 
   for (index = 0; index < game->net.snapshot_player_count; ++index) {
     const ShroomSnapshotPlayerState* snapshot_player = &game->net.snapshot_players[index];
@@ -46,6 +46,18 @@ static void ApplyNetworkSnapshot(Game* game) {
     if (player->player_id == game->net.player_id) {
       game->local_player = player;
     }
+  }
+
+  for (index = 0; index < game->net.spore_count; ++index) {
+    const ShroomSnapshotSporeState* snapshot_spore = &game->net.snapshot_spores[index];
+    ShroomSporeState* spore = &game->world.spores[index];
+
+    *spore = (ShroomSporeState){
+        .entity_id = snapshot_spore->entity_id,
+        .position = {snapshot_spore->position_x, snapshot_spore->position_y},
+        .value = snapshot_spore->value,
+        .active = true,
+    };
   }
 }
 

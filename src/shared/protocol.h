@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#include "config.h"
+
 #define SHROOM_PROTOCOL_VERSION 1u
 #define SHROOM_SERVER_PORT 7777u
 #define SHROOM_MAX_NAME_LENGTH 32u
@@ -13,6 +15,7 @@
 #define SHROOM_ENET_CHANNEL_COUNT 3u
 #define SHROOM_SNAPSHOT_RATE 15u
 #define SHROOM_MAX_SNAPSHOT_PLAYERS 32u
+#define SHROOM_SPORE_STATE_RATE 5u
 
 typedef enum ShroomPacketType {
   SHROOM_PACKET_HELLO = 1,
@@ -21,6 +24,7 @@ typedef enum ShroomPacketType {
   SHROOM_PACKET_SNAPSHOT = 4,
   SHROOM_PACKET_PING = 5,
   SHROOM_PACKET_PONG = 6,
+  SHROOM_PACKET_SPORE_STATE = 7,
 } ShroomPacketType;
 
 typedef struct ShroomPacketHeader {
@@ -85,5 +89,21 @@ typedef struct ShroomPongPacket {
   ShroomPacketHeader header;
   uint32_t nonce;
 } ShroomPongPacket;
+
+typedef struct ShroomSnapshotSporeState {
+  uint32_t entity_id;
+  float position_x;
+  float position_y;
+  uint16_t value;
+  uint16_t reserved;
+} ShroomSnapshotSporeState;
+
+typedef struct ShroomSporeStatePacket {
+  ShroomPacketHeader header;
+  uint64_t tick;
+  uint16_t spore_count;
+  uint16_t reserved;
+  ShroomSnapshotSporeState spores[SHROOM_MAX_SPORES];
+} ShroomSporeStatePacket;
 
 #endif

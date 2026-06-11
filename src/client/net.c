@@ -84,6 +84,34 @@ static void HandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet) {
   }
 }
 
+static void HandleSporeState(ClientNetState* net, const ENetPacket* enet_packet) {
+  const ShroomSporeStatePacket* packet = (const ShroomSporeStatePacket*)enet_packet->data;
+  uint16_t spore_count;
+  size_t payload_size;
+
+  if (enet_packet->dataLength < sizeof(ShroomPacketHeader) + sizeof(uint64_t) + sizeof(uint16_t) +
+                                    sizeof(uint16_t)) {
+    return;
+  }
+
+  spore_count = packet->spore_count;
+  if (spore_count > SHROOM_MAX_SPORES) {
+    spore_count = SHROOM_MAX_SPORES;
+  }
+
+  payload_size = sizeof(ShroomPacketHeader) + sizeof(uint64_t) + sizeof(uint16_t) +
+                 sizeof(uint16_t) + ((size_t)spore_count * sizeof(ShroomSnapshotSporeState));
+  if (enet_packet->dataLength < payload_size) {
+    return;
+  }
+
+  net->spore_count = spore_count;
+  if (spore_count > 0) {
+    memcpy(net->snapshot_spores, packet->spores,
+           (size_t)spore_count * sizeof(ShroomSnapshotSporeState));
+  }
+}
+
 bool ClientNetInit(ClientNetState* net, const char* host_name, uint16_t port) {
   ENetAddress address = {0};
 
@@ -151,6 +179,9 @@ void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, float delt
           break;
         case SHROOM_PACKET_SNAPSHOT:
           HandleSnapshot(net, event.packet);
+          break;
+        case SHROOM_PACKET_SPORE_STATE:
+          HandleSporeState(net, event.packet);
           break;
         case SHROOM_PACKET_PONG:
         case SHROOM_PACKET_PING:
