@@ -110,7 +110,7 @@ uint32_t ShroomConnectionCalculateRTT(ShroomConnection* conn, uint64_t pong_time
   return conn->rtt_ms;
 }
 
-bool ShroomConnectionIsTimedOut(ShroomConnection* conn, uint64_t current_time,
+bool ShroomConnectionIsTimedOut(const ShroomConnection* conn, uint64_t current_time,
                                 uint64_t timeout_ms) {
   if (conn == NULL || conn->state == SHROOM_CONN_STATE_DISCONNECTED) {
     return false;
@@ -124,7 +124,7 @@ bool ShroomConnectionIsTimedOut(ShroomConnection* conn, uint64_t current_time,
   return elapsed > timeout_ms;
 }
 
-bool ShroomConnectionNeedsPing(ShroomConnection* conn, uint64_t current_time,
+bool ShroomConnectionNeedsPing(const ShroomConnection* conn, uint64_t current_time,
                                uint64_t ping_interval_ms) {
   if (conn == NULL || conn->state != SHROOM_CONN_STATE_CONNECTED) {
     return false;
@@ -154,14 +154,14 @@ void ShroomConnectionReset(ShroomConnection* conn) {
   conn->state = SHROOM_CONN_STATE_DISCONNECTED;
 }
 
-uint32_t ShroomConnectionManagerGetActiveCount(ShroomConnectionManager* manager) {
+uint32_t ShroomConnectionManagerGetActiveCount(const ShroomConnectionManager* manager) {
   if (manager == NULL) {
     return 0;
   }
   return manager->active_connections;
 }
 
-uint32_t ShroomConnectionManagerGetAvailableSlot(ShroomConnectionManager* manager) {
+uint32_t ShroomConnectionManagerGetAvailableSlot(const ShroomConnectionManager* manager) {
   if (manager == NULL || manager->connections == NULL) {
     return UINT32_MAX;
   }
