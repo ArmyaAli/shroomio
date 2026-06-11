@@ -8,6 +8,8 @@ on:
       - 'Makefile'
       - '.clang-format'
       - '.github/workflows/**'
+      - 'design/**'
+      - 'docs/**'
 
 jobs:
   build:

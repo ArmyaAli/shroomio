@@ -7,6 +7,8 @@ on:
       - 'src/**'
       - 'Makefile'
       - '.github/workflows/**'
+      - 'design/**'
+      - 'docs/**'
 
 jobs:
   analyze:
