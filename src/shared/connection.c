@@ -21,7 +21,7 @@ void ShroomConnectionManagerInit(ShroomConnectionManager* manager, uint32_t max_
 }
 
 void ShroomConnectionManagerShutdown(ShroomConnectionManager* manager) {
-  if (manager == NULL || manager->connections == NULL) {
+  if (manager == NULL) {
     return;
   }
 
