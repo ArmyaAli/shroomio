@@ -71,10 +71,10 @@ RAYLIB_SOURCE_NAMES := rcore rmodels rshapes rtext rtextures utils raudio rglfw
 LINUX_RAYLIB_OBJECTS := $(addprefix $(LINUX_BUILD_DIR)/raylib/,$(addsuffix .o,$(RAYLIB_SOURCE_NAMES)))
 WINDOWS_RAYLIB_OBJECTS := $(addprefix $(WINDOWS_BUILD_DIR)/raylib/,$(addsuffix .o,$(RAYLIB_SOURCE_NAMES)))
 
-CLIENT_SOURCES := $(CLIENT_SRC_DIR)/main.c $(CLIENT_SRC_DIR)/game.c $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/screen.c $(CLIENT_SRC_DIR)/raygui_impl.c $(CLIENT_SRC_DIR)/screens/main_menu.c $(CLIENT_SRC_DIR)/screens/settings.c $(CLIENT_SRC_DIR)/screens/help.c $(CLIENT_SRC_DIR)/screens/credits.c $(CLIENT_SRC_DIR)/screens/server_browser.c $(SHARED_SRC_DIR)/sim.c $(SHARED_SRC_DIR)/lifecycle.c
-SERVER_SOURCES := $(SERVER_SRC_DIR)/main.c $(SERVER_SRC_DIR)/logger.c $(SHARED_SRC_DIR)/sim.c $(SHARED_SRC_DIR)/lifecycle.c
+CLIENT_SOURCES := $(CLIENT_SRC_DIR)/main.c $(CLIENT_SRC_DIR)/game.c $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/screen.c $(CLIENT_SRC_DIR)/raygui_impl.c $(CLIENT_SRC_DIR)/screens/main_menu.c $(CLIENT_SRC_DIR)/screens/settings.c $(CLIENT_SRC_DIR)/screens/help.c $(CLIENT_SRC_DIR)/screens/credits.c $(CLIENT_SRC_DIR)/screens/server_browser.c $(SHARED_SRC_DIR)/sim.c $(SHARED_SRC_DIR)/lifecycle.c $(SHARED_SRC_DIR)/connection.c
+SERVER_SOURCES := $(SERVER_SRC_DIR)/main.c $(SERVER_SRC_DIR)/logger.c $(SHARED_SRC_DIR)/sim.c $(SHARED_SRC_DIR)/lifecycle.c $(SHARED_SRC_DIR)/connection.c
 SHARED_HEADERS := $(SHARED_SRC_DIR)/config.h $(SHARED_SRC_DIR)/vec2.h $(SHARED_SRC_DIR)/world.h $(SHARED_SRC_DIR)/sim.h
-SHARED_HEADERS += $(SHARED_SRC_DIR)/protocol.h $(SHARED_SRC_DIR)/lifecycle.h
+SHARED_HEADERS += $(SHARED_SRC_DIR)/protocol.h $(SHARED_SRC_DIR)/lifecycle.h $(SHARED_SRC_DIR)/connection.h
 ENET_COMMON_SOURCE_NAMES := callbacks compress host list packet peer protocol
 ENET_LINUX_SOURCE_NAMES := unix
 ENET_WINDOWS_SOURCE_NAMES := win32
@@ -315,6 +315,10 @@ $(TEST_BUILD_DIR)/test_lifecycle: $(UNIT_TESTS_DIR)/test_lifecycle.c $(UNITY_SRC
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
 $(TEST_BUILD_DIR)/test_screen: $(UNIT_TESTS_DIR)/test_screen.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/screen.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_connection: $(UNIT_TESTS_DIR)/test_connection.c $(UNITY_SRC) $(SHARED_SRC_DIR)/connection.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
