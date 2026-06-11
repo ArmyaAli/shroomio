@@ -48,13 +48,14 @@ void ShroomConnectionUpdateActivity(ShroomConnection* conn, uint64_t current_tim
 void ShroomConnectionUpdatePing(ShroomConnection* conn, uint32_t nonce, uint64_t current_time);
 uint32_t ShroomConnectionCalculateRTT(ShroomConnection* conn, uint64_t pong_time);
 
-bool ShroomConnectionIsTimedOut(ShroomConnection* conn, uint64_t current_time, uint64_t timeout_ms);
-bool ShroomConnectionNeedsPing(ShroomConnection* conn, uint64_t current_time,
+bool ShroomConnectionIsTimedOut(const ShroomConnection* conn, uint64_t current_time,
+                                uint64_t timeout_ms);
+bool ShroomConnectionNeedsPing(const ShroomConnection* conn, uint64_t current_time,
                                uint64_t ping_interval_ms);
 
 void ShroomConnectionReset(ShroomConnection* conn);
 
-uint32_t ShroomConnectionManagerGetActiveCount(ShroomConnectionManager* manager);
-uint32_t ShroomConnectionManagerGetAvailableSlot(ShroomConnectionManager* manager);
+uint32_t ShroomConnectionManagerGetActiveCount(const ShroomConnectionManager* manager);
+uint32_t ShroomConnectionManagerGetAvailableSlot(const ShroomConnectionManager* manager);
 
 #endif
