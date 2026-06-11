@@ -12,6 +12,11 @@ SERVER_SRC_DIR := $(SRC_DIR)/server
 SHARED_SRC_DIR := $(SRC_DIR)/shared
 BUILD_DIR := build
 DIST_DIR := dist
+TESTS_DIR := tests
+UNIT_TESTS_DIR := $(TESTS_DIR)/unit
+UNITY_DIR := $(TESTS_DIR)/unity
+UNITY_SRC := $(UNITY_DIR)/src/unity.c
+UNITY_INCLUDE := -I$(UNITY_DIR)/src
 
 LINUX_BUILD_DIR := $(BUILD_DIR)/linux
 WINDOWS_BUILD_DIR := $(BUILD_DIR)/windows
@@ -257,6 +262,50 @@ $(LINUX_BUILD_DIR)/vendor/enet/%.o: $(ENET_DIR)/%.c
 $(WINDOWS_BUILD_DIR)/vendor/enet/%.o: $(ENET_DIR)/%.c
 	@$(MKDIR_P) $(dir $@)
 	$(WINDOWS_CC) -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) -I$(ENET_INCLUDE_DIR) -c $< -o $@
+
+# Test targets
+TEST_BUILD_DIR := $(BUILD_DIR)/tests
+TEST_CFLAGS := -std=c11 -O0 -g $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) $(UNITY_INCLUDE) -DTEST_MODE
+TEST_LIBS := -lm
+
+# Find all test files
+TEST_SRCS := $(wildcard $(UNIT_TESTS_DIR)/*.c)
+TEST_BINS := $(patsubst $(UNIT_TESTS_DIR)/%.c,$(TEST_BUILD_DIR)/%,$(TEST_SRCS))
+
+.PHONY: test test-coverage test-clean
+
+test: $(TEST_BINS)
+	@echo "Running unit tests..."
+	@failed=0; total=0; \
+	for test in $(TEST_BINS); do \
+		total=$$((total + 1)); \
+		echo ""; \
+		echo "=== Running $$(basename $$test) ==="; \
+		if $$test; then \
+			echo "✓ $$(basename $$test) passed"; \
+		else \
+			echo "✗ $$(basename $$test) failed"; \
+			failed=$$((failed + 1)); \
+		fi; \
+	done; \
+	echo ""; \
+	echo "=== Test Summary ==="; \
+	echo "Total: $$total, Passed: $$((total - failed)), Failed: $$failed"; \
+	if [ $$failed -gt 0 ]; then exit 1; fi
+
+$(TEST_BUILD_DIR)/%: $(UNIT_TESTS_DIR)/%.c $(UNITY_SRC)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+test-coverage: CFLAGS += -fprofile-arcs -ftest-coverage
+test-coverage: LDFLAGS += -lgcov
+test-coverage: test
+	@echo "Generating coverage report..."
+	@gcovr -r . --html --html-details -o coverage.html
+	@echo "Coverage report generated: coverage.html"
+
+test-clean:
+	$(RM_RF) $(TEST_BUILD_DIR) coverage.html *.gcda *.gcno
 
 clean:
 	$(RM_RF) $(BUILD_DIR) $(DIST_DIR)
