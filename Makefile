@@ -6,6 +6,10 @@ RAYLIB_SRC_DIR := $(RAYLIB_DIR)/src
 RAYLIB_GLFW_INCLUDE_DIR := $(RAYLIB_SRC_DIR)/external/glfw/include
 ENET_DIR := vendor/enet
 ENET_INCLUDE_DIR := $(ENET_DIR)/include
+UNITY_VERSION := 2.6.0
+UNITY_DIR := vendor/Unity-$(UNITY_VERSION)
+UNITY_URL := https://github.com/ThrowTheSwitch/Unity/archive/refs/tags/v$(UNITY_VERSION).tar.gz
+UNITY_SRC_DIR := $(UNITY_DIR)/src
 SRC_DIR := src
 CLIENT_SRC_DIR := $(SRC_DIR)/client
 SERVER_SRC_DIR := $(SRC_DIR)/server
@@ -14,9 +18,8 @@ BUILD_DIR := build
 DIST_DIR := dist
 TESTS_DIR := tests
 UNIT_TESTS_DIR := $(TESTS_DIR)/unit
-UNITY_DIR := $(TESTS_DIR)/unity
-UNITY_SRC := $(UNITY_DIR)/src/unity.c
-UNITY_INCLUDE := -I$(UNITY_DIR)/src
+UNITY_SRC := $(UNITY_SRC_DIR)/unity.c
+UNITY_INCLUDE := -I$(UNITY_SRC_DIR)
 
 LINUX_BUILD_DIR := $(BUILD_DIR)/linux
 WINDOWS_BUILD_DIR := $(BUILD_DIR)/windows
@@ -202,12 +205,17 @@ devcontainer-github-status:
 run-windows: $(WINDOWS_BIN)
 	./$(WINDOWS_BIN)
 
-vendor: $(RAYLIB_DIR)
+vendor: $(RAYLIB_DIR) $(UNITY_DIR)
 
 $(RAYLIB_DIR):
 	@$(MKDIR_P) vendor $(BUILD_DIR)
 	$(CURL) -L $(RAYLIB_URL) -o $(BUILD_DIR)/raylib.tar.gz
 	$(TAR) -xzf $(BUILD_DIR)/raylib.tar.gz -C vendor
+
+$(UNITY_DIR):
+	@$(MKDIR_P) vendor $(BUILD_DIR)
+	$(CURL) -L $(UNITY_URL) -o $(BUILD_DIR)/unity.tar.gz
+	$(TAR) -xzf $(BUILD_DIR)/unity.tar.gz -C vendor
 
 $(LINUX_BIN): $(LINUX_APP_OBJECTS) $(LINUX_RAYLIB_LIB) $(LINUX_ENET_OBJECTS)
 	@$(MKDIR_P) $(DIST_DIR)
@@ -293,7 +301,11 @@ test: $(TEST_BINS)
 	echo "Total: $$total, Passed: $$((total - failed)), Failed: $$failed"; \
 	if [ $$failed -gt 0 ]; then exit 1; fi
 
-$(TEST_BUILD_DIR)/%: $(UNIT_TESTS_DIR)/%.c $(UNITY_SRC)
+$(TEST_BUILD_DIR)/test_lifecycle: $(UNIT_TESTS_DIR)/test_lifecycle.c $(UNITY_SRC) $(SHARED_SRC_DIR)/lifecycle.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/%: $(UNIT_TESTS_DIR)/%.c $(UNITY_SRC) | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
