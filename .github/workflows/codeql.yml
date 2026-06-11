@@ -24,6 +24,7 @@ jobs:
             curl \
             libasound2-dev \
             libgl1-mesa-dev \
+            libsqlite3-dev \
             libx11-dev \
             libxcursor-dev \
             libxi-dev \

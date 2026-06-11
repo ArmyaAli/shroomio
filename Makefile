@@ -29,6 +29,7 @@ MKDIR_P ?= mkdir -p
 RM_RF ?= rm -rf
 DOCKER ?= docker
 SERVER_IMAGE ?= shroomio-server:dev
+SERVER_CONTAINER ?= shroomio-server-1
 DEVCONTAINER ?= devcontainer
 DEVCONTAINER_IMAGE ?= shroomio-devcontainer:dev
 DEVCONTAINER_CONTAINER ?= shroomio-devcontainer
@@ -43,7 +44,7 @@ COMMON_WARNINGS := -Wall -Wextra -Wpedantic
 COMMON_INCLUDE_DIRS := -I$(SRC_DIR) -I$(CLIENT_SRC_DIR) -I$(SERVER_SRC_DIR) -I$(SHARED_SRC_DIR)
 COMMON_CFLAGS := -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) -I$(RAYLIB_SRC_DIR) -I$(RAYLIB_GLFW_INCLUDE_DIR)
 SERVER_CFLAGS := -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) -I$(ENET_INCLUDE_DIR) -D_POSIX_C_SOURCE=199309L -D_DEFAULT_SOURCE
-SERVER_LIBS := -lm
+SERVER_LIBS := -lm -lsqlite3
 
 VENDOR_WARNINGS := -Wall -Wextra
 
@@ -59,7 +60,7 @@ LINUX_RAYLIB_OBJECTS := $(addprefix $(LINUX_BUILD_DIR)/raylib/,$(addsuffix .o,$(
 WINDOWS_RAYLIB_OBJECTS := $(addprefix $(WINDOWS_BUILD_DIR)/raylib/,$(addsuffix .o,$(RAYLIB_SOURCE_NAMES)))
 
 CLIENT_SOURCES := $(CLIENT_SRC_DIR)/main.c $(CLIENT_SRC_DIR)/game.c $(CLIENT_SRC_DIR)/net.c $(SHARED_SRC_DIR)/sim.c
-SERVER_SOURCES := $(SERVER_SRC_DIR)/main.c $(SHARED_SRC_DIR)/sim.c
+SERVER_SOURCES := $(SERVER_SRC_DIR)/main.c $(SERVER_SRC_DIR)/logger.c $(SHARED_SRC_DIR)/sim.c
 SHARED_HEADERS := $(SHARED_SRC_DIR)/config.h $(SHARED_SRC_DIR)/vec2.h $(SHARED_SRC_DIR)/world.h $(SHARED_SRC_DIR)/sim.h
 SHARED_HEADERS += $(SHARED_SRC_DIR)/protocol.h
 ENET_COMMON_SOURCE_NAMES := callbacks compress host list packet peer protocol
@@ -81,7 +82,7 @@ WINDOWS_RAYLIB_LIB := $(WINDOWS_BUILD_DIR)/libraylib.a
 LINUX_LIBS := -lGL -lm -ldl -lpthread -lrt -lX11 -lXrandr -lXi -lXcursor -lXinerama -lasound
 WINDOWS_LIBS := -lopengl32 -lgdi32 -lwinmm -lws2_32
 
-.PHONY: all linux windows server run run-server run-windows docker-server docker-run-server devcontainer-up devcontainer-build devcontainer-shell devcontainer-down devcontainer-opencode-sync devcontainer-git-identity devcontainer-github-token devcontainer-github-status clean distclean vendor spec help
+.PHONY: all linux windows server run run-server run-windows docker-server docker-run-server docker-logs devcontainer-up devcontainer-build devcontainer-shell devcontainer-down devcontainer-opencode-sync devcontainer-git-identity devcontainer-github-token devcontainer-github-status clean distclean vendor spec help
 
 all: linux
 
@@ -103,6 +104,7 @@ help:
 	  '  make devcontainer-github-status Check GitHub auth inside container' \
 	  '  make docker-server Build the server container image' \
 	  '  make docker-run-server Build and run the server container' \
+	  '  make docker-logs Follow the server container logs' \
 	  '  make windows  Build the Windows binary from WSL with mingw-w64' \
 	  '  make run-windows Build and run the Windows binary from WSL' \
 	  '  make clean    Remove build and dist artifacts' \
@@ -129,6 +131,9 @@ docker-server:
 
 docker-run-server: docker-server
 	$(DOCKER) run --rm -p 7777:7777/udp $(SERVER_IMAGE)
+
+docker-logs:
+	$(DOCKER) logs -f $(SERVER_CONTAINER)
 
 devcontainer-build:
 	DOCKER_BUILDKIT=0 $(DOCKER) build -f .devcontainer/Dockerfile -t $(DEVCONTAINER_IMAGE) .
