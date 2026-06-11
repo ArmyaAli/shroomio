@@ -37,8 +37,7 @@ jobs:
             make
 
       - name: Check code formatting
-        run: |
-          find src -name '*.c' -o -name '*.h' | xargs clang-format --dry-run --Werror
+        run: make format-check
 
       - name: Download ENet
         run: |
@@ -50,8 +49,8 @@ jobs:
       - name: Download raylib
         run: make vendor
 
-      - name: Lint with cppcheck
-        run: cppcheck --enable=warning,style,performance,portability --error-exitcode=1 --include=src/shared/config.h src/
+      - name: Run cppcheck
+        run: make cppcheck
 
       - name: Run unit tests
         run: make test
