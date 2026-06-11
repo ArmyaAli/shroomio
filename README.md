@@ -1,105 +1,112 @@
 # shroomio
 
-Minimal `raylib` game scaffold in pure C with a single `Makefile`.
+A real-time multiplayer arena game built in pure C. Control a fungal organism, collect spores to grow, consume smaller players, and climb the leaderboard in a mass-growth battle inspired by agar.io.
 
-Project layout:
+[![CI](https://github.com/ArmyaAli/shroomio/actions/workflows/ci.yml/badge.svg)](https://github.com/ArmyaAli/shroomio/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/ArmyaAli/shroomio/actions/workflows/codeql.yml/badge.svg)](https://github.com/ArmyaAli/shroomio/actions/workflows/codeql.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-- `src/client/`: raylib client entry point and rendering
-- `src/shared/`: shared simulation state and rules
-- `src/server/`: headless server entry point scaffold
-- `assets/`: place game data here
-- `dist/`: built binaries
+## Features
 
-## Requirements
+- **Offline mode** — play against 18 bot colonies with full simulation, spore economy, and leaderboard
+- **Online multiplayer** — authoritative headless server over ENet/UDP (port 7777)
+- **Dual-mode client** — seamless switching between local sandbox and server-authoritative play
+- **Bot AI** — utility-driven behavior: flee threats, chase prey, forage spores, contest the center
+- **Arena zones** — center hotspot, mid ring, and outer ring with escalating risk and reward
+- **Cross-platform** — Linux client, Windows client (cross-compiled from WSL), Linux dedicated server
 
-Linux build:
+## Tech Stack
 
-- `make`
-- `curl`
-- a C compiler such as `gcc` or `clang`
-- Linux desktop development libraries for OpenGL/X11
+| Component | Technology |
+|---|---|
+| Language | C11 |
+| Graphics | raylib 5.5 (static) |
+| Networking | ENet (UDP) |
+| Build | GNU Make |
+| Containers | Docker, Docker Compose |
+| Dev Environment | VS Code Dev Container (Debian Bookworm) |
+| Cross-compile | mingw-w64 |
 
-Windows build from WSL:
+## Project Structure
 
-- `mingw-w64`
+```
+src/
+  client/        raylib rendering, input, camera, UI, ENet client
+  server/        headless dedicated server, session management, tick loop
+  shared/        deterministic simulation, protocol, world state, vector math
+assets/          sprites, audio, maps, shaders
+dist/            built binaries
+design/          LaTeX game specification
+docs/            development guides and runbooks
+```
 
-Example install on Ubuntu/WSL:
+The `shared/` module has zero dependencies on raylib, ENet, client, or server code. Client and server never depend on each other.
+
+## Prerequisites
+
+**Linux / WSL:**
 
 ```bash
 sudo apt update
-sudo apt install build-essential curl mingw-w64 libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev libasound2-dev
+sudo apt install build-essential curl \
+  libx11-dev libxcursor-dev libxrandr-dev libxi-dev libxinerama-dev \
+  libgl1-mesa-dev libasound2-dev libsqlite3-dev
 ```
 
-## Build
+**Windows cross-compile from WSL** (additional):
 
 ```bash
-make linux
-make server
-make windows
+sudo apt install mingw-w64
 ```
 
-Convenience targets:
+## Building
 
 ```bash
-make run
-make run-server
-make docker-server
-make docker-run-server
+make linux      # Linux client    -> dist/shroomio
+make server     # Linux server    -> dist/shroomio-server
+make windows    # Windows client  -> dist/shroomio.exe  (requires mingw-w64)
 ```
 
-Artifacts are written to `dist/`:
-
-- `dist/shroomio`
-- `dist/shroomio-server`
-- `dist/shroomio.exe`
-
-## Current scaffold
-
-- Local sandbox arena with bot colonies
-- Mouse-directed movement with temporary WASD fallback
-- Spore collection, growth, size-based speed scaling, and consume/respawn loop
-- Center hotspot, mid ring, and outer ring arena zones
-- Leaderboard and shared world/player simulation state
-- ENet-backed headless server listening on UDP `7777`
-- Client/server handshake, input sending, and authoritative player snapshot prototype
-- Shared world/player simulation state separated from client rendering
-- `Camera2D` centered on the player
-- World grid for motion/readability
-- Asset folders ready for sprites, audio, maps, and shaders
-
-## Server Container
-
-Build and run the headless server in Docker:
+Run directly:
 
 ```bash
-make docker-server
-make docker-run-server
+make run            # build and run the Linux client
+make run-server     # build and run the server
 ```
 
-The container exposes UDP port `7777`.
+The Makefile downloads raylib 5.5 source on demand and builds a static `libraylib.a` per target. The Windows build uses `-static` for a self-contained `.exe`.
 
-## Docker Compose
+## Running the Server
 
-Run the server with Docker Compose:
+**With Docker Compose** (recommended):
 
 ```bash
 docker compose up --build server
 ```
 
+**With Make targets:**
+
+```bash
+make docker-server        # build the server image
+make docker-run-server    # build and run (exposes UDP 7777)
+make docker-logs          # follow container logs
+```
+
+**Native:**
+
+```bash
+make run-server
+```
+
+The server listens on UDP port `7777`.
+
 ## Dev Container
 
-The repo includes a VS Code dev container under `.devcontainer/` with:
+The repo includes a VS Code dev container (`.devcontainer/`) with the full C11 toolchain, raylib build dependencies, mingw-w64, Docker CLI, and GitHub CLI preconfigured.
 
-- `C11` toolchain via `build-essential`
-- Linux desktop build dependencies for `raylib`
-- `mingw-w64` for `make windows`
-- Docker CLI support inside the dev container
-- GitHub CLI via `gh`
-- latest `opencode` via `npm install -g opencode-ai`
+**VS Code:** Open the repo and select **Reopen in Container**.
 
-Open the repo in VS Code and choose `Reopen in Container`.
-
-Without VS Code, use the Dev Container CLI:
+**CLI (without VS Code):**
 
 ```bash
 make devcontainer-build
@@ -108,39 +115,30 @@ make devcontainer-shell
 make devcontainer-down
 ```
 
-These Makefile targets use the `.devcontainer/Dockerfile` directly with plain Docker so they work even when the Dev Container CLI has issues under WSL/buildx.
-
-The devcontainer mounts your WSL `~/.ssh` into `/home/dev/.ssh` as read-only.
-It also mounts your host `~/.gitconfig` into `/home/dev/.gitconfig` as read-only.
-For GitHub CLI auth, use a host-side token file stored outside the repo.
-It also mounts your WSL OpenCode directories read-only and copies them into the container on startup so the container reuses your existing setup without sharing the live SQLite/state files:
-
-- `~/.config/opencode` -> `/home/dev/.config/opencode`
-- `~/.local/share/opencode` -> `/home/dev/.local/share/opencode`
-- `~/.local/state/opencode` -> `/home/dev/.local/state/opencode`
-- `~/.cache/opencode` -> `/home/dev/.cache/opencode`
-
-To set a persistent GitHub token for the devcontainer:
+The dev container mounts your host `~/.ssh`, `~/.gitconfig`, and OpenCode directories read-only so credentials and tooling carry through. To configure GitHub CLI authentication:
 
 ```bash
-make devcontainer-github-token
-make devcontainer-down
-make devcontainer-up
-make devcontainer-github-status
+make devcontainer-github-token    # store a token on the host
+make devcontainer-down && make devcontainer-up
+make devcontainer-github-status   # verify auth
 ```
 
-The token is stored on the host at:
+## Game Specification
 
-- `~/.config/shroomio-devcontainer/github-token`
+A full LaTeX specification covering game mechanics, tuning constants, and protocol design is available at `design/shroomio-specification.tex`. Build the PDF with:
 
-with restrictive permissions and mounted into the container as a read-only secret file.
+```bash
+make spec    # -> dist/latex/shroomio-specification.pdf
+```
 
-## Notes
+## CI
 
-- The `Makefile` downloads `raylib` source on demand and builds a static `libraylib.a` for each target.
-- The Windows build uses `-static` to produce a self-contained `.exe`.
-- Fully static Linux binaries are usually not practical with desktop/X11 system libraries, so the Linux target links `raylib` statically while still using system libraries dynamically.
-# shroomio
-# shroomio
-# shroomio
-# shroomio
+Pull requests are validated on GitHub Actions with:
+
+- **clang-format** — enforces `.clang-format` style across `src/`
+- **cppcheck** — static analysis for warnings, style, performance, and portability
+- **Build** — compiles both the Linux client and headless server
+
+## License
+
+MIT — see [LICENSE](LICENSE).
