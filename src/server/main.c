@@ -257,7 +257,8 @@ int main(void) {
   LOG_INFO("shroomio server listening on UDP %u", SHROOM_SERVER_PORT);
   next_tick_time = GetTimeNanos();
 
-  while (ShroomLifecycleIsRunning(&g_lifecycle) && !ShroomLifecycleIsShutdownRequested(&g_lifecycle)) {
+  while (ShroomLifecycleIsRunning(&g_lifecycle) &&
+         !ShroomLifecycleIsShutdownRequested(&g_lifecycle)) {
     ENetEvent event;
 
     while (enet_host_service(host, &event, 0) > 0) {
