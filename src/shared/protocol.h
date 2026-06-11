@@ -15,75 +15,75 @@
 #define SHROOM_MAX_SNAPSHOT_PLAYERS 32u
 
 typedef enum ShroomPacketType {
-    SHROOM_PACKET_HELLO = 1,
-    SHROOM_PACKET_WELCOME = 2,
-    SHROOM_PACKET_INPUT = 3,
-    SHROOM_PACKET_SNAPSHOT = 4,
-    SHROOM_PACKET_PING = 5,
-    SHROOM_PACKET_PONG = 6,
+  SHROOM_PACKET_HELLO = 1,
+  SHROOM_PACKET_WELCOME = 2,
+  SHROOM_PACKET_INPUT = 3,
+  SHROOM_PACKET_SNAPSHOT = 4,
+  SHROOM_PACKET_PING = 5,
+  SHROOM_PACKET_PONG = 6,
 } ShroomPacketType;
 
 typedef struct ShroomPacketHeader {
-    uint8_t type;
-    uint8_t reserved;
-    uint16_t size;
+  uint8_t type;
+  uint8_t reserved;
+  uint16_t size;
 } ShroomPacketHeader;
 
 typedef struct ShroomHelloPacket {
-    ShroomPacketHeader header;
-    uint32_t protocol_version;
-    char name[SHROOM_MAX_NAME_LENGTH];
+  ShroomPacketHeader header;
+  uint32_t protocol_version;
+  char name[SHROOM_MAX_NAME_LENGTH];
 } ShroomHelloPacket;
 
 typedef struct ShroomWelcomePacket {
-    ShroomPacketHeader header;
-    uint32_t protocol_version;
-    uint32_t player_id;
-    uint32_t entity_id;
-    uint16_t server_tick_rate;
-    uint16_t snapshot_rate;
-    float world_width;
-    float world_height;
+  ShroomPacketHeader header;
+  uint32_t protocol_version;
+  uint32_t player_id;
+  uint32_t entity_id;
+  uint16_t server_tick_rate;
+  uint16_t snapshot_rate;
+  float world_width;
+  float world_height;
 } ShroomWelcomePacket;
 
 typedef struct ShroomInputPacket {
-    ShroomPacketHeader header;
-    uint32_t sequence;
-    float direction_x;
-    float direction_y;
+  ShroomPacketHeader header;
+  uint32_t sequence;
+  float direction_x;
+  float direction_y;
 } ShroomInputPacket;
 
 typedef struct ShroomSnapshotPlayerState {
-    uint32_t player_id;
-    uint32_t entity_id;
-    float position_x;
-    float position_y;
-    float mass;
-    float radius;
-    uint8_t alive;
-    uint8_t is_bot;
-    uint16_t reserved;
+  uint32_t player_id;
+  uint32_t entity_id;
+  float position_x;
+  float position_y;
+  float mass;
+  float radius;
+  uint8_t alive;
+  uint8_t is_bot;
+  uint16_t reserved;
 } ShroomSnapshotPlayerState;
 
 typedef struct ShroomSnapshotPacket {
-    ShroomPacketHeader header;
-    uint64_t tick;
-    uint32_t last_processed_input_sequence;
-    uint32_t player_id;
-    uint32_t entity_id;
-    uint16_t player_count;
-    uint16_t reserved;
-    ShroomSnapshotPlayerState players[SHROOM_MAX_SNAPSHOT_PLAYERS];
+  ShroomPacketHeader header;
+  uint64_t tick;
+  uint32_t last_processed_input_sequence;
+  uint32_t player_id;
+  uint32_t entity_id;
+  uint16_t player_count;
+  uint16_t reserved;
+  ShroomSnapshotPlayerState players[SHROOM_MAX_SNAPSHOT_PLAYERS];
 } ShroomSnapshotPacket;
 
 typedef struct ShroomPingPacket {
-    ShroomPacketHeader header;
-    uint32_t nonce;
+  ShroomPacketHeader header;
+  uint32_t nonce;
 } ShroomPingPacket;
 
 typedef struct ShroomPongPacket {
-    ShroomPacketHeader header;
-    uint32_t nonce;
+  ShroomPacketHeader header;
+  uint32_t nonce;
 } ShroomPongPacket;
 
 #endif

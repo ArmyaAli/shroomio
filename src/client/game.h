@@ -7,17 +7,17 @@
 #include "shared/world.h"
 
 typedef struct Game {
-    Camera2D camera;
-    ClientNetState net;
-    ShroomWorldState world;
-    ShroomPlayerState *local_player;
-    int screen_width;
-    int screen_height;
+  Camera2D camera;
+  ClientNetState net;
+  ShroomWorldState world;
+  ShroomPlayerState* local_player;
+  int screen_width;
+  int screen_height;
 } Game;
 
-void GameInit(Game *game, int screen_width, int screen_height);
-void GameUpdate(Game *game, float delta_time);
-void GameDraw(const Game *game);
-void GameShutdown(Game *game);
+void GameInit(Game* game, int screen_width, int screen_height);
+void GameUpdate(Game* game, float delta_time);
+void GameDraw(const Game* game);
+void GameShutdown(Game* game);
 
 #endif
