@@ -90,23 +90,39 @@ The repository is organized into four top-level modules, each with a defined res
 \hline
 \textbf{Module} & \textbf{Source Path} & \textbf{Responsibility} \\
 \hline
-Client & \texttt{src/client/main.c} & Application entry, window creation, render loop dispatch \\
+Client / Main & \texttt{src/client/main.c} & Application lifecycle, window creation, main loop, state machine dispatch \\
 \hline
-Client / Game & \texttt{src/client/game.c}, \texttt{g\allowbreak ame.h} & Game state initialization, update tick (local or network), all 2D rendering (arena, players, spores, UI), camera management, input collection \\
+Client / Screens & \texttt{src/client/screens/} & Screen state machine (menu, lobby, game, settings, etc.) \\
 \hline
-Client / Net & \texttt{src/client/net.c}, \texttt{n\allowbreak et.h} & ENet host lifecycle, hello/welcome handshake, per-tick input sending, snapshot reception and storage \\
+Client / Game & \texttt{src/client/game.c}, \texttt{game.h} & Game state initialization, update tick, 2D rendering, camera, input \\
 \hline
-Server & \texttt{src/server/main.c} & ENet host lifecycle, session management, hello/input/snapshot dispatch, tick scheduler, signal handling \\
+Client / Net & \texttt{src/client/net.c}, \texttt{net.h} & ENet lifecycle, handshake, input sending, snapshot reception \\
 \hline
-Server / Logger & \texttt{src/server/logger.c}, \texttt{l\allowbreak ogger.h} & Structured logging with levels (DEBUG, INFO, WARN, ERROR, FATAL), timestamps, colored output, source location tracking \\
+Client / Chat & \texttt{src/client/chat.c}, \texttt{chat.h} & Text chat UI, message history, input handling \\
 \hline
-Shared / Config & \texttt{src/shared/config.h} & Compile-time tuning constants (world size, speeds, spore count, consume ratios, tick rate) \\
+Client / Voice & \texttt{src/client/voice.c}, \texttt{voice.h} & Microphone capture, Opus encoding/decoding, audio playback \\
 \hline
-Shared / World & \texttt{src/shared/world.h} & Data-type definitions: \texttt{ShroomWorldState}, \texttt{ShroomPlayerState}, \texttt{ShroomSporeState}, \texttt{ShroomZone} \\
+Client / Auth & \texttt{src/client/auth.c}, \texttt{auth.h} & Authentication UI, token storage, login/logout \\
 \hline
-Shared / Sim & \texttt{src/shared/sim.c}, \texttt{s\allowbreak im.h} & Deterministic simulation: movement, spore collection, consume resolution, bot AI, spawn/respawn logic \\
+Server / Main & \texttt{src/server/main.c} & Server lifecycle, ENet host, session management, tick loop \\
 \hline
-Shared / Protocol & \texttt{src/shared/protocol.h} & Binary packet format definitions for all client--server messages \\
+Server / Auth & \texttt{src/server/auth.c}, \texttt{auth.h} & Authentication validation, token management, Discord OAuth \\
+\hline
+Server / Chat & \texttt{src/server/chat.c}, \texttt{chat.h} & Chat message routing, rate limiting, moderation \\
+\hline
+Server / Voice & \texttt{src/server/voice.c}, \texttt{voice.h} & Voice packet routing, mixing, bandwidth management \\
+\hline
+Server / Logger & \texttt{src/server/logger.c}, \texttt{logger.h} & Structured logging with levels, timestamps, colored output \\
+\hline
+Server / Master & \texttt{src/server/master.c}, \texttt{master.h} & Master server registration, heartbeat, server discovery \\
+\hline
+Shared / Config & \texttt{src/shared/config.h} & Compile-time tuning constants \\
+\hline
+Shared / World & \texttt{src/shared/world.h} & Data types: world state, player state, spore state, zones \\
+\hline
+Shared / Sim & \texttt{src/shared/sim.c}, \texttt{sim.h} & Deterministic simulation: movement, collection, consume, bot AI \\
+\hline
+Shared / Protocol & \texttt{src/shared/protocol.h} & Binary packet formats for all client-server messages \\
 \hline
 Shared / Vector & \texttt{src/shared/vec2.h} & Inline 2D vector math \\
 \hline
@@ -116,23 +132,23 @@ Shared / Vector & \texttt{src/shared/vec2.h} & Inline 2D vector math \\
 
 \begin{verbatim}
 client/main.c
-  -> client/game.h -> client/net.h -> shared/protocol.h -> shared/vec2.h
-                   -> shared/world.h -> shared/config.h  -> shared/vec2.h
-                   -> raylib
+  -> client/screens/* -> client/game.h -> client/net.h -> shared/protocol.h
+                    -> client/chat.h                     -> shared/vec2.h
+                    -> client/voice.h -> shared/world.h -> shared/config.h
+                    -> client/auth.h                   -> raylib, opus, enet
 
 server/main.c
-  -> server/logger.h
-  -> shared/sim.h    -> shared/world.h -> shared/config.h -> shared/vec2.h
-  -> shared/protocol.h
-  -> enet
-  -> sqlite3
+  -> server/auth.h    -> server/logger.h
+  -> server/chat.h    -> shared/sim.h    -> shared/world.h -> shared/config.h
+  -> server/voice.h   -> shared/protocol.h                -> shared/vec2.h
+  -> server/master.h  -> enet, sqlite3, opus
 
 shared/sim.c
   -> shared/sim.h
   -> shared/world.h
 \end{verbatim}
 
-\noindent\textbf{Rule}: client code may depend on shared code but never on server code. Server code may depend on shared code but never on client code. Shared code has no dependency on either client or server, and no dependency on \texttt{raylib} or \texttt{enet}.
+\noindent\textbf{Rule}: client code may depend on shared code but never on server code. Server code may depend on shared code but never on client code. Shared code has no dependency on either client or server, and no dependency on \texttt{raylib}, \texttt{enet}, or \texttt{opus}.
 
 \subsection{Build System}
 
@@ -167,9 +183,9 @@ ShroomWorldState {
     uint64_t             tick;
     float                width, height;          // 6000 x 6000
     ShroomEntityId       next_entity_id;
-    size_t               player_count;           // <= SHROOM_MAX_PLAYERS (128)
+    size_t               player_count;           // <= SHROOM_MAX_PLAYERS (256)
     size_t               spore_count;            // <= SHROOM_MAX_SPORES (4096)
-    ShroomPlayerState    players[128];
+    ShroomPlayerState    players[256];
     ShroomSporeState     spores[4096];
 }
 \end{verbatim}
@@ -219,13 +235,15 @@ The server uses SQLite for persistent storage of player statistics, session hist
 
 \subsection{Schema Overview}
 
-The data model consists of five core tables and two leaderboard views:
+The data model consists of seven core tables and two leaderboard views:
 
 \begin{longtable}{|>{\raggedright\arraybackslash}p{0.25\textwidth}|>{\raggedright\arraybackslash}p{0.65\textwidth}|}
 \hline
 \textbf{Table} & \textbf{Purpose} \\
 \hline
 \texttt{players} & Tracks all known players by UUID and display name \\
+\hline
+\texttt{users} & Authentication accounts (username, password hash, Discord ID) \\
 \hline
 \texttt{sessions} & Records individual game sessions with timing and participant counts \\
 \hline
@@ -234,6 +252,8 @@ The data model consists of five core tables and two leaderboard views:
 \texttt{player\_stats} & Cumulative statistics per player (kills, deaths, mass, etc.) \\
 \hline
 \texttt{match\_events} & Significant in-game events (spawns, deaths, consumptions) \\
+\hline
+\texttt{auth\_tokens} & Active authentication tokens for logged-in users \\
 \hline
 \end{longtable}
 
@@ -252,6 +272,42 @@ CREATE TABLE players (
 \end{verbatim}
 
 Each player is uniquely identified by a UUID. The \texttt{display\_name} is the player-chosen name sent in the Hello packet. The server updates \texttt{last\_seen\_at} on each session participation.
+
+\subsection{Users Table (Authentication)}
+
+\begin{verbatim}
+CREATE TABLE users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL UNIQUE,
+    username TEXT NOT NULL UNIQUE,
+    email TEXT,
+    password_hash TEXT,
+    discord_id TEXT UNIQUE,
+    auth_method TEXT NOT NULL CHECK (auth_method IN ('password', 'discord', 'anonymous')),
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    last_login_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE
+);
+\end{verbatim}
+
+Each user account is linked to a player record. The \texttt{auth\_method} indicates how the account was created. Password-based accounts have a \texttt{password\_hash} (bcrypt or argon2). Discord accounts have a \texttt{discord\_id}.
+
+\subsection{Auth Tokens Table}
+
+\begin{verbatim}
+CREATE TABLE auth_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    token TEXT NOT NULL UNIQUE,
+    token_type TEXT NOT NULL DEFAULT 'jwt',
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    revoked_at TEXT,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+\end{verbatim}
+
+Active authentication tokens are stored server-side for validation and revocation. Tokens expire after 24 hours by default.
 
 \subsection{Sessions Table}
 
@@ -382,17 +438,21 @@ The SQLite database file is stored at \texttt{data/shroomio.db} by default. The 
 
 \subsection{Transport}
 
-All multiplayer communication uses ENet over UDP on port 7777. ENet provides ordered reliable delivery on channel 0 (control), and unreliable sequenced delivery on channels 1 (input) and 2 (snapshot).
+All multiplayer communication uses ENet over UDP on port 7777. ENet provides multiple channels with different quality-of-service guarantees.
 
 \begin{longtable}{|>{\raggedright\arraybackslash}p{0.18\textwidth}|>{\raggedright\arraybackslash}p{0.12\textwidth}|>{\raggedright\arraybackslash}p{0.16\textwidth}|>{\raggedright\arraybackslash}p{0.38\textwidth}|}
 \hline
 \textbf{Channel} & \textbf{ID} & \textbf{QoS} & \textbf{Purpose} \\
 \hline
-Control & 0 & Reliable, ordered & Hello, Welcome, Ping, Pong \\
+Control & 0 & Reliable, ordered & Hello, Welcome, Ping, Pong, Auth, Chat \\
 \hline
 Input & 1 & Unreliable, sequenced & Player directional input \\
 \hline
 Snapshot & 2 & Unreliable, sequenced & Server-to-client world state updates \\
+\hline
+Chat & 3 & Reliable, ordered & Text chat messages \\
+\hline
+Voice & 4 & Unreliable, ordered & Voice chat packets (Opus encoded) \\
 \hline
 \end{longtable}
 
@@ -579,7 +639,7 @@ Bots follow a priority-ordered behavior tree evaluated each tick:
 \hline
 World width / height & $6000 \times 6000$ & \texttt{config.h:7--8} \\
 \hline
-Max players (sim) & 128 & \texttt{config.h:4} \\
+Max players (sim) & 256 & \texttt{config.h:4} \\
 \hline
 Max spores & 4096 & \texttt{config.h:5} \\
 \hline
@@ -618,6 +678,22 @@ Server port & 7777 / UDP & \texttt{protocol.h:7} \\
 Protocol version & 1 & \texttt{protocol.h:6} \\
 \hline
 Max player name length & 32 & \texttt{protocol.h:8} \\
+\hline
+Latency goal & < 100ms & \texttt{config.h} \\
+\hline
+Latency warning & 150ms & \texttt{config.h} \\
+\hline
+Latency unplayable & > 200ms & \texttt{config.h} \\
+\hline
+Voice bitrate & 32--64kbps & \texttt{config.h} \\
+\hline
+Voice sample rate & 48kHz & \texttt{config.h} \\
+\hline
+Voice frame size & 20ms & \texttt{config.h} \\
+\hline
+Chat max length & 200 chars & \texttt{protocol.h} \\
+\hline
+Chat rate limit & 5 msgs/10 sec & \texttt{config.h} \\
 \hline
 \end{longtable}
 
@@ -689,9 +765,10 @@ Primary movement: mouse-to-world vector (screen to world using \texttt{GetScreen
 3. enet_initialize()
 4. Initialize database (create/open SQLite file, apply migrations)
 5. ShroomWorldInit() -> spawn 18 bots
-6. enet_host_create(&address, 128 clients, 3 channels)
+6. enet_host_create(&address, 256 clients, 5 channels)
 7. Create new session record in database
-8. Enter tick loop
+8. Register with master server (if applicable)
+9. Enter tick loop
 \end{verbatim}
 
 \subsection{Tick Loop}
@@ -711,11 +788,13 @@ Primary movement: mouse-to-world vector (screen to world using \texttt{GetScreen
 \subsection{Session Management}
 
 \begin{itemize}
-  \item Each connected peer is assigned a \texttt{ServerSession} slot (max 128).
+  \item Each connected peer is assigned a \texttt{ServerSession} slot (max 256).
   \item On connect: the session is stored via \texttt{peer->data}.
   \item On Hello: session is activated, player spawned, Welcome sent.
   \item On Input: the input sequence is recorded and direction applied to the player.
   \item On disconnect: the player is zeroed (mass = 0, radius = 0, alive = false) and the session deactivated.
+  \item Connection health tracked: ping, packet loss, RTT average.
+  \item Rate limiting on rapid reconnect attempts.
 \end{itemize}
 
 \subsection{Snapshot Broadcast}
@@ -746,6 +825,444 @@ docker compose up --build server  # via compose
 \end{verbatim}
 
 %---------------------------------------------------------------------
+\section{Authentication System}
+
+\subsection{Authentication Methods}
+
+The game supports three authentication methods, ordered by preference:
+
+\begin{enumerate}
+  \item \textbf{Username + Password} (encouraged): Traditional account-based authentication with persistent identity.
+  \item \textbf{Discord OAuth} (encouraged): OAuth2 flow with Discord for seamless social login.
+  \item \textbf{Anonymous} (available): Pick any username, no password required. Limited features.
+\end{enumerate}
+
+\subsection{Authentication Flow}
+
+\begin{verbatim}
+Client                          Server
+  |                                |
+  |-- AuthRequest (method, creds) ->|
+  |                                |-- Validate credentials
+  |                                |-- Create/find player record
+  |<-- AuthResponse (token, info) -|
+  |                                |
+  |-- Hello (token, name) -------->|
+  |                                |-- Validate token
+  |<-- Welcome (player_id, ...) --|
+\end{verbatim}
+
+\subsection{Token Management}
+
+Authenticated users receive a JWT (JSON Web Token) with:
+\begin{itemize}
+  \item Player UUID
+  \item Username
+  \item Authentication method
+  \item Expiration timestamp (24 hours)
+  \item Signature (HMAC-SHA256)
+\end{itemize}
+
+Tokens are stored client-side in \texttt{\textasciitilde/.config/shroomio/auth.json} with restrictive permissions (0600).
+
+\subsection{Anonymous Mode}
+
+Anonymous players:
+\begin{itemize}
+  \item Can join with any username (not reserved)
+  \item No persistent stats or identity
+  \item Marked as "Guest" in UI
+  \item Cannot access ranked features (future)
+\end{itemize}
+
+%---------------------------------------------------------------------
+\section{Voice Chat}
+
+\subsection{Audio Pipeline}
+
+\begin{enumerate}
+  \item \textbf{Capture}: Record microphone input (platform-specific: ALSA on Linux, WASAPI on Windows)
+  \item \textbf{Encode}: Compress with Opus codec (32--64kbps, 48kHz, 20ms frames)
+  \item \textbf{Transmit}: Send encoded packets over UDP (Channel 4, unreliable)
+  \item \textbf{Receive}: Decode incoming voice packets
+  \item \textbf{Playback}: Mix and play through speakers
+\end{enumerate}
+
+\subsection{Opus Codec Configuration}
+
+\begin{longtable}{|>{\raggedright\arraybackslash}p{0.40\textwidth}|>{\raggedright\arraybackslash}p{0.30\textwidth}|}
+\hline
+\textbf{Parameter} & \textbf{Value} \\
+\hline
+Sample rate & 48kHz \\
+\hline
+Bitrate & 32--64kbps (configurable) \\
+\hline
+Frame size & 20ms \\
+\hline
+Complexity & 5--8 (quality vs CPU) \\
+\hline
+Channels & Mono \\
+\hline
+Application & VOIP \\
+\hline
+\end{longtable}
+
+\subsection{Voice Chat Modes}
+
+\begin{itemize}
+  \item \textbf{Push-to-talk (PTT)}: Hold key to transmit (default: V or B). Recommended for v1.
+  \item \textbf{Always-on}: Continuous transmission with voice activity detection (VAD). Optional.
+\end{itemize}
+
+\subsection{Bandwidth Budget}
+
+\begin{itemize}
+  \item Per active speaker: 30--50kbps
+  \item Receiving client (5--10 simultaneous speakers): 150--500kbps
+  \item Total voice bandwidth per client: $\sim$200kbps typical
+\end{itemize}
+
+\subsection{Voice Features}
+
+\begin{itemize}
+  \item Mute/unmute self
+  \item Mute individual players
+  \item Volume control per speaker
+  \item Voice activity indicator (who's talking)
+  \item Push-to-talk key binding (configurable)
+  \item Automatic gain control (AGC)
+  \item Jitter buffer for incoming audio
+\end{itemize}
+
+%---------------------------------------------------------------------
+\section{Text Chat}
+
+\subsection{Chat Types}
+
+\begin{itemize}
+  \item \textbf{Global chat}: Messages visible to all players in lobby
+  \item \textbf{Team chat}: Messages visible to team members only (future, if teams implemented)
+\end{itemize}
+
+\subsection{Chat Features}
+
+\begin{itemize}
+  \item Send/receive text messages
+  \item Display chat history (last 50 messages)
+  \item Show sender name and timestamp
+  \item Message length limit: 200 characters
+  \item Rate limiting: max 5 messages per 10 seconds per player
+  \item Mute individual players
+  \item Profanity filter (optional, configurable)
+\end{itemize}
+
+\subsection{Chat Protocol}
+
+\begin{verbatim}
+ShroomChatPacket {
+    ShroomPacketHeader header;
+    uint32_t           sender_id;
+    uint64_t           timestamp;
+    char               message[200];
+}
+\end{verbatim}
+
+Sent on Channel 3 (reliable, ordered) to ensure no messages are lost.
+
+%---------------------------------------------------------------------
+\section{Server Discovery and Matchmaking}
+
+\subsection{Master Server}
+
+A lightweight HTTP service that tracks active game servers:
+
+\begin{itemize}
+  \item Game servers register on startup with: IP, port, name, max players, map
+  \item Heartbeat every 30 seconds with updated stats (current player count)
+  \item Deregister on graceful shutdown
+  \item Clients query master server for server list
+\end{itemize}
+
+\subsection{Lobby Browser}
+
+Client UI for browsing available servers:
+
+\begin{itemize}
+  \item Display: server name, player count (current/max), ping, map
+  \item Sort by: name, player count, ping
+  \item Filter by: player count range, map
+  \item Refresh button
+  \item Direct connect option (IP:port)
+\end{itemize}
+
+\subsection{Basic Matchmaking}
+
+Automatic server assignment based on:
+
+\begin{enumerate}
+  \item \textbf{Primary}: Lowest ping/latency (best connection quality)
+  \item \textbf{Secondary}: Lowest player count (balance load)
+  \item \textbf{Tertiary}: Server has space (< 256 players)
+\end{enumerate}
+
+\textbf{Scoring algorithm}:
+\begin{verbatim}
+score = (0.7 * ping_ms) + (0.3 * player_count)
+\end{verbatim}
+
+Lower score = better choice. Servers with ping > 200ms are excluded.
+
+%---------------------------------------------------------------------
+\section{Performance Targets}
+
+\subsection{Latency Budget}
+
+\begin{longtable}{|>{\raggedright\arraybackslash}p{0.30\textwidth}|>{\raggedright\arraybackslash}p{0.30\textwidth}|>{\raggedright\arraybackslash}p{0.30\textwidth}|}
+\hline
+\textbf{Threshold} & \textbf{RTT} & \textbf{Action} \\
+\hline
+Goal & < 100ms & Smooth gameplay \\
+\hline
+Warning & 150ms & Show "high latency" warning \\
+\hline
+Unplayable & > 200ms & Exclude from matchmaking, warn player \\
+\hline
+\end{longtable}
+
+\subsection{Throughput Targets}
+
+\begin{longtable}{|>{\raggedright\arraybackslash}p{0.40\textwidth}|>{\raggedright\arraybackslash}p{0.30\textwidth}|}
+\hline
+\textbf{Metric} & \textbf{Target} \\
+\hline
+Input rate (client $\rightarrow$ server) & 30 Hz (30 msgs/sec) \\
+\hline
+Snapshot rate (server $\rightarrow$ client) & 15--20 Hz \\
+\hline
+Total per client & 45--50 msgs/sec \\
+\hline
+Server total (256 players) & 11,500--12,800 msgs/sec \\
+\hline
+Voice per speaker & 30--50kbps \\
+\hline
+Total per client (with voice) & $\sim$200kbps \\
+\hline
+\end{longtable}
+
+\subsection{Server Hardware Requirements}
+
+Target specification for 256-player lobbies with voice chat:
+
+\begin{longtable}{|>{\raggedright\arraybackslash}p{0.30\textwidth}|>{\raggedright\arraybackslash}p{0.30\textwidth}|}
+\hline
+\textbf{Component} & \textbf{Specification} \\
+\hline
+CPU & 4 cores (8 threads recommended) \\
+\hline
+RAM & 8GB minimum (16GB recommended) \\
+\hline
+Network & 1Gbps uplink \\
+\hline
+Storage & SSD for logs and database \\
+\hline
+OS & Linux (Ubuntu 22.04 LTS or Debian 12) \\
+\hline
+\end{longtable}
+
+\textbf{Resource budget} (256 players):
+\begin{itemize}
+  \item CPU: game simulation $\sim$2 cores, voice $\sim$1 core, network $\sim$0.5 cores
+  \item RAM: game state $\sim$500MB, voice buffers $\sim$200MB, total $\sim$2--3GB
+  \item Network: $\sim$15--25Mbps sustained, 50--100Mbps burst
+\end{itemize}
+
+%---------------------------------------------------------------------
+\section{Application Lifecycle}
+
+\subsection{Client Lifecycle}
+
+\begin{enumerate}
+  \item \textbf{Initialization}:
+    \begin{itemize}
+      \item Parse command-line arguments
+      \item Load configuration (settings, keybindings)
+      \item Initialize raylib (window, audio, input)
+      \item Initialize audio subsystem (microphone, speakers)
+      \item Load assets (textures, fonts, sounds)
+      \item Initialize database (local settings, cached data)
+      \item Initialize network subsystem (ENet)
+    \end{itemize}
+  \item \textbf{Runtime}:
+    \begin{itemize}
+      \item Main loop with state machine dispatch
+      \item Handle state transitions (menu $\rightarrow$ game $\rightarrow$ settings)
+      \item Process input, update state, render
+      \item Network polling and event handling
+      \item Resource management (load/unload on state change)
+    \end{itemize}
+  \item \textbf{Shutdown}:
+    \begin{itemize}
+      \item Save user settings and preferences
+      \item Disconnect from server (if connected)
+      \item Unload assets and free resources
+      \item Close database connections
+      \item Shutdown ENet
+      \item Close window and cleanup raylib
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Server Lifecycle}
+
+\begin{enumerate}
+  \item \textbf{Initialization}:
+    \begin{itemize}
+      \item Parse command-line arguments and config
+      \item Initialize logger
+      \item Install signal handlers (SIGINT, SIGTERM)
+      \item Initialize database (SQLite, apply migrations)
+      \item Initialize ENet
+      \item Register with master server (if applicable)
+      \item Initialize world state and spawn bots
+    \end{itemize}
+  \item \textbf{Runtime}:
+    \begin{itemize}
+      \item Fixed-timestep tick loop (30 Hz)
+      \item Process network events
+      \item Update simulation
+      \item Broadcast snapshots
+      \item Heartbeat to master server (every 30s)
+      \item Log stats periodically
+    \end{itemize}
+  \item \textbf{Shutdown}:
+    \begin{itemize}
+      \item Handle SIGINT/SIGTERM gracefully
+      \item Disconnect all clients with reason
+      \item Save final session stats to database
+      \item Deregister from master server
+      \item Cleanup ENet
+      \item Close database
+      \item Flush logs
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Signal Handling}
+
+\begin{itemize}
+  \item SIGINT (Ctrl+C): graceful shutdown
+  \item SIGTERM: graceful shutdown
+  \item SIGHUP: reload config (optional, future)
+\end{itemize}
+
+%---------------------------------------------------------------------
+\section{Screen State Machine}
+
+\subsection{Screen States}
+
+\begin{longtable}{|>{\raggedright\arraybackslash}p{0.20\textwidth}|>{\raggedright\arraybackslash}p{0.70\textwidth}|}
+\hline
+\textbf{State} & \textbf{Description} \\
+\hline
+BOOT & Initial loading screen, load core assets, transition to MAIN\_MENU \\
+\hline
+MAIN\_MENU & Title screen with Play, Settings, Help, Credits, Exit buttons \\
+\hline
+AUTH & Login form (username/password), Discord OAuth, "Play as Guest" \\
+\hline
+SERVER\_BROWSER & List available servers, sort/filter, direct connect, quick match \\
+\hline
+LOBBY & Pre-game lobby, player list, chat, ready check, countdown \\
+\hline
+GAME & Active gameplay, HUD overlay, pause menu (if offline) \\
+\hline
+RESULTS & Post-game stats, leaderboard, play again or back to menu \\
+\hline
+SETTINGS & Graphics, audio, controls, network settings \\
+\hline
+HELP & Game controls, mechanics, arena zones, tips and strategies \\
+\hline
+CREDITS & Credits, licenses, acknowledgments \\
+\hline
+\end{longtable}
+
+\subsection{State Transitions}
+
+\begin{itemize}
+  \item Stack-based navigation (back button pops state)
+  \item Resource management: load on enter, unload on exit
+  \item Fade in/out transitions
+  \item Loading screen for heavy transitions
+  \item Preserve state data when needed (e.g., settings persist)
+\end{itemize}
+
+\subsection{Input Handling}
+
+\begin{itemize}
+  \item Each screen handles its own input
+  \item Global hotkeys: ESC (pause/back), F11 (fullscreen)
+  \item Input buffering during transitions
+\end{itemize}
+
+%---------------------------------------------------------------------
+\section{Dynamic Spawn Zones}
+
+\subsection{Spawn Density Logic}
+
+Spawn zones scale with player count to optimize gameplay density:
+
+\begin{longtable}{|>{\raggedright\arraybackslash}p{0.25\textwidth}|>{\raggedright\arraybackslash}p{0.35\textwidth}|>{\raggedright\arraybackslash}p{0.30\textwidth}|}
+\hline
+\textbf{Lobby Size} & \textbf{Spawn Area} & \textbf{Density} \\
+\hline
+Small (1--64 players) & Wide area, more exploration & Low \\
+\hline
+Medium (65--128 players) & Moderate density & Balanced \\
+\hline
+Large (129--256 players) & Tight spawn zones & High conflict \\
+\hline
+\end{longtable}
+
+\subsection{Spawn Algorithm}
+
+\begin{enumerate}
+  \item Calculate target density based on current player count
+  \item Generate candidate spawn points within zone
+  \item Filter by minimum distance from other players (340 units)
+  \item Select spawn point (random or weighted by distance from center)
+  \item Smooth transitions as lobby size changes
+\end{enumerate}
+
+\subsection{Configuration}
+
+\begin{itemize}
+  \item Configurable density curves (players per square unit)
+  \item Min/max spawn radius bounds
+  \item Minimum distance between spawns
+  \item Respect existing arena zones (center, mid, outer)
+\end{itemize}
+
+%---------------------------------------------------------------------
+\section{Client-Side Prediction}
+
+\subsection{Prediction Model}
+
+\begin{enumerate}
+  \item \textbf{Input Application}: Client applies input immediately, updates local player position/velocity, sends input to server with sequence number
+  \item \textbf{Server Reconciliation}: Server processes input, updates authoritative state, sends snapshot with processed input sequence
+  \item \textbf{Correction}: Client compares predicted state vs server state. If mismatch, snap to server state. If error < threshold, interpolate smoothly. If error > threshold, hard snap (teleport).
+\end{enumerate}
+
+\subsection{Configuration}
+
+\begin{itemize}
+  \item Prediction error threshold (snap vs interpolate)
+  \item Interpolation speed for corrections
+  \item Handle packet loss (server didn't receive input)
+  \item Handle out-of-order snapshots
+  \item Prevent prediction drift over time
+\end{itemize}
+
+%---------------------------------------------------------------------
 \section{Engineering Review and Risk Assessment}
 
 \subsection{Code Quality}
@@ -758,25 +1275,29 @@ The implementation is compact (12 source files, approximately 1~400 lines of C),
 \hline
 \textbf{ID} & \textbf{Gap} & \textbf{Severity} & \textbf{Mitigation} \\
 \hline
-G1 & Spores not replicated in snapshots; online players cannot collect spores & High & M1: add spore replication to snapshot protocol \\
+G1 & Spores not replicated in snapshots; online players cannot collect spores & High & Issue \#24: add spore replication to snapshot protocol \\
 \hline
-G2 & Snapshot max 32 players vs simulation max 128; invisible players in full matches & High & M2: expand snapshot capacity or add interest management \\
+G2 & Snapshot max 32 players vs simulation max 256; invisible players in full matches & High & Issue \#25: expand snapshot capacity or add interest management \\
 \hline
-G3 & No client-side prediction, interpolation, or reconciliation; movement will feel jittery under latency & Medium & M3: add interpolation buffer and dead reckoning \\
+G3 & No client-side prediction, interpolation, or reconciliation & Medium & Issue \#28: add basic client-side prediction \\
 \hline
-G4 & Player name sent in Hello but not stored or displayed anywhere & Medium & M4: store names server-side, include in snapshots, render in HUD \\
+G4 & Player name sent in Hello but not stored or displayed anywhere & Medium & Issue \#25: store names server-side, include in snapshots \\
 \hline
-G5 & No menu, server browser, or connection UX beyond status text & Low & M4: add basic connection screen \\
+G5 & No menu, server browser, or connection UX & Medium & Issues \#34, \#35, \#37: add screen state machine and lobby browser \\
 \hline
-G6 & No audio, sprites, or themed content (scaffold folders exist but are empty) & Low & M5: art pass after core loop is network-complete \\
+G6 & No audio, sprites, or themed content & Low & Future: art pass after core features complete \\
 \hline
-G7 & Deterministic PRNG seeded with constant (srand(7)); identical bot/spore patterns every session & Low & Seed from time or allow config override \\
+G7 & Deterministic PRNG seeded with constant & Low & Issue \#36: seed from time or allow config override \\
 \hline
-G8 & No RTT display on client despite ping/pong support & Low & Wire ping RTT to HUD status line \\
+G8 & No RTT display on client despite ping/pong support & Low & Issue \#29: wire ping RTT to HUD status line \\
 \hline
-G9 & No CI, automated testing, or linting in repository & Medium & Add CI pipeline with build verification \\
+G9 & No CI, automated testing, or linting & Medium & Resolved: CI pipeline with clang-format, cppcheck, builds \\
 \hline
-G10 & README duplicates content (last lines) & Low & Clean README \\
+G10 & No authentication system & High & Issue \#25: implement username/password + Discord OAuth + anonymous \\
+\hline
+G11 & No voice or text chat & Medium & Issues \#31, \#32: implement text and voice chat \\
+\hline
+G12 & No application lifecycle management & Medium & Issue \#36: implement structured lifecycle \\
 \hline
 \end{longtable}
 
@@ -784,7 +1305,44 @@ G10 & README duplicates content (last lines) & Low & Clean README \\
 \section{Engineering Roadmap}
 \label{sec:roadmap}
 
-\subsection{Milestone 1: Online Spore Economy (G1)}
+The roadmap is organized by priority and dependency order. Each milestone corresponds to one or more GitHub issues.
+
+\subsection{Phase 1: Core Infrastructure}
+
+\begin{itemize}
+  \item \textbf{Issue \#24}: Connection and session management (disconnect-and-rejoin model)
+  \item \textbf{Issue \#25}: Authentication system (username/password + Discord OAuth + anonymous)
+  \item \textbf{Issue \#27}: Message channel architecture (5 channels with reliability tiers)
+  \item \textbf{Issue \#36}: Application lifecycle management (startup, runtime, shutdown)
+  \item \textbf{Issue \#37}: Screen/page state machine (9 screens with transitions)
+  \item \textbf{Issue \#38}: Game state management and persistence
+\end{itemize}
+
+\subsection{Phase 2: Networking and Performance}
+
+\begin{itemize}
+  \item \textbf{Issue \#26}: Dynamic spawn zones based on lobby size (256 players)
+  \item \textbf{Issue \#28}: Basic client-side prediction (apply input immediately, reconcile)
+  \item \textbf{Issue \#29}: Latency targets and monitoring (<100ms goal, 150ms warning)
+  \item \textbf{Issue \#30}: Throughput optimization (45--50 msgs/sec per client, 12,800+ total)
+  \item \textbf{Issue \#33}: Server hardware requirements (4 cores, 8GB RAM)
+\end{itemize}
+
+\subsection{Phase 3: Communication Features}
+
+\begin{itemize}
+  \item \textbf{Issue \#31}: Live text chat (global chat, reliable delivery)
+  \item \textbf{Issue \#32}: Live voice chat (Opus codec, push-to-talk, custom implementation)
+\end{itemize}
+
+\subsection{Phase 4: Server Discovery and Matchmaking}
+
+\begin{itemize}
+  \item \textbf{Issue \#34}: Lobby browser and server list (master server)
+  \item \textbf{Issue \#35}: Basic matchmaking (auto-assign to least-loaded/lowest-ping server)
+\end{itemize}
+
+\subsection{Phase 5: Online Spore Economy (G1)}
 
 Add spore state to server snapshots so online matches include the full growth loop.
 
@@ -795,73 +1353,60 @@ Add spore state to server snapshots so online matches include the full growth lo
   \item Files affected: \texttt{protocol.h}, \texttt{server/main.c}, \texttt{client/net.c}, \texttt{client/game.c}.
 \end{itemize}
 
-\subsection{Milestone 2: Snapshot Scaling (G2)}
+\subsection{Phase 6: Snapshot Scaling (G2)}
 
 Increase visible player capacity beyond 32.
 
 \begin{itemize}
-  \item Either: raise \texttt{SHROOM\_MAX\_SNAPSHOT\_PLAYERS} to 128 (packet size $\approx$ 5 KiB, acceptable over LAN/DC).
+  \item Either: raise \texttt{SHROOM\_MAX\_SNAPSHOT\_PLAYERS} to 256 (packet size $\approx$ 10 KiB, acceptable over LAN/DC).
   \item Or: implement distance-based interest management to send only the nearest N players.
   \item Files affected: \texttt{protocol.h}, \texttt{server/main.c}, \texttt{client/net.c}.
 \end{itemize}
 
-\subsection{Milestone 3: Client-Side Smoothing (G3)}
-
-Add interpolation and basic prediction for smooth perceived motion.
-
-\begin{itemize}
-  \item Buffer the last two snapshots and interpolate entity positions between them.
-  \item Apply dead reckoning for the local player between input sends.
-  \item Files affected: \texttt{client/game.c}, \texttt{client/net.c}.
-\end{itemize}
-
-\subsection{Milestone 4: Player Identity and Session UX (G4, G5)}
-
-\begin{itemize}
-  \item Store player name server-side in \texttt{ServerSession}.
-  \item Include name in \texttt{ShroomSnapshotPlayerState} (add 32-byte name field).
-  \item Render player names above entities in the client.
-  \item Add a basic text-entry prompt for player name on client launch.
-  \item Add a simple connection screen (server address entry, connect/disconnect button).
-  \item Files affected: \texttt{protocol.h}, \texttt{server/main.c}, \texttt{client/net.c}, \texttt{client/game.c}, \texttt{client/main.c}.
-\end{itemize}
-
-\subsection{Milestone 5: Polish and Content (G6, G7, G8, G9)}
+\subsection{Phase 7: Polish and Content}
 
 \begin{itemize}
   \item Seed PRNG from \texttt{time(NULL)} or add a config option.
   \item Display RTT in client HUD status line.
-  \item Add basic CI (GitHub Actions) that runs \texttt{make linux} and \texttt{make server}.
-  \item Clean README.
   \item Art direction pass: simple sprite rendering, audio stubs.
 \end{itemize}
 
 %---------------------------------------------------------------------
 \section{Acceptance Criteria}
 
-The current product slice is considered successful when:
+The v1 product is considered successful when:
 
 \begin{itemize}
-  \item a player can launch the client and move immediately,
-  \item the player can grow via spore collection,
+  \item a player can launch the client and navigate through the screen state machine (menu, settings, game),
+  \item the player can authenticate via username/password, Discord OAuth, or play anonymously,
+  \item the player can browse available servers and join a lobby (up to 256 players),
+  \item the player can move immediately and grow via spore collection,
   \item larger entities can consume smaller ones under deterministic rules,
   \item the player respawns quickly after defeat,
-  \item a headless server can host the simulation on UDP port 7777,
+  \item a headless server can host the simulation on UDP port 7777 with 256 concurrent players,
   \item a client can connect, complete handshake, submit input, and render server snapshots,
+  \item text chat works for in-game communication,
+  \item voice chat works with push-to-talk (Opus codec),
+  \item latency is monitored and displayed (<100ms goal, 150ms warning),
+  \item basic matchmaking auto-assigns players to optimal servers,
+  \item the application lifecycle is structured (clean startup, runtime, shutdown),
   \item this specification document can be regenerated from the repository using \texttt{latexmk}.
 \end{itemize}
 
-\noindent Each milestone above extends this baseline with additional, verifiable criteria documented in the corresponding GitHub issue.
+\noindent Each issue in the roadmap extends this baseline with additional, verifiable criteria documented in the corresponding GitHub issue.
 
 %---------------------------------------------------------------------
 \section{Non-Goals for the Current Phase}
 
 \begin{itemize}
-  \item Deep account systems or progression.
-  \item Monetization design.
-  \item Matchmaking services beyond direct local or hosted connection.
+  \item Deep progression systems (XP, levels, unlocks).
+  \item Monetization design or microtransactions.
+  \item Multi-region server deployment (single region for v1).
   \item High-fidelity art requirements before the core loop is proven.
   \item Large-scale persistent world simulation.
+  \item Team-based game modes (free-for-all only for v1).
+  \item Replay system or match history browser.
+  \item Mobile client support.
 \end{itemize}
 
 %---------------------------------------------------------------------
