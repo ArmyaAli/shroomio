@@ -3,6 +3,11 @@ name: CI
 on:
   pull_request:
     branches: [main]
+    paths:
+      - 'src/**'
+      - 'Makefile'
+      - '.clang-format'
+      - '.github/workflows/**'
 
 jobs:
   build:
