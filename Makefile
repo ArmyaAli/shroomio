@@ -49,7 +49,40 @@ WINDOWS_BIN := $(DIST_DIR)/$(PROJECT).exe
 SERVER_BIN := $(DIST_DIR)/$(PROJECT)-server
 
 # =============================================================================
-# 3. Compiler Settings
+# 3. Vendor Dependencies
+# =============================================================================
+RAYLIB_DIR := vendor/raylib-$(RAYLIB_VERSION)
+RAYLIB_URL := https://github.com/raysan5/raylib/archive/refs/tags/$(RAYLIB_VERSION).tar.gz
+RAYLIB_SRC_DIR := $(RAYLIB_DIR)/src
+RAYLIB_GLFW_INCLUDE_DIR := $(RAYLIB_SRC_DIR)/external/glfw/include
+
+RAYGUI_DIR := vendor/raygui-$(RAYGUI_VERSION)
+RAYGUI_URL := https://github.com/raysan5/raygui/archive/refs/tags/$(RAYGUI_VERSION).tar.gz
+RAYGUI_SRC_DIR := $(RAYGUI_DIR)/src
+
+ENET_DIR := vendor/enet
+ENET_INCLUDE_DIR := $(ENET_DIR)/include
+
+UNITY_DIR := vendor/Unity-$(UNITY_VERSION)
+UNITY_URL := https://github.com/ThrowTheSwitch/Unity/archive/refs/tags/v$(UNITY_VERSION).tar.gz
+UNITY_SRC_DIR := $(UNITY_DIR)/src
+UNITY_SRC := $(UNITY_SRC_DIR)/unity.c
+UNITY_INCLUDE := -I$(UNITY_SRC_DIR)
+
+# Warning flags
+COMMON_WARNINGS := -Wall -Wextra -Wpedantic
+VENDOR_WARNINGS := -Wall -Wextra
+
+# Include directories
+COMMON_INCLUDE_DIRS := -I$(SRC_DIR) -I$(CLIENT_SRC_DIR) -I$(SERVER_SRC_DIR) -I$(SHARED_SRC_DIR)
+
+# Test compiler flags
+TEST_CFLAGS := -std=c11 -O0 -g $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
+               $(UNITY_INCLUDE) -DTEST_MODE
+TEST_LIBS   := -lm
+
+# =============================================================================
+# 4. Compiler Settings
 # =============================================================================
 LINUX_CC   ?= cc
 WINDOWS_CC ?= x86_64-w64-mingw32-gcc
@@ -61,13 +94,6 @@ TAR     ?= tar
 MKDIR_P ?= mkdir -p
 RM_RF   ?= rm -rf
 DOCKER  ?= docker
-
-# Warning flags
-COMMON_WARNINGS := -Wall -Wextra -Wpedantic
-VENDOR_WARNINGS := -Wall -Wextra
-
-# Include directories
-COMMON_INCLUDE_DIRS := -I$(SRC_DIR) -I$(CLIENT_SRC_DIR) -I$(SERVER_SRC_DIR) -I$(SHARED_SRC_DIR)
 
 # Client compiler flags (raylib-based)
 COMMON_CFLAGS := -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
@@ -96,31 +122,8 @@ LINUX_LIBS   := -lGL -lm -ldl -lpthread -lrt -lX11 -lXrandr -lXi -lXcursor -lXin
 WINDOWS_LIBS := -lopengl32 -lgdi32 -lwinmm -lws2_32
 
 # =============================================================================
-# 4. Source Files and Objects
+# 5. Source Files and Objects
 # =============================================================================
-
-# Vendor directories
-RAYLIB_DIR := vendor/raylib-$(RAYLIB_VERSION)
-RAYLIB_URL := https://github.com/raysan5/raylib/archive/refs/tags/$(RAYLIB_VERSION).tar.gz
-RAYLIB_SRC_DIR := $(RAYLIB_DIR)/src
-RAYLIB_GLFW_INCLUDE_DIR := $(RAYLIB_SRC_DIR)/external/glfw/include
-
-RAYGUI_DIR := vendor/raygui-$(RAYGUI_VERSION)
-RAYGUI_URL := https://github.com/raysan5/raygui/archive/refs/tags/$(RAYGUI_VERSION).tar.gz
-RAYGUI_SRC_DIR := $(RAYGUI_DIR)/src
-
-ENET_DIR := vendor/enet
-ENET_INCLUDE_DIR := $(ENET_DIR)/include
-
-UNITY_DIR := vendor/Unity-$(UNITY_VERSION)
-UNITY_URL := https://github.com/ThrowTheSwitch/Unity/archive/refs/tags/v$(UNITY_VERSION).tar.gz
-UNITY_SRC_DIR := $(UNITY_DIR)/src
-UNITY_SRC := $(UNITY_SRC_DIR)/unity.c
-UNITY_INCLUDE := -I$(UNITY_SRC_DIR)
-
-# Test compiler flags (must be after UNITY_INCLUDE)
-TEST_CFLAGS := -std=c11 -O0 -g $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
-               $(UNITY_INCLUDE) -DTEST_MODE
 
 # Raylib source files
 RAYLIB_SOURCE_NAMES := rcore rmodels rshapes rtext rtextures utils raudio rglfw
