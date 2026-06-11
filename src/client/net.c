@@ -89,8 +89,8 @@ static void HandleSporeState(ClientNetState* net, const ENetPacket* enet_packet)
   uint16_t spore_count;
   size_t payload_size;
 
-  if (enet_packet->dataLength < sizeof(ShroomPacketHeader) + sizeof(uint64_t) + sizeof(uint16_t) +
-                                    sizeof(uint16_t)) {
+  if (enet_packet->dataLength <
+      sizeof(ShroomPacketHeader) + sizeof(uint64_t) + sizeof(uint16_t) + sizeof(uint16_t)) {
     return;
   }
 
