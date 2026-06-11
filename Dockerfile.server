@@ -1,0 +1,21 @@
+FROM debian:bookworm-slim AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential make && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY Makefile ./
+COPY src ./src
+COPY vendor/enet ./vendor/enet
+
+RUN make server
+
+FROM debian:bookworm-slim
+
+WORKDIR /app
+
+COPY --from=builder /app/dist/shroomio-server /usr/local/bin/shroomio-server
+
+EXPOSE 7777/udp
+
+CMD ["/usr/local/bin/shroomio-server"]

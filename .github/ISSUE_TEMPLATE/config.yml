@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: shroomio Specification
+    url: https://github.com/ArmyaAli/shroomio/blob/main/design/shroomio-specification.tex
+    about: Read the authoritative product specification before opening an issue.

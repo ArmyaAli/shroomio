@@ -1,0 +1,42 @@
+{
+  "name": "shroomio-dev",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "remoteUser": "dev",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.makefile-tools",
+        "vadimcn.vscode-lldb"
+      ],
+      "settings": {
+        "files.eol": "\n",
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "makefile.configureOnOpen": false
+      }
+    }
+  },
+  "containerEnv": {
+    "GIT_USER_NAME": "${localEnv:GIT_AUTHOR_NAME}",
+    "GIT_USER_EMAIL": "${localEnv:GIT_AUTHOR_EMAIL}",
+    "DISPLAY": "${localEnv:DISPLAY}",
+    "WAYLAND_DISPLAY": "${localEnv:WAYLAND_DISPLAY}",
+    "XDG_RUNTIME_DIR": "${localEnv:XDG_RUNTIME_DIR}"
+  },
+  "mounts": [
+    "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind,consistency=cached",
+    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind",
+    "source=${localEnv:HOME}/.ssh,target=/home/dev/.ssh,type=bind,readonly",
+    "source=${localEnv:HOME}/.gitconfig,target=/home/dev/.gitconfig,type=bind,readonly",
+    "source=${localEnv:HOME}/.config/shroomio-devcontainer/github-token,target=/run/secrets/shroomio-github-token,type=bind,readonly",
+    "source=${localEnv:HOME}/.config/opencode,target=/mnt/host-opencode/config,type=bind,readonly",
+    "source=${localEnv:HOME}/.local/share/opencode,target=/mnt/host-opencode/share,type=bind,readonly",
+    "source=${localEnv:HOME}/.local/state/opencode,target=/mnt/host-opencode/state,type=bind,readonly",
+    "source=${localEnv:HOME}/.cache/opencode,target=/mnt/host-opencode/cache,type=bind,readonly"
+  ],
+  "postCreateCommand": "make help",
+  "postStartCommand": "bash .devcontainer/init-opencode.sh && bash .devcontainer/init-git-identity.sh && bash .devcontainer/init-github-auth.sh"
+}

@@ -1,0 +1,11 @@
+build/
+dist/
+vendor/
+
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.toc
+*.synctex.gz

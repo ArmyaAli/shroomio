@@ -1,0 +1,260 @@
+PROJECT := shroomio
+RAYLIB_VERSION := 5.5
+RAYLIB_DIR := vendor/raylib-$(RAYLIB_VERSION)
+RAYLIB_URL := https://github.com/raysan5/raylib/archive/refs/tags/$(RAYLIB_VERSION).tar.gz
+RAYLIB_SRC_DIR := $(RAYLIB_DIR)/src
+RAYLIB_GLFW_INCLUDE_DIR := $(RAYLIB_SRC_DIR)/external/glfw/include
+ENET_DIR := vendor/enet
+ENET_INCLUDE_DIR := $(ENET_DIR)/include
+SRC_DIR := src
+CLIENT_SRC_DIR := $(SRC_DIR)/client
+SERVER_SRC_DIR := $(SRC_DIR)/server
+SHARED_SRC_DIR := $(SRC_DIR)/shared
+BUILD_DIR := build
+DIST_DIR := dist
+
+LINUX_BUILD_DIR := $(BUILD_DIR)/linux
+WINDOWS_BUILD_DIR := $(BUILD_DIR)/windows
+
+LINUX_BIN := $(DIST_DIR)/$(PROJECT)
+WINDOWS_BIN := $(DIST_DIR)/$(PROJECT).exe
+SERVER_BIN := $(DIST_DIR)/$(PROJECT)-server
+
+LINUX_CC ?= cc
+WINDOWS_CC ?= x86_64-w64-mingw32-gcc
+AR ?= ar
+CURL ?= curl
+TAR ?= tar
+MKDIR_P ?= mkdir -p
+RM_RF ?= rm -rf
+DOCKER ?= docker
+SERVER_IMAGE ?= shroomio-server:dev
+DEVCONTAINER ?= devcontainer
+DEVCONTAINER_IMAGE ?= shroomio-devcontainer:dev
+DEVCONTAINER_CONTAINER ?= shroomio-devcontainer
+GIT_USER_NAME := $(shell git config --global --get user.name)
+GIT_USER_EMAIL := $(shell git config --global --get user.email)
+DEVCONTAINER_SECRET_DIR ?= $(HOME)/.config/shroomio-devcontainer
+SPEC_SRC := design/shroomio-specification.tex
+SPEC_OUT := dist/latex
+DEVCONTAINER_GITHUB_TOKEN_FILE ?= $(DEVCONTAINER_SECRET_DIR)/github-token
+
+COMMON_WARNINGS := -Wall -Wextra -Wpedantic
+COMMON_INCLUDE_DIRS := -I$(SRC_DIR) -I$(CLIENT_SRC_DIR) -I$(SERVER_SRC_DIR) -I$(SHARED_SRC_DIR)
+COMMON_CFLAGS := -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) -I$(RAYLIB_SRC_DIR) -I$(RAYLIB_GLFW_INCLUDE_DIR)
+SERVER_CFLAGS := -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) -I$(ENET_INCLUDE_DIR) -D_POSIX_C_SOURCE=199309L -D_DEFAULT_SOURCE
+SERVER_LIBS := -lm
+
+VENDOR_WARNINGS := -Wall -Wextra
+
+LINUX_CFLAGS := $(COMMON_CFLAGS) -DPLATFORM_DESKTOP -D_DEFAULT_SOURCE
+WINDOWS_CFLAGS := $(COMMON_CFLAGS) -DPLATFORM_DESKTOP
+
+LINUX_RAYLIB_CFLAGS := -std=c11 -O2 $(VENDOR_WARNINGS) -I$(SRC_DIR) -I$(RAYLIB_SRC_DIR) -I$(RAYLIB_GLFW_INCLUDE_DIR) -DPLATFORM_DESKTOP -D_DEFAULT_SOURCE -D_GLFW_X11
+WINDOWS_RAYLIB_CFLAGS := -std=c11 -O2 $(VENDOR_WARNINGS) -I$(SRC_DIR) -I$(RAYLIB_SRC_DIR) -I$(RAYLIB_GLFW_INCLUDE_DIR) -DPLATFORM_DESKTOP
+
+RAYLIB_SOURCE_NAMES := rcore rmodels rshapes rtext rtextures utils raudio rglfw
+
+LINUX_RAYLIB_OBJECTS := $(addprefix $(LINUX_BUILD_DIR)/raylib/,$(addsuffix .o,$(RAYLIB_SOURCE_NAMES)))
+WINDOWS_RAYLIB_OBJECTS := $(addprefix $(WINDOWS_BUILD_DIR)/raylib/,$(addsuffix .o,$(RAYLIB_SOURCE_NAMES)))
+
+CLIENT_SOURCES := $(CLIENT_SRC_DIR)/main.c $(CLIENT_SRC_DIR)/game.c $(CLIENT_SRC_DIR)/net.c $(SHARED_SRC_DIR)/sim.c
+SERVER_SOURCES := $(SERVER_SRC_DIR)/main.c $(SHARED_SRC_DIR)/sim.c
+SHARED_HEADERS := $(SHARED_SRC_DIR)/config.h $(SHARED_SRC_DIR)/vec2.h $(SHARED_SRC_DIR)/world.h $(SHARED_SRC_DIR)/sim.h
+SHARED_HEADERS += $(SHARED_SRC_DIR)/protocol.h
+ENET_COMMON_SOURCE_NAMES := callbacks compress host list packet peer protocol
+ENET_LINUX_SOURCE_NAMES := unix
+ENET_WINDOWS_SOURCE_NAMES := win32
+LINUX_ENET_SOURCES := $(addprefix $(ENET_DIR)/,$(addsuffix .c,$(ENET_COMMON_SOURCE_NAMES) $(ENET_LINUX_SOURCE_NAMES)))
+WINDOWS_ENET_SOURCES := $(addprefix $(ENET_DIR)/,$(addsuffix .c,$(ENET_COMMON_SOURCE_NAMES) $(ENET_WINDOWS_SOURCE_NAMES)))
+
+LINUX_APP_OBJECTS := $(patsubst $(SRC_DIR)/%.c,$(LINUX_BUILD_DIR)/%.o,$(CLIENT_SOURCES))
+WINDOWS_APP_OBJECTS := $(patsubst $(SRC_DIR)/%.c,$(WINDOWS_BUILD_DIR)/%.o,$(CLIENT_SOURCES))
+SERVER_OBJECTS := $(patsubst $(SRC_DIR)/%.c,$(LINUX_BUILD_DIR)/%.o,$(SERVER_SOURCES))
+LINUX_ENET_OBJECTS := $(patsubst $(ENET_DIR)/%.c,$(LINUX_BUILD_DIR)/vendor/enet/%.o,$(LINUX_ENET_SOURCES))
+WINDOWS_ENET_OBJECTS := $(patsubst $(ENET_DIR)/%.c,$(WINDOWS_BUILD_DIR)/vendor/enet/%.o,$(WINDOWS_ENET_SOURCES))
+SERVER_ENET_OBJECTS := $(LINUX_ENET_OBJECTS)
+
+LINUX_RAYLIB_LIB := $(LINUX_BUILD_DIR)/libraylib.a
+WINDOWS_RAYLIB_LIB := $(WINDOWS_BUILD_DIR)/libraylib.a
+
+LINUX_LIBS := -lGL -lm -ldl -lpthread -lrt -lX11 -lXrandr -lXi -lXcursor -lXinerama -lasound
+WINDOWS_LIBS := -lopengl32 -lgdi32 -lwinmm -lws2_32
+
+.PHONY: all linux windows server run run-server run-windows docker-server docker-run-server devcontainer-up devcontainer-build devcontainer-shell devcontainer-down devcontainer-opencode-sync devcontainer-git-identity devcontainer-github-token devcontainer-github-status clean distclean vendor spec help
+
+all: linux
+
+help:
+	@printf '%s\n' \
+	  'Targets:' \
+	  '  make linux    Build the Linux binary' \
+	  '  make run      Build and run the Linux binary' \
+	  '  make server   Build the Linux headless server target' \
+	  '  make run-server Build and run the Linux headless server target' \
+	  '  make spec     Build the LaTeX specification PDF into dist/latex/' \
+	  '  make devcontainer-build Build the development container' \
+	  '  make devcontainer-up Start the development container' \
+	  '  make devcontainer-shell Open a shell in the development container' \
+	  '  make devcontainer-down Stop the development container' \
+	  '  make devcontainer-opencode-sync Refresh OpenCode state from host into container' \
+	  '  make devcontainer-git-identity Copy host git identity into container' \
+	  '  make devcontainer-github-token Store GitHub token for container use' \
+	  '  make devcontainer-github-status Check GitHub auth inside container' \
+	  '  make docker-server Build the server container image' \
+	  '  make docker-run-server Build and run the server container' \
+	  '  make windows  Build the Windows binary from WSL with mingw-w64' \
+	  '  make run-windows Build and run the Windows binary from WSL' \
+	  '  make clean    Remove build and dist artifacts' \
+	  '  make distclean Remove build artifacts and downloaded raylib source'
+
+linux: $(LINUX_BIN)
+
+run: $(LINUX_BIN)
+	./$(LINUX_BIN)
+
+windows: $(WINDOWS_BIN)
+
+server: $(SERVER_BIN)
+
+run-server: $(SERVER_BIN)
+	./$(SERVER_BIN)
+
+spec:
+	@$(MKDIR_P) $(SPEC_OUT)
+	latexmk -pdf -outdir=$(SPEC_OUT) $(SPEC_SRC)
+
+docker-server:
+	$(DOCKER) build -f Dockerfile.server -t $(SERVER_IMAGE) .
+
+docker-run-server: docker-server
+	$(DOCKER) run --rm -p 7777:7777/udp $(SERVER_IMAGE)
+
+devcontainer-build:
+	DOCKER_BUILDKIT=0 $(DOCKER) build -f .devcontainer/Dockerfile -t $(DEVCONTAINER_IMAGE) .
+
+devcontainer-up:
+	@mkdir -p "$(DEVCONTAINER_SECRET_DIR)"
+	@touch "$(DEVCONTAINER_GITHUB_TOKEN_FILE)"
+	@chmod 600 "$(DEVCONTAINER_GITHUB_TOKEN_FILE)"
+	$(DOCKER) rm -f $(DEVCONTAINER_CONTAINER) >/dev/null 2>&1 || true
+	$(DOCKER) run -d --name $(DEVCONTAINER_CONTAINER) \
+		-u dev \
+		-v "$(PWD):/workspaces/shroomio" \
+		-v /var/run/docker.sock:/var/run/docker.sock \
+		-v /tmp/.X11-unix:/tmp/.X11-unix \
+		-v "$(HOME)/.ssh:/home/dev/.ssh:ro" \
+		-v "$(HOME)/.gitconfig:/home/dev/.gitconfig:ro" \
+		-v "$(DEVCONTAINER_GITHUB_TOKEN_FILE):/run/secrets/shroomio-github-token:ro" \
+		-v "$(HOME)/.config/opencode:/mnt/host-opencode/config:ro" \
+		-v "$(HOME)/.local/share/opencode:/mnt/host-opencode/share:ro" \
+		-v "$(HOME)/.local/state/opencode:/mnt/host-opencode/state:ro" \
+		-v "$(HOME)/.cache/opencode:/mnt/host-opencode/cache:ro" \
+		-e HOME="/home/dev" \
+		-e GIT_USER_NAME="$(GIT_USER_NAME)" \
+		-e GIT_USER_EMAIL="$(GIT_USER_EMAIL)" \
+		-e DISPLAY="$(DISPLAY)" \
+		-e WAYLAND_DISPLAY="$(WAYLAND_DISPLAY)" \
+		-e XDG_RUNTIME_DIR="$(XDG_RUNTIME_DIR)" \
+		-w /workspaces/shroomio \
+		$(DEVCONTAINER_IMAGE) bash -lc 'bash .devcontainer/init-opencode.sh && bash .devcontainer/init-git-identity.sh && bash .devcontainer/init-github-auth.sh && sleep infinity'
+
+devcontainer-shell:
+	$(DOCKER) exec -it \
+		-u dev \
+		-e HOME=/home/dev \
+		-e TERM="$(TERM)" \
+		$(DEVCONTAINER_CONTAINER) bash -il
+
+devcontainer-down:
+	$(DOCKER) rm -f $(DEVCONTAINER_CONTAINER)
+
+devcontainer-opencode-sync:
+	$(DOCKER) exec -u dev -e HOME=/home/dev $(DEVCONTAINER_CONTAINER) bash -lc 'bash .devcontainer/init-opencode.sh'
+
+devcontainer-git-identity:
+	@test -n "$(GIT_USER_NAME)" || (printf '%s\n' 'Host git user.name is not set.' && exit 1)
+	@test -n "$(GIT_USER_EMAIL)" || (printf '%s\n' 'Host git user.email is not set.' && exit 1)
+	$(DOCKER) exec -u dev -e HOME=/home/dev $(DEVCONTAINER_CONTAINER) git config --global user.name "$(GIT_USER_NAME)"
+	$(DOCKER) exec -u dev -e HOME=/home/dev $(DEVCONTAINER_CONTAINER) git config --global user.email "$(GIT_USER_EMAIL)"
+	$(DOCKER) exec -u dev -e HOME=/home/dev $(DEVCONTAINER_CONTAINER) git config --global --get user.name
+	$(DOCKER) exec -u dev -e HOME=/home/dev $(DEVCONTAINER_CONTAINER) git config --global --get user.email
+
+devcontainer-github-token:
+	@mkdir -p "$(DEVCONTAINER_SECRET_DIR)"
+	@printf '%s\n' 'Paste your GitHub token. Input will be hidden.'
+	@bash -lc 'read -rsp "Token: " token; printf "\n"; umask 177; printf "%s" "$$token" > "$(DEVCONTAINER_GITHUB_TOKEN_FILE)"'
+	@printf '%s\n' "Saved token to $(DEVCONTAINER_GITHUB_TOKEN_FILE)"
+
+devcontainer-github-status:
+	$(DOCKER) exec -u dev -e HOME=/home/dev $(DEVCONTAINER_CONTAINER) gh auth status
+
+run-windows: $(WINDOWS_BIN)
+	./$(WINDOWS_BIN)
+
+vendor: $(RAYLIB_DIR)
+
+$(RAYLIB_DIR):
+	@$(MKDIR_P) vendor $(BUILD_DIR)
+	$(CURL) -L $(RAYLIB_URL) -o $(BUILD_DIR)/raylib.tar.gz
+	$(TAR) -xzf $(BUILD_DIR)/raylib.tar.gz -C vendor
+
+$(LINUX_BIN): $(LINUX_APP_OBJECTS) $(LINUX_RAYLIB_LIB) $(LINUX_ENET_OBJECTS)
+	@$(MKDIR_P) $(DIST_DIR)
+	$(LINUX_CC) $(LINUX_APP_OBJECTS) $(LINUX_RAYLIB_LIB) $(LINUX_ENET_OBJECTS) -o $@ $(LINUX_LIBS)
+
+$(WINDOWS_BIN): $(WINDOWS_APP_OBJECTS) $(WINDOWS_RAYLIB_LIB) $(WINDOWS_ENET_OBJECTS)
+	@$(MKDIR_P) $(DIST_DIR)
+	$(WINDOWS_CC) -static $(WINDOWS_APP_OBJECTS) $(WINDOWS_RAYLIB_LIB) $(WINDOWS_ENET_OBJECTS) -o $@ $(WINDOWS_LIBS)
+
+$(SERVER_BIN): $(SERVER_OBJECTS) $(SERVER_ENET_OBJECTS)
+	@$(MKDIR_P) $(DIST_DIR)
+	$(LINUX_CC) $(SERVER_OBJECTS) $(SERVER_ENET_OBJECTS) -o $@ $(SERVER_LIBS)
+
+$(LINUX_RAYLIB_LIB): $(LINUX_RAYLIB_OBJECTS)
+	$(AR) rcs $@ $(LINUX_RAYLIB_OBJECTS)
+
+$(WINDOWS_RAYLIB_LIB): $(WINDOWS_RAYLIB_OBJECTS)
+	$(AR) rcs $@ $(WINDOWS_RAYLIB_OBJECTS)
+
+$(LINUX_BUILD_DIR)/raylib/%.o: $(RAYLIB_SRC_DIR)/%.c $(RAYLIB_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(LINUX_RAYLIB_CFLAGS) -c $< -o $@
+
+$(WINDOWS_BUILD_DIR)/raylib/%.o: $(RAYLIB_SRC_DIR)/%.c $(RAYLIB_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(WINDOWS_CC) $(WINDOWS_RAYLIB_CFLAGS) -c $< -o $@
+
+$(LINUX_BUILD_DIR)/client/%.o: $(CLIENT_SRC_DIR)/%.c $(CLIENT_SRC_DIR)/game.h $(CLIENT_SRC_DIR)/net.h $(SHARED_HEADERS) $(RAYLIB_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(LINUX_CFLAGS) -I$(ENET_INCLUDE_DIR) -D_POSIX_C_SOURCE=199309L -D_DEFAULT_SOURCE -c $< -o $@
+
+$(WINDOWS_BUILD_DIR)/client/%.o: $(CLIENT_SRC_DIR)/%.c $(CLIENT_SRC_DIR)/game.h $(CLIENT_SRC_DIR)/net.h $(SHARED_HEADERS) $(RAYLIB_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(WINDOWS_CC) $(WINDOWS_CFLAGS) -I$(ENET_INCLUDE_DIR) -c $< -o $@
+
+$(LINUX_BUILD_DIR)/shared/%.o: $(SHARED_SRC_DIR)/%.c $(SHARED_HEADERS)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(SERVER_CFLAGS) -c $< -o $@
+
+$(WINDOWS_BUILD_DIR)/shared/%.o: $(SHARED_SRC_DIR)/%.c $(SHARED_HEADERS)
+	@$(MKDIR_P) $(dir $@)
+	$(WINDOWS_CC) $(SERVER_CFLAGS) -c $< -o $@
+
+$(LINUX_BUILD_DIR)/server/%.o: $(SERVER_SRC_DIR)/%.c
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(SERVER_CFLAGS) -c $< -o $@
+
+$(LINUX_BUILD_DIR)/vendor/enet/%.o: $(ENET_DIR)/%.c
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(SERVER_CFLAGS) -c $< -o $@
+
+$(WINDOWS_BUILD_DIR)/vendor/enet/%.o: $(ENET_DIR)/%.c
+	@$(MKDIR_P) $(dir $@)
+	$(WINDOWS_CC) -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) -I$(ENET_INCLUDE_DIR) -c $< -o $@
+
+clean:
+	$(RM_RF) $(BUILD_DIR) $(DIST_DIR)
+
+distclean: clean
+	$(RM_RF) vendor

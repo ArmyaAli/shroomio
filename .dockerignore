@@ -1,0 +1,4 @@
+build/
+dist/
+.git/
+vendor/raylib-5.5/

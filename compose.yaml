@@ -1,0 +1,8 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    image: shroomio-server:dev
+    ports:
+      - "7777:7777/udp"

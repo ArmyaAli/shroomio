@@ -1,0 +1,711 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{amsmath}
+\usepackage{enumitem}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  urlcolor=blue,
+  pdftitle={shroomio Software Specification},
+  pdfauthor={shroomio Authors}
+}
+
+\setlist[itemize]{leftmargin=1.5em}
+\setlist[enumerate]{leftmargin=1.75em}
+\setlength{\parskip}{0.5em}
+\setlength{\parindent}{0pt}
+
+\title{shroomio Software Specification\\\large Formal Product Requirements, Architecture, and Engineering Baseline}
+\author{shroomio Authors}
+\date{June 11, 2026}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+
+%---------------------------------------------------------------------
+\section{Document Purpose}
+
+This document is the formal software specification for \textbf{shroomio}, a real-time multiplayer fungal arena game written in C. It replaces the earlier informal \emph{Product Requirements and Technical Baseline} document and constitutes the single authoritative reference for all product requirements, technical architecture, protocol design, balancing parameters, and engineering roadmap.
+
+This specification draws from three sources:
+\begin{itemize}
+  \item the actual implementation as it exists in the repository today,
+  \item the intended product vision described in the earlier baseline document,
+  \item a formal engineering review of the current codebase against that vision.
+\end{itemize}
+
+Where a requirement is already satisfied by the codebase it is annotated with the relevant source file. Where a requirement is not yet implemented it is marked as a scheduled milestone.
+
+%---------------------------------------------------------------------
+\section{Product Overview}
+
+\subsection{Product Identity}
+
+\textbf{shroomio} is a real-time multiplayer arena game in which players control fungal organisms, collect spores to grow, consume smaller organisms, avoid larger threats, and compete on a mass-based leaderboard. The game is designed to be playable both locally (offline against bots) and online (against human opponents via a headless dedicated server).
+
+\subsection{Core Loop}
+
+The intended player loop is:
+\begin{enumerate}
+  \item enter the arena at low-to-mid mass,
+  \item collect safe spores in the outer ring,
+  \item rotate toward mid and center zones to improve growth rate,
+  \item watch for favorable fights against smaller targets,
+  \item avoid larger predators as increased mass lowers mobility,
+  \item climb the leaderboard,
+  \item respawn quickly and re-engage after defeat.
+\end{enumerate}
+
+\subsection{Design Pillars}
+
+\begin{itemize}
+  \item \textbf{Readable competition}: player state and arena risk must be legible at a glance.
+  \item \textbf{Fast re-entry}: defeat resets the player quickly without removing them from the session.
+  \item \textbf{Authoritative multiplayer}: server state is the source of truth for movement and collisions.
+  \item \textbf{Low content overhead}: the game remains fun with simple shapes, simple rules, and lightweight assets.
+  \item \textbf{Incremental extensibility}: simulation, client rendering, and server networking stay separated so the prototype can evolve safely.
+\end{itemize}
+
+%---------------------------------------------------------------------
+\section{Architecture}
+
+\subsection{Module Map}
+
+The repository is organized into four top-level modules, each with a defined responsibility and dependency boundary.
+
+\begin{longtable}{|>{\raggedright\arraybackslash}p{0.18\textwidth}|>{\raggedright\arraybackslash}p{0.32\textwidth}|>{\raggedright\arraybackslash}p{0.38\textwidth}|}
+\hline
+\textbf{Module} & \textbf{Source Path} & \textbf{Responsibility} \\
+\hline
+Client & \texttt{src/client/main.c} & Application entry, window creation, render loop dispatch \\
+\hline
+Client / Game & \texttt{src/client/game.c}, \texttt{g\allowbreak ame.h} & Game state initialization, update tick (local or network), all 2D rendering (arena, players, spores, UI), camera management, input collection \\
+\hline
+Client / Net & \texttt{src/client/net.c}, \texttt{n\allowbreak et.h} & ENet host lifecycle, hello/welcome handshake, per-tick input sending, snapshot reception and storage \\
+\hline
+Server & \texttt{src/server/main.c} & ENet host lifecycle, session management, hello/input/snapshot dispatch, tick scheduler, signal handling \\
+\hline
+Shared / Config & \texttt{src/shared/config.h} & Compile-time tuning constants (world size, speeds, spore count, consume ratios, tick rate) \\
+\hline
+Shared / World & \texttt{src/shared/world.h} & Data-type definitions: \texttt{ShroomWorldState}, \texttt{ShroomPlayerState}, \texttt{ShroomSporeState}, \texttt{ShroomZone} \\
+\hline
+Shared / Sim & \texttt{src/shared/sim.c}, \texttt{s\allowbreak im.h} & Deterministic simulation: movement, spore collection, consume resolution, bot AI, spawn/respawn logic \\
+\hline
+Shared / Protocol & \texttt{src/shared/protocol.h} & Binary packet format definitions for all client--server messages \\
+\hline
+Shared / Vector & \texttt{src/shared/vec2.h} & Inline 2D vector math \\
+\hline
+\end{longtable}
+
+\subsection{Dependency Graph}
+
+\begin{verbatim}
+client/main.c
+  -> client/game.h -> client/net.h -> shared/protocol.h -> shared/vec2.h
+                   -> shared/world.h -> shared/config.h  -> shared/vec2.h
+                   -> raylib
+
+server/main.c
+  -> shared/sim.h    -> shared/world.h -> shared/config.h -> shared/vec2.h
+  -> shared/protocol.h
+  -> enet
+
+shared/sim.c
+  -> shared/sim.h
+  -> shared/world.h
+\end{verbatim}
+
+\noindent\textbf{Rule}: client code may depend on shared code but never on server code. Server code may depend on shared code but never on client code. Shared code has no dependency on either client or server, and no dependency on \texttt{raylib} or \texttt{enet}.
+
+\subsection{Build System}
+
+The project uses a single GNU Makefile at the repository root.
+
+\begin{itemize}
+  \item \texttt{make linux} --- builds the Linux raylib client binary (\texttt{dist/shroomio}).
+  \item \texttt{make server} --- builds the Linux headless server binary (\texttt{dist/shroomio-server}).
+  \item \texttt{make windows} --- cross-compiles the Windows client binary (\texttt{dist/shroomio.exe}) using mingw-w64.
+  \item \texttt{make run} --- builds and launches the Linux client.
+  \item \texttt{make run-server} --- builds and launches the headless server.
+  \item \texttt{make docker-server} --- builds the server Docker image.
+  \item \texttt{make docker-run-server} --- builds and runs the server Docker container.
+\end{itemize}
+
+The Makefile downloads raylib source (version 5.5) on demand, compiles \texttt{libraylib.a} statically for each target, and bundles ENet (vendored under \texttt{vendor/enet/}) for the server target.
+
+\noindent\textbf{Supported platforms}:
+\begin{itemize}
+  \item Linux client (gcc/clang, raylib static, system GL/X11 libs dynamic)
+  \item Linux headless server (gcc/clang, no graphics libraries)
+  \item Windows client cross-build from Linux (mingw-w64, fully static exe)
+\end{itemize}
+
+%---------------------------------------------------------------------
+\section{Data Structures}
+
+\subsection{World State}
+
+\begin{verbatim}
+ShroomWorldState {
+    uint64_t             tick;
+    float                width, height;          // 6000 x 6000
+    ShroomEntityId       next_entity_id;
+    size_t               player_count;           // <= SHROOM_MAX_PLAYERS (128)
+    size_t               spore_count;            // <= SHROOM_MAX_SPORES (4096)
+    ShroomPlayerState    players[128];
+    ShroomSporeState     spores[4096];
+}
+\end{verbatim}
+
+\subsection{Player State}
+
+\begin{verbatim}
+ShroomPlayerState {
+    ShroomPlayerId  player_id;        // unique player identifier
+    ShroomEntityId  entity_id;        // unique entity identifier
+    ShroomVec2      position;         // world-space position
+    ShroomVec2      input_direction;  // normalized or zero
+    float           mass;             // current mass
+    float           radius;           // derived from mass
+    bool            alive;
+    bool            is_bot;
+}
+\end{verbatim}
+
+\subsection{Spore State}
+
+\begin{verbatim}
+ShroomSporeState {
+    ShroomEntityId  entity_id;
+    ShroomVec2      position;
+    uint16_t        value;            // mass granted on collection (8)
+    bool            active;
+}
+\end{verbatim}
+
+\subsection{Zone Enumeration}
+
+\begin{verbatim}
+ShroomZone {
+    SHROOM_ZONE_OUTER  = 0,
+    SHROOM_ZONE_MID    = 1,
+    SHROOM_ZONE_CENTER = 2,
+}
+\end{verbatim}
+
+Zones are concentric circles centered on the world midpoint. Center radius is 900, mid radius is 2000, outer is everything beyond mid up to the world border.
+
+%---------------------------------------------------------------------
+\section{Protocol Specification}
+
+\subsection{Transport}
+
+All multiplayer communication uses ENet over UDP on port 7777. ENet provides ordered reliable delivery on channel 0 (control), and unreliable sequenced delivery on channels 1 (input) and 2 (snapshot).
+
+\begin{longtable}{|>{\raggedright\arraybackslash}p{0.18\textwidth}|>{\raggedright\arraybackslash}p{0.12\textwidth}|>{\raggedright\arraybackslash}p{0.16\textwidth}|>{\raggedright\arraybackslash}p{0.38\textwidth}|}
+\hline
+\textbf{Channel} & \textbf{ID} & \textbf{QoS} & \textbf{Purpose} \\
+\hline
+Control & 0 & Reliable, ordered & Hello, Welcome, Ping, Pong \\
+\hline
+Input & 1 & Unreliable, sequenced & Player directional input \\
+\hline
+Snapshot & 2 & Unreliable, sequenced & Server-to-client world state updates \\
+\hline
+\end{longtable}
+
+\subsection{Common Header}
+
+Every packet begins with a 4-byte header:
+
+\begin{verbatim}
+ShroomPacketHeader {
+    uint8_t  type;       // ShroomPacketType enum
+    uint8_t  reserved;
+    uint16_t size;       // total packet size in bytes
+}
+\end{verbatim}
+
+\subsection{Packet Types}
+
+\subsubsection{Hello (client to server, type = 1)}
+
+\begin{verbatim}
+ShroomHelloPacket {
+    ShroomPacketHeader header;
+    uint32_t protocol_version;    // SHROOM_PROTOCOL_VERSION (1)
+    char     name[32];            // player-chosen display name
+}
+\end{verbatim}
+
+Sent immediately after ENet connection. If \texttt{protocol\_version} does not match, the server disconnects the peer. If the server is full, the peer is disconnected.
+
+\subsubsection{Welcome (server to client, type = 2)}
+
+\begin{verbatim}
+ShroomWelcomePacket {
+    ShroomPacketHeader header;
+    uint32_t protocol_version;
+    uint32_t player_id;
+    uint32_t entity_id;
+    uint16_t server_tick_rate;    // 30
+    uint16_t snapshot_rate;       // 15
+    float    world_width;         // 6000.0
+    float    world_height;        // 6000.0
+}
+\end{verbatim}
+
+Sent in response to a valid Hello. After receiving Welcome, the client switches from local simulation to applying server snapshots.
+
+\subsubsection{Input (client to server, type = 3)}
+
+\begin{verbatim}
+ShroomInputPacket {
+    ShroomPacketHeader header;
+    uint32_t sequence;            // monotonic, client-side
+    float    direction_x;         // normalized input x
+    float    direction_y;         // normalized input y
+}
+\end{verbatim}
+
+Sent per tick at the server tick rate (30~Hz). The server clamps and normalizes the direction vector before applying it.
+
+\subsubsection{Snapshot (server to client, type = 4)}
+
+\begin{verbatim}
+ShroomSnapshotPacket {
+    ShroomPacketHeader              header;
+    uint64_t                        tick;
+    uint32_t                        last_processed_input_sequence;
+    uint32_t                        player_id;        // this client's player
+    uint32_t                        entity_id;
+    uint16_t                        player_count;
+    uint16_t                        reserved;
+    ShroomSnapshotPlayerState       players[32];
+}
+
+ShroomSnapshotPlayerState {
+    uint32_t player_id;
+    uint32_t entity_id;
+    float    position_x;
+    float    position_y;
+    float    mass;
+    float    radius;
+    uint8_t  alive;
+    uint8_t  is_bot;
+    uint16_t reserved;
+}
+\end{verbatim}
+
+Broadcast at the snapshot rate (15~Hz). Contains up to 32 player entries. Clients overwrite their local player array from this payload.
+
+\noindent\textbf{Known limitation}: spores are not included in snapshot packets. Online players do not see or interact with spores through the network layer. Spore replication is milestone 1 in the engineering roadmap (\S\ref{sec:roadmap}).
+
+\subsubsection{Ping / Pong (type = 5, 6)}
+
+\begin{verbatim}
+ShroomPingPacket  { ShroomPacketHeader; uint32_t nonce; }
+ShroomPongPacket  { ShroomPacketHeader; uint32_t nonce; }
+\end{verbatim}
+
+Used for latency measurement. The server echoes Pong with the same nonce. Not yet wired to a visible RTT display on the client.
+
+\subsection{Snapshot Capacity Constraint}
+
+The simulation supports up to 128 players (\texttt{SHROOM\_MAX\_PLAYERS}), but the snapshot packet is hard-coded to 32 player entries (\texttt{SHROOM\_MAX\_SNAPSHOT\_PLAYERS}). This means that in a full online match, only the first 32 alive players will be visible to any given client. This is a known capacity gap scheduled for remediation in milestone 2 (\S\ref{sec:roadmap}).
+
+%---------------------------------------------------------------------
+\section{Simulation Rules}
+
+\subsection{World}
+
+\begin{itemize}
+  \item World dimensions: $6000 \times 6000$ units (square).
+  \item Entity positions are clamped to the rectangle $[radius,\; width - radius] \times [radius,\; height - radius]$.
+  \item Three concentric zones centered at $(3000, 3000)$: center~($r \le 900$), mid~($900 < r \le 2000$), outer~($r > 2000$).
+\end{itemize}
+
+\subsection{Movement}
+
+\begin{itemize}
+  \item Each tick, each alive player is moved by $\text{velocity} = \text{input\_direction} \times \text{speed} \times \Delta t$.
+  \item Input direction is a normalized 2D vector (zero allowed for no movement).
+  \item Speed is derived from mass:
+    \begin{verbatim}
+speed = SHROOM_MAX_PLAYER_SPEED / (1.0 + (mass * 0.35 / 100.0))
+clamp(speed, SHROOM_MIN_PLAYER_SPEED, SHROOM_MAX_PLAYER_SPEED)
+    \end{verbatim}
+  \item Minimum speed: 120. Maximum speed: 260. (Both units/sec.)
+  \item Bots compute their own input direction each tick (see \S\ref{sec:bot-ai}).
+\end{itemize}
+
+\subsection{Spore Collection}
+
+\begin{itemize}
+  \item The world maintains a target of 900 active spores.
+  \item Each spore has a value of 8 mass.
+  \item Collection radius is $\text{player\_radius} + 6.0$ units.
+  \item When a player overlaps a spore, the player gains the spore's mass value and the spore is immediately relocated to a new random position (biased toward center and mid zones).
+\end{itemize}
+
+\noindent\textbf{Spore spawn bias} (per \texttt{ShroomSpawnOrResetSpore}):
+\begin{itemize}
+  \item 45\% chance: placed within the center zone.
+  \item 35\% chance: placed within the mid zone (beyond center but within mid radius).
+  \item 20\% chance: placed anywhere in the world (outer).
+\end{itemize}
+
+\subsection{Consumption}
+
+\begin{itemize}
+  \item A player may consume another player if:
+    \begin{enumerate}
+      \item both are alive,
+      \item the attacker's mass is at least $1.15 \times$ the target's mass,
+      \item the attacker's center overlaps the target's radius scaled by $0.88$.
+    \end{enumerate}
+  \item On consumption: the attacker gains $0.70 \times$ the victim's mass; the victim respawns immediately at default mass (100) in a safe outer-zone location.
+  \item Multiple simultaneous consumes are resolved in a single pass: a victim is consumed at most once per tick.
+\end{itemize}
+
+\subsection{Spawning and Respawning}
+
+\begin{itemize}
+  \item New players and respawning players are placed in the outer zone, at least 340 units away from any alive player.
+  \item Up to 32 random candidate positions are tried before falling back to a random position without safety checks.
+  \item Default spawn mass is 100.
+  \item Radius is recalculated from mass: $\text{radius} = 10.0 + \text{mass} \times 0.14$.
+\end{itemize}
+
+\subsection{Bot AI}
+\label{sec:bot-ai}
+
+Bots follow a priority-ordered behavior tree evaluated each tick:
+
+\begin{enumerate}
+  \item \textbf{Flee}: if a larger player (mass $>$ bot\_mass $\times 1.15$) is within 900 units, move directly away.
+  \item \textbf{Chase}: if a smaller player (bot\_mass $>$ target\_mass $\times 1.15$) is within 700 units, move directly toward.
+  \item \textbf{Forage}: move toward the nearest active spore.
+  \item \textbf{Drift}: move toward the world center.
+\end{enumerate}
+
+\subsection{Tuning Parameters}
+
+\begin{longtable}{|>{\raggedright\arraybackslash}p{0.48\textwidth}|>{\raggedright\arraybackslash}p{0.20\textwidth}|>{\raggedright\arraybackslash}p{0.20\textwidth}|}
+\hline
+\textbf{Parameter} & \textbf{Value} & \textbf{Defined In} \\
+\hline
+World width / height & $6000 \times 6000$ & \texttt{config.h:7--8} \\
+\hline
+Max players (sim) & 128 & \texttt{config.h:4} \\
+\hline
+Max spores & 4096 & \texttt{config.h:5} \\
+\hline
+Max snapshot players & 32 & \texttt{protocol.h:15} \\
+\hline
+Center zone radius & 900 & \texttt{config.h:10} \\
+\hline
+Mid zone radius & 2000 & \texttt{config.h:11} \\
+\hline
+Default player mass & 100 & \texttt{config.h:13} \\
+\hline
+Bot count & 18 & \texttt{config.h:14} \\
+\hline
+Min player speed & 120 & \texttt{config.h:15} \\
+\hline
+Max player speed & 260 & \texttt{config.h:16} \\
+\hline
+Speed mass scale & 0.35 & \texttt{config.h:17} \\
+\hline
+Spore target count & 900 & \texttt{config.h:19} \\
+\hline
+Spore value & 8 & \texttt{config.h:20} \\
+\hline
+Consume mass advantage & 1.15 & \texttt{config.h:22} \\
+\hline
+Consume mass gain factor & 0.70 & \texttt{config.h:23} \\
+\hline
+Spawn safe distance & 340 & \texttt{config.h:24} \\
+\hline
+Server tick rate & 30 Hz & \texttt{config.h:26} \\
+\hline
+Snapshot rate & 15 Hz & \texttt{protocol.h:14} \\
+\hline
+Server port & 7777 / UDP & \texttt{protocol.h:7} \\
+\hline
+Protocol version & 1 & \texttt{protocol.h:6} \\
+\hline
+Max player name length & 32 & \texttt{protocol.h:8} \\
+\hline
+\end{longtable}
+
+%---------------------------------------------------------------------
+\section{Client Specification}
+
+\subsection{Rendering}
+
+\begin{itemize}
+  \item Uses \texttt{raylib} 5.5 with a 2D camera (\texttt{Camera2D}) centered on the local player.
+  \item Target window: 1280$\times$720 at 60 FPS.
+  \item Arena zones rendered as colored rectangles/circles with alpha blending.
+  \item Player entities rendered as filled circles, color-coded: human players in green (\texttt{\{126,217,87\}}), bots in preset palette colors rotated by player ID.
+  \item Local player highlighted with an additional white outline ring.
+  \item Spores rendered as small gold circles (radius 4).
+  \item Grid drawn every 80 units for spatial orientation.
+  \item World border drawn as a rectangle outline.
+\end{itemize}
+
+\subsection{HUD}
+
+The client renders two fixed HUD panels (top-left and top-right) regardless of camera position:
+
+\begin{itemize}
+  \item \textbf{Top-left}:
+    \begin{itemize}
+      \item Title.
+      \item Movement hint (``Move toward the mouse\ldots'').
+      \item Mass, radius, current speed.
+      \item Zone label, player count, spore count, tick.
+      \item Server connection status and last snapshot tick (green when connected, orange otherwise).
+    \end{itemize}
+  \item \textbf{Top-right}: leaderboard, top 6 entries, highlighting the local player with ``You'' label and white text.
+\end{itemize}
+
+\subsection{Input}
+
+Primary movement: mouse-to-world vector (screen to world using \texttt{GetScreenToWorld2D}). Secondary: WASD and arrow keys add $+1.0$ or $-1.0$ to the accumulated direction vector. The resulting vector is normalized before being sent to the simulation or the server.
+
+\subsection{Dual-Mode Operation}
+
+\begin{itemize}
+  \item \textbf{Offline mode}: the client runs the shared simulation (\texttt{ShroomWorldStep}) locally. No network connection required. Full spore economy and bot AI run client-side.
+  \item \textbf{Online mode}: after a successful Welcome handshake, the client stops running \texttt{ShroomWorldStep} locally and instead applies snapshots from the server (\texttt{ApplyNetworkSnapshot}). Spore state is zeroed in this mode.
+\end{itemize}
+
+\subsection{Network Client Lifecycle}
+
+\begin{verbatim}
+1. ENet init
+2. Create ENet client host
+3. Resolve server address
+4. Connect to server
+5. Wait for ENet connect event -> send Hello
+6. Wait for Welcome -> status = CONNECTED
+7. Send Input packets each tick at 30 Hz
+8. Receive Snapshot packets at ~15 Hz
+9. On disconnect -> reset to local offline mode
+\end{verbatim}
+
+%---------------------------------------------------------------------
+\section{Server Specification}
+
+\subsection{Startup}
+
+\begin{verbatim}
+1. Configure stdout/stderr as unbuffered
+2. Install SIGINT / SIGTERM handlers
+3. enet_initialize()
+4. ShroomWorldInit() -> spawn 18 bots
+5. enet_host_create(&address, 128 clients, 3 channels)
+6. Enter tick loop
+\end{verbatim}
+
+\subsection{Tick Loop}
+
+\begin{itemize}
+  \item Fixed-timestep loop at 30 Hz using \texttt{clock\_gettime(CLOCK\_MONOTONIC)} and \texttt{nanosleep}.
+  \item Each tick:
+    \begin{enumerate}
+      \item Service all ENet events (connect, receive, disconnect).
+      \item Call \texttt{ShroomWorldStep(world, 1/30)}.
+      \item If tick is divisible by the snapshot interval (every 2nd tick), broadcast snapshots to all connected peers.
+      \item Flush ENet.
+      \item Sleep until next tick boundary.
+    \end{enumerate}
+\end{itemize}
+
+\subsection{Session Management}
+
+\begin{itemize}
+  \item Each connected peer is assigned a \texttt{ServerSession} slot (max 128).
+  \item On connect: the session is stored via \texttt{peer->data}.
+  \item On Hello: session is activated, player spawned, Welcome sent.
+  \item On Input: the input sequence is recorded and direction applied to the player.
+  \item On disconnect: the player is zeroed (mass = 0, radius = 0, alive = false) and the session deactivated.
+\end{itemize}
+
+\subsection{Snapshot Broadcast}
+
+Snapshots are sent to every connected peer. The snapshot payload includes the first 32 alive players with positive mass. If more than 32 alive players exist, only the first 32 are included.
+
+\subsection{Deployment}
+
+The server is packaged as a Docker container:
+
+\begin{verbatim}
+FROM debian:bookworm-slim AS builder
+# install build-essential, make
+# COPY Makefile, src/, vendor/enet
+# RUN make server
+
+FROM debian:bookworm-slim
+# COPY shroomio-server binary
+# EXPOSE 7777/udp
+# CMD ["/usr/local/bin/shroomio-server"]
+\end{verbatim}
+
+\noindent Run with:
+\begin{verbatim}
+make docker-server      # build image
+make docker-run-server  # build and run
+docker compose up --build server  # via compose
+\end{verbatim}
+
+%---------------------------------------------------------------------
+\section{Engineering Review and Risk Assessment}
+
+\subsection{Code Quality}
+
+The implementation is compact (12 source files, approximately 1~400 lines of C), well-structured, and consistent. The separation of shared simulation from client and server is maintained without violation. No known memory leaks or undefined behavior; the code uses stack-allocated structs and fixed-size arrays throughout with no dynamic allocation beyond ENet internals.
+
+\subsection{Identified Gaps and Risks}
+
+\begin{longtable}{|>{\raggedright\arraybackslash}p{0.08\textwidth}|>{\raggedright\arraybackslash}p{0.30\textwidth}|>{\raggedright\arraybackslash}p{0.22\textwidth}|>{\raggedright\arraybackslash}p{0.28\textwidth}|}
+\hline
+\textbf{ID} & \textbf{Gap} & \textbf{Severity} & \textbf{Mitigation} \\
+\hline
+G1 & Spores not replicated in snapshots; online players cannot collect spores & High & M1: add spore replication to snapshot protocol \\
+\hline
+G2 & Snapshot max 32 players vs simulation max 128; invisible players in full matches & High & M2: expand snapshot capacity or add interest management \\
+\hline
+G3 & No client-side prediction, interpolation, or reconciliation; movement will feel jittery under latency & Medium & M3: add interpolation buffer and dead reckoning \\
+\hline
+G4 & Player name sent in Hello but not stored or displayed anywhere & Medium & M4: store names server-side, include in snapshots, render in HUD \\
+\hline
+G5 & No menu, server browser, or connection UX beyond status text & Low & M4: add basic connection screen \\
+\hline
+G6 & No audio, sprites, or themed content (scaffold folders exist but are empty) & Low & M5: art pass after core loop is network-complete \\
+\hline
+G7 & Deterministic PRNG seeded with constant (srand(7)); identical bot/spore patterns every session & Low & Seed from time or allow config override \\
+\hline
+G8 & No RTT display on client despite ping/pong support & Low & Wire ping RTT to HUD status line \\
+\hline
+G9 & No CI, automated testing, or linting in repository & Medium & Add CI pipeline with build verification \\
+\hline
+G10 & README duplicates content (last lines) & Low & Clean README \\
+\hline
+\end{longtable}
+
+%---------------------------------------------------------------------
+\section{Engineering Roadmap}
+\label{sec:roadmap}
+
+\subsection{Milestone 1: Online Spore Economy (G1)}
+
+Add spore state to server snapshots so online matches include the full growth loop.
+
+\begin{itemize}
+  \item Extend \texttt{ShroomSnapshotPacket} or add a new \texttt{ShroomWorldStatePacket} type that includes spore data.
+  \item Update \texttt{ApplyNetworkSnapshot} to populate \texttt{world.spores} from network data.
+  \item Ensure spore collection is resolved authoritatively on the server and the client applies server spore state.
+  \item Files affected: \texttt{protocol.h}, \texttt{server/main.c}, \texttt{client/net.c}, \texttt{client/game.c}.
+\end{itemize}
+
+\subsection{Milestone 2: Snapshot Scaling (G2)}
+
+Increase visible player capacity beyond 32.
+
+\begin{itemize}
+  \item Either: raise \texttt{SHROOM\_MAX\_SNAPSHOT\_PLAYERS} to 128 (packet size $\approx$ 5 KiB, acceptable over LAN/DC).
+  \item Or: implement distance-based interest management to send only the nearest N players.
+  \item Files affected: \texttt{protocol.h}, \texttt{server/main.c}, \texttt{client/net.c}.
+\end{itemize}
+
+\subsection{Milestone 3: Client-Side Smoothing (G3)}
+
+Add interpolation and basic prediction for smooth perceived motion.
+
+\begin{itemize}
+  \item Buffer the last two snapshots and interpolate entity positions between them.
+  \item Apply dead reckoning for the local player between input sends.
+  \item Files affected: \texttt{client/game.c}, \texttt{client/net.c}.
+\end{itemize}
+
+\subsection{Milestone 4: Player Identity and Session UX (G4, G5)}
+
+\begin{itemize}
+  \item Store player name server-side in \texttt{ServerSession}.
+  \item Include name in \texttt{ShroomSnapshotPlayerState} (add 32-byte name field).
+  \item Render player names above entities in the client.
+  \item Add a basic text-entry prompt for player name on client launch.
+  \item Add a simple connection screen (server address entry, connect/disconnect button).
+  \item Files affected: \texttt{protocol.h}, \texttt{server/main.c}, \texttt{client/net.c}, \texttt{client/game.c}, \texttt{client/main.c}.
+\end{itemize}
+
+\subsection{Milestone 5: Polish and Content (G6, G7, G8, G9)}
+
+\begin{itemize}
+  \item Seed PRNG from \texttt{time(NULL)} or add a config option.
+  \item Display RTT in client HUD status line.
+  \item Add basic CI (GitHub Actions) that runs \texttt{make linux} and \texttt{make server}.
+  \item Clean README.
+  \item Art direction pass: simple sprite rendering, audio stubs.
+\end{itemize}
+
+%---------------------------------------------------------------------
+\section{Acceptance Criteria}
+
+The current product slice is considered successful when:
+
+\begin{itemize}
+  \item a player can launch the client and move immediately,
+  \item the player can grow via spore collection,
+  \item larger entities can consume smaller ones under deterministic rules,
+  \item the player respawns quickly after defeat,
+  \item a headless server can host the simulation on UDP port 7777,
+  \item a client can connect, complete handshake, submit input, and render server snapshots,
+  \item this specification document can be regenerated from the repository using \texttt{latexmk}.
+\end{itemize}
+
+\noindent Each milestone above extends this baseline with additional, verifiable criteria documented in the corresponding GitHub issue.
+
+%---------------------------------------------------------------------
+\section{Non-Goals for the Current Phase}
+
+\begin{itemize}
+  \item Deep account systems or progression.
+  \item Monetization design.
+  \item Matchmaking services beyond direct local or hosted connection.
+  \item High-fidelity art requirements before the core loop is proven.
+  \item Large-scale persistent world simulation.
+\end{itemize}
+
+%---------------------------------------------------------------------
+\section{Document Maintenance}
+
+This specification is the authoritative reference for the shroomio project. It must be updated whenever:
+
+\begin{itemize}
+  \item a tuning constant changes in \texttt{config.h} or \texttt{protocol.h},
+  \item a new packet type or channel is introduced,
+  \item the data model is extended,
+  \item a roadmap milestone is completed,
+  \item a new architectural module is added.
+\end{itemize}
+
+\noindent The source file lives at \texttt{design/shroomio-specification.tex} and is compiled with \texttt{make spec} (outputs to \texttt{dist/latex/}).
+
+\end{document}
