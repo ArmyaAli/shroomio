@@ -1,6 +1,5 @@
 #include <signal.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <string.h>
 #include <time.h>
 
@@ -8,6 +7,7 @@
 
 #include "shared/protocol.h"
 #include "shared/sim.h"
+#include "logger.h"
 
 typedef struct ServerSession {
     bool active;
@@ -17,11 +17,6 @@ typedef struct ServerSession {
 } ServerSession;
 
 static volatile sig_atomic_t g_running = 1;
-
-static void ConfigureLogging(void) {
-    setvbuf(stdout, 0, _IONBF, 0);
-    setvbuf(stderr, 0, _IONBF, 0);
-}
 
 static void HandleSignal(int signal_number) {
     (void)signal_number;
@@ -220,12 +215,12 @@ int main(void) {
     uint32_t next_player_id = 1;
     uint64_t next_tick_time;
 
-    ConfigureLogging();
+    LoggerInit(LOG_LEVEL_INFO, 1);
     signal(SIGINT, HandleSignal);
     signal(SIGTERM, HandleSignal);
 
     if (enet_initialize() != 0) {
-        fputs("failed to initialize ENet\n", stderr);
+        LOG_ERROR("failed to initialize ENet");
         return 1;
     }
 
@@ -238,12 +233,12 @@ int main(void) {
     address.port = SHROOM_SERVER_PORT;
     host = enet_host_create(&address, SHROOM_SERVER_MAX_CLIENTS, SHROOM_ENET_CHANNEL_COUNT, 0, 0);
     if (host == 0) {
-        fputs("failed to create ENet host\n", stderr);
+        LOG_ERROR("failed to create ENet host");
         enet_deinitialize();
         return 1;
     }
 
-    printf("shroomio server listening on UDP %u\n", SHROOM_SERVER_PORT);
+    LOG_INFO("shroomio server listening on UDP %u", SHROOM_SERVER_PORT);
     next_tick_time = GetTimeNanos();
 
     while (g_running) {
@@ -254,8 +249,9 @@ int main(void) {
                 case ENET_EVENT_TYPE_CONNECT:
                     if (event.peer->incomingPeerID < SHROOM_SERVER_MAX_CLIENTS) {
                         event.peer->data = &sessions[event.peer->incomingPeerID];
-                        printf("peer connected: slot=%u\n", (unsigned)event.peer->incomingPeerID);
+                        LOG_INFO("peer connected: slot=%u", (unsigned)event.peer->incomingPeerID);
                     } else {
+                        LOG_WARN("rejected connection: no available slots");
                         enet_peer_disconnect(event.peer, 0);
                     }
                     break;
@@ -270,7 +266,7 @@ int main(void) {
                     enet_packet_destroy(event.packet);
                     break;
                 case ENET_EVENT_TYPE_DISCONNECT:
-                    printf("peer disconnected: slot=%u\n", (unsigned)event.peer->incomingPeerID);
+                    LOG_INFO("peer disconnected: slot=%u", (unsigned)event.peer->incomingPeerID);
                     DisconnectSession((ServerSession *)event.peer->data);
                     event.peer->data = 0;
                     break;
@@ -298,6 +294,6 @@ int main(void) {
 
     enet_host_destroy(host);
     enet_deinitialize();
-    puts("shroomio server shutting down");
+    LOG_INFO("shroomio server shutting down");
     return 0;
 }

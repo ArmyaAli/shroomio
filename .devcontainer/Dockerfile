@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     latexmk \
     libasound2-dev \
     libgl1-mesa-dev \
+    libsqlite3-dev \
     lmodern \
     libx11-dev \
     libxcursor-dev \
