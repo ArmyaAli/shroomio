@@ -5,6 +5,7 @@
 
 #include <enet/enet.h>
 
+#include "shared/lifecycle.h"
 #include "shared/protocol.h"
 #include "shared/sim.h"
 #include "logger.h"
@@ -16,11 +17,11 @@ typedef struct ServerSession {
   ShroomPlayerState* player;
 } ServerSession;
 
-static volatile sig_atomic_t g_running = 1;
+static ShroomLifecycle g_lifecycle;
 
 static void HandleSignal(int signal_number) {
   (void)signal_number;
-  g_running = 0;
+  ShroomLifecycleRequestShutdown(&g_lifecycle);
 }
 
 static ShroomVec2 NormalizeInput(ShroomVec2 input) {
@@ -224,12 +225,16 @@ int main(void) {
   uint32_t next_player_id = 1;
   uint64_t next_tick_time;
 
+  ShroomLifecycleInit(&g_lifecycle);
+  ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_INIT);
+
   LoggerInit(LOG_LEVEL_INFO, 1);
   signal(SIGINT, HandleSignal);
   signal(SIGTERM, HandleSignal);
 
   if (enet_initialize() != 0) {
     LOG_ERROR("failed to initialize ENet");
+    ShroomLifecycleSetError(&g_lifecycle, 1, "ENet initialization failed");
     return 1;
   }
 
@@ -244,13 +249,15 @@ int main(void) {
   if (host == 0) {
     LOG_ERROR("failed to create ENet host");
     enet_deinitialize();
+    ShroomLifecycleSetError(&g_lifecycle, 2, "ENet host creation failed");
     return 1;
   }
 
+  ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_START);
   LOG_INFO("shroomio server listening on UDP %u", SHROOM_SERVER_PORT);
   next_tick_time = GetTimeNanos();
 
-  while (g_running) {
+  while (ShroomLifecycleIsRunning(&g_lifecycle) && !ShroomLifecycleIsShutdownRequested(&g_lifecycle)) {
     ENetEvent event;
 
     while (enet_host_service(host, &event, 0) > 0) {
@@ -296,8 +303,10 @@ int main(void) {
     SleepUntil(next_tick_time);
   }
 
+  ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_STOP);
   enet_host_destroy(host);
   enet_deinitialize();
+  ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_SHUTDOWN);
   LOG_INFO("shroomio server shutting down");
   return 0;
 }

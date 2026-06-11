@@ -4,6 +4,10 @@ RAYLIB_DIR := vendor/raylib-$(RAYLIB_VERSION)
 RAYLIB_URL := https://github.com/raysan5/raylib/archive/refs/tags/$(RAYLIB_VERSION).tar.gz
 RAYLIB_SRC_DIR := $(RAYLIB_DIR)/src
 RAYLIB_GLFW_INCLUDE_DIR := $(RAYLIB_SRC_DIR)/external/glfw/include
+RAYGUI_VERSION := 4.0
+RAYGUI_DIR := vendor/raygui-$(RAYGUI_VERSION)
+RAYGUI_URL := https://github.com/raysan5/raygui/archive/refs/tags/$(RAYGUI_VERSION).tar.gz
+RAYGUI_SRC_DIR := $(RAYGUI_DIR)/src
 ENET_DIR := vendor/enet
 ENET_INCLUDE_DIR := $(ENET_DIR)/include
 UNITY_VERSION := 2.6.0
@@ -50,7 +54,7 @@ DEVCONTAINER_GITHUB_TOKEN_FILE ?= $(DEVCONTAINER_SECRET_DIR)/github-token
 
 COMMON_WARNINGS := -Wall -Wextra -Wpedantic
 COMMON_INCLUDE_DIRS := -I$(SRC_DIR) -I$(CLIENT_SRC_DIR) -I$(SERVER_SRC_DIR) -I$(SHARED_SRC_DIR)
-COMMON_CFLAGS := -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) -I$(RAYLIB_SRC_DIR) -I$(RAYLIB_GLFW_INCLUDE_DIR)
+COMMON_CFLAGS := -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) -I$(RAYLIB_SRC_DIR) -I$(RAYLIB_GLFW_INCLUDE_DIR) -I$(RAYGUI_SRC_DIR)
 SERVER_CFLAGS := -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) -I$(ENET_INCLUDE_DIR) -D_POSIX_C_SOURCE=199309L -D_DEFAULT_SOURCE
 SERVER_LIBS := -lm -lsqlite3
 
@@ -67,10 +71,10 @@ RAYLIB_SOURCE_NAMES := rcore rmodels rshapes rtext rtextures utils raudio rglfw
 LINUX_RAYLIB_OBJECTS := $(addprefix $(LINUX_BUILD_DIR)/raylib/,$(addsuffix .o,$(RAYLIB_SOURCE_NAMES)))
 WINDOWS_RAYLIB_OBJECTS := $(addprefix $(WINDOWS_BUILD_DIR)/raylib/,$(addsuffix .o,$(RAYLIB_SOURCE_NAMES)))
 
-CLIENT_SOURCES := $(CLIENT_SRC_DIR)/main.c $(CLIENT_SRC_DIR)/game.c $(CLIENT_SRC_DIR)/net.c $(SHARED_SRC_DIR)/sim.c
+CLIENT_SOURCES := $(CLIENT_SRC_DIR)/main.c $(CLIENT_SRC_DIR)/game.c $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/screen.c $(CLIENT_SRC_DIR)/screens/main_menu.c $(SHARED_SRC_DIR)/sim.c $(SHARED_SRC_DIR)/lifecycle.c
 SERVER_SOURCES := $(SERVER_SRC_DIR)/main.c $(SERVER_SRC_DIR)/logger.c $(SHARED_SRC_DIR)/sim.c
 SHARED_HEADERS := $(SHARED_SRC_DIR)/config.h $(SHARED_SRC_DIR)/vec2.h $(SHARED_SRC_DIR)/world.h $(SHARED_SRC_DIR)/sim.h
-SHARED_HEADERS += $(SHARED_SRC_DIR)/protocol.h
+SHARED_HEADERS += $(SHARED_SRC_DIR)/protocol.h $(SHARED_SRC_DIR)/lifecycle.h
 ENET_COMMON_SOURCE_NAMES := callbacks compress host list packet peer protocol
 ENET_LINUX_SOURCE_NAMES := unix
 ENET_WINDOWS_SOURCE_NAMES := win32
@@ -205,12 +209,17 @@ devcontainer-github-status:
 run-windows: $(WINDOWS_BIN)
 	./$(WINDOWS_BIN)
 
-vendor: $(RAYLIB_DIR) $(UNITY_DIR)
+vendor: $(RAYLIB_DIR) $(RAYGUI_DIR) $(UNITY_DIR)
 
 $(RAYLIB_DIR):
 	@$(MKDIR_P) vendor $(BUILD_DIR)
 	$(CURL) -L $(RAYLIB_URL) -o $(BUILD_DIR)/raylib.tar.gz
 	$(TAR) -xzf $(BUILD_DIR)/raylib.tar.gz -C vendor
+
+$(RAYGUI_DIR):
+	@$(MKDIR_P) vendor $(BUILD_DIR)
+	$(CURL) -L $(RAYGUI_URL) -o $(BUILD_DIR)/raygui.tar.gz
+	$(TAR) -xzf $(BUILD_DIR)/raygui.tar.gz -C vendor
 
 $(UNITY_DIR):
 	@$(MKDIR_P) vendor $(BUILD_DIR)
@@ -302,6 +311,10 @@ test: $(TEST_BINS)
 	if [ $$failed -gt 0 ]; then exit 1; fi
 
 $(TEST_BUILD_DIR)/test_lifecycle: $(UNIT_TESTS_DIR)/test_lifecycle.c $(UNITY_SRC) $(SHARED_SRC_DIR)/lifecycle.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_screen: $(UNIT_TESTS_DIR)/test_screen.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/screen.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
