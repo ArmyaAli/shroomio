@@ -15,6 +15,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential \
+            clang-format \
             cppcheck \
             curl \
             libasound2-dev \
@@ -39,6 +40,10 @@ jobs:
 
       - name: Lint with cppcheck
         run: cppcheck --enable=warning,style,performance,portability --error-exitcode=1 --include=src/shared/config.h src/
+
+      - name: Check code formatting
+        run: |
+          find src -name '*.c' -o -name '*.h' | xargs clang-format --dry-run --Werror
 
       - name: Build Linux client
         run: make linux
