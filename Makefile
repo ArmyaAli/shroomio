@@ -71,7 +71,7 @@ RAYLIB_SOURCE_NAMES := rcore rmodels rshapes rtext rtextures utils raudio rglfw
 LINUX_RAYLIB_OBJECTS := $(addprefix $(LINUX_BUILD_DIR)/raylib/,$(addsuffix .o,$(RAYLIB_SOURCE_NAMES)))
 WINDOWS_RAYLIB_OBJECTS := $(addprefix $(WINDOWS_BUILD_DIR)/raylib/,$(addsuffix .o,$(RAYLIB_SOURCE_NAMES)))
 
-CLIENT_SOURCES := $(CLIENT_SRC_DIR)/main.c $(CLIENT_SRC_DIR)/game.c $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/screen.c $(CLIENT_SRC_DIR)/screens/main_menu.c $(SHARED_SRC_DIR)/sim.c $(SHARED_SRC_DIR)/lifecycle.c
+CLIENT_SOURCES := $(CLIENT_SRC_DIR)/main.c $(CLIENT_SRC_DIR)/game.c $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/screen.c $(CLIENT_SRC_DIR)/raygui_impl.c $(CLIENT_SRC_DIR)/screens/main_menu.c $(CLIENT_SRC_DIR)/screens/settings.c $(CLIENT_SRC_DIR)/screens/help.c $(CLIENT_SRC_DIR)/screens/credits.c $(CLIENT_SRC_DIR)/screens/server_browser.c $(SHARED_SRC_DIR)/sim.c $(SHARED_SRC_DIR)/lifecycle.c
 SERVER_SOURCES := $(SERVER_SRC_DIR)/main.c $(SERVER_SRC_DIR)/logger.c $(SHARED_SRC_DIR)/sim.c
 SHARED_HEADERS := $(SHARED_SRC_DIR)/config.h $(SHARED_SRC_DIR)/vec2.h $(SHARED_SRC_DIR)/world.h $(SHARED_SRC_DIR)/sim.h
 SHARED_HEADERS += $(SHARED_SRC_DIR)/protocol.h $(SHARED_SRC_DIR)/lifecycle.h

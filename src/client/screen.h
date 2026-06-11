@@ -56,5 +56,9 @@ void ShroomScreenManagerRequestExit(ShroomScreenManager* manager);
 const char* ShroomScreenTypeToString(ShroomScreenType type);
 
 void ShroomScreenRegisterMainMenu(ShroomScreenManager* manager);
+void ShroomScreenRegisterSettings(ShroomScreenManager* manager);
+void ShroomScreenRegisterHelp(ShroomScreenManager* manager);
+void ShroomScreenRegisterCredits(ShroomScreenManager* manager);
+void ShroomScreenRegisterServerBrowser(ShroomScreenManager* manager);
 
 #endif
