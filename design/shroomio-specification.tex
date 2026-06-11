@@ -1302,6 +1302,580 @@ G12 & No application lifecycle management & Medium & Issue \#36: implement struc
 \end{longtable}
 
 %---------------------------------------------------------------------
+\section{Error Handling and Graceful Degradation}
+
+\subsection{Error Categories}
+
+\begin{itemize}
+  \item \textbf{Network errors}: Connection failures, timeouts, packet loss
+  \item \textbf{Authentication errors}: Invalid credentials, token expiry, server rejection
+  \item \textbf{Server errors}: Database failures, resource exhaustion, internal errors
+  \item \textbf{Client errors}: Resource loading failures, invalid state, crashes
+  \item \textbf{Protocol errors}: Malformed packets, version mismatch, sequence errors
+\end{itemize}
+
+\subsection{Recovery Strategies}
+
+\begin{longtable}{|>{\raggedright\arraybackslash}p{0.30\textwidth}|>{\raggedright\arraybackslash}p{0.60\textwidth}|}
+\hline
+\textbf{Error Type} & \textbf{Recovery Action} \\
+\hline
+Network disconnect & Auto-reconnect with exponential backoff \\
+\hline
+Auth token expired & Silent token refresh \\
+\hline
+Server unreachable & Fallback to offline mode \\
+\hline
+Resource load failure & Use default asset or skip \\
+\hline
+Protocol mismatch & Show version update prompt \\
+\hline
+Fatal error & Graceful shutdown with error report \\
+\hline
+\end{longtable}
+
+\subsection{User Feedback}
+
+\begin{itemize}
+  \item Clear, actionable error messages (no cryptic codes)
+  \item Retry mechanisms with user control
+  \item Progress indicators for long operations
+  \item Fallback behavior clearly communicated
+\end{itemize}
+
+%---------------------------------------------------------------------
+\section{Audio System}
+
+\subsection{Sound Effects}
+
+\begin{itemize}
+  \item \textbf{Gameplay}: Spore collection, consumption, death/respawn, movement, zone transitions
+  \item \textbf{UI}: Button clicks, screen transitions, notifications, achievements
+  \item \textbf{Ambient}: Background music, environmental sounds
+\end{itemize}
+
+\subsection{Audio Features}
+
+\begin{itemize}
+  \item Volume controls per category (master, SFX, music, voice)
+  \item Spatial audio (panning based on world position)
+  \item Sound attenuation (distance-based volume)
+  \item Audio ducking (lower other audio during voice chat)
+  \item Sound pooling to prevent overload
+\end{itemize}
+
+\subsection{Audio Configuration}
+
+\begin{itemize}
+  \item Individual volume sliders per category
+  \item Mute toggles per category
+  \item Audio device selection
+  \item Default volume levels
+\end{itemize}
+
+%---------------------------------------------------------------------
+\section{Minimap}
+
+\subsection{Minimap Display}
+
+\begin{itemize}
+  \item Fixed position (configurable corner)
+  \item Configurable size (small, medium, large)
+  \item Semi-transparent background
+  \item Toggle visibility (F4 or settings)
+\end{itemize}
+
+\subsection{Minimap Content}
+
+\begin{itemize}
+  \item Player position (centered or world-relative)
+  \item Other players (color-coded by team/threat level)
+  \item Spore clusters (optional)
+  \item Zone boundaries (center, mid, outer rings)
+  \item World border
+  \item Player facing direction
+\end{itemize}
+
+\subsection{Minimap Modes}
+
+\begin{itemize}
+  \item \textbf{World-relative}: Shows entire arena, player moves on map
+  \item \textbf{Player-relative}: Player centered, world moves around them
+  \item \textbf{Zoom levels}: Configurable zoom for detail or overview
+\end{itemize}
+
+%---------------------------------------------------------------------
+\section{Kill Feed and Notifications}
+
+\subsection{Kill Feed}
+
+\begin{itemize}
+  \item Scrolling list of recent kills (last 5--10 events)
+  \item Format: ``PlayerX consumed PlayerY''
+  \item Fade out old entries after 5--10 seconds
+  \item Position: configurable corner
+  \item Color-coded by event type
+\end{itemize}
+
+\subsection{Death Notifications}
+
+\begin{itemize}
+  \item ``You were consumed by PlayerX'' (large, centered, fades after 3s)
+  \item ``You consumed PlayerX'' (celebration effect)
+  \item Show killer's current mass/rank
+  \item Show distance when killed
+\end{itemize}
+
+\subsection{Combat Feedback}
+
+\begin{itemize}
+  \item Near-miss indicators
+  \item Mass gain popups (+50 mass, +100 mass)
+  \item Rank change indicators
+  \item Zone entry notifications
+  \item Danger warnings (larger player nearby)
+\end{itemize}
+
+%---------------------------------------------------------------------
+\section{Spectator Mode}
+
+\subsection{Spectator Features}
+
+\begin{itemize}
+  \item Auto-enter spectator mode on death
+  \item Follow random player or last killer
+  \item Cycle through players (next/prev buttons or hotkeys)
+  \item Free camera mode (detach from player, fly around)
+  \item Show spectated player info (name, mass, rank, zone)
+\end{itemize}
+
+\subsection{Camera Controls}
+
+\begin{itemize}
+  \item \textbf{Follow mode}: Camera tracks player smoothly
+  \item \textbf{Free mode}: WASD + mouse to fly around
+  \item \textbf{Zoom}: Mouse wheel to zoom in/out
+  \item \textbf{Reset}: Return to default view
+\end{itemize}
+
+\subsection{Respawn Integration}
+
+\begin{itemize}
+  \item Respawn timer (3--5 seconds)
+  \item ``Respawn now'' button (skip timer)
+  \item Auto-respawn when timer expires
+  \item Keep spectating until respawn
+\end{itemize}
+
+%---------------------------------------------------------------------
+\section{Anti-Cheat Validation}
+
+\subsection{Movement Validation}
+
+\begin{itemize}
+  \item Speed limit checks (player can't move faster than max speed)
+  \item Position validation (can't teleport or move through walls)
+  \item Acceleration limits (prevent instant speed changes)
+  \item Boundary checks (can't leave world bounds)
+\end{itemize}
+
+\subsection{Action Validation}
+
+\begin{itemize}
+  \item Input rate limiting (max inputs/sec)
+  \item Action cooldowns (can't consume faster than physics allows)
+  \item Mass validation (can't gain mass faster than spore collection allows)
+  \item Sequence validation (inputs must be in order)
+\end{itemize}
+
+\subsection{Detection and Response}
+
+\begin{itemize}
+  \item Warning system (first offense: warning)
+  \item Temporary kick (repeated offenses: 5 min ban)
+  \item Permanent ban (egregious cheating)
+  \item Log all violations for review
+\end{itemize}
+
+%---------------------------------------------------------------------
+\section{Tutorial and Onboarding}
+
+\subsection{First-Time Onboarding}
+
+\begin{itemize}
+  \item Detect new players (first launch or no tutorial completion flag)
+  \item Skip option for returning players
+  \item Brief introduction to game concept
+  \item Username entry (if not already set)
+  \item Quick settings check (audio, controls)
+\end{itemize}
+
+\subsection{Interactive Tutorial}
+
+\begin{itemize}
+  \item Step-by-step guided gameplay
+  \item Highlight controls (``Move your mouse to steer'')
+  \item Practice spore collection (spawn extra spores nearby)
+  \item Practice consumption (spawn smaller bots to eat)
+  \item Practice evasion (spawn larger bot to flee from)
+  \item Explain zones (center, mid, outer with risk/reward)
+  \item Explain leaderboard and scoring
+\end{itemize}
+
+\subsection{Contextual Help}
+
+\begin{itemize}
+  \item First-time hints for features (chat, voice, minimap)
+  \item ``Did you know?'' tips during gameplay
+  \item Tooltips on hover for UI elements
+  \item Help button in-game (F1)
+\end{itemize}
+
+%---------------------------------------------------------------------
+\section{Accessibility}
+
+\subsection{Visual Accessibility}
+
+\begin{itemize}
+  \item Colorblind modes (deuteranopia, protanopia, tritanopia)
+  \item High contrast mode
+  \item Font size options (small, medium, large, extra large)
+  \item UI scale (50\% to 200\%)
+  \item Reduce motion option (disable animations)
+  \item Color customization (player colors, UI colors)
+\end{itemize}
+
+\subsection{Hearing Accessibility}
+
+\begin{itemize}
+  \item Visual indicators for audio cues
+  \item Subtitles for voice chat (optional, future)
+  \item Visual volume indicators
+  \item Closed captions for game events
+\end{itemize}
+
+\subsection{Motor Accessibility}
+
+\begin{itemize}
+  \item Fully remappable controls
+  \item Toggle vs hold for actions (e.g., push-to-talk toggle mode)
+  \item Reduced input complexity options
+  \item Mouse sensitivity adjustment
+  \item Keyboard repeat rate adjustment
+\end{itemize}
+
+\subsection{Cognitive Accessibility}
+
+\begin{itemize}
+  \item Simplified UI mode (hide advanced elements)
+  \item Reduced clutter option
+  \item Clear, simple language
+  \item Consistent UI patterns
+  \item No time-limited prompts (or adjustable timers)
+\end{itemize}
+
+%---------------------------------------------------------------------
+\section{Moderation Tools}
+
+\subsection{Player Reporting}
+
+\begin{itemize}
+  \item Report player button (in-game and from kill feed)
+  \item Report categories: cheating, harassment, spam, inappropriate name, other
+  \item Include context (last 30 seconds of chat, kill feed, player actions)
+  \item Submit to server admin or central moderation system
+  \item Confirmation message with report ID
+\end{itemize}
+
+\subsection{Muting System}
+
+\begin{itemize}
+  \item Mute individual players (chat and/or voice)
+  \item Mute list management (view, unmute)
+  \item Mute persists across sessions
+  \item Auto-mute on report (optional, server admin setting)
+\end{itemize}
+
+\subsection{Server Admin Tools}
+
+\begin{itemize}
+  \item Admin panel (web UI or in-game command)
+  \item Player list with actions (kick, ban, mute, teleport)
+  \item Ban management (temporary, permanent, unban)
+  \item Chat logs viewer
+  \item Report queue viewer
+  \item Server settings (max players, game mode, etc.)
+\end{itemize}
+
+%---------------------------------------------------------------------
+\section{Analytics and Crash Reporting}
+
+\subsection{Player Analytics}
+
+\begin{itemize}
+  \item Session duration and frequency
+  \item Game modes played (offline, online, server)
+  \item Average match length
+  \item Player retention (return rate)
+  \item Feature usage (chat, voice, minimap, etc.)
+  \item Progression metrics (mass gained, kills, deaths)
+\end{itemize}
+
+\subsection{Performance Metrics}
+
+\begin{itemize}
+  \item FPS distribution (average, min, max)
+  \item Latency distribution (ping stats)
+  \item Packet loss rates
+  \item Memory usage
+  \item CPU/GPU usage (if available)
+  \item Crash frequency and types
+\end{itemize}
+
+\subsection{Crash Reporting}
+
+\begin{itemize}
+  \item Automatic crash detection
+  \item Stack trace capture
+  \item System info (OS, hardware, drivers)
+  \item Game state at crash (what screen, what action)
+  \item Upload to crash reporting service
+  \item User notification and opt-out option
+\end{itemize}
+
+\subsection{Privacy and Compliance}
+
+\begin{itemize}
+  \item Opt-in analytics (default off, ask user)
+  \item Clear privacy policy
+  \item No PII (personally identifiable information)
+  \item GDPR/CCPA compliance
+  \item Data retention policy
+  \item User can delete their data
+\end{itemize}
+
+%---------------------------------------------------------------------
+\section{Visual Polish}
+
+\subsection{Particle Effects}
+
+\begin{itemize}
+  \item Spore collection (sparkles, glow, burst)
+  \item Player consumption (splatter, shockwave, particles)
+  \item Death/respawn (explosion, fade out, spawn-in effect)
+  \item Movement trail (subtle trail behind fast-moving players)
+  \item Zone transitions (visual effect when crossing zone boundaries)
+  \item Ambient effects (floating particles in background)
+\end{itemize}
+
+\subsection{Player Visuals}
+
+\begin{itemize}
+  \item Better player shapes (not just circles)
+  \item Mushroom/fungal theme (caps, stems, spores)
+  \item Size-based visual scaling
+  \item Color variations by player or team
+  \item Outline/glow for local player
+  \item Health/mass indicator (visual size or aura)
+\end{itemize}
+
+\subsection{Animations}
+
+\begin{itemize}
+  \item Smooth size changes (mass gain/loss)
+  \item Movement animations (wobble, bounce)
+  \item UI animations (menu transitions, button hovers)
+  \item HUD animations (leaderboard updates, score changes)
+  \item Camera shake on big events (consumption, death)
+\end{itemize}
+
+%---------------------------------------------------------------------
+\section{Friends and Party System}
+
+\subsection{Friends List}
+
+\begin{itemize}
+  \item Add/remove friends by username or player ID
+  \item Friends list UI (online status, current server)
+  \item Friend requests (send, accept, decline, block)
+  \item Friend activity feed (joined server, achieved milestone)
+  \item Search friends by name
+\end{itemize}
+
+\subsection{Party System}
+
+\begin{itemize}
+  \item Create party (invite friends)
+  \item Party leader controls (start game, change settings)
+  \item Party chat (text and voice, separate from global)
+  \item Party size limit (2--8 players)
+  \item Auto-join same server when party leader joins
+\end{itemize}
+
+\subsection{Invitations}
+
+\begin{itemize}
+  \item Invite to party (in-game or from friends list)
+  \item Invite to server (share server link or code)
+  \item Accept/decline invitations
+  \item Invitation timeout (auto-cancel after 30s)
+\end{itemize}
+
+%---------------------------------------------------------------------
+\section{Game Modes}
+
+\subsection{Teams Mode}
+
+\begin{itemize}
+  \item 2--4 teams (configurable)
+  \item Team colors and identifiers
+  \item Team chat (separate from global)
+  \item Team scoring (combined mass or kills)
+  \item Friendly fire toggle (on/off)
+  \item Team spawn (spawn near teammates)
+  \item Team leaderboard
+\end{itemize}
+
+\subsection{Battle Royale Mode}
+
+\begin{itemize}
+  \item Shrinking play zone (forces players together)
+  \item Last player/team standing wins
+  \item Zone damage (outside zone = damage over time)
+  \item Zone timer (countdown to next shrink)
+  \item Minimap shows safe zone
+  \item Winner announcement
+\end{itemize}
+
+%---------------------------------------------------------------------
+\section{Replay System}
+
+\subsection{Recording}
+
+\begin{itemize}
+  \item Auto-record all online matches
+  \item Record player positions, actions, events
+  \item Record chat and voice (optional)
+  \item Store metadata (players, duration, winner, stats)
+  \item Compress replay data
+\end{itemize}
+
+\subsection{Playback}
+
+\begin{itemize}
+  \item Replay viewer with controls (play, pause, fast forward, rewind)
+  \item Speed control (0.5x, 1x, 2x, 4x)
+  \item Camera controls (follow player, free camera, overview)
+  \item Timeline scrubbing
+  \item Player selector (switch perspective)
+\end{itemize}
+
+\subsection{Replay Features}
+
+\begin{itemize}
+  \item Kill feed overlay
+  \item Scoreboard overlay
+  \item Minimap with all players
+  \item Event markers (kills, deaths, zone changes)
+  \item Highlight reel (auto-generate best moments)
+\end{itemize}
+
+%---------------------------------------------------------------------
+\section{Localization}
+
+\subsection{Language Support}
+
+\begin{itemize}
+  \item English (default)
+  \item Spanish, French, German, Portuguese
+  \item Russian, Chinese (Simplified), Japanese, Korean
+  \item Additional languages via community contributions
+\end{itemize}
+
+\subsection{Localization Scope}
+
+\begin{itemize}
+  \item All UI text (menus, buttons, labels)
+  \item In-game messages (kill feed, chat, notifications)
+  \item Tutorial and help text
+  \item Error messages
+  \item Settings labels and tooltips
+\end{itemize}
+
+\subsection{Text Handling}
+
+\begin{itemize}
+  \item Right-to-left language support (Arabic, Hebrew)
+  \item Character encoding (UTF-8)
+  \item Font support for all languages
+  \item Pluralization rules per language
+  \item Date/time formatting per locale
+\end{itemize}
+
+%---------------------------------------------------------------------
+\section{Auto-Updater}
+
+\subsection{Update Detection}
+
+\begin{itemize}
+  \item Check for updates on launch (and periodically)
+  \item Compare client version to server version
+  \item Show update notification if available
+  \item Display changelog/release notes
+\end{itemize}
+
+\subsection{Update Process}
+
+\begin{itemize}
+  \item Download update in background
+  \item Verify download (checksum/hash)
+  \item Pause/resume support
+  \item Show download progress
+  \item Apply update on next launch (or immediately if critical)
+\end{itemize}
+
+\subsection{Update Channels}
+
+\begin{itemize}
+  \item \textbf{Stable}: Default, tested releases
+  \item \textbf{Beta}: Opt-in, newer features, may have bugs
+  \item \textbf{Dev}: Opt-in, bleeding edge, unstable
+\end{itemize}
+
+%---------------------------------------------------------------------
+\section{Server Admin Panel}
+
+\subsection{Dashboard}
+
+\begin{itemize}
+  \item Server status (online, player count, uptime)
+  \item Performance metrics (CPU, RAM, network, FPS)
+  \item Recent events (joins, leaves, kills, reports)
+  \item Quick stats (total players, peak players, avg session)
+\end{itemize}
+
+\subsection{Player Management}
+
+\begin{itemize}
+  \item Online player list with actions (kick, ban, mute, teleport)
+  \item Player search (by name, ID, IP)
+  \item Player details (stats, session history, reports)
+  \item Ban management (temporary, permanent, unban)
+  \item Mute management (chat, voice)
+  \item Whitelist/blacklist
+\end{itemize}
+
+\subsection{Server Settings}
+
+\begin{itemize}
+  \item Game settings (max players, tick rate, game mode)
+  \item Map settings (world size, zone sizes, spore count)
+  \item Network settings (port, max connections)
+  \item Moderation settings (profanity filter, auto-mod)
+  \item Save/load presets
+\end{itemize}
+
+%---------------------------------------------------------------------
 \section{Engineering Roadmap}
 \label{sec:roadmap}
 
