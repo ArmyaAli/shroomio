@@ -132,6 +132,53 @@ static void SendSnapshot(ENetPeer* peer, const ServerSession* session,
   enet_peer_send(peer, SHROOM_ENET_CHANNEL_SNAPSHOT, CreatePacket(&packet, sizeof(packet), 0));
 }
 
+static void SendSporeState(ENetPeer* peer, const ShroomWorldState* world) {
+  uint16_t spore_count = 0;
+  size_t index;
+  size_t packet_size;
+  ENetPacket* enet_packet;
+
+  for (index = 0; index < world->spore_count; ++index) {
+    if (world->spores[index].active) {
+      ++spore_count;
+    }
+  }
+
+  packet_size = sizeof(ShroomPacketHeader) + sizeof(uint64_t) + sizeof(uint16_t) +
+                sizeof(uint16_t) + ((size_t)spore_count * sizeof(ShroomSnapshotSporeState));
+  enet_packet = enet_packet_create(NULL, packet_size, 0);
+
+  {
+    ShroomSporeStatePacket* packet = (ShroomSporeStatePacket*)enet_packet->data;
+    uint16_t i = 0;
+
+    packet->header.type = SHROOM_PACKET_SPORE_STATE;
+    packet->header.reserved = 0;
+    packet->header.size = (uint16_t)packet_size;
+    packet->tick = world->tick;
+    packet->spore_count = spore_count;
+    packet->reserved = 0;
+
+    for (index = 0; index < world->spore_count; ++index) {
+      const ShroomSporeState* spore = &world->spores[index];
+
+      if (!spore->active) {
+        continue;
+      }
+
+      packet->spores[i++] = (ShroomSnapshotSporeState){
+          .entity_id = spore->entity_id,
+          .position_x = spore->position.x,
+          .position_y = spore->position.y,
+          .value = spore->value,
+          .reserved = 0,
+      };
+    }
+  }
+
+  enet_peer_send(peer, SHROOM_ENET_CHANNEL_SNAPSHOT, enet_packet);
+}
+
 static void DisconnectSession(ServerSession* session) {
   if ((session == 0) || !session->active) {
     return;
@@ -218,6 +265,8 @@ int main(void) {
   const uint64_t tick_interval_nanos = 1000000000ull / (uint64_t)SHROOM_SERVER_TICK_RATE;
   const uint64_t snapshot_interval_ticks =
       (uint64_t)(SHROOM_SERVER_TICK_RATE / (float)SHROOM_SNAPSHOT_RATE);
+  const uint64_t spore_interval_ticks =
+      (uint64_t)(SHROOM_SERVER_TICK_RATE / (float)SHROOM_SPORE_STATE_RATE);
   ENetAddress address = {0};
   ENetHost* host;
   ShroomWorldState world;
@@ -295,6 +344,16 @@ int main(void) {
       for (index = 0; index < host->peerCount; ++index) {
         if (host->peers[index].state == ENET_PEER_STATE_CONNECTED) {
           SendSnapshot(&host->peers[index], (ServerSession*)host->peers[index].data, &world);
+        }
+      }
+      enet_host_flush(host);
+    }
+    if ((spore_interval_ticks > 0) && ((world.tick % spore_interval_ticks) == 0)) {
+      size_t index;
+
+      for (index = 0; index < host->peerCount; ++index) {
+        if (host->peers[index].state == ENET_PEER_STATE_CONNECTED) {
+          SendSporeState(&host->peers[index], &world);
         }
       }
       enet_host_flush(host);
