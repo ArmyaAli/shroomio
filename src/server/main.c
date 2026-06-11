@@ -121,7 +121,7 @@ static void SendSnapshot(ENetPeer *peer, const ServerSession *session, const Shr
             .position_y = player->position.y,
             .mass = player->mass,
             .radius = player->radius,
-            .alive = player->alive ? 1u : 0u,
+            .alive = 1u,
             .is_bot = player->is_bot ? 1u : 0u,
         };
     }

@@ -85,7 +85,9 @@ static void BuildLeaderboard(const Game *game, LeaderboardEntry *entries, size_t
         };
     }
 
-    qsort(entries, *entry_count, sizeof(entries[0]), CompareLeaderboardEntries);
+    if (*entry_count > 0) {
+        qsort(entries, *entry_count, sizeof(entries[0]), CompareLeaderboardEntries);
+    }
 }
 
 static const char *GetZoneLabel(ShroomZone zone) {

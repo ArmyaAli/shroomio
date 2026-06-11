@@ -92,7 +92,7 @@ static ShroomVec2 ShroomRandomSpawnPosition(const ShroomWorldState *world, bool 
     return (ShroomVec2){ShroomRandomFloat(padding, world->width - padding), ShroomRandomFloat(padding, world->height - padding)};
 }
 
-static void ShroomRespawnPlayer(ShroomWorldState *world, ShroomPlayerState *player) {
+static void ShroomRespawnPlayer(const ShroomWorldState *world, ShroomPlayerState *player) {
     player->position = ShroomRandomSpawnPosition(world, true);
     player->input_direction = (ShroomVec2){0};
     player->mass = SHROOM_DEFAULT_PLAYER_MASS;
@@ -250,14 +250,14 @@ static void ShroomResolveConsumes(ShroomWorldState *world) {
 
     for (attacker_index = 0; attacker_index < world->player_count; ++attacker_index) {
         size_t target_index;
-        ShroomPlayerState *attacker = &world->players[attacker_index];
+        const ShroomPlayerState *attacker = &world->players[attacker_index];
 
         if (!attacker->alive || consumed[attacker_index]) {
             continue;
         }
 
         for (target_index = 0; target_index < world->player_count; ++target_index) {
-            ShroomPlayerState *target = &world->players[target_index];
+            const ShroomPlayerState *target = &world->players[target_index];
 
             if ((attacker_index == target_index) || consumed[target_index]) {
                 continue;
