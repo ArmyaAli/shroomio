@@ -1,6 +1,6 @@
+#include <stddef.h>
 #include "screen.h"
 #include "raylib.h"
-#define RAYGUI_IMPLEMENTATION
 #include "raygui.h"
 #include <stddef.h>
 

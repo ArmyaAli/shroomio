@@ -18,6 +18,10 @@ int main(void) {
 
   ShroomScreenManagerInit(&g_screen_manager);
   ShroomScreenRegisterMainMenu(&g_screen_manager);
+  ShroomScreenRegisterSettings(&g_screen_manager);
+  ShroomScreenRegisterHelp(&g_screen_manager);
+  ShroomScreenRegisterCredits(&g_screen_manager);
+  ShroomScreenRegisterServerBrowser(&g_screen_manager);
   ShroomScreenManagerTransition(&g_screen_manager, SHROOM_SCREEN_MAIN_MENU);
 
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_START);
