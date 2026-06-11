@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'src/**'
+      - 'tests/**'
       - 'Makefile'
       - '.clang-format'
       - '.github/workflows/**'
@@ -51,6 +52,9 @@ jobs:
 
       - name: Lint with cppcheck
         run: cppcheck --enable=warning,style,performance,portability --error-exitcode=1 --include=src/shared/config.h src/
+
+      - name: Run unit tests
+        run: make test
 
       - name: Build Linux client
         run: make linux

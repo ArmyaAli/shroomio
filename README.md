@@ -34,6 +34,9 @@ src/
   client/        raylib rendering, input, camera, UI, ENet client
   server/        headless dedicated server, session management, tick loop
   shared/        deterministic simulation, protocol, world state, vector math
+tests/
+  unit/          unit tests (Unity framework)
+  unity/         Unity test framework source
 assets/          sprites, audio, maps, shaders
 dist/            built binaries
 design/          LaTeX game specification
@@ -75,6 +78,28 @@ make run-server     # build and run the server
 ```
 
 The Makefile downloads raylib 5.5 source on demand and builds a static `libraylib.a` per target. The Windows build uses `-static` for a self-contained `.exe`.
+
+## Testing
+
+Run the unit test suite:
+
+```bash
+make test
+```
+
+The project uses [Unity](https://github.com/ThrowTheSwitch/Unity) for unit testing. Tests are located in `tests/unit/` and cover core modules like vector math and protocol structures.
+
+To run tests with coverage reporting (requires `gcovr`):
+
+```bash
+make test-coverage    # generates coverage.html
+```
+
+To add new tests:
+1. Create a test file in `tests/unit/` (e.g., `test_mymodule.c`)
+2. Include Unity and the module under test
+3. Write test functions using `TEST_ASSERT_*` macros
+4. Add tests to the `main()` function with `RUN_TEST()`
 
 ## Running the Server
 
@@ -137,6 +162,7 @@ Pull requests are validated on GitHub Actions with:
 
 - **clang-format** — enforces `.clang-format` style across `src/`
 - **cppcheck** — static analysis for warnings, style, performance, and portability
+- **Unit tests** — runs the test suite via `make test`
 - **Build** — compiles both the Linux client and headless server
 
 ## License
