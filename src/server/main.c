@@ -220,7 +220,7 @@ int main(void) {
   ENetAddress address = {0};
   ENetHost* host;
   ShroomWorldState world;
-  ServerSession sessions[SHROOM_SERVER_MAX_CLIENTS] = {0};
+  static ServerSession sessions[SHROOM_SERVER_MAX_CLIENTS] = {0};
   uint32_t next_player_id = 1;
   uint64_t next_tick_time;
 
