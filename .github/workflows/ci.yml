@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cppcheck \
+            curl \
+            libasound2-dev \
+            libgl1-mesa-dev \
+            libx11-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libxinerama-dev \
+            libxrandr-dev \
+            make
+
+      - name: Lint with cppcheck
+        run: cppcheck --enable=warning,style,performance,portability --error-exitcode=1 src/
+
+      - name: Build Linux client
+        run: make linux
+
+      - name: Build server
+        run: make server
