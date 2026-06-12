@@ -35,6 +35,10 @@ typedef struct LeaderboardEntry {
 
 static bool IsOnlineMode(GameSessionMode mode) { return mode == SHROOM_SESSION_MODE_QUICK_PLAY; }
 
+static bool UseHighContrastPalette(const Game* game) {
+  return (game != NULL) && (game->settings.palette_preset == CLIENT_PALETTE_HIGH_CONTRAST);
+}
+
 static const char* GetSessionModeLabel(GameSessionMode mode) {
   switch (mode) {
   case SHROOM_SESSION_MODE_OFFLINE_PRACTICE:
@@ -56,7 +60,19 @@ static Color GetLatencyColor(uint32_t rtt_ms) {
   return GREEN;
 }
 
-static Color GetZoneColor(ShroomZone zone) {
+static Color GetZoneColor(const Game* game, ShroomZone zone) {
+  if (UseHighContrastPalette(game)) {
+    switch (zone) {
+    case SHROOM_ZONE_CENTER:
+      return ORANGE;
+    case SHROOM_ZONE_MID:
+      return SKYBLUE;
+    case SHROOM_ZONE_OUTER:
+    default:
+      return YELLOW;
+    }
+  }
+
   switch (zone) {
   case SHROOM_ZONE_CENTER:
     return LIME;
@@ -97,7 +113,19 @@ static PlayerThreatState GetThreatState(const ShroomPlayerState* local_player,
   return PLAYER_THREAT_NONE;
 }
 
-static Color GetThreatOutlineColor(PlayerThreatState state) {
+static Color GetThreatOutlineColor(const Game* game, PlayerThreatState state) {
+  if (UseHighContrastPalette(game)) {
+    switch (state) {
+    case PLAYER_THREAT_PREY:
+      return YELLOW;
+    case PLAYER_THREAT_DANGER:
+      return MAGENTA;
+    case PLAYER_THREAT_NONE:
+    default:
+      return Fade(RAYWHITE, 0.34f);
+    }
+  }
+
   switch (state) {
   case PLAYER_THREAT_PREY:
     return SKYBLUE;
@@ -330,14 +358,23 @@ static const char* GetZoneLabel(ShroomZone zone) {
   }
 }
 
-static void DrawArenaZones(const ShroomWorldState* world) {
+static void DrawArenaZones(const Game* game) {
+  const ShroomWorldState* world = &game->world;
   const Vector2 center = {world->width * 0.5f, world->height * 0.5f};
+  const Color outer_color =
+      UseHighContrastPalette(game) ? (Color){34, 34, 24, 255} : kZoneOuterColor;
+  const Color mid_color = UseHighContrastPalette(game) ? (Color){22, 60, 82, 255} : kZoneMidColor;
+  const Color center_color =
+      UseHighContrastPalette(game) ? (Color){104, 46, 0, 255} : kZoneCenterColor;
+  const Color mid_outline = UseHighContrastPalette(game) ? SKYBLUE : DARKGREEN;
+  const Color center_outline = UseHighContrastPalette(game) ? ORANGE : LIME;
 
-  DrawRectangle(0, 0, (int)world->width, (int)world->height, Fade(kZoneOuterColor, 0.85f));
-  DrawCircleV(center, SHROOM_ZONE_MID_RADIUS, Fade(kZoneMidColor, 0.68f));
-  DrawCircleV(center, SHROOM_ZONE_CENTER_RADIUS, Fade(kZoneCenterColor, 0.75f));
-  DrawCircleLines((int)center.x, (int)center.y, SHROOM_ZONE_MID_RADIUS, Fade(DARKGREEN, 0.35f));
-  DrawCircleLines((int)center.x, (int)center.y, SHROOM_ZONE_CENTER_RADIUS, Fade(LIME, 0.4f));
+  DrawRectangle(0, 0, (int)world->width, (int)world->height, Fade(outer_color, 0.85f));
+  DrawCircleV(center, SHROOM_ZONE_MID_RADIUS, Fade(mid_color, 0.68f));
+  DrawCircleV(center, SHROOM_ZONE_CENTER_RADIUS, Fade(center_color, 0.75f));
+  DrawCircleLines((int)center.x, (int)center.y, SHROOM_ZONE_MID_RADIUS, Fade(mid_outline, 0.35f));
+  DrawCircleLines((int)center.x, (int)center.y, SHROOM_ZONE_CENTER_RADIUS,
+                  Fade(center_outline, 0.4f));
 }
 
 static void DrawSpores(const ShroomWorldState* world) {
@@ -363,7 +400,7 @@ static void DrawPlayers(const Game* game) {
     const Vector2 position = {render_position.x, render_position.y};
     const Color fill = GetPlayerFillColor(player);
     const PlayerThreatState threat_state = GetThreatState(game->local_player, player);
-    const Color threat_outline = GetThreatOutlineColor(threat_state);
+    const Color threat_outline = GetThreatOutlineColor(game, threat_state);
 
     if (!player->alive) {
       continue;
@@ -389,7 +426,7 @@ static void DrawOffscreenIndicators(const Game* game) {
   for (size_t index = 0; index < game->world.player_count; ++index) {
     const ShroomPlayerState* player = &game->world.players[index];
     const PlayerThreatState threat_state = GetThreatState(game->local_player, player);
-    const Color color = GetThreatOutlineColor(threat_state);
+    const Color color = GetThreatOutlineColor(game, threat_state);
     const Vector2 world_position = {game->render_positions[index].x,
                                     game->render_positions[index].y};
     const Vector2 screen_position = GetWorldToScreen2D(world_position, game->camera);
@@ -458,18 +495,18 @@ static void DrawZoneLegend(const Game* game) {
   DrawRectangle(24, game->screen_height - 108, 330, 84, Fade(BLACK, 0.42f));
   DrawText("Zone Guide", 40, game->screen_height - 100, 20, RAYWHITE);
   DrawText("Outer: safest recovery", 40, game->screen_height - 74, 18,
-           GetZoneColor(SHROOM_ZONE_OUTER));
+           GetZoneColor(game, SHROOM_ZONE_OUTER));
   DrawText("Mid: balanced pressure", 40, game->screen_height - 52, 18,
-           GetZoneColor(SHROOM_ZONE_MID));
+           GetZoneColor(game, SHROOM_ZONE_MID));
   DrawText("Center: highest contest", 40, game->screen_height - 30, 18,
-           GetZoneColor(SHROOM_ZONE_CENTER));
+           GetZoneColor(game, SHROOM_ZONE_CENTER));
 }
 
 static void DrawStatusBanners(const Game* game) {
   if (game->zone_callout_timer > 0.0f) {
     DrawRectangle(game->screen_width / 2 - 220, 24, 440, 66, Fade(BLACK, 0.48f));
     DrawText(TextFormat("%s Zone", GetZoneLabel(game->current_zone)), game->screen_width / 2 - 86,
-             34, 26, GetZoneColor(game->current_zone));
+             34, 26, GetZoneColor(game, game->current_zone));
     DrawText(GetZoneSummary(game->current_zone), game->screen_width / 2 - 156, 62, 18, RAYWHITE);
   }
 
@@ -499,7 +536,7 @@ static void DrawLeaderboardOverlay(const Game* game, const LeaderboardEntry* lea
     const PlayerThreatState threat_state = GetThreatState(game->local_player, player);
     const char* label = player == game->local_player ? "You" : (player->is_bot ? "Bot" : "Player");
     const Color color =
-        player == game->local_player ? RAYWHITE : GetThreatOutlineColor(threat_state);
+        player == game->local_player ? RAYWHITE : GetThreatOutlineColor(game, threat_state);
 
     DrawText(TextFormat("%d.", (int)(index + 1)), game->screen_width / 2 - 182,
              198 + ((int)index * 22), 20, color);
@@ -604,7 +641,7 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
   DrawText(TextFormat("Rank %d/%d", local_rank > 0 ? local_rank : (int)leaderboard_count,
                       (int)leaderboard_count),
            40, 110, 20, GRAY);
-  DrawText(TextFormat("Zone %s", GetZoneLabel(zone)), 188, 110, 20, GetZoneColor(zone));
+  DrawText(TextFormat("Zone %s", GetZoneLabel(zone)), 188, 110, 20, GetZoneColor(game, zone));
   DrawText(TextFormat("Players %d   Spores %d", (int)game->world.player_count,
                       (int)game->world.spore_count),
            40, 136, 18, GRAY);
@@ -766,7 +803,7 @@ void GameDraw(const Game* game) {
 
   BeginMode2D(game->camera);
 
-  DrawArenaZones(&game->world);
+  DrawArenaZones(game);
   DrawRectangleLines(0, 0, (int)game->world.width, (int)game->world.height, Fade(DARKGREEN, 0.7f));
   DrawGrid(80, 64.0f);
   DrawSpores(&game->world);
