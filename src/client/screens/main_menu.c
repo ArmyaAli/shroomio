@@ -1,14 +1,11 @@
-#include <stddef.h>
-
 #include "game.h"
 #include "screen.h"
 
-#include "raygui.h"
+#include "imgui_wrapper.h"
 #include "raylib.h"
 
 static bool MainMenuInit(ShroomScreenManager* manager) {
   (void)manager;
-  GuiSetStyle(DEFAULT, TEXT_SIZE, 20);
   return true;
 }
 
@@ -19,69 +16,61 @@ static void MainMenuUpdate(ShroomScreenManager* manager, float delta_time) {
 
 static void MainMenuDraw(ShroomScreenManager* manager) {
   Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
+  const int screen_width = GetScreenWidth();
+  const int screen_height = GetScreenHeight();
+  const float panel_width = 340.0f;
+  const float panel_height = 470.0f;
 
-  BeginDrawing();
-  ClearBackground((Color){20, 20, 40, 255});
+  ClearBackground((Color){18, 20, 32, 255});
 
-  int screen_width = GetScreenWidth();
+  ShroomImGui_SetNextWindowPos((screen_width - (int)panel_width) * 0.5f,
+                               (screen_height - (int)panel_height) * 0.5f,
+                               SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowSize(panel_width, panel_height, SHROOM_IMGUI_COND_ALWAYS);
+  if (!ShroomImGui_Begin("Main Menu", NULL,
+                         SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
+                             SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
+                             SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
+    ShroomImGui_End();
+    return;
+  }
 
-  int button_width = 280;
-  int button_height = 48;
-  int button_x = screen_width / 2 - button_width / 2;
-  int button_y = 188;
-  int button_spacing = 58;
+  ShroomImGui_Text("SHROOMIO");
+  ShroomImGui_TextWrapped("Grow by collecting spores, out-position bigger threats, and take over the arena.");
+  ShroomImGui_Spacing();
 
-  GuiLabel((Rectangle){screen_width / 2 - 150, 80, 300, 60}, "SHROOMIO");
-  GuiSetStyle(DEFAULT, TEXT_SIZE, 30);
-  DrawText("SHROOMIO", screen_width / 2 - MeasureText("SHROOMIO", 60) / 2, 80, 60, WHITE);
-  GuiSetStyle(DEFAULT, TEXT_SIZE, 20);
-
-  DrawText("Choose how to play", screen_width / 2 - 112, 148, 22, GRAY);
-
-  if (GuiButton((Rectangle){button_x, button_y, button_width, button_height}, "QUICK PLAY")) {
+  if (ShroomImGui_Button("Quick Play", -1.0f, 38.0f)) {
     if (game != NULL) {
       game->selected_mode = SHROOM_SESSION_MODE_QUICK_PLAY;
     }
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
   }
-
-  if (GuiButton((Rectangle){button_x, button_y + button_spacing, button_width, button_height},
-                "SERVER BROWSER")) {
+  if (ShroomImGui_Button("Server Browser", -1.0f, 38.0f)) {
     if (game != NULL) {
       game->selected_mode = SHROOM_SESSION_MODE_QUICK_PLAY;
     }
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
   }
-
-  if (GuiButton((Rectangle){button_x, button_y + button_spacing * 2, button_width, button_height},
-                "OFFLINE PRACTICE")) {
+  if (ShroomImGui_Button("Offline Practice", -1.0f, 38.0f)) {
     if (game != NULL) {
       game->selected_mode = SHROOM_SESSION_MODE_OFFLINE_PRACTICE;
     }
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
   }
-
-  if (GuiButton((Rectangle){button_x, button_y + button_spacing * 3, button_width, button_height},
-                "SETTINGS")) {
+  if (ShroomImGui_Button("Settings", -1.0f, 38.0f)) {
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SETTINGS);
   }
-
-  if (GuiButton((Rectangle){button_x, button_y + button_spacing * 4, button_width, button_height},
-                "HELP")) {
+  if (ShroomImGui_Button("Help", -1.0f, 38.0f)) {
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_HELP);
   }
-
-  if (GuiButton((Rectangle){button_x, button_y + button_spacing * 5, button_width, button_height},
-                "CREDITS")) {
+  if (ShroomImGui_Button("Credits", -1.0f, 38.0f)) {
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_CREDITS);
   }
-
-  if (GuiButton((Rectangle){button_x, button_y + button_spacing * 6, button_width, button_height},
-                "EXIT")) {
+  if (ShroomImGui_Button("Exit", -1.0f, 38.0f)) {
     ShroomScreenManagerRequestExit(manager);
   }
 
-  EndDrawing();
+  ShroomImGui_End();
 }
 
 static void MainMenuHandleInput(ShroomScreenManager* manager) {
@@ -93,11 +82,13 @@ static void MainMenuHandleInput(ShroomScreenManager* manager) {
 static void MainMenuCleanup(ShroomScreenManager* manager) { (void)manager; }
 
 void ShroomScreenRegisterMainMenu(ShroomScreenManager* manager) {
+  ShroomScreen* screen;
+
   if (manager == NULL) {
     return;
   }
 
-  ShroomScreen* screen = &manager->screens[SHROOM_SCREEN_MAIN_MENU];
+  screen = &manager->screens[SHROOM_SCREEN_MAIN_MENU];
   screen->type = SHROOM_SCREEN_MAIN_MENU;
   screen->name = "Main Menu";
   screen->init = MainMenuInit;

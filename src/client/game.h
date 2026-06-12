@@ -1,6 +1,8 @@
 #ifndef SHROOM_CLIENT_GAME_H
 #define SHROOM_CLIENT_GAME_H
 
+#include <stdint.h>
+
 #include "raylib.h"
 
 #include "client_settings.h"
@@ -21,14 +23,12 @@ typedef struct ShroomPendingInput {
 
 typedef struct Game {
   Camera2D camera;
+  ClientSettings settings;
   ClientNetState net;
   ShroomWorldState world;
   ShroomPlayerState* local_player;
-  ClientSettings settings;
   GameSessionMode selected_mode;
   GameSessionMode active_mode;
-  char selected_server_host[64];
-  uint16_t selected_server_port;
   ShroomZone current_zone;
   ShroomPendingInput pending_inputs[SHROOM_CLIENT_PENDING_INPUT_CAPACITY];
   uint32_t pending_input_count;
@@ -38,20 +38,21 @@ typedef struct Game {
   bool render_position_initialized[SHROOM_MAX_PLAYERS];
   bool leaderboard_overlay_open;
   bool menu_overlay_open;
-  bool leave_confirmation_open;
   bool diagnostics_overlay_open;
+  bool leave_confirmation_open;
+  bool return_to_menu_requested;
   float previous_local_mass;
-  float recent_correction_distance;
-  float snapshot_age_seconds;
   float zone_callout_timer;
   float respawn_banner_timer;
   int screen_width;
   int screen_height;
+  char selected_server_host[64];
+  uint16_t selected_server_port;
 } Game;
 
 void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode mode);
 void GameUpdate(Game* game, float delta_time);
-void GameDraw(const Game* game);
+void GameDraw(Game* game);
 void GameShutdown(Game* game);
 
 #endif

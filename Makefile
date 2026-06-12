@@ -10,7 +10,7 @@
 #   4. Source Files          - Lists of source files and objects
 #   5. Build Targets         - Main build targets (linux, windows, server)
 #   6. Compilation Rules     - Pattern rules for compiling objects
-#   7. Vendor Dependencies   - raylib, raygui, enet, Unity downloads
+#   7. Vendor Dependencies   - raylib, ImGui, enet, Unity downloads
 #   8. Test Targets          - Unit test compilation and execution
 #   9. Docker Targets        - Container builds for server and devcontainer
 #   10. Lint & Format        - Code formatting and static analysis
@@ -24,9 +24,7 @@
 PROJECT := shroomio
 
 RAYLIB_VERSION := 5.5
-RAYGUI_VERSION := 4.0
 IMGUI_VERSION  := 1.91.8
-ENET_VERSION   := 1.3.18
 UNITY_VERSION  := 2.6.0
 
 # =============================================================================
@@ -58,17 +56,12 @@ RAYLIB_URL := https://github.com/raysan5/raylib/archive/refs/tags/$(RAYLIB_VERSI
 RAYLIB_SRC_DIR := $(RAYLIB_DIR)/src
 RAYLIB_GLFW_INCLUDE_DIR := $(RAYLIB_SRC_DIR)/external/glfw/include
 
-RAYGUI_DIR := vendor/raygui-$(RAYGUI_VERSION)
-RAYGUI_URL := https://github.com/raysan5/raygui/archive/refs/tags/$(RAYGUI_VERSION).tar.gz
-RAYGUI_SRC_DIR := $(RAYGUI_DIR)/src
-
 IMGUI_DIR := vendor/imgui-$(IMGUI_VERSION)
 IMGUI_URL := https://github.com/ocornut/imgui/archive/refs/tags/v$(IMGUI_VERSION).tar.gz
 IMGUI_SRC_DIR := $(IMGUI_DIR)
 IMGUI_BACKENDS_DIR := $(IMGUI_DIR)/backends
 
-ENET_DIR := vendor/enet-$(ENET_VERSION)
-ENET_URL := https://github.com/lsalzman/enet/archive/refs/tags/v$(ENET_VERSION).tar.gz
+ENET_DIR := vendor/enet
 ENET_INCLUDE_DIR := $(ENET_DIR)/include
 
 UNITY_DIR := vendor/Unity-$(UNITY_VERSION)
@@ -92,9 +85,11 @@ TEST_LIBS   := -lm
 # =============================================================================
 # 4. Compiler Settings
 # =============================================================================
-LINUX_CC   ?= cc
-WINDOWS_CC ?= x86_64-w64-mingw32-gcc
-AR         ?= ar
+LINUX_CC    ?= cc
+WINDOWS_CC  ?= x86_64-w64-mingw32-gcc
+LINUX_CXX   ?= c++
+WINDOWS_CXX ?= x86_64-w64-mingw32-g++
+AR          ?= ar
 
 # Tools
 CURL    ?= curl
@@ -105,11 +100,14 @@ DOCKER  ?= docker
 
 # Client compiler flags (raylib-based)
 COMMON_CFLAGS := -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
-                 -I$(RAYLIB_SRC_DIR) -I$(RAYLIB_GLFW_INCLUDE_DIR) -I$(RAYGUI_SRC_DIR) \
-                 -I$(IMGUI_SRC_DIR) -I$(IMGUI_BACKENDS_DIR) \
-                 -I$(ENET_INCLUDE_DIR)
+                 -I$(RAYLIB_SRC_DIR) -I$(RAYLIB_GLFW_INCLUDE_DIR) -I$(ENET_INCLUDE_DIR)
+COMMON_CXXFLAGS := -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
+                   -I$(RAYLIB_SRC_DIR) -I$(RAYLIB_GLFW_INCLUDE_DIR) -I$(ENET_INCLUDE_DIR) \
+                   -I$(IMGUI_SRC_DIR)
 LINUX_CFLAGS   := $(COMMON_CFLAGS) -DPLATFORM_DESKTOP -D_DEFAULT_SOURCE
 WINDOWS_CFLAGS := $(COMMON_CFLAGS) -DPLATFORM_DESKTOP
+LINUX_CXXFLAGS := $(COMMON_CXXFLAGS) -DPLATFORM_DESKTOP -D_DEFAULT_SOURCE
+WINDOWS_CXXFLAGS := $(COMMON_CXXFLAGS) -DPLATFORM_DESKTOP
 
 # Server compiler flags (headless, ENet-based)
 SERVER_CFLAGS := -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
@@ -143,18 +141,13 @@ LINUX_RAYLIB_LIB   := $(LINUX_BUILD_DIR)/libraylib.a
 WINDOWS_RAYLIB_LIB := $(WINDOWS_BUILD_DIR)/libraylib.a
 
 # Dear ImGui source files
-IMGUI_CORE_SOURCES := imgui imgui_draw imgui_tables imgui_widgets imgui_demo
-IMGUI_BACKEND_SOURCES := imgui_impl_raylib
-IMGUI_WRAPPER_SOURCES := imgui_wrapper
-IMGUI_SOURCES := $(addprefix $(IMGUI_SRC_DIR)/,$(addsuffix .cpp,$(IMGUI_CORE_SOURCES))) \
-                 $(CLIENT_SRC_DIR)/$(IMGUI_BACKEND_SOURCES).cpp \
-                 $(CLIENT_SRC_DIR)/$(IMGUI_WRAPPER_SOURCES).cpp
+IMGUI_CORE_SOURCES := imgui imgui_draw imgui_tables imgui_widgets
 LINUX_IMGUI_OBJECTS := $(addprefix $(LINUX_BUILD_DIR)/imgui/,$(addsuffix .o,$(IMGUI_CORE_SOURCES))) \
-                       $(LINUX_BUILD_DIR)/client/$(IMGUI_BACKEND_SOURCES).o \
-                       $(LINUX_BUILD_DIR)/client/$(IMGUI_WRAPPER_SOURCES).o
+	$(LINUX_BUILD_DIR)/client/imgui_impl_raylib.o \
+	$(LINUX_BUILD_DIR)/client/imgui_wrapper.o
 WINDOWS_IMGUI_OBJECTS := $(addprefix $(WINDOWS_BUILD_DIR)/imgui/,$(addsuffix .o,$(IMGUI_CORE_SOURCES))) \
-                         $(WINDOWS_BUILD_DIR)/client/$(IMGUI_BACKEND_SOURCES).o \
-                         $(WINDOWS_BUILD_DIR)/client/$(IMGUI_WRAPPER_SOURCES).o
+	$(WINDOWS_BUILD_DIR)/client/imgui_impl_raylib.o \
+	$(WINDOWS_BUILD_DIR)/client/imgui_wrapper.o
 
 # Client source files
 CLIENT_SOURCES := \
@@ -163,7 +156,6 @@ CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/game.c \
 	$(CLIENT_SRC_DIR)/net.c \
 	$(CLIENT_SRC_DIR)/screen.c \
-	$(CLIENT_SRC_DIR)/raygui_impl.c \
 	$(CLIENT_SRC_DIR)/screens/main_menu.c \
 	$(CLIENT_SRC_DIR)/screens/settings.c \
 	$(CLIENT_SRC_DIR)/screens/help.c \
@@ -250,6 +242,8 @@ help:
 	@echo "  make devcontainer-build         Build the dev container image"
 	@echo "  make devcontainer-up            Start the dev container"
 	@echo "  make devcontainer-shell         Open a shell in the dev container"
+	@echo "  make devcontainer-exec CMD=...  Run a command in the dev container"
+	@echo "  make devcontainer-gh ARGS=...   Run gh inside the dev container"
 	@echo "  make devcontainer-down          Stop the dev container"
 	@echo "  make devcontainer-opencode-sync Refresh OpenCode state"
 	@echo "  make devcontainer-git-identity  Copy host git identity"
@@ -288,13 +282,13 @@ run-windows: $(WINDOWS_BIN)
 # =============================================================================
 
 # Link targets
-$(LINUX_BIN): $(LINUX_APP_OBJECTS) $(LINUX_RAYLIB_LIB) $(LINUX_IMGUI_OBJECTS) $(LINUX_ENET_OBJECTS)
+$(LINUX_BIN): $(LINUX_APP_OBJECTS) $(LINUX_IMGUI_OBJECTS) $(LINUX_RAYLIB_LIB) $(LINUX_ENET_OBJECTS)
 	@$(MKDIR_P) $(DIST_DIR)
-	$(LINUX_CC) $(LINUX_APP_OBJECTS) $(LINUX_RAYLIB_LIB) $(LINUX_IMGUI_OBJECTS) $(LINUX_ENET_OBJECTS) -o $@ $(LINUX_LIBS) -lstdc++
+	$(LINUX_CXX) $(LINUX_APP_OBJECTS) $(LINUX_IMGUI_OBJECTS) $(LINUX_RAYLIB_LIB) $(LINUX_ENET_OBJECTS) -o $@ $(LINUX_LIBS)
 
-$(WINDOWS_BIN): $(WINDOWS_APP_OBJECTS) $(WINDOWS_RAYLIB_LIB) $(WINDOWS_IMGUI_OBJECTS) $(WINDOWS_ENET_OBJECTS)
+$(WINDOWS_BIN): $(WINDOWS_APP_OBJECTS) $(WINDOWS_IMGUI_OBJECTS) $(WINDOWS_RAYLIB_LIB) $(WINDOWS_ENET_OBJECTS)
 	@$(MKDIR_P) $(DIST_DIR)
-	$(WINDOWS_CC) -static $(WINDOWS_APP_OBJECTS) $(WINDOWS_RAYLIB_LIB) $(WINDOWS_IMGUI_OBJECTS) $(WINDOWS_ENET_OBJECTS) -o $@ $(WINDOWS_LIBS) -lstdc++
+	$(WINDOWS_CXX) -static $(WINDOWS_APP_OBJECTS) $(WINDOWS_IMGUI_OBJECTS) $(WINDOWS_RAYLIB_LIB) $(WINDOWS_ENET_OBJECTS) -o $@ $(WINDOWS_LIBS)
 
 $(SERVER_BIN): $(SERVER_OBJECTS) $(SERVER_ENET_OBJECTS)
 	@$(MKDIR_P) $(DIST_DIR)
@@ -316,44 +310,38 @@ $(WINDOWS_BUILD_DIR)/raylib/%.o: $(RAYLIB_SRC_DIR)/%.c $(RAYLIB_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(WINDOWS_CC) $(WINDOWS_RAYLIB_CFLAGS) -c $< -o $@
 
-# ImGui object compilation (C++)
-LINUX_IMGUI_CFLAGS := -std=c++11 -O2 $(VENDOR_WARNINGS) -I$(IMGUI_SRC_DIR) \
-                      -I$(RAYLIB_SRC_DIR) -I$(RAYLIB_GLFW_INCLUDE_DIR) -DPLATFORM_DESKTOP
-WINDOWS_IMGUI_CFLAGS := -std=c++11 -O2 $(VENDOR_WARNINGS) -I$(IMGUI_SRC_DIR) \
-                        -I$(RAYLIB_SRC_DIR) -I$(RAYLIB_GLFW_INCLUDE_DIR) -DPLATFORM_DESKTOP
+# Client object compilation
+$(LINUX_BUILD_DIR)/client/%.o: $(CLIENT_SRC_DIR)/%.c $(CLIENT_SRC_DIR)/game.h $(CLIENT_SRC_DIR)/net.h $(SHARED_HEADERS) $(RAYLIB_DIR) $(IMGUI_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(LINUX_CFLAGS) -D_POSIX_C_SOURCE=199309L -D_DEFAULT_SOURCE -c $< -o $@
+
+$(WINDOWS_BUILD_DIR)/client/%.o: $(CLIENT_SRC_DIR)/%.c $(CLIENT_SRC_DIR)/game.h $(CLIENT_SRC_DIR)/net.h $(SHARED_HEADERS) $(RAYLIB_DIR) $(IMGUI_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(WINDOWS_CC) $(WINDOWS_CFLAGS) -c $< -o $@
 
 $(LINUX_BUILD_DIR)/imgui/%.o: $(IMGUI_SRC_DIR)/%.cpp $(IMGUI_DIR)
 	@$(MKDIR_P) $(dir $@)
-	$(LINUX_CC) $(LINUX_IMGUI_CFLAGS) -c $< -o $@
-
-$(LINUX_BUILD_DIR)/client/imgui_impl_raylib.o: $(CLIENT_SRC_DIR)/imgui_impl_raylib.cpp $(IMGUI_DIR)
-	@$(MKDIR_P) $(dir $@)
-	$(LINUX_CC) $(LINUX_IMGUI_CFLAGS) -c $< -o $@
-
-$(LINUX_BUILD_DIR)/client/imgui_wrapper.o: $(CLIENT_SRC_DIR)/imgui_wrapper.cpp $(IMGUI_DIR)
-	@$(MKDIR_P) $(dir $@)
-	$(LINUX_CC) $(LINUX_IMGUI_CFLAGS) -c $< -o $@
+	$(LINUX_CXX) $(LINUX_CXXFLAGS) -c $< -o $@
 
 $(WINDOWS_BUILD_DIR)/imgui/%.o: $(IMGUI_SRC_DIR)/%.cpp $(IMGUI_DIR)
 	@$(MKDIR_P) $(dir $@)
-	$(WINDOWS_CC) $(WINDOWS_IMGUI_CFLAGS) -c $< -o $@
+	$(WINDOWS_CXX) $(WINDOWS_CXXFLAGS) -c $< -o $@
+
+$(LINUX_BUILD_DIR)/client/imgui_impl_raylib.o: $(CLIENT_SRC_DIR)/imgui_impl_raylib.cpp $(IMGUI_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CXX) $(LINUX_CXXFLAGS) -c $< -o $@
+
+$(LINUX_BUILD_DIR)/client/imgui_wrapper.o: $(CLIENT_SRC_DIR)/imgui_wrapper.cpp $(IMGUI_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CXX) $(LINUX_CXXFLAGS) -c $< -o $@
 
 $(WINDOWS_BUILD_DIR)/client/imgui_impl_raylib.o: $(CLIENT_SRC_DIR)/imgui_impl_raylib.cpp $(IMGUI_DIR)
 	@$(MKDIR_P) $(dir $@)
-	$(WINDOWS_CC) $(WINDOWS_IMGUI_CFLAGS) -c $< -o $@
+	$(WINDOWS_CXX) $(WINDOWS_CXXFLAGS) -c $< -o $@
 
 $(WINDOWS_BUILD_DIR)/client/imgui_wrapper.o: $(CLIENT_SRC_DIR)/imgui_wrapper.cpp $(IMGUI_DIR)
 	@$(MKDIR_P) $(dir $@)
-	$(WINDOWS_CC) $(WINDOWS_IMGUI_CFLAGS) -c $< -o $@
-
-# Client object compilation
-$(LINUX_BUILD_DIR)/client/%.o: $(CLIENT_SRC_DIR)/%.c $(CLIENT_SRC_DIR)/game.h $(CLIENT_SRC_DIR)/net.h $(SHARED_HEADERS) $(RAYLIB_DIR)
-	@$(MKDIR_P) $(dir $@)
-	$(LINUX_CC) $(LINUX_CFLAGS) -I$(ENET_INCLUDE_DIR) -D_POSIX_C_SOURCE=199309L -D_DEFAULT_SOURCE -c $< -o $@
-
-$(WINDOWS_BUILD_DIR)/client/%.o: $(CLIENT_SRC_DIR)/%.c $(CLIENT_SRC_DIR)/game.h $(CLIENT_SRC_DIR)/net.h $(SHARED_HEADERS) $(RAYLIB_DIR)
-	@$(MKDIR_P) $(dir $@)
-	$(WINDOWS_CC) $(WINDOWS_CFLAGS) -I$(ENET_INCLUDE_DIR) -c $< -o $@
+	$(WINDOWS_CXX) $(WINDOWS_CXXFLAGS) -c $< -o $@
 
 # Shared object compilation
 $(LINUX_BUILD_DIR)/shared/%.o: $(SHARED_SRC_DIR)/%.c $(SHARED_HEADERS)
@@ -383,22 +371,14 @@ $(WINDOWS_BUILD_DIR)/vendor/enet/%.o: $(ENET_DIR)/%.c
 # =============================================================================
 .PHONY: vendor
 
-vendor: $(RAYLIB_DIR) $(RAYGUI_DIR) $(IMGUI_DIR) $(ENET_DIR) $(UNITY_DIR)
-
-$(ENET_DIR):
-	$(MKDIR_P) vendor build
-	$(CURL) -L $(ENET_URL) -o build/enet.tar.gz
-	$(TAR) -xzf build/enet.tar.gz -C vendor
+vendor: $(RAYLIB_DIR) $(IMGUI_DIR) $(UNITY_DIR)
+vendor: $(RAYLIB_DIR) $(IMGUI_DIR) $(UNITY_DIR)
 
 $(RAYLIB_DIR):
 	@$(MKDIR_P) vendor $(BUILD_DIR)
 	$(CURL) -L $(RAYLIB_URL) -o $(BUILD_DIR)/raylib.tar.gz
 	$(TAR) -xzf $(BUILD_DIR)/raylib.tar.gz -C vendor
 
-$(RAYGUI_DIR):
-	@$(MKDIR_P) vendor $(BUILD_DIR)
-	$(CURL) -L $(RAYGUI_URL) -o $(BUILD_DIR)/raygui.tar.gz
-	$(TAR) -xzf $(BUILD_DIR)/raygui.tar.gz -C vendor
 
 $(IMGUI_DIR):
 	@$(MKDIR_P) vendor $(BUILD_DIR)
@@ -507,7 +487,7 @@ $(TEST_BUILD_DIR)/%: $(UNIT_TESTS_DIR)/%.c $(UNITY_SRC) | $(UNITY_DIR)
 # 9. Docker Targets
 # =============================================================================
 .PHONY: docker-server docker-run-server docker-logs
-.PHONY: devcontainer-build devcontainer-up devcontainer-shell devcontainer-down
+.PHONY: devcontainer-build devcontainer-up devcontainer-shell devcontainer-exec devcontainer-gh devcontainer-down
 .PHONY: devcontainer-opencode-sync devcontainer-git-identity devcontainer-github-token devcontainer-github-status
 
 # Server container settings
@@ -570,6 +550,13 @@ devcontainer-shell:
 		-e HOME=/home/dev \
 		-e TERM="$(TERM)" \
 		$(DEVCONTAINER_CONTAINER) bash -il
+
+devcontainer-exec:
+	@test -n "$(CMD)" || (printf '%s\n' 'Usage: make devcontainer-exec CMD="gh issue list"' && exit 1)
+	$(DOCKER) exec -u dev -e HOME=/home/dev -e TERM="$(TERM)" $(DEVCONTAINER_CONTAINER) bash -lc "$(CMD)"
+
+devcontainer-gh:
+	$(DOCKER) exec -u dev -e HOME=/home/dev -e TERM="$(TERM)" $(DEVCONTAINER_CONTAINER) gh $(ARGS)
 
 devcontainer-down:
 	$(DOCKER) rm -f $(DEVCONTAINER_CONTAINER)

@@ -1,34 +1,18 @@
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <fcntl.h>
-#include <unistd.h>
-
 #include "game.h"
 #include "screen.h"
 #include "shared/config.h"
 
-#include "raygui.h"
+#include "imgui_wrapper.h"
 #include "raylib.h"
+
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
 #define SERVER_BROWSER_MAX_SERVERS 6u
 #define SERVER_BROWSER_MAX_RECENTS 5u
-#define SERVER_BROWSER_PORT_TEXT_LENGTH 8u
-
-typedef enum ServerBrowserViewState {
-  SERVER_BROWSER_VIEW_LOADING = 0,
-  SERVER_BROWSER_VIEW_READY,
-  SERVER_BROWSER_VIEW_EMPTY,
-  SERVER_BROWSER_VIEW_ERROR,
-} ServerBrowserViewState;
-
-typedef enum ServerBrowserResultState {
-  SERVER_BROWSER_RESULT_READY = 0,
-  SERVER_BROWSER_RESULT_EMPTY,
-  SERVER_BROWSER_RESULT_ERROR,
-} ServerBrowserResultState;
 
 typedef enum ServerBrowserSortKey {
   SERVER_BROWSER_SORT_NAME = 0,
@@ -47,26 +31,20 @@ typedef struct ServerBrowserEntry {
 } ServerBrowserEntry;
 
 typedef struct ServerBrowserState {
-  ServerBrowserViewState view_state;
-  ServerBrowserResultState pending_result;
   ServerBrowserSortKey sort_key;
   bool sort_descending;
-  bool host_text_edit_mode;
-  bool port_text_edit_mode;
-  float loading_timer;
   int selected_index;
+  int selected_recent_index;
   size_t server_count;
   size_t recent_count;
-  int selected_recent_index;
   char direct_host_input[64];
-  char direct_port_input[SERVER_BROWSER_PORT_TEXT_LENGTH];
+  char direct_port_input[8];
   char validation_message[128];
   ServerBrowserEntry servers[SERVER_BROWSER_MAX_SERVERS];
   ServerBrowserEntry recent_servers[SERVER_BROWSER_MAX_RECENTS];
 } ServerBrowserState;
 
 static const char* kRecentServersPath = "server_browser_recent.txt";
-
 static ServerBrowserState g_server_browser;
 
 static void CopyText(char* destination, size_t destination_size, const char* source) {
@@ -86,73 +64,60 @@ static void CopyText(char* destination, size_t destination_size, const char* sou
   destination[length] = '\0';
 }
 
-static void SetEntryDisplayName(ServerBrowserEntry* entry, const char* host, int port) {
-  size_t host_length;
-
-  if (entry == NULL) {
-    return;
-  }
-
-  host_length = strnlen(host, sizeof(entry->name) - 8u);
-  memcpy(entry->name, host, host_length);
-  snprintf(entry->name + host_length, sizeof(entry->name) - host_length, ":%d", port);
-}
-
-static void SortServerEntries(ServerBrowserState* browser, ServerBrowserEntry* entries,
-                              size_t count) {
-  for (size_t outer_index = 0; outer_index + 1 < count; ++outer_index) {
-    for (size_t inner_index = outer_index + 1; inner_index < count; ++inner_index) {
-      const ServerBrowserEntry* left = &entries[outer_index];
-      const ServerBrowserEntry* right = &entries[inner_index];
+static void SortEntries(ServerBrowserEntry* entries, size_t count) {
+  for (size_t outer = 0; outer + 1 < count; ++outer) {
+    for (size_t inner = outer + 1; inner < count; ++inner) {
       bool swap = false;
+      const ServerBrowserEntry* left = &entries[outer];
+      const ServerBrowserEntry* right = &entries[inner];
 
-      switch (browser->sort_key) {
+      switch (g_server_browser.sort_key) {
       case SERVER_BROWSER_SORT_PLAYERS:
-        if (left->player_count != right->player_count) {
-          swap = browser->sort_descending ? (left->player_count < right->player_count)
-                                          : (left->player_count > right->player_count);
-        } else if (left->ping_ms != right->ping_ms) {
-          swap = left->ping_ms > right->ping_ms;
-        } else {
-          swap = strcmp(left->name, right->name) > 0;
-        }
+        swap = g_server_browser.sort_descending ? (left->player_count < right->player_count)
+                                                : (left->player_count > right->player_count);
         break;
       case SERVER_BROWSER_SORT_PING:
-        if (left->ping_ms != right->ping_ms) {
-          swap = browser->sort_descending ? (left->ping_ms < right->ping_ms)
-                                          : (left->ping_ms > right->ping_ms);
-        } else if (left->player_count != right->player_count) {
-          swap = left->player_count < right->player_count;
-        } else {
-          swap = strcmp(left->name, right->name) > 0;
-        }
+        swap = g_server_browser.sort_descending ? (left->ping_ms < right->ping_ms)
+                                                : (left->ping_ms > right->ping_ms);
         break;
       case SERVER_BROWSER_SORT_NAME:
-      default: {
-        const int name_compare = strcmp(left->name, right->name);
-        if (name_compare != 0) {
-          swap = browser->sort_descending ? (name_compare < 0) : (name_compare > 0);
-        } else if (left->ping_ms != right->ping_ms) {
-          swap = left->ping_ms > right->ping_ms;
-        } else {
-          swap = left->player_count < right->player_count;
-        }
-      } break;
+      default:
+        swap = g_server_browser.sort_descending ? (strcmp(left->name, right->name) < 0)
+                                                : (strcmp(left->name, right->name) > 0);
+        break;
       }
 
       if (swap) {
-        const ServerBrowserEntry temp = entries[outer_index];
-        entries[outer_index] = entries[inner_index];
-        entries[inner_index] = temp;
+        const ServerBrowserEntry temporary = entries[outer];
+        entries[outer] = entries[inner];
+        entries[inner] = temporary;
       }
     }
   }
 }
 
-static void SaveRecentServers(const ServerBrowserState* browser) {
-  const int file_descriptor = open(kRecentServersPath, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+static void LoadSampleServers(void) {
+  g_server_browser.server_count = 5;
+
+  g_server_browser.servers[0] = (ServerBrowserEntry){"Local Development", "127.0.0.1", 3, 32, 12,
+                                                     SHROOM_SERVER_PORT, "Arena / Local"};
+  g_server_browser.servers[1] = (ServerBrowserEntry){"Canopy Clash EU", "eu.shroomio.dev", 24, 32,
+                                                     46, SHROOM_SERVER_PORT, "Arena / Public"};
+  g_server_browser.servers[2] = (ServerBrowserEntry){"Spore Sprint NA", "na.shroomio.dev", 17, 32,
+                                                     78, SHROOM_SERVER_PORT, "Arena / Ranked"};
+  g_server_browser.servers[3] = (ServerBrowserEntry){"Outer Ring Learn", "practice.shroomio.dev",
+                                                     8, 16, 33, SHROOM_SERVER_PORT,
+                                                     "Practice / Casual"};
+  g_server_browser.servers[4] = (ServerBrowserEntry){"Center Rush", "rush.shroomio.dev", 29, 32,
+                                                     61, SHROOM_SERVER_PORT, "Arena / High Risk"};
+  SortEntries(g_server_browser.servers, g_server_browser.server_count);
+}
+
+static void SaveRecentServers(void) {
+  int file_descriptor;
   FILE* file;
 
+  file_descriptor = open(kRecentServersPath, O_WRONLY | O_CREAT | O_TRUNC, 0600);
   if (file_descriptor < 0) {
     return;
   }
@@ -163,31 +128,32 @@ static void SaveRecentServers(const ServerBrowserState* browser) {
     return;
   }
 
-  for (size_t index = 0; index < browser->recent_count; ++index) {
-    const ServerBrowserEntry* entry = &browser->recent_servers[index];
+  for (size_t index = 0; index < g_server_browser.recent_count; ++index) {
+    const ServerBrowserEntry* entry = &g_server_browser.recent_servers[index];
     fprintf(file, "%s|%s|%d|%s\n", entry->name, entry->host, entry->port, entry->map_label);
   }
 
   fclose(file);
 }
 
-static void LoadRecentServers(ServerBrowserState* browser) {
-  FILE* file = fopen(kRecentServersPath, "r");
+static void LoadRecentServers(void) {
+  FILE* file;
   char line[256];
 
-  browser->recent_count = 0;
-  browser->selected_recent_index = -1;
+  g_server_browser.recent_count = 0;
+  g_server_browser.selected_recent_index = -1;
 
+  file = fopen(kRecentServersPath, "r");
   if (file == NULL) {
     return;
   }
 
-  while ((browser->recent_count < SERVER_BROWSER_MAX_RECENTS) &&
+  while ((g_server_browser.recent_count < SERVER_BROWSER_MAX_RECENTS) &&
          (fgets(line, sizeof(line), file) != NULL)) {
-    ServerBrowserEntry* entry = &browser->recent_servers[browser->recent_count];
+    ServerBrowserEntry* entry = &g_server_browser.recent_servers[g_server_browser.recent_count];
     char* separator;
-    const char* port_text;
-    const char* map_label;
+    char* port_text;
+    char* map_label;
 
     line[strcspn(line, "\r\n")] = '\0';
     separator = strchr(line, '|');
@@ -218,28 +184,25 @@ static void LoadRecentServers(ServerBrowserState* browser) {
     entry->player_count = 0;
     entry->player_capacity = 0;
     entry->ping_ms = 0;
-
-    browser->recent_count += 1;
+    g_server_browser.recent_count += 1;
   }
 
   fclose(file);
 
-  if (browser->recent_count > 0) {
-    browser->selected_recent_index = 0;
+  if (g_server_browser.recent_count > 0) {
+    g_server_browser.selected_recent_index = 0;
   }
 }
 
-static void AddRecentServer(ServerBrowserState* browser, const ServerBrowserEntry* entry) {
-  ServerBrowserEntry saved_entry = *entry;
-  size_t target_index = 0;
+static void AddRecentServer(const ServerBrowserEntry* entry) {
+  size_t target_index = g_server_browser.recent_count;
 
-  for (size_t index = 0; index < browser->recent_count; ++index) {
-    if ((strcmp(browser->recent_servers[index].host, entry->host) == 0) &&
-        (browser->recent_servers[index].port == entry->port)) {
+  for (size_t index = 0; index < g_server_browser.recent_count; ++index) {
+    if ((strcmp(g_server_browser.recent_servers[index].host, entry->host) == 0) &&
+        (g_server_browser.recent_servers[index].port == entry->port)) {
       target_index = index;
       break;
     }
-    target_index = index + 1;
   }
 
   if (target_index >= SERVER_BROWSER_MAX_RECENTS) {
@@ -247,133 +210,52 @@ static void AddRecentServer(ServerBrowserState* browser, const ServerBrowserEntr
   }
 
   for (size_t index = target_index; index > 0; --index) {
-    browser->recent_servers[index] = browser->recent_servers[index - 1];
+    g_server_browser.recent_servers[index] = g_server_browser.recent_servers[index - 1];
   }
-  browser->recent_servers[0] = saved_entry;
+  g_server_browser.recent_servers[0] = *entry;
 
-  if (browser->recent_count < SERVER_BROWSER_MAX_RECENTS) {
-    browser->recent_count += 1;
+  if (g_server_browser.recent_count < SERVER_BROWSER_MAX_RECENTS) {
+    g_server_browser.recent_count += 1;
   }
-  browser->selected_recent_index = 0;
-  SaveRecentServers(browser);
+  g_server_browser.selected_recent_index = 0;
+  SaveRecentServers();
 }
 
-static void LoadSampleServers(ServerBrowserState* browser) {
-  browser->server_count = 5;
-  browser->servers[0] = (ServerBrowserEntry){.name = "Local Development",
-                                             .host = "127.0.0.1",
-                                             .player_count = 3,
-                                             .player_capacity = 32,
-                                             .ping_ms = 12,
-                                             .port = SHROOM_SERVER_PORT,
-                                             .map_label = "Arena / Local"};
-  browser->servers[1] = (ServerBrowserEntry){.name = "Canopy Clash EU",
-                                             .host = "eu.shroomio.dev",
-                                             .player_count = 24,
-                                             .player_capacity = 32,
-                                             .ping_ms = 46,
-                                             .port = SHROOM_SERVER_PORT,
-                                             .map_label = "Arena / Public"};
-  browser->servers[2] = (ServerBrowserEntry){.name = "Spore Sprint NA",
-                                             .host = "na.shroomio.dev",
-                                             .player_count = 17,
-                                             .player_capacity = 32,
-                                             .ping_ms = 78,
-                                             .port = SHROOM_SERVER_PORT,
-                                             .map_label = "Arena / Ranked"};
-  browser->servers[3] = (ServerBrowserEntry){.name = "Outer Ring Learn",
-                                             .host = "practice.shroomio.dev",
-                                             .player_count = 8,
-                                             .player_capacity = 16,
-                                             .ping_ms = 33,
-                                             .port = SHROOM_SERVER_PORT,
-                                             .map_label = "Practice / Casual"};
-  browser->servers[4] = (ServerBrowserEntry){.name = "Center Rush",
-                                             .host = "rush.shroomio.dev",
-                                             .player_count = 29,
-                                             .player_capacity = 32,
-                                             .ping_ms = 61,
-                                             .port = SHROOM_SERVER_PORT,
-                                             .map_label = "Arena / High Risk"};
-  SortServerEntries(browser, browser->servers, browser->server_count);
-}
-
-static void StartLoading(ServerBrowserState* browser, ServerBrowserResultState pending_result) {
-  browser->view_state = SERVER_BROWSER_VIEW_LOADING;
-  browser->pending_result = pending_result;
-  browser->loading_timer = 0.45f;
-  browser->validation_message[0] = '\0';
-}
-
-static void ApplySortSelection(ServerBrowserState* browser, ServerBrowserSortKey sort_key) {
-  if (browser->sort_key == sort_key) {
-    browser->sort_descending = !browser->sort_descending;
-  } else {
-    browser->sort_key = sort_key;
-    browser->sort_descending = sort_key == SERVER_BROWSER_SORT_PLAYERS;
-  }
-
-  if (browser->server_count > 0) {
-    const ServerBrowserEntry selected =
-        browser->servers[browser->selected_index >= 0 ? (size_t)browser->selected_index : 0];
-    SortServerEntries(browser, browser->servers, browser->server_count);
-    for (size_t index = 0; index < browser->server_count; ++index) {
-      if ((strcmp(browser->servers[index].host, selected.host) == 0) &&
-          (browser->servers[index].port == selected.port)) {
-        browser->selected_index = (int)index;
-        break;
-      }
-    }
-  }
-}
-
-static bool CanJoinSelectedServer(const ServerBrowserState* browser) {
-  return (browser->view_state == SERVER_BROWSER_VIEW_READY) && (browser->server_count > 0) &&
-         (browser->selected_index >= 0) &&
-         ((size_t)browser->selected_index < browser->server_count);
-}
-
-static bool ParseDirectConnect(ServerBrowserState* browser, ServerBrowserEntry* entry) {
+static bool ParseDirectConnect(ServerBrowserEntry* entry) {
   char* end = NULL;
-  long port = 0;
+  long port;
 
-  if (browser->direct_host_input[0] == '\0') {
-    snprintf(browser->validation_message, sizeof(browser->validation_message),
-             "Host or IP is required.");
-    return false;
-  }
-  if (strchr(browser->direct_host_input, ' ') != NULL) {
-    snprintf(browser->validation_message, sizeof(browser->validation_message),
-             "Host or IP cannot contain spaces.");
+  if (g_server_browser.direct_host_input[0] == '\0') {
+    snprintf(g_server_browser.validation_message, sizeof(g_server_browser.validation_message),
+             "%s", "Host or IP is required.");
     return false;
   }
 
-  port = strtol(browser->direct_port_input, &end, 10);
-  if ((browser->direct_port_input[0] == '\0') || (end == NULL) || (*end != '\0') || (port < 1) ||
-      (port > 65535)) {
-    snprintf(browser->validation_message, sizeof(browser->validation_message),
-             "Port must be between 1 and 65535.");
+  port = strtol(g_server_browser.direct_port_input, &end, 10);
+  if ((g_server_browser.direct_port_input[0] == '\0') || (end == NULL) || (*end != '\0') ||
+      (port < 1) || (port > 65535)) {
+    snprintf(g_server_browser.validation_message, sizeof(g_server_browser.validation_message),
+             "%s", "Port must be between 1 and 65535.");
     return false;
   }
 
   *entry = (ServerBrowserEntry){0};
-  SetEntryDisplayName(entry, browser->direct_host_input, (int)port);
-  CopyText(entry->host, sizeof(entry->host), browser->direct_host_input);
-  entry->port = (int)port;
+  snprintf(entry->name, sizeof(entry->name), "%.56s:%ld", g_server_browser.direct_host_input, port);
+  CopyText(entry->host, sizeof(entry->host), g_server_browser.direct_host_input);
   CopyText(entry->map_label, sizeof(entry->map_label), "Direct Connect");
-  browser->validation_message[0] = '\0';
+  entry->port = (int)port;
+  g_server_browser.validation_message[0] = '\0';
   return true;
 }
 
-static void JoinServerEntry(ShroomScreenManager* manager, Game* game, ServerBrowserState* browser,
-                            const ServerBrowserEntry* entry) {
+static void JoinServer(ShroomScreenManager* manager, Game* game, const ServerBrowserEntry* entry) {
   if (game != NULL) {
     game->selected_mode = SHROOM_SESSION_MODE_QUICK_PLAY;
     CopyText(game->selected_server_host, sizeof(game->selected_server_host), entry->host);
     game->selected_server_port = (uint16_t)entry->port;
   }
 
-  AddRecentServer(browser, entry);
+  AddRecentServer(entry);
   ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
 }
 
@@ -383,296 +265,192 @@ static bool ServerBrowserInit(ShroomScreenManager* manager) {
   g_server_browser = (ServerBrowserState){0};
   g_server_browser.sort_key = SERVER_BROWSER_SORT_PING;
   g_server_browser.selected_index = 0;
-  g_server_browser.selected_recent_index = -1;
-  CopyText(g_server_browser.direct_host_input, sizeof(g_server_browser.direct_host_input),
+  snprintf(g_server_browser.direct_host_input, sizeof(g_server_browser.direct_host_input), "%s",
            "127.0.0.1");
   snprintf(g_server_browser.direct_port_input, sizeof(g_server_browser.direct_port_input), "%u",
            SHROOM_SERVER_PORT);
-  LoadRecentServers(&g_server_browser);
-  LoadSampleServers(&g_server_browser);
-  StartLoading(&g_server_browser, SERVER_BROWSER_RESULT_READY);
+
+  LoadRecentServers();
+  LoadSampleServers();
   return true;
-}
-
-static void ServerBrowserUpdate(ShroomScreenManager* manager, float delta_time) {
-  (void)manager;
-
-  if (g_server_browser.view_state != SERVER_BROWSER_VIEW_LOADING) {
-    return;
-  }
-
-  g_server_browser.loading_timer -= delta_time;
-  if (g_server_browser.loading_timer > 0.0f) {
-    return;
-  }
-
-  switch (g_server_browser.pending_result) {
-  case SERVER_BROWSER_RESULT_EMPTY:
-    g_server_browser.view_state = SERVER_BROWSER_VIEW_EMPTY;
-    break;
-  case SERVER_BROWSER_RESULT_ERROR:
-    g_server_browser.view_state = SERVER_BROWSER_VIEW_ERROR;
-    break;
-  case SERVER_BROWSER_RESULT_READY:
-  default:
-    g_server_browser.view_state = SERVER_BROWSER_VIEW_READY;
-    if (g_server_browser.selected_index < 0) {
-      g_server_browser.selected_index = 0;
-    }
-    break;
-  }
-}
-
-static void DrawStatePanel(const ServerBrowserState* browser, Rectangle panel) {
-  const int center_x = (int)(panel.x + (panel.width / 2.0f));
-  const int center_y = (int)(panel.y + (panel.height / 2.0f));
-
-  switch (browser->view_state) {
-  case SERVER_BROWSER_VIEW_LOADING:
-    DrawText("Refreshing server list...", center_x - 138, center_y - 18, 28, RAYWHITE);
-    DrawText("Please wait while available servers are fetched.", center_x - 176, center_y + 18, 20,
-             GRAY);
-    break;
-  case SERVER_BROWSER_VIEW_EMPTY:
-    DrawText("No servers available", center_x - 124, center_y - 18, 28, RAYWHITE);
-    DrawText("Try Refresh or return later when a server is online.", center_x - 196, center_y + 18,
-             20, GRAY);
-    break;
-  case SERVER_BROWSER_VIEW_ERROR:
-    DrawText("Server list unavailable", center_x - 142, center_y - 18, 28, ORANGE);
-    DrawText("Refresh to retry the browser query or use Direct Connect.", center_x - 202,
-             center_y + 18, 20, GRAY);
-    break;
-  case SERVER_BROWSER_VIEW_READY:
-  default:
-    break;
-  }
-}
-
-static void DrawServerRows(ServerBrowserState* browser, Rectangle panel) {
-  const float header_y = panel.y + 18.0f;
-  const float rows_start_y = panel.y + 56.0f;
-  const float row_height = 46.0f;
-
-  DrawText("Name", (int)panel.x + 18, (int)header_y, 20, LIGHTGRAY);
-  DrawText("Players", (int)panel.x + 312, (int)header_y, 20, LIGHTGRAY);
-  DrawText("Ping", (int)panel.x + 438, (int)header_y, 20, LIGHTGRAY);
-  DrawText("Map / Label", (int)panel.x + 530, (int)header_y, 20, LIGHTGRAY);
-
-  for (size_t index = 0; index < browser->server_count; ++index) {
-    Rectangle row = {panel.x + 10.0f, rows_start_y + ((float)index * row_height),
-                     panel.width - 20.0f, row_height - 4.0f};
-    const ServerBrowserEntry* entry = &browser->servers[index];
-    const bool selected = (int)index == browser->selected_index;
-    const bool hovered = CheckCollisionPointRec(GetMousePosition(), row);
-    const Color row_color =
-        selected ? Fade(SKYBLUE, 0.28f) : (hovered ? Fade(RAYWHITE, 0.08f) : Fade(BLACK, 0.18f));
-    const Color outline = selected ? SKYBLUE : Fade(RAYWHITE, 0.08f);
-
-    if (hovered && IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-      browser->selected_index = (int)index;
-    }
-
-    DrawRectangleRec(row, row_color);
-    DrawRectangleLinesEx(row, 1.0f, outline);
-    DrawText(entry->name, (int)row.x + 12, (int)row.y + 12, 20, RAYWHITE);
-    DrawText(TextFormat("%d/%d", entry->player_count, entry->player_capacity), (int)row.x + 314,
-             (int)row.y + 12, 20, RAYWHITE);
-    DrawText(TextFormat("%d ms", entry->ping_ms), (int)row.x + 438, (int)row.y + 12, 20,
-             entry->ping_ms <= 40 ? LIME : (entry->ping_ms <= 75 ? GOLD : ORANGE));
-    DrawText(entry->map_label, (int)row.x + 530, (int)row.y + 12, 20, LIGHTGRAY);
-  }
-}
-
-static void DrawRecentServers(ServerBrowserState* browser, Rectangle panel) {
-  DrawText("Recent Servers", (int)panel.x + 18, (int)panel.y + 14, 22, RAYWHITE);
-
-  if (browser->recent_count == 0) {
-    DrawText("No recent servers yet.", (int)panel.x + 18, (int)panel.y + 48, 18, GRAY);
-    DrawText("Joined servers will be saved here for later.", (int)panel.x + 18, (int)panel.y + 72,
-             18, GRAY);
-    return;
-  }
-
-  for (size_t index = 0; index < browser->recent_count; ++index) {
-    const ServerBrowserEntry* entry = &browser->recent_servers[index];
-    const int y = (int)panel.y + 44 + ((int)index * 34);
-    Rectangle button = {panel.x + 14.0f, (float)y, 256.0f, 28.0f};
-    if (GuiButton(button, entry->name)) {
-      snprintf(browser->direct_host_input, sizeof(browser->direct_host_input), "%s", entry->host);
-      snprintf(browser->direct_port_input, sizeof(browser->direct_port_input), "%d", entry->port);
-      browser->selected_recent_index = (int)index;
-      browser->validation_message[0] = '\0';
-    }
-  }
-}
-
-static void DrawDirectConnect(ServerBrowserState* browser, Rectangle panel,
-                              ShroomScreenManager* manager, Game* game) {
-  ServerBrowserEntry direct_entry;
-
-  DrawText("Direct Connect", (int)panel.x + 18, (int)panel.y + 14, 22, RAYWHITE);
-  DrawText("Host / IP", (int)panel.x + 18, (int)panel.y + 50, 18, LIGHTGRAY);
-  if (GuiTextBox((Rectangle){panel.x + 18.0f, panel.y + 74.0f, 256.0f, 34.0f},
-                 browser->direct_host_input, sizeof(browser->direct_host_input),
-                 browser->host_text_edit_mode)) {
-    browser->host_text_edit_mode = !browser->host_text_edit_mode;
-  }
-
-  DrawText("Port", (int)panel.x + 18, (int)panel.y + 122, 18, LIGHTGRAY);
-  if (GuiTextBox((Rectangle){panel.x + 18.0f, panel.y + 146.0f, 120.0f, 34.0f},
-                 browser->direct_port_input, sizeof(browser->direct_port_input),
-                 browser->port_text_edit_mode)) {
-    browser->port_text_edit_mode = !browser->port_text_edit_mode;
-  }
-
-  if (GuiButton((Rectangle){panel.x + 154.0f, panel.y + 146.0f, 120.0f, 34.0f}, "CONNECT")) {
-    if (ParseDirectConnect(browser, &direct_entry)) {
-      JoinServerEntry(manager, game, browser, &direct_entry);
-    }
-  }
-
-  if (browser->validation_message[0] != '\0') {
-    DrawText(browser->validation_message, (int)panel.x + 18, (int)panel.y + 190, 18, ORANGE);
-  } else {
-    DrawText("Enter a known host and port to bypass browsing.", (int)panel.x + 18,
-             (int)panel.y + 190, 18, GRAY);
-  }
 }
 
 static void ServerBrowserDraw(ShroomScreenManager* manager) {
   Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
-  ServerBrowserState* browser = &g_server_browser;
   const int screen_width = GetScreenWidth();
-  const Rectangle utility_panel = {40.0f, 144.0f, 292.0f, 430.0f};
-  const Rectangle recent_panel = {40.0f, 370.0f, 292.0f, 204.0f};
-  const Rectangle table_panel = {356.0f, 144.0f, (float)screen_width - 396.0f, 316.0f};
-  const bool can_join = CanJoinSelectedServer(browser);
-  const char* sort_order = browser->sort_descending ? "desc" : "asc";
+  const int screen_height = GetScreenHeight();
+  bool join_clicked = false;
 
-  BeginDrawing();
-  ClearBackground((Color){24, 28, 42, 255});
+  ClearBackground((Color){18, 20, 32, 255});
 
-  DrawText("SERVER BROWSER", screen_width / 2 - 148, 44, 34, RAYWHITE);
-  DrawText("Browse available servers, use direct connect, or jump back to a recent target.",
-           screen_width / 2 - 342, 84, 22, GRAY);
-
-  DrawRectangleRec(utility_panel, Fade(BLACK, 0.26f));
-  DrawRectangleLinesEx(utility_panel, 1.0f, Fade(RAYWHITE, 0.16f));
-  DrawDirectConnect(browser, utility_panel, manager, game);
-
-  DrawRectangleRec(recent_panel, Fade(BLACK, 0.26f));
-  DrawRectangleLinesEx(recent_panel, 1.0f, Fade(RAYWHITE, 0.16f));
-  DrawRecentServers(browser, recent_panel);
-
-  if (GuiButton((Rectangle){356, 108, 120, 28}, "REFRESH")) {
-    LoadSampleServers(browser);
-    StartLoading(browser, SERVER_BROWSER_RESULT_READY);
-  }
-  if (GuiButton((Rectangle){488, 108, 120, 28}, "SHOW EMPTY")) {
-    StartLoading(browser, SERVER_BROWSER_RESULT_EMPTY);
-  }
-  if (GuiButton((Rectangle){620, 108, 120, 28}, "SHOW ERROR")) {
-    StartLoading(browser, SERVER_BROWSER_RESULT_ERROR);
-  }
-  if (GuiButton((Rectangle){screen_width - 454, 108, 110, 28}, "SORT NAME")) {
-    ApplySortSelection(browser, SERVER_BROWSER_SORT_NAME);
-  }
-  if (GuiButton((Rectangle){screen_width - 332, 108, 110, 28}, "SORT PLAYERS")) {
-    ApplySortSelection(browser, SERVER_BROWSER_SORT_PLAYERS);
-  }
-  if (GuiButton((Rectangle){screen_width - 210, 108, 110, 28}, "SORT PING")) {
-    ApplySortSelection(browser, SERVER_BROWSER_SORT_PING);
+  ShroomImGui_SetNextWindowPos((float)screen_width * 0.06f, (float)screen_height * 0.08f,
+                               SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowSize((float)screen_width * 0.88f, (float)screen_height * 0.84f,
+                                SHROOM_IMGUI_COND_ALWAYS);
+  if (!ShroomImGui_Begin("Server Browser", NULL,
+                         SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
+                             SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
+                             SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
+    ShroomImGui_End();
+    return;
   }
 
-  DrawText(TextFormat("Sort: %s (%s)",
-                      browser->sort_key == SERVER_BROWSER_SORT_NAME
-                          ? "name"
-                          : (browser->sort_key == SERVER_BROWSER_SORT_PLAYERS ? "players" : "ping"),
-                      sort_order),
-           screen_width - 280, 468, 18, LIGHTGRAY);
-
-  DrawRectangleRec(table_panel, Fade(BLACK, 0.26f));
-  DrawRectangleLinesEx(table_panel, 1.0f, Fade(RAYWHITE, 0.16f));
-  if (browser->view_state == SERVER_BROWSER_VIEW_READY) {
-    DrawServerRows(browser, table_panel);
-  } else {
-    DrawStatePanel(browser, table_panel);
+  if (ShroomImGui_Button("Refresh", 120.0f, 0.0f)) {
+    LoadSampleServers();
+  }
+  ShroomImGui_SameLine();
+  if (ShroomImGui_Button("Sort Name", 120.0f, 0.0f)) {
+    g_server_browser.sort_key = SERVER_BROWSER_SORT_NAME;
+    g_server_browser.sort_descending = !g_server_browser.sort_descending;
+    SortEntries(g_server_browser.servers, g_server_browser.server_count);
+  }
+  ShroomImGui_SameLine();
+  if (ShroomImGui_Button("Sort Players", 120.0f, 0.0f)) {
+    g_server_browser.sort_key = SERVER_BROWSER_SORT_PLAYERS;
+    g_server_browser.sort_descending = !g_server_browser.sort_descending;
+    SortEntries(g_server_browser.servers, g_server_browser.server_count);
+  }
+  ShroomImGui_SameLine();
+  if (ShroomImGui_Button("Sort Ping", 120.0f, 0.0f)) {
+    g_server_browser.sort_key = SERVER_BROWSER_SORT_PING;
+    g_server_browser.sort_descending = !g_server_browser.sort_descending;
+    SortEntries(g_server_browser.servers, g_server_browser.server_count);
   }
 
-  DrawRectangle(356, 490, screen_width - 396, 92, Fade(BLACK, 0.26f));
-  DrawRectangleLines(356, 490, screen_width - 396, 92, Fade(RAYWHITE, 0.16f));
-  if (can_join) {
-    const ServerBrowserEntry* entry = &browser->servers[browser->selected_index];
-    DrawText(TextFormat("Selected: %s", entry->name), 376, 512, 24, RAYWHITE);
-    DrawText(TextFormat("Players %d/%d   Ping %d ms   %s:%d", entry->player_count,
-                        entry->player_capacity, entry->ping_ms, entry->host, entry->port),
-             376, 544, 20, LIGHTGRAY);
-  } else if (browser->view_state == SERVER_BROWSER_VIEW_LOADING) {
-    DrawText("Selection unavailable while the list is loading.", 376, 526, 22, GRAY);
-  } else if (browser->view_state == SERVER_BROWSER_VIEW_EMPTY) {
-    DrawText("No selection available. Use Direct Connect or Refresh.", 376, 526, 22, GRAY);
-  } else {
-    DrawText("Browser error state active. Use Direct Connect or Refresh.", 376, 526, 22, GRAY);
+  if (ShroomImGui_BeginTable("servers", 4,
+                             SHROOM_IMGUI_TABLE_BORDERS | SHROOM_IMGUI_TABLE_ROW_BG |
+                                 SHROOM_IMGUI_TABLE_SCROLL_Y | SHROOM_IMGUI_TABLE_SIZING_STRETCH,
+                             0.0f, 260.0f)) {
+    ShroomImGui_TableSetupColumn("Name", 0.0f);
+    ShroomImGui_TableSetupColumn("Players", 0.0f);
+    ShroomImGui_TableSetupColumn("Ping", 0.0f);
+    ShroomImGui_TableSetupColumn("Map", 0.0f);
+    ShroomImGui_TableHeadersRow();
+
+    for (size_t index = 0; index < g_server_browser.server_count; ++index) {
+      const ServerBrowserEntry* entry = &g_server_browser.servers[index];
+
+      ShroomImGui_TableNextRow();
+      ShroomImGui_TableSetColumnIndex(0);
+      if (ShroomImGui_Selectable(entry->name, g_server_browser.selected_index == (int)index,
+                                 SHROOM_IMGUI_SELECTABLE_SPAN_ALL_COLUMNS, 0.0f, 0.0f)) {
+        g_server_browser.selected_index = (int)index;
+      }
+      ShroomImGui_TableSetColumnIndex(1);
+      ShroomImGui_Text(TextFormat("%d/%d", entry->player_count, entry->player_capacity));
+      ShroomImGui_TableSetColumnIndex(2);
+      ShroomImGui_Text(TextFormat("%d ms", entry->ping_ms));
+      ShroomImGui_TableSetColumnIndex(3);
+      ShroomImGui_Text(entry->map_label);
+    }
+
+    ShroomImGui_EndTable();
   }
 
-  if (can_join && GuiButton((Rectangle){screen_width - 304, 512, 184, 48}, "JOIN SELECTED")) {
-    JoinServerEntry(manager, game, browser, &browser->servers[browser->selected_index]);
+  if ((g_server_browser.selected_index >= 0) &&
+      ((size_t)g_server_browser.selected_index < g_server_browser.server_count)) {
+    const ServerBrowserEntry* selected = &g_server_browser.servers[g_server_browser.selected_index];
+    ShroomImGui_Text(TextFormat("Selected: %s (%s:%d)", selected->name, selected->host,
+                                selected->port));
   }
-  if (GuiButton((Rectangle){screen_width - 304, 568, 184, 40}, "BACK")) {
+
+  if (ShroomImGui_Button("Join Selected", 150.0f, 0.0f)) {
+    join_clicked = true;
+  }
+  ShroomImGui_SameLine();
+  if (ShroomImGui_Button("Back", 120.0f, 0.0f)) {
     ShroomScreenManagerGoBack(manager);
   }
 
-  DrawText("Hotkeys: Up/Down select, Enter joins, R refreshes, Esc goes back", 40,
-           GetScreenHeight() - 36, 18, GRAY);
+  ShroomImGui_Separator();
+  ShroomImGui_Text("Direct Connect");
+  ShroomImGui_SetNextItemWidth(260.0f);
+  ShroomImGui_InputText("Host", g_server_browser.direct_host_input,
+                        sizeof(g_server_browser.direct_host_input));
+  ShroomImGui_SetNextItemWidth(140.0f);
+  ShroomImGui_InputText("Port", g_server_browser.direct_port_input,
+                        sizeof(g_server_browser.direct_port_input));
+  if (ShroomImGui_Button("Join Host", 150.0f, 0.0f)) {
+    ServerBrowserEntry direct_entry;
 
-  EndDrawing();
+    if (ParseDirectConnect(&direct_entry)) {
+      JoinServer(manager, game, &direct_entry);
+    }
+  }
+
+  if (g_server_browser.validation_message[0] != '\0') {
+    ShroomImGui_Text(g_server_browser.validation_message);
+  }
+
+  ShroomImGui_Separator();
+  ShroomImGui_Text("Recent Servers");
+  if (ShroomImGui_BeginTable("recent", 3,
+                             SHROOM_IMGUI_TABLE_BORDERS | SHROOM_IMGUI_TABLE_ROW_BG |
+                                 SHROOM_IMGUI_TABLE_SIZING_STRETCH,
+                             0.0f, 0.0f)) {
+    ShroomImGui_TableSetupColumn("Server", 0.0f);
+    ShroomImGui_TableSetupColumn("Address", 0.0f);
+    ShroomImGui_TableSetupColumn("Type", 0.0f);
+    ShroomImGui_TableHeadersRow();
+
+    for (size_t index = 0; index < g_server_browser.recent_count; ++index) {
+      const ServerBrowserEntry* entry = &g_server_browser.recent_servers[index];
+
+      ShroomImGui_TableNextRow();
+      ShroomImGui_TableSetColumnIndex(0);
+      if (ShroomImGui_Selectable(entry->name, g_server_browser.selected_recent_index == (int)index,
+                                 SHROOM_IMGUI_SELECTABLE_SPAN_ALL_COLUMNS, 0.0f, 0.0f)) {
+        g_server_browser.selected_recent_index = (int)index;
+      }
+      ShroomImGui_TableSetColumnIndex(1);
+      ShroomImGui_Text(TextFormat("%s:%d", entry->host, entry->port));
+      ShroomImGui_TableSetColumnIndex(2);
+      ShroomImGui_Text(entry->map_label);
+    }
+
+    ShroomImGui_EndTable();
+  }
+
+  if ((g_server_browser.selected_recent_index >= 0) &&
+      ((size_t)g_server_browser.selected_recent_index < g_server_browser.recent_count) &&
+      ShroomImGui_Button("Join Recent", 150.0f, 0.0f)) {
+    JoinServer(manager, game, &g_server_browser.recent_servers[g_server_browser.selected_recent_index]);
+  }
+
+  ShroomImGui_End();
+
+  if (join_clicked && (g_server_browser.selected_index >= 0) &&
+      ((size_t)g_server_browser.selected_index < g_server_browser.server_count)) {
+    JoinServer(manager, game, &g_server_browser.servers[g_server_browser.selected_index]);
+  }
 }
 
 static void ServerBrowserHandleInput(ShroomScreenManager* manager) {
-  Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
-  ServerBrowserState* browser = &g_server_browser;
-  ServerBrowserEntry direct_entry;
-
   if (IsKeyPressed(KEY_ESCAPE)) {
     ShroomScreenManagerGoBack(manager);
     return;
   }
-  if (IsKeyPressed(KEY_R)) {
-    LoadSampleServers(browser);
-    StartLoading(browser, SERVER_BROWSER_RESULT_READY);
-    return;
+
+  if ((g_server_browser.selected_index > 0) && IsKeyPressed(KEY_UP)) {
+    g_server_browser.selected_index -= 1;
   }
-  if (IsKeyPressed(KEY_ENTER) && (browser->host_text_edit_mode || browser->port_text_edit_mode)) {
-    if (ParseDirectConnect(browser, &direct_entry)) {
-      JoinServerEntry(manager, game, browser, &direct_entry);
-    }
-    return;
-  }
-  if (browser->view_state != SERVER_BROWSER_VIEW_READY) {
-    return;
-  }
-  if (IsKeyPressed(KEY_DOWN) && (browser->selected_index + 1 < (int)browser->server_count)) {
-    browser->selected_index += 1;
-  }
-  if (IsKeyPressed(KEY_UP) && (browser->selected_index > 0)) {
-    browser->selected_index -= 1;
-  }
-  if ((IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_J)) && CanJoinSelectedServer(browser)) {
-    JoinServerEntry(manager, game, browser, &browser->servers[browser->selected_index]);
+  if (((size_t)(g_server_browser.selected_index + 1) < g_server_browser.server_count) &&
+      IsKeyPressed(KEY_DOWN)) {
+    g_server_browser.selected_index += 1;
   }
 }
 
 void ShroomScreenRegisterServerBrowser(ShroomScreenManager* manager) {
+  ShroomScreen* screen;
+
   if (manager == NULL) {
     return;
   }
 
-  ShroomScreen* screen = &manager->screens[SHROOM_SCREEN_SERVER_BROWSER];
+  screen = &manager->screens[SHROOM_SCREEN_SERVER_BROWSER];
   screen->type = SHROOM_SCREEN_SERVER_BROWSER;
   screen->name = "Server Browser";
   screen->init = ServerBrowserInit;
-  screen->update = ServerBrowserUpdate;
   screen->draw = ServerBrowserDraw;
   screen->handle_input = ServerBrowserHandleInput;
 }

@@ -1,7 +1,7 @@
-#include <stddef.h>
 #include "screen.h"
+
+#include "imgui_wrapper.h"
 #include "raylib.h"
-#include "raygui.h"
 
 static bool CreditsInit(ShroomScreenManager* manager) {
   (void)manager;
@@ -9,27 +9,34 @@ static bool CreditsInit(ShroomScreenManager* manager) {
 }
 
 static void CreditsDraw(ShroomScreenManager* manager) {
-  (void)manager;
+  const int screen_width = GetScreenWidth();
+  const int screen_height = GetScreenHeight();
 
-  BeginDrawing();
-  ClearBackground((Color){30, 30, 50, 255});
+  ClearBackground((Color){18, 20, 32, 255});
 
-  int screen_width = GetScreenWidth();
+  ShroomImGui_SetNextWindowPos((screen_width - 460) * 0.5f, (screen_height - 300) * 0.5f,
+                               SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowSize(460.0f, 300.0f, SHROOM_IMGUI_COND_ALWAYS);
+  if (!ShroomImGui_Begin("Credits", NULL,
+                         SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
+                             SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
+                             SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
+    ShroomImGui_End();
+    return;
+  }
 
-  GuiLabel((Rectangle){screen_width / 2 - 100, 50, 200, 40}, "CREDITS");
+  ShroomImGui_Text("shroomio");
+  ShroomImGui_TextWrapped("A multiplayer arena prototype focused on readable movement, fast iteration, and eventually a full Dear ImGui-driven client UI.");
+  ShroomImGui_Separator();
+  ShroomImGui_Text("Built with raylib, Dear ImGui, ENet, and SQLite.");
+  ShroomImGui_TextWrapped("Thanks to the upstream open-source projects that make this kind of iteration speed possible.");
+  ShroomImGui_Spacing();
 
-  DrawText("shroomio", 100, 150, 30, WHITE);
-  DrawText("A multiplayer arena game", 100, 200, 20, GRAY);
-  DrawText("Built with raylib and raygui", 100, 240, 20, GRAY);
-
-  int button_width = 200;
-  int button_x = screen_width / 2 - button_width / 2;
-
-  if (GuiButton((Rectangle){button_x, 400, button_width, 50}, "BACK")) {
+  if (ShroomImGui_Button("Back", 140.0f, 36.0f)) {
     ShroomScreenManagerGoBack(manager);
   }
 
-  EndDrawing();
+  ShroomImGui_End();
 }
 
 static void CreditsHandleInput(ShroomScreenManager* manager) {
@@ -39,10 +46,13 @@ static void CreditsHandleInput(ShroomScreenManager* manager) {
 }
 
 void ShroomScreenRegisterCredits(ShroomScreenManager* manager) {
-  if (manager == NULL)
-    return;
+  ShroomScreen* screen;
 
-  ShroomScreen* screen = &manager->screens[SHROOM_SCREEN_CREDITS];
+  if (manager == NULL) {
+    return;
+  }
+
+  screen = &manager->screens[SHROOM_SCREEN_CREDITS];
   screen->type = SHROOM_SCREEN_CREDITS;
   screen->name = "Credits";
   screen->init = CreditsInit;
