@@ -9,6 +9,7 @@ on:
       - 'Makefile'
       - '.clang-format'
       - '.github/workflows/**'
+      - '.devcontainer/**'
       - 'design/**'
       - 'docs/**'
 
