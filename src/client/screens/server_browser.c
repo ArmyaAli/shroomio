@@ -152,8 +152,7 @@ static void LoadRecentServers(void) {
          (fgets(line, sizeof(line), file) != NULL)) {
     ServerBrowserEntry* entry = &g_server_browser.recent_servers[g_server_browser.recent_count];
     char* separator;
-    char* port_text;
-    char* map_label;
+    char* next_separator;
 
     line[strcspn(line, "\r\n")] = '\0';
     separator = strchr(line, '|');
@@ -163,23 +162,28 @@ static void LoadRecentServers(void) {
     *separator = '\0';
     CopyText(entry->name, sizeof(entry->name), line);
 
-    port_text = separator + 1;
-    separator = strchr(port_text, '|');
-    if (separator == NULL) {
-      continue;
-    }
-    *separator = '\0';
-    CopyText(entry->host, sizeof(entry->host), port_text);
+    {
+      char* const port_text = separator + 1;
 
-    map_label = separator + 1;
-    separator = strchr(map_label, '|');
-    if (separator == NULL) {
-      continue;
+      next_separator = strchr(port_text, '|');
+      if (next_separator == NULL) {
+        continue;
+      }
+      *next_separator = '\0';
+      CopyText(entry->host, sizeof(entry->host), port_text);
     }
-    *separator = '\0';
-    entry->port = atoi(map_label);
-    map_label = separator + 1;
-    CopyText(entry->map_label, sizeof(entry->map_label), map_label);
+
+    {
+      char* const port_value = next_separator + 1;
+      char* const map_text = strchr(port_value, '|');
+
+      if (map_text == NULL) {
+        continue;
+      }
+      *map_text = '\0';
+      entry->port = atoi(port_value);
+      CopyText(entry->map_label, sizeof(entry->map_label), map_text + 1);
+    }
 
     entry->player_count = 0;
     entry->player_capacity = 0;

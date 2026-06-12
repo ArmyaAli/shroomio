@@ -79,7 +79,7 @@ static void UpdateKeyboardState(void) {
 }
 
 static void EnableScissor(float x, float y, float width, float height) {
-  ImGuiIO& io = ImGui::GetIO();
+  const ImGuiIO& io = ImGui::GetIO();
 
   rlEnableScissorTest();
   rlScissor((int)x, (int)(io.DisplaySize.y - (y + height)), (int)width, (int)height);
@@ -145,9 +145,9 @@ bool ImGui_ImplRaylib_Init(void) {
 }
 
 void ImGui_ImplRaylib_Shutdown(void) {
-  ImGuiIO& io = ImGui::GetIO();
+  ImFontAtlas* fonts = ImGui::GetIO().Fonts;
 
-  io.Fonts->TexID = 0;
+  fonts->TexID = 0;
   if (g_FontTexture.id != 0) {
     UnloadTexture(g_FontTexture);
     g_FontTexture.id = 0;
