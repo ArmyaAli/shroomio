@@ -309,7 +309,6 @@ ShroomAuthResult ShroomAuthLoginAnonymous(ShroomAuthContext* ctx, const char* us
   sqlite3_bind_text(stmt, 1, username, -1, SQLITE_STATIC);
 
   uint32_t user_id = 0;
-  uint32_t player_id = 0;
 
   if (sqlite3_step(stmt) == SQLITE_ROW) {
     user_id = (uint32_t)sqlite3_column_int64(stmt, 0);
@@ -338,7 +337,7 @@ ShroomAuthResult ShroomAuthLoginAnonymous(ShroomAuthContext* ctx, const char* us
       return SHROOM_AUTH_DATABASE_ERROR;
     }
     sqlite3_finalize(stmt);
-    player_id = (uint32_t)sqlite3_last_insert_rowid(ctx->db);
+    uint32_t player_id = (uint32_t)sqlite3_last_insert_rowid(ctx->db);
 
     const char* insert_stats_sql = "INSERT INTO player_stats (player_id) VALUES (?)";
     sqlite3_prepare_v2(ctx->db, insert_stats_sql, -1, &stmt, NULL);
