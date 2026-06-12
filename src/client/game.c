@@ -2,6 +2,7 @@
 
 #include <math.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 #include "raymath.h"
@@ -656,10 +657,22 @@ static ShroomVec2 GetMovementInput(const Game* game) {
 }
 
 void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode mode) {
+  char selected_server_host[sizeof(game->selected_server_host)] = {0};
+  uint16_t selected_server_port = game->selected_server_port;
+
+  if (game->selected_server_host[0] != '\0') {
+    snprintf(selected_server_host, sizeof(selected_server_host), "%s", game->selected_server_host);
+  }
+
   *game = (Game){0};
 
   game->selected_mode = mode;
   game->active_mode = mode;
+  game->selected_server_port = selected_server_port;
+  if (selected_server_host[0] != '\0') {
+    snprintf(game->selected_server_host, sizeof(game->selected_server_host), "%s",
+             selected_server_host);
+  }
   game->screen_width = screen_width;
   game->screen_height = screen_height;
 
@@ -667,7 +680,11 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
   game->local_player = ShroomWorldSpawnPlayer(&game->world, 1, false);
 
   if (IsOnlineMode(mode)) {
-    ClientNetInit(&game->net, "127.0.0.1", SHROOM_SERVER_PORT);
+    const char* host_name =
+        game->selected_server_host[0] != '\0' ? game->selected_server_host : "127.0.0.1";
+    const uint16_t port =
+        game->selected_server_port != 0 ? game->selected_server_port : SHROOM_SERVER_PORT;
+    ClientNetInit(&game->net, host_name, port);
   } else {
     size_t bot_index;
 

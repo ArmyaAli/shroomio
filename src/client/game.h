@@ -25,6 +25,8 @@ typedef struct Game {
   ShroomPlayerState* local_player;
   GameSessionMode selected_mode;
   GameSessionMode active_mode;
+  char selected_server_host[64];
+  uint16_t selected_server_port;
   ShroomZone current_zone;
   ShroomPendingInput pending_inputs[SHROOM_CLIENT_PENDING_INPUT_CAPACITY];
   uint32_t pending_input_count;
