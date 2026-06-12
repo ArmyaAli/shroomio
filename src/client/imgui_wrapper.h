@@ -78,8 +78,7 @@ void ShroomImGui_TableSetupColumn(const char* label, float width);
 void ShroomImGui_TableHeadersRow(void);
 void ShroomImGui_TableNextRow(void);
 void ShroomImGui_TableSetColumnIndex(int index);
-bool ShroomImGui_Selectable(const char* label, bool selected, int flags, float width,
-                            float height);
+bool ShroomImGui_Selectable(const char* label, bool selected, int flags, float width, float height);
 
 #ifdef __cplusplus
 }

@@ -99,17 +99,17 @@ static void SortEntries(ServerBrowserEntry* entries, size_t count) {
 static void LoadSampleServers(void) {
   g_server_browser.server_count = 5;
 
-  g_server_browser.servers[0] = (ServerBrowserEntry){"Local Development", "127.0.0.1", 3, 32, 12,
-                                                     SHROOM_SERVER_PORT, "Arena / Local"};
-  g_server_browser.servers[1] = (ServerBrowserEntry){"Canopy Clash EU", "eu.shroomio.dev", 24, 32,
-                                                     46, SHROOM_SERVER_PORT, "Arena / Public"};
-  g_server_browser.servers[2] = (ServerBrowserEntry){"Spore Sprint NA", "na.shroomio.dev", 17, 32,
-                                                     78, SHROOM_SERVER_PORT, "Arena / Ranked"};
-  g_server_browser.servers[3] = (ServerBrowserEntry){"Outer Ring Learn", "practice.shroomio.dev",
-                                                     8, 16, 33, SHROOM_SERVER_PORT,
-                                                     "Practice / Casual"};
-  g_server_browser.servers[4] = (ServerBrowserEntry){"Center Rush", "rush.shroomio.dev", 29, 32,
-                                                     61, SHROOM_SERVER_PORT, "Arena / High Risk"};
+  g_server_browser.servers[0] = (ServerBrowserEntry){"Local Development", "127.0.0.1",    3, 32, 12,
+                                                     SHROOM_SERVER_PORT,  "Arena / Local"};
+  g_server_browser.servers[1] = (ServerBrowserEntry){
+      "Canopy Clash EU", "eu.shroomio.dev", 24, 32, 46, SHROOM_SERVER_PORT, "Arena / Public"};
+  g_server_browser.servers[2] = (ServerBrowserEntry){
+      "Spore Sprint NA", "na.shroomio.dev", 17, 32, 78, SHROOM_SERVER_PORT, "Arena / Ranked"};
+  g_server_browser.servers[3] =
+      (ServerBrowserEntry){"Outer Ring Learn", "practice.shroomio.dev", 8, 16, 33,
+                           SHROOM_SERVER_PORT, "Practice / Casual"};
+  g_server_browser.servers[4] = (ServerBrowserEntry){
+      "Center Rush", "rush.shroomio.dev", 29, 32, 61, SHROOM_SERVER_PORT, "Arena / High Risk"};
   SortEntries(g_server_browser.servers, g_server_browser.server_count);
 }
 
@@ -226,16 +226,16 @@ static bool ParseDirectConnect(ServerBrowserEntry* entry) {
   long port;
 
   if (g_server_browser.direct_host_input[0] == '\0') {
-    snprintf(g_server_browser.validation_message, sizeof(g_server_browser.validation_message),
-             "%s", "Host or IP is required.");
+    snprintf(g_server_browser.validation_message, sizeof(g_server_browser.validation_message), "%s",
+             "Host or IP is required.");
     return false;
   }
 
   port = strtol(g_server_browser.direct_port_input, &end, 10);
   if ((g_server_browser.direct_port_input[0] == '\0') || (end == NULL) || (*end != '\0') ||
       (port < 1) || (port > 65535)) {
-    snprintf(g_server_browser.validation_message, sizeof(g_server_browser.validation_message),
-             "%s", "Port must be between 1 and 65535.");
+    snprintf(g_server_browser.validation_message, sizeof(g_server_browser.validation_message), "%s",
+             "Port must be between 1 and 65535.");
     return false;
   }
 
@@ -350,8 +350,8 @@ static void ServerBrowserDraw(ShroomScreenManager* manager) {
   if ((g_server_browser.selected_index >= 0) &&
       ((size_t)g_server_browser.selected_index < g_server_browser.server_count)) {
     const ServerBrowserEntry* selected = &g_server_browser.servers[g_server_browser.selected_index];
-    ShroomImGui_Text(TextFormat("Selected: %s (%s:%d)", selected->name, selected->host,
-                                selected->port));
+    ShroomImGui_Text(
+        TextFormat("Selected: %s (%s:%d)", selected->name, selected->host, selected->port));
   }
 
   if (ShroomImGui_Button("Join Selected", 150.0f, 0.0f)) {
@@ -414,7 +414,8 @@ static void ServerBrowserDraw(ShroomScreenManager* manager) {
   if ((g_server_browser.selected_recent_index >= 0) &&
       ((size_t)g_server_browser.selected_recent_index < g_server_browser.recent_count) &&
       ShroomImGui_Button("Join Recent", 150.0f, 0.0f)) {
-    JoinServer(manager, game, &g_server_browser.recent_servers[g_server_browser.selected_recent_index]);
+    JoinServer(manager, game,
+               &g_server_browser.recent_servers[g_server_browser.selected_recent_index]);
   }
 
   ShroomImGui_End();

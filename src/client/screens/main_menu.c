@@ -36,7 +36,8 @@ static void MainMenuDraw(ShroomScreenManager* manager) {
   }
 
   ShroomImGui_Text("SHROOMIO");
-  ShroomImGui_TextWrapped("Grow by collecting spores, out-position bigger threats, and take over the arena.");
+  ShroomImGui_TextWrapped(
+      "Grow by collecting spores, out-position bigger threats, and take over the arena.");
   ShroomImGui_Spacing();
 
   if (ShroomImGui_Button("Quick Play", -1.0f, 38.0f)) {

@@ -1,35 +1,42 @@
-# =============================================================================
-# shroomio Makefile
-# =============================================================================
-# Build system for the shroomio multiplayer arena game.
+#== == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==   \
+    == == == == == == =
+#shroomio Makefile
+#== == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==   \
+    == == == == == == =
+#Build system for the shroomio multiplayer arena game.
 #
-# Sections:
-#   1. Project Configuration - Core project settings and version info
-#   2. Directory Paths       - Source, build, and output directories
-#   3. Compiler Settings     - Compilers, flags, and libraries
-#   4. Source Files          - Lists of source files and objects
-#   5. Build Targets         - Main build targets (linux, windows, server)
-#   6. Compilation Rules     - Pattern rules for compiling objects
-#   7. Vendor Dependencies   - raylib, ImGui, enet, Unity downloads
-#   8. Test Targets          - Unit test compilation and execution
-#   9. Docker Targets        - Container builds for server and devcontainer
-#   10. Lint & Format        - Code formatting and static analysis
-#   11. Documentation        - LaTeX specification build
-#   12. Cleanup              - Clean and distclean targets
-# =============================================================================
+#Sections:
+# 1. Project Configuration - Core project settings and version info
+# 2. Directory Paths - Source, build, and output directories
+# 3. Compiler Settings - Compilers, flags, and libraries
+# 4. Source Files - Lists of source files and objects
+# 5. Build Targets - Main build targets(linux, windows, server)
+# 6. Compilation Rules - Pattern rules for compiling objects
+# 7. Vendor Dependencies - raylib, ImGui, enet, Unity downloads
+# 8. Test Targets - Unit test compilation and execution
+# 9. Docker Targets - Container builds for server and devcontainer
+# 10. Lint & Format - Code formatting and static analysis
+# 11. Documentation - LaTeX specification build
+# 12. Cleanup - Clean and distclean targets
+#== == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==   \
+    == == == == == == =
 
-# =============================================================================
+#== == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==   \
+    == == == == == == =
 # 1. Project Configuration
-# =============================================================================
+#== == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==   \
+    == == == == == == =
 PROJECT := shroomio
 
 RAYLIB_VERSION := 5.5
 IMGUI_VERSION  := 1.91.8
 UNITY_VERSION  := 2.6.0
 
-# =============================================================================
+#== == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==   \
+    == == == == == == =
 # 2. Directory Paths
-# =============================================================================
+#== == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==   \
+    == == == == == == =
 SRC_DIR         := src
 CLIENT_SRC_DIR  := $(SRC_DIR)/client
 SERVER_SRC_DIR  := $(SRC_DIR)/server
@@ -43,14 +50,16 @@ LINUX_BUILD_DIR   := $(BUILD_DIR)/linux
 WINDOWS_BUILD_DIR := $(BUILD_DIR)/windows
 TEST_BUILD_DIR    := $(BUILD_DIR)/tests
 
-# Output binaries
+#Output binaries
 LINUX_BIN  := $(DIST_DIR)/$(PROJECT)
 WINDOWS_BIN := $(DIST_DIR)/$(PROJECT).exe
 SERVER_BIN := $(DIST_DIR)/$(PROJECT)-server
 
-# =============================================================================
+#== == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==   \
+    == == == == == == =
 # 3. Vendor Dependencies
-# =============================================================================
+#== == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==   \
+    == == == == == == =
 RAYLIB_DIR := vendor/raylib-$(RAYLIB_VERSION)
 RAYLIB_URL := https://github.com/raysan5/raylib/archive/refs/tags/$(RAYLIB_VERSION).tar.gz
 RAYLIB_SRC_DIR := $(RAYLIB_DIR)/src
@@ -70,35 +79,37 @@ UNITY_SRC_DIR := $(UNITY_DIR)/src
 UNITY_SRC := $(UNITY_SRC_DIR)/unity.c
 UNITY_INCLUDE := -I$(UNITY_SRC_DIR)
 
-# Warning flags
+#Warning flags
 COMMON_WARNINGS := -Wall -Wextra -Wpedantic
 VENDOR_WARNINGS := -Wall -Wextra
 
-# Include directories
+#Include directories
 COMMON_INCLUDE_DIRS := -I$(SRC_DIR) -I$(CLIENT_SRC_DIR) -I$(SERVER_SRC_DIR) -I$(SHARED_SRC_DIR)
 
-# Test compiler flags
+#Test compiler flags
 TEST_CFLAGS := -std=c11 -O0 -g $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
                $(UNITY_INCLUDE) -DTEST_MODE -D_POSIX_C_SOURCE=199309L -D_DEFAULT_SOURCE
 TEST_LIBS   := -lm
 
-# =============================================================================
+#== == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==   \
+    == == == == == == =
 # 4. Compiler Settings
-# =============================================================================
+#== == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==   \
+    == == == == == == =
 LINUX_CC    ?= cc
 WINDOWS_CC  ?= x86_64-w64-mingw32-gcc
 LINUX_CXX   ?= c++
 WINDOWS_CXX ?= x86_64-w64-mingw32-g++
 AR          ?= ar
 
-# Tools
+#Tools
 CURL    ?= curl
 TAR     ?= tar
 MKDIR_P ?= mkdir -p
 RM_RF   ?= rm -rf
 DOCKER  ?= docker
 
-# Client compiler flags (raylib-based)
+#Client compiler flags(raylib - based)
 COMMON_CFLAGS := -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
                  -I$(RAYLIB_SRC_DIR) -I$(RAYLIB_GLFW_INCLUDE_DIR) -I$(ENET_INCLUDE_DIR)
 COMMON_CXXFLAGS := -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
@@ -109,12 +120,12 @@ WINDOWS_CFLAGS := $(COMMON_CFLAGS) -DPLATFORM_DESKTOP
 LINUX_CXXFLAGS := $(COMMON_CXXFLAGS) -DPLATFORM_DESKTOP -D_DEFAULT_SOURCE
 WINDOWS_CXXFLAGS := $(COMMON_CXXFLAGS) -DPLATFORM_DESKTOP
 
-# Server compiler flags (headless, ENet-based)
+#Server compiler flags(headless, ENet - based)
 SERVER_CFLAGS := -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
                  -I$(ENET_INCLUDE_DIR) -D_POSIX_C_SOURCE=199309L -D_DEFAULT_SOURCE
 SERVER_LIBS   := -lm -lsqlite3
 
-# Raylib vendor compiler flags
+#Raylib vendor compiler flags
 LINUX_RAYLIB_CFLAGS   := -std=c11 -O2 $(VENDOR_WARNINGS) -I$(SRC_DIR) \
                          -I$(RAYLIB_SRC_DIR) -I$(RAYLIB_GLFW_INCLUDE_DIR) \
                          -DPLATFORM_DESKTOP -D_DEFAULT_SOURCE -D_GLFW_X11
@@ -122,25 +133,27 @@ WINDOWS_RAYLIB_CFLAGS := -std=c11 -O2 $(VENDOR_WARNINGS) -I$(SRC_DIR) \
                          -I$(RAYLIB_SRC_DIR) -I$(RAYLIB_GLFW_INCLUDE_DIR) \
                          -DPLATFORM_DESKTOP
 
-# Test compiler flags (UNITY_INCLUDE defined in vendor section)
+#Test compiler flags(UNITY_INCLUDE defined in vendor section)
 TEST_LIBS := -lm
 
-# Platform link libraries
+#Platform link libraries
 LINUX_LIBS   := -lGL -lm -ldl -lpthread -lrt -lX11 -lXrandr -lXi -lXcursor -lXinerama -lasound
 WINDOWS_LIBS := -lopengl32 -lgdi32 -lwinmm -lws2_32
 
-# =============================================================================
+#== == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==   \
+    == == == == == == =
 # 5. Source Files and Objects
-# =============================================================================
+#== == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==   \
+    == == == == == == =
 
-# Raylib source files
+#Raylib source files
 RAYLIB_SOURCE_NAMES := rcore rmodels rshapes rtext rtextures utils raudio rglfw
 LINUX_RAYLIB_OBJECTS   := $(addprefix $(LINUX_BUILD_DIR)/raylib/,$(addsuffix .o,$(RAYLIB_SOURCE_NAMES)))
 WINDOWS_RAYLIB_OBJECTS := $(addprefix $(WINDOWS_BUILD_DIR)/raylib/,$(addsuffix .o,$(RAYLIB_SOURCE_NAMES)))
 LINUX_RAYLIB_LIB   := $(LINUX_BUILD_DIR)/libraylib.a
 WINDOWS_RAYLIB_LIB := $(WINDOWS_BUILD_DIR)/libraylib.a
 
-# Dear ImGui source files
+#Dear ImGui source files
 IMGUI_CORE_SOURCES := imgui imgui_draw imgui_tables imgui_widgets
 LINUX_IMGUI_OBJECTS := $(addprefix $(LINUX_BUILD_DIR)/imgui/,$(addsuffix .o,$(IMGUI_CORE_SOURCES))) \
 	$(LINUX_BUILD_DIR)/client/imgui_impl_raylib.o \
@@ -149,7 +162,7 @@ WINDOWS_IMGUI_OBJECTS := $(addprefix $(WINDOWS_BUILD_DIR)/imgui/,$(addsuffix .o,
 	$(WINDOWS_BUILD_DIR)/client/imgui_impl_raylib.o \
 	$(WINDOWS_BUILD_DIR)/client/imgui_wrapper.o
 
-# Client source files
+#Client source files
 CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/main.c \
 	$(CLIENT_SRC_DIR)/client_settings.c \
@@ -166,7 +179,7 @@ CLIENT_SOURCES := \
 	$(SHARED_SRC_DIR)/lifecycle.c \
 	$(SHARED_SRC_DIR)/connection.c
 
-# Server source files
+#Server source files
 SERVER_SOURCES := \
 	$(SERVER_SRC_DIR)/main.c \
 	$(SERVER_SRC_DIR)/logger.c \
@@ -175,7 +188,7 @@ SERVER_SOURCES := \
 	$(SHARED_SRC_DIR)/lifecycle.c \
 	$(SHARED_SRC_DIR)/connection.c
 
-# Shared headers (dependencies for all modules)
+#Shared headers(dependencies for all modules)
 SHARED_HEADERS := \
 	$(SHARED_SRC_DIR)/config.h \
 	$(SHARED_SRC_DIR)/vec2.h \
@@ -186,14 +199,14 @@ SHARED_HEADERS := \
 	$(SHARED_SRC_DIR)/connection.h \
 	$(SERVER_SRC_DIR)/auth.h
 
-# ENet source files
+#ENet source files
 ENET_COMMON_SOURCE_NAMES  := callbacks compress host list packet peer protocol
 ENET_LINUX_SOURCE_NAMES   := unix
 ENET_WINDOWS_SOURCE_NAMES := win32
 LINUX_ENET_SOURCES   := $(addprefix $(ENET_DIR)/,$(addsuffix .c,$(ENET_COMMON_SOURCE_NAMES) $(ENET_LINUX_SOURCE_NAMES)))
 WINDOWS_ENET_SOURCES := $(addprefix $(ENET_DIR)/,$(addsuffix .c,$(ENET_COMMON_SOURCE_NAMES) $(ENET_WINDOWS_SOURCE_NAMES)))
 
-# Object files
+#Object files
 LINUX_APP_OBJECTS   := $(patsubst $(SRC_DIR)/%.c,$(LINUX_BUILD_DIR)/%.o,$(CLIENT_SOURCES))
 WINDOWS_APP_OBJECTS := $(patsubst $(SRC_DIR)/%.c,$(WINDOWS_BUILD_DIR)/%.o,$(CLIENT_SOURCES))
 SERVER_OBJECTS      := $(patsubst $(SRC_DIR)/%.c,$(LINUX_BUILD_DIR)/%.o,$(SERVER_SOURCES))
@@ -201,7 +214,7 @@ LINUX_ENET_OBJECTS  := $(patsubst $(ENET_DIR)/%.c,$(LINUX_BUILD_DIR)/vendor/enet
 WINDOWS_ENET_OBJECTS := $(patsubst $(ENET_DIR)/%.c,$(WINDOWS_BUILD_DIR)/vendor/enet/%.o,$(WINDOWS_ENET_SOURCES))
 SERVER_ENET_OBJECTS := $(LINUX_ENET_OBJECTS)
 
-# Test files
+#Test files
 TEST_SRCS := $(wildcard $(UNIT_TESTS_DIR)/*.c)
 TEST_BINS := $(patsubst $(UNIT_TESTS_DIR)/%.c,$(TEST_BUILD_DIR)/%,$(TEST_SRCS))
 

@@ -26,7 +26,8 @@ static void HelpDraw(ShroomScreenManager* manager) {
     return;
   }
 
-  ShroomImGui_TextWrapped("Stay alive by growing faster than the lobby. Movement follows the mouse, with keyboard nudging available for sharper cuts and escapes.");
+  ShroomImGui_TextWrapped("Stay alive by growing faster than the lobby. Movement follows the "
+                          "mouse, with keyboard nudging available for sharper cuts and escapes.");
   ShroomImGui_Separator();
   ShroomImGui_Text("Core Rules");
   ShroomImGui_TextWrapped("Collect spores to gain mass and become harder to consume.");
@@ -35,7 +36,8 @@ static void HelpDraw(ShroomScreenManager* manager) {
   ShroomImGui_TextWrapped("The center zone is the riskiest but has the biggest swing potential.");
   ShroomImGui_Separator();
   ShroomImGui_Text("Overlay Shortcuts");
-  ShroomImGui_TextWrapped("Tab opens the leaderboard, Esc opens the match menu, and F3 toggles diagnostics.");
+  ShroomImGui_TextWrapped(
+      "Tab opens the leaderboard, Esc opens the match menu, and F3 toggles diagnostics.");
   ShroomImGui_Spacing();
 
   if (ShroomImGui_Button("Back", 140.0f, 36.0f)) {

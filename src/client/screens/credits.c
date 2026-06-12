@@ -26,10 +26,12 @@ static void CreditsDraw(ShroomScreenManager* manager) {
   }
 
   ShroomImGui_Text("shroomio");
-  ShroomImGui_TextWrapped("A multiplayer arena prototype focused on readable movement, fast iteration, and eventually a full Dear ImGui-driven client UI.");
+  ShroomImGui_TextWrapped("A multiplayer arena prototype focused on readable movement, fast "
+                          "iteration, and eventually a full Dear ImGui-driven client UI.");
   ShroomImGui_Separator();
   ShroomImGui_Text("Built with raylib, Dear ImGui, ENet, and SQLite.");
-  ShroomImGui_TextWrapped("Thanks to the upstream open-source projects that make this kind of iteration speed possible.");
+  ShroomImGui_TextWrapped("Thanks to the upstream open-source projects that make this kind of "
+                          "iteration speed possible.");
   ShroomImGui_Spacing();
 
   if (ShroomImGui_Button("Back", 140.0f, 36.0f)) {
