@@ -531,6 +531,9 @@ test-coverage:
 			test_connection) \
 				$(LINUX_CC) $(TEST_CFLAGS) -fprofile-arcs -ftest-coverage \
 					$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/connection.c -o $$test_bin $(TEST_LIBS) -lgcov ;; \
+			test_sim) \
+				$(LINUX_CC) $(TEST_CFLAGS) -fprofile-arcs -ftest-coverage \
+					$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/sim.c -o $$test_bin $(TEST_LIBS) -lgcov ;; \
 			*) \
 				$(LINUX_CC) $(TEST_CFLAGS) -fprofile-arcs -ftest-coverage \
 					$$src $(UNITY_SRC) -o $$test_bin $(TEST_LIBS) -lgcov ;; \
@@ -566,6 +569,10 @@ $(TEST_BUILD_DIR)/test_screen: $(UNIT_TESTS_DIR)/test_screen.c $(UNITY_SRC) $(CL
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
 $(TEST_BUILD_DIR)/test_connection: $(UNIT_TESTS_DIR)/test_connection.c $(UNITY_SRC) $(SHARED_SRC_DIR)/connection.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_sim: $(UNIT_TESTS_DIR)/test_sim.c $(UNITY_SRC) $(SHARED_SRC_DIR)/sim.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
