@@ -1,6 +1,6 @@
 # Shroomio Database
 
-This directory contains the database schema and migrations for persistent storage in the shroomio server.
+This directory contains the database schema for persistent storage in the shroomio server.
 
 ## Overview
 
@@ -8,20 +8,19 @@ The shroomio server uses SQLite for persistent storage of:
 - Player statistics and history
 - Game session records
 - Match events for analytics
+- User authentication and session tokens
 
 ## Directory Structure
 
 ```
 database/
-├── migrations/
-│   ├── 001_initial_schema.sql    # Core schema definition
-│   └── 001_seed_data.sql         # Sample data for development
+├── schema.sql    # Consolidated schema definition
 └── README.md
 ```
 
 ## Schema
 
-The database consists of five core tables:
+The database consists of seven core tables:
 
 ### players
 Tracks all known players by UUID and display name. Updated on each session participation.
@@ -38,15 +37,15 @@ Cumulative statistics per player: games played, kills, deaths, mass consumed, di
 ### match_events
 Significant in-game events (spawns, deaths, consumptions) for analytics and replay purposes.
 
-## Migrations
+### users
+Authentication accounts linked to players. Supports password, Discord OAuth, and anonymous authentication methods.
 
-Migration files are applied in lexicographic order on server startup. The naming convention is:
+### auth_tokens
+Active session tokens for authenticated users with expiration tracking.
 
-```
-NNN_description.sql
-```
+## Database Schema
 
-Where `NNN` is a zero-padded migration number (e.g., `001`, `002`).
+The schema is maintained in a single `schema.sql` file. Since we're pre-production, we maintain one consolidated schema file that represents the current database state. As features are added, the schema file is updated directly rather than using incremental migrations.
 
 ## Database Location
 
@@ -54,11 +53,10 @@ By default, the SQLite database file is created at `data/shroomio.db` relative t
 
 ## Development
 
-To initialize the database with seed data for development:
+To initialize the database for development:
 
 ```bash
-sqlite3 data/shroomio.db < database/migrations/001_initial_schema.sql
-sqlite3 data/shroomio.db < database/migrations/001_seed_data.sql
+sqlite3 data/shroomio.db < database/schema.sql
 ```
 
 ## Views
