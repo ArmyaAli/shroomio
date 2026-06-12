@@ -15,6 +15,7 @@ int main(void) {
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_INIT);
 
   InitWindow(screen_width, screen_height, "shroomio");
+  SetExitKey(KEY_NULL);
   SetTargetFPS(60);
 
   ShroomScreenManagerInit(&g_screen_manager);
