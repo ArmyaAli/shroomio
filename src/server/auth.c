@@ -315,16 +315,6 @@ ShroomAuthResult ShroomAuthLoginAnonymous(ShroomAuthContext* ctx, const char* us
   if (sqlite3_step(stmt) == SQLITE_ROW) {
     user_id = (uint32_t)sqlite3_column_int64(stmt, 0);
     sqlite3_finalize(stmt);
-
-    const char* get_player_sql = "SELECT player_id FROM users WHERE id = ?";
-    if (sqlite3_prepare_v2(ctx->db, get_player_sql, -1, &stmt, NULL) != SQLITE_OK) {
-      return SHROOM_AUTH_DATABASE_ERROR;
-    }
-    sqlite3_bind_int64(stmt, 1, user_id);
-    if (sqlite3_step(stmt) == SQLITE_ROW) {
-      // Player exists, player_id retrieved but not needed for anonymous login flow
-    }
-    sqlite3_finalize(stmt);
   } else {
     sqlite3_finalize(stmt);
 
