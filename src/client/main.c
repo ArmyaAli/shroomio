@@ -5,6 +5,7 @@
 
 static ShroomLifecycle g_lifecycle;
 static ShroomScreenManager g_screen_manager;
+static Game g_game;
 
 int main(void) {
   const int screen_width = 1280;
@@ -17,11 +18,13 @@ int main(void) {
   SetTargetFPS(60);
 
   ShroomScreenManagerInit(&g_screen_manager);
+  g_screen_manager.user_data = &g_game;
   ShroomScreenRegisterMainMenu(&g_screen_manager);
   ShroomScreenRegisterSettings(&g_screen_manager);
   ShroomScreenRegisterHelp(&g_screen_manager);
   ShroomScreenRegisterCredits(&g_screen_manager);
   ShroomScreenRegisterServerBrowser(&g_screen_manager);
+  ShroomScreenRegisterGame(&g_screen_manager);
   ShroomScreenManagerTransition(&g_screen_manager, SHROOM_SCREEN_MAIN_MENU);
 
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_START);

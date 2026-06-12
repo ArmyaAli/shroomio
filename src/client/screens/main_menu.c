@@ -35,7 +35,7 @@ static void MainMenuDraw(ShroomScreenManager* manager) {
   GuiSetStyle(DEFAULT, TEXT_SIZE, 20);
 
   if (GuiButton((Rectangle){button_x, button_y, button_width, button_height}, "PLAY")) {
-    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
+    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
   }
 
   if (GuiButton((Rectangle){button_x, button_y + button_spacing, button_width, button_height},

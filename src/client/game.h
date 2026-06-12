@@ -6,11 +6,28 @@
 #include "net.h"
 #include "shared/world.h"
 
+#define SHROOM_CLIENT_PENDING_INPUT_CAPACITY 128u
+
+typedef struct ShroomPendingInput {
+  uint32_t sequence;
+  ShroomVec2 direction;
+} ShroomPendingInput;
+
 typedef struct Game {
   Camera2D camera;
   ClientNetState net;
   ShroomWorldState world;
   ShroomPlayerState* local_player;
+  ShroomZone current_zone;
+  ShroomPendingInput pending_inputs[SHROOM_CLIENT_PENDING_INPUT_CAPACITY];
+  uint32_t pending_input_count;
+  uint32_t tracked_input_sequence;
+  ShroomVec2 render_positions[SHROOM_MAX_PLAYERS];
+  ShroomVec2 previous_local_position;
+  bool render_position_initialized[SHROOM_MAX_PLAYERS];
+  float previous_local_mass;
+  float zone_callout_timer;
+  float respawn_banner_timer;
   int screen_width;
   int screen_height;
 } Game;

@@ -1,5 +1,6 @@
 #include "game.h"
 
+#include <math.h>
 #include <stddef.h>
 #include <stdlib.h>
 
@@ -17,10 +18,203 @@ static const Color kBotColors[] = {
     {186, 104, 200, 255}, {255, 214, 102, 255},
 };
 
+static const float kRemoteInterpolationRate = 10.0f;
+static const float kStatusBannerDuration = 2.0f;
+
+typedef enum PlayerThreatState {
+  PLAYER_THREAT_NONE = 0,
+  PLAYER_THREAT_PREY,
+  PLAYER_THREAT_DANGER,
+} PlayerThreatState;
+
 typedef struct LeaderboardEntry {
   size_t index;
   float mass;
 } LeaderboardEntry;
+
+static Color GetLatencyColor(uint32_t rtt_ms) {
+  if (rtt_ms >= SHROOM_LATENCY_UNPLAYABLE_MS) {
+    return RED;
+  }
+  if (rtt_ms >= SHROOM_LATENCY_WARNING_MS) {
+    return ORANGE;
+  }
+
+  return GREEN;
+}
+
+static Color GetZoneColor(ShroomZone zone) {
+  switch (zone) {
+  case SHROOM_ZONE_CENTER:
+    return LIME;
+  case SHROOM_ZONE_MID:
+    return GOLD;
+  case SHROOM_ZONE_OUTER:
+  default:
+    return DARKGREEN;
+  }
+}
+
+static const char* GetZoneSummary(ShroomZone zone) {
+  switch (zone) {
+  case SHROOM_ZONE_CENTER:
+    return "Highest traffic and biggest swings";
+  case SHROOM_ZONE_MID:
+    return "Balanced risk and escape routes";
+  case SHROOM_ZONE_OUTER:
+  default:
+    return "Safest respawn and recovery space";
+  }
+}
+
+static PlayerThreatState GetThreatState(const ShroomPlayerState* local_player,
+                                        const ShroomPlayerState* other_player) {
+  if ((local_player == NULL) || (other_player == NULL) || (local_player == other_player) ||
+      !local_player->alive || !other_player->alive) {
+    return PLAYER_THREAT_NONE;
+  }
+
+  if (local_player->mass >= (other_player->mass * SHROOM_CONSUME_MASS_ADVANTAGE)) {
+    return PLAYER_THREAT_PREY;
+  }
+  if (other_player->mass >= (local_player->mass * SHROOM_CONSUME_MASS_ADVANTAGE)) {
+    return PLAYER_THREAT_DANGER;
+  }
+
+  return PLAYER_THREAT_NONE;
+}
+
+static Color GetThreatOutlineColor(PlayerThreatState state) {
+  switch (state) {
+  case PLAYER_THREAT_PREY:
+    return SKYBLUE;
+  case PLAYER_THREAT_DANGER:
+    return RED;
+  case PLAYER_THREAT_NONE:
+  default:
+    return Fade(RAYWHITE, 0.18f);
+  }
+}
+
+static int GetLocalPlayerRank(const Game* game, const LeaderboardEntry* leaderboard,
+                              size_t leaderboard_count) {
+  for (size_t index = 0; index < leaderboard_count; ++index) {
+    if (&game->world.players[leaderboard[index].index] == game->local_player) {
+      return (int)index + 1;
+    }
+  }
+
+  return 0;
+}
+
+static ShroomVec2 ClampPlayerPosition(const ShroomWorldState* world, float radius,
+                                      ShroomVec2 position) {
+  const float min_x = radius;
+  const float min_y = radius;
+  const float max_x = world->width - radius;
+  const float max_y = world->height - radius;
+
+  if (position.x < min_x) {
+    position.x = min_x;
+  }
+  if (position.x > max_x) {
+    position.x = max_x;
+  }
+  if (position.y < min_y) {
+    position.y = min_y;
+  }
+  if (position.y > max_y) {
+    position.y = max_y;
+  }
+
+  return position;
+}
+
+static void ApplyPredictedInputToPlayer(const ShroomWorldState* world, ShroomPlayerState* player,
+                                        ShroomVec2 input_direction, float delta_time) {
+  const float speed = ShroomMassToSpeed(player->mass);
+
+  if ((player == NULL) || !player->alive) {
+    return;
+  }
+
+  player->input_direction = input_direction;
+  player->position = ClampPlayerPosition(
+      world, player->radius,
+      (ShroomVec2){player->position.x + (input_direction.x * speed * delta_time),
+                   player->position.y + (input_direction.y * speed * delta_time)});
+}
+
+static void AppendPendingInput(Game* game, uint32_t sequence, ShroomVec2 direction) {
+  if (sequence == 0) {
+    return;
+  }
+
+  if (game->pending_input_count == SHROOM_CLIENT_PENDING_INPUT_CAPACITY) {
+    for (uint32_t index = 1; index < game->pending_input_count; ++index) {
+      game->pending_inputs[index - 1] = game->pending_inputs[index];
+    }
+    game->pending_input_count -= 1;
+  }
+
+  game->pending_inputs[game->pending_input_count++] =
+      (ShroomPendingInput){.sequence = sequence, .direction = direction};
+}
+
+static void DiscardAcknowledgedInputs(Game* game) {
+  uint32_t keep_index = 0;
+
+  for (uint32_t index = 0; index < game->pending_input_count; ++index) {
+    if (game->pending_inputs[index].sequence > game->net.last_processed_input_sequence) {
+      game->pending_inputs[keep_index++] = game->pending_inputs[index];
+    }
+  }
+
+  game->pending_input_count = keep_index;
+}
+
+static void ReapplyPendingInputs(Game* game) {
+  const float input_delta_time = 1.0f / SHROOM_SERVER_TICK_RATE;
+
+  if ((game->local_player == NULL) || !game->local_player->alive) {
+    return;
+  }
+
+  for (uint32_t index = 0; index < game->pending_input_count; ++index) {
+    ApplyPredictedInputToPlayer(&game->world, game->local_player,
+                                game->pending_inputs[index].direction, input_delta_time);
+  }
+}
+
+static void SyncRenderPositions(Game* game, float delta_time) {
+  const float blend = fminf(1.0f, delta_time * kRemoteInterpolationRate);
+
+  for (size_t index = 0; index < game->world.player_count; ++index) {
+    const ShroomPlayerState* player = &game->world.players[index];
+
+    if (!player->alive) {
+      game->render_position_initialized[index] = false;
+      continue;
+    }
+
+    if ((player == game->local_player) || !game->net.welcome_received) {
+      game->render_positions[index] = player->position;
+      game->render_position_initialized[index] = true;
+      continue;
+    }
+
+    if (!game->render_position_initialized[index]) {
+      game->render_positions[index] = player->position;
+      game->render_position_initialized[index] = true;
+      continue;
+    }
+
+    game->render_positions[index].x +=
+        (player->position.x - game->render_positions[index].x) * blend;
+    game->render_positions[index].y +=
+        (player->position.y - game->render_positions[index].y) * blend;
+  }
+}
 
 static void ApplyNetworkSnapshot(Game* game) {
   size_t index;
@@ -48,6 +242,10 @@ static void ApplyNetworkSnapshot(Game* game) {
     }
   }
 
+  for (; index < SHROOM_MAX_PLAYERS; ++index) {
+    game->render_position_initialized[index] = false;
+  }
+
   for (index = 0; index < game->net.spore_count; ++index) {
     const ShroomSnapshotSporeState* snapshot_spore = &game->net.snapshot_spores[index];
     ShroomSporeState* spore = &game->world.spores[index];
@@ -59,6 +257,13 @@ static void ApplyNetworkSnapshot(Game* game) {
         .active = true,
     };
   }
+
+  for (; index < SHROOM_MAX_SPORES; ++index) {
+    game->world.spores[index].active = false;
+  }
+
+  DiscardAcknowledgedInputs(game);
+  ReapplyPendingInputs(game);
 }
 
 static Color GetPlayerFillColor(const ShroomPlayerState* player) {
@@ -140,8 +345,11 @@ static void DrawPlayers(const Game* game) {
 
   for (index = 0; index < game->world.player_count; ++index) {
     const ShroomPlayerState* player = &game->world.players[index];
-    const Vector2 position = {player->position.x, player->position.y};
+    const ShroomVec2 render_position = game->render_positions[index];
+    const Vector2 position = {render_position.x, render_position.y};
     const Color fill = GetPlayerFillColor(player);
+    const PlayerThreatState threat_state = GetThreatState(game->local_player, player);
+    const Color threat_outline = GetThreatOutlineColor(threat_state);
 
     if (!player->alive) {
       continue;
@@ -149,10 +357,101 @@ static void DrawPlayers(const Game* game) {
 
     DrawCircleV(position, player->radius, fill);
     DrawCircleLines((int)position.x, (int)position.y, player->radius + 3.0f, Fade(BLACK, 0.55f));
+    if (player != game->local_player) {
+      DrawCircleLines((int)position.x, (int)position.y, player->radius + 6.0f, threat_outline);
+    }
 
     if (player == game->local_player) {
       DrawCircleLines((int)position.x, (int)position.y, player->radius + 8.0f, RAYWHITE);
     }
+  }
+}
+
+static void UpdateStatusBanners(Game* game, float delta_time) {
+  const ShroomZone zone = ShroomGetZoneAtPosition(&game->world, game->local_player->position);
+  const float moved_distance =
+      sqrtf(ShroomDistanceSqr(game->local_player->position, game->previous_local_position));
+
+  if (zone != game->current_zone) {
+    game->current_zone = zone;
+    game->zone_callout_timer = kStatusBannerDuration;
+  } else if (game->zone_callout_timer > 0.0f) {
+    game->zone_callout_timer -= delta_time;
+  }
+
+  if ((game->previous_local_mass > (SHROOM_DEFAULT_PLAYER_MASS * 1.5f)) &&
+      (game->local_player->mass <= (SHROOM_DEFAULT_PLAYER_MASS + 0.1f)) &&
+      (moved_distance > 250.0f)) {
+    game->respawn_banner_timer = kStatusBannerDuration;
+  } else if (game->respawn_banner_timer > 0.0f) {
+    game->respawn_banner_timer -= delta_time;
+  }
+
+  game->previous_local_mass = game->local_player->mass;
+  game->previous_local_position = game->local_player->position;
+}
+
+static void DrawZoneLegend(const Game* game) {
+  DrawRectangle(24, game->screen_height - 108, 330, 84, Fade(BLACK, 0.42f));
+  DrawText("Zone Guide", 40, game->screen_height - 100, 20, RAYWHITE);
+  DrawText("Outer: safest recovery", 40, game->screen_height - 74, 18,
+           GetZoneColor(SHROOM_ZONE_OUTER));
+  DrawText("Mid: balanced pressure", 40, game->screen_height - 52, 18,
+           GetZoneColor(SHROOM_ZONE_MID));
+  DrawText("Center: highest contest", 40, game->screen_height - 30, 18,
+           GetZoneColor(SHROOM_ZONE_CENTER));
+}
+
+static void DrawStatusBanners(const Game* game) {
+  if (game->zone_callout_timer > 0.0f) {
+    DrawRectangle(game->screen_width / 2 - 220, 24, 440, 66, Fade(BLACK, 0.48f));
+    DrawText(TextFormat("%s Zone", GetZoneLabel(game->current_zone)), game->screen_width / 2 - 86,
+             34, 26, GetZoneColor(game->current_zone));
+    DrawText(GetZoneSummary(game->current_zone), game->screen_width / 2 - 156, 62, 18, RAYWHITE);
+  }
+
+  if (game->respawn_banner_timer > 0.0f) {
+    DrawRectangle(game->screen_width / 2 - 190, 98, 380, 52, Fade(BLACK, 0.52f));
+    DrawText("Consumed - respawned in the outer ring", game->screen_width / 2 - 156, 114, 20,
+             ORANGE);
+  }
+}
+
+static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard_count,
+                            ShroomZone zone, const LeaderboardEntry* leaderboard,
+                            size_t shown_count) {
+  size_t index;
+
+  DrawRectangle(24, 24, 388, 180, Fade(BLACK, 0.42f));
+  DrawRectangle(1016, 24, 240, 190, Fade(BLACK, 0.42f));
+
+  DrawText("shroomio", 40, 32, 34, RAYWHITE);
+  DrawText(TextFormat("Mass %.0f", game->local_player->mass), 40, 76, 28, RAYWHITE);
+  DrawText(TextFormat("Rank %d/%d", local_rank > 0 ? local_rank : (int)leaderboard_count,
+                      (int)leaderboard_count),
+           40, 110, 20, GRAY);
+  DrawText(TextFormat("Zone %s", GetZoneLabel(zone)), 40, 136, 20, GetZoneColor(zone));
+  DrawText(TextFormat("Players %d   Spores %d", (int)game->world.player_count,
+                      (int)game->world.spore_count),
+           40, 162, 20, GRAY);
+
+  DrawText(TextFormat("Ping %ums   Avg %ums", game->net.rtt_ms, game->net.rtt_average_ms), 214, 110,
+           20, GetLatencyColor(game->net.rtt_average_ms));
+  DrawText(TextFormat("Server %s", ClientNetStatusLabel(&game->net)), 214, 136, 20,
+           game->net.status == CLIENT_NET_CONNECTED ? GREEN : ORANGE);
+  DrawText(TextFormat("Snapshot %llu", game->net.last_snapshot_tick), 214, 162, 20, GRAY);
+
+  DrawText("Leaderboard", 1034, 36, 24, RAYWHITE);
+  for (index = 0; index < shown_count; ++index) {
+    const ShroomPlayerState* player = &game->world.players[leaderboard[index].index];
+    const PlayerThreatState threat_state = GetThreatState(game->local_player, player);
+    const char* label = player == game->local_player ? "You" : (player->is_bot ? "Bot" : "Player");
+    const Color color =
+        player == game->local_player ? RAYWHITE : GetThreatOutlineColor(threat_state);
+
+    DrawText(TextFormat("%d. %s %u", (int)(index + 1), label, player->player_id), 1034,
+             72 + ((int)index * 22), 20, color);
+    DrawText(TextFormat("%.0f", player->mass), 1188, 72 + ((int)index * 22), 20, color);
   }
 }
 
@@ -189,6 +488,8 @@ static ShroomVec2 GetMovementInput(const Game* game) {
 void GameInit(Game* game, int screen_width, int screen_height) {
   size_t bot_index;
 
+  *game = (Game){0};
+
   game->screen_width = screen_width;
   game->screen_height = screen_height;
 
@@ -203,19 +504,38 @@ void GameInit(Game* game, int screen_width, int screen_height) {
   game->camera.target = (Vector2){game->local_player->position.x, game->local_player->position.y};
   game->camera.rotation = 0.0f;
   game->camera.zoom = 1.0f;
+  game->current_zone = ShroomGetZoneAtPosition(&game->world, game->local_player->position);
+  game->previous_local_position = game->local_player->position;
+  game->previous_local_mass = game->local_player->mass;
+  game->zone_callout_timer = kStatusBannerDuration;
 }
 
 void GameUpdate(Game* game, float delta_time) {
   const ShroomVec2 input_direction = GetMovementInput(game);
+  const uint32_t previous_input_sequence = game->net.last_input_sequence;
 
   ClientNetUpdate(&game->net, input_direction, delta_time);
 
+  if (game->net.last_input_sequence > previous_input_sequence) {
+    for (uint32_t sequence = previous_input_sequence + 1; sequence <= game->net.last_input_sequence;
+         ++sequence) {
+      AppendPendingInput(game, sequence, input_direction);
+    }
+    game->tracked_input_sequence = game->net.last_input_sequence;
+  }
+
   if (game->net.welcome_received && (game->net.snapshot_player_count > 0)) {
     ApplyNetworkSnapshot(game);
+    if (game->local_player != NULL) {
+      ApplyPredictedInputToPlayer(&game->world, game->local_player, input_direction, delta_time);
+    }
   } else {
     ShroomPlayerSetInput(game->local_player, input_direction);
     ShroomWorldStep(&game->world, delta_time);
   }
+
+  SyncRenderPositions(game, delta_time);
+  UpdateStatusBanners(game, delta_time);
 
   game->camera.target = (Vector2){game->local_player->position.x, game->local_player->position.y};
 }
@@ -223,11 +543,13 @@ void GameUpdate(Game* game, float delta_time) {
 void GameDraw(const Game* game) {
   LeaderboardEntry leaderboard[SHROOM_MAX_PLAYERS];
   size_t leaderboard_count = 0;
-  size_t index;
   size_t shown_count;
   const ShroomZone zone = ShroomGetZoneAtPosition(&game->world, game->local_player->position);
+  int local_rank;
 
   BuildLeaderboard(game, leaderboard, &leaderboard_count);
+  local_rank = GetLocalPlayerRank(game, leaderboard, leaderboard_count);
+  shown_count = leaderboard_count < 6 ? leaderboard_count : 6;
 
   BeginDrawing();
   ClearBackground((Color){18, 18, 26, 255});
@@ -242,32 +564,9 @@ void GameDraw(const Game* game) {
 
   EndMode2D();
 
-  DrawRectangle(24, 24, 510, 176, Fade(BLACK, 0.42f));
-  DrawRectangle(1040, 24, 216, 176, Fade(BLACK, 0.42f));
-  DrawText("shroomio", 40, 32, 40, RAYWHITE);
-  DrawText("Move toward the mouse. WASD is temporary prototype input.", 40, 82, 20, GRAY);
-  DrawText(TextFormat("Mass: %.0f  Radius: %.1f  Speed: %.0f", game->local_player->mass,
-                      game->local_player->radius, ShroomMassToSpeed(game->local_player->mass)),
-           40, 110, 20, GRAY);
-  DrawText(TextFormat("Zone: %s  Players: %d  Spores: %d  Tick: %llu", GetZoneLabel(zone),
-                      (int)game->world.player_count, (int)game->world.spore_count,
-                      game->world.tick),
-           40, 136, 20, GRAY);
-  DrawText(TextFormat("Server: %s  Snapshot Tick: %llu", ClientNetStatusLabel(&game->net),
-                      game->net.last_snapshot_tick),
-           40, 162, 20, game->net.status == CLIENT_NET_CONNECTED ? GREEN : ORANGE);
-
-  DrawText("Leaderboard", 1070, 36, 24, RAYWHITE);
-  shown_count = leaderboard_count < 6 ? leaderboard_count : 6;
-  for (index = 0; index < shown_count; ++index) {
-    const ShroomPlayerState* player = &game->world.players[leaderboard[index].index];
-    const char* label =
-        (player == game->local_player) ? "You" : (player->is_bot ? "Bot" : "Player");
-
-    DrawText(
-        TextFormat("%d. %s %u   %.0f", (int)(index + 1), label, player->player_id, player->mass),
-        1062, 72 + ((int)index * 22), 20, player == game->local_player ? RAYWHITE : GRAY);
-  }
+  DrawGameplayHud(game, local_rank, leaderboard_count, zone, leaderboard, shown_count);
+  DrawZoneLegend(game);
+  DrawStatusBanners(game);
 
   EndDrawing();
 }

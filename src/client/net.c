@@ -14,6 +14,45 @@ static ENetPacket* CreatePacket(const void* data, size_t size, enet_uint32 flags
   return enet_packet_create(data, size, flags);
 }
 
+static ENetPacket* CreateProtocolPacket(const void* data, size_t size, ShroomPacketType type) {
+  return CreatePacket(data, size,
+                      ShroomPacketTypeUsesReliableDelivery(type) ? ENET_PACKET_FLAG_RELIABLE : 0);
+}
+
+static void RecordRTTSample(ClientNetState* net, uint32_t rtt_ms) {
+  uint64_t total = 0;
+
+  net->rtt_ms = rtt_ms;
+  net->rtt_samples[net->rtt_sample_index] = rtt_ms;
+  if (net->rtt_sample_count < SHROOM_CLIENT_RTT_SAMPLE_COUNT) {
+    net->rtt_sample_count += 1;
+  }
+  net->rtt_sample_index = (net->rtt_sample_index + 1u) % SHROOM_CLIENT_RTT_SAMPLE_COUNT;
+
+  for (uint32_t index = 0; index < net->rtt_sample_count; ++index) {
+    total += net->rtt_samples[index];
+  }
+
+  net->rtt_average_ms = net->rtt_sample_count > 0 ? (uint32_t)(total / net->rtt_sample_count) : 0;
+}
+
+static void SendPing(ClientNetState* net) {
+  ShroomPingPacket packet = {0};
+
+  if (!net->welcome_received || (net->peer == 0) ||
+      (net->peer->state != ENET_PEER_STATE_CONNECTED) || (net->pending_ping_nonce != 0)) {
+    return;
+  }
+
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_PING, sizeof(packet));
+  packet.nonce = ++net->next_ping_nonce;
+  net->pending_ping_nonce = packet.nonce;
+  net->pending_ping_sent_time_ms = enet_time_get();
+
+  enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CONTROL,
+                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_PING));
+}
+
 static void SendHello(ClientNetState* net) {
   ShroomHelloPacket packet = {0};
 
@@ -21,13 +60,12 @@ static void SendHello(ClientNetState* net) {
     return;
   }
 
-  packet.header.type = SHROOM_PACKET_HELLO;
-  packet.header.size = sizeof(packet);
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_HELLO, sizeof(packet));
   packet.protocol_version = SHROOM_PROTOCOL_VERSION;
   snprintf(packet.name, sizeof(packet.name), "local-client");
 
   enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CONTROL,
-                 CreatePacket(&packet, sizeof(packet), ENET_PACKET_FLAG_RELIABLE));
+                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_HELLO));
 }
 
 static void SendInput(ClientNetState* net, ShroomVec2 input_direction) {
@@ -38,13 +76,13 @@ static void SendInput(ClientNetState* net, ShroomVec2 input_direction) {
     return;
   }
 
-  packet.header.type = SHROOM_PACKET_INPUT;
-  packet.header.size = sizeof(packet);
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_INPUT, sizeof(packet));
   packet.sequence = ++net->last_input_sequence;
   packet.direction_x = input_direction.x;
   packet.direction_y = input_direction.y;
 
-  enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_INPUT, CreatePacket(&packet, sizeof(packet), 0));
+  enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_INPUT,
+                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_INPUT));
 }
 
 static void HandleWelcome(ClientNetState* net, const ENetPacket* enet_packet) {
@@ -64,6 +102,20 @@ static void HandleWelcome(ClientNetState* net, const ENetPacket* enet_packet) {
   SetStatus(net, CLIENT_NET_CONNECTED, "Connected");
 }
 
+static void HandlePong(ClientNetState* net, const ENetPacket* enet_packet) {
+  const ShroomPongPacket* packet = (const ShroomPongPacket*)enet_packet->data;
+
+  if (enet_packet->dataLength < sizeof(*packet)) {
+    return;
+  }
+  if ((net->pending_ping_nonce == 0) || (packet->nonce != net->pending_ping_nonce)) {
+    return;
+  }
+
+  RecordRTTSample(net, enet_time_get() - net->pending_ping_sent_time_ms);
+  net->pending_ping_nonce = 0;
+}
+
 static void HandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet) {
   const ShroomSnapshotPacket* packet = (const ShroomSnapshotPacket*)enet_packet->data;
   uint16_t player_count;
@@ -73,6 +125,7 @@ static void HandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet) {
   }
 
   net->last_snapshot_tick = packet->tick;
+  net->last_processed_input_sequence = packet->last_processed_input_sequence;
   player_count = packet->player_count;
   if (player_count > SHROOM_MAX_SNAPSHOT_PLAYERS) {
     player_count = SHROOM_MAX_SNAPSHOT_PLAYERS;
@@ -175,18 +228,30 @@ void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, float delt
       if (event.packet->dataLength >= sizeof(ShroomPacketHeader)) {
         switch ((ShroomPacketType)header->type) {
         case SHROOM_PACKET_WELCOME:
-          HandleWelcome(net, event.packet);
+          if (ShroomPacketHeaderUsesExpectedChannel(header, event.channelID)) {
+            HandleWelcome(net, event.packet);
+          }
           break;
         case SHROOM_PACKET_SNAPSHOT:
-          HandleSnapshot(net, event.packet);
+          if (ShroomPacketHeaderUsesExpectedChannel(header, event.channelID)) {
+            HandleSnapshot(net, event.packet);
+          }
           break;
         case SHROOM_PACKET_SPORE_STATE:
-          HandleSporeState(net, event.packet);
+          if (ShroomPacketHeaderUsesExpectedChannel(header, event.channelID)) {
+            HandleSporeState(net, event.packet);
+          }
           break;
         case SHROOM_PACKET_PONG:
+          if (ShroomPacketHeaderUsesExpectedChannel(header, event.channelID)) {
+            HandlePong(net, event.packet);
+          }
+          break;
         case SHROOM_PACKET_PING:
         case SHROOM_PACKET_HELLO:
         case SHROOM_PACKET_INPUT:
+        case SHROOM_PACKET_AUTH_REQUEST:
+        case SHROOM_PACKET_AUTH_RESPONSE:
         default:
           break;
         }
@@ -210,6 +275,11 @@ void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, float delt
       SendInput(net, input_direction);
       net->input_send_accumulator -= 1.0f / SHROOM_SERVER_TICK_RATE;
     }
+    net->ping_send_accumulator += delta_time;
+    while (net->ping_send_accumulator >= SHROOM_CLIENT_PING_INTERVAL_SECONDS) {
+      SendPing(net);
+      net->ping_send_accumulator -= SHROOM_CLIENT_PING_INTERVAL_SECONDS;
+    }
     enet_host_flush(net->host);
   }
 }
@@ -219,6 +289,7 @@ void ClientNetShutdown(ClientNetState* net) {
     enet_peer_disconnect_now(net->peer, 0);
     net->peer = 0;
   }
+  net->pending_ping_nonce = 0;
   if (net->host != 0) {
     enet_host_destroy(net->host);
     net->host = 0;

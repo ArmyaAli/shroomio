@@ -140,6 +140,8 @@ typedef struct ServerSession {
   uint32_t player_id;
   uint32_t user_id;
   uint32_t last_processed_input_sequence;
+  uint32_t last_logged_rtt_ms;
+  uint64_t last_latency_log_time_ms;
   ShroomPlayerState* player;
   char auth_token[SHROOM_AUTH_TOKEN_LENGTH + 1];
 } ServerSession;
@@ -170,6 +172,8 @@ static uint64_t GetTimeNanos(void) {
   return ((uint64_t)now.tv_sec * 1000000000ull) + (uint64_t)now.tv_nsec;
 }
 
+static uint64_t GetTimeMillis(void) { return GetTimeNanos() / 1000000ull; }
+
 static void SleepUntil(uint64_t target_time_nanos) {
   struct timespec sleep_time;
   uint64_t now = GetTimeNanos();
@@ -189,10 +193,15 @@ static ENetPacket* CreatePacket(const void* data, size_t size, enet_uint32 flags
   return enet_packet_create(data, size, flags);
 }
 
+static ENetPacket* CreateProtocolPacket(const void* data, size_t size, ShroomPacketType type) {
+  return CreatePacket(data, size,
+                      ShroomPacketTypeUsesReliableDelivery(type) ? ENET_PACKET_FLAG_RELIABLE : 0);
+}
+
 static void SendWelcome(ENetPeer* peer, const ServerSession* session,
                         const ShroomWorldState* world) {
   const ShroomWelcomePacket packet = {
-      .header = {SHROOM_PACKET_WELCOME, 0, sizeof(ShroomWelcomePacket)},
+      .header = {SHROOM_PACKET_WELCOME, SHROOM_ENET_CHANNEL_CONTROL, sizeof(ShroomWelcomePacket)},
       .protocol_version = SHROOM_PROTOCOL_VERSION,
       .player_id = session->player_id,
       .entity_id = session->player != 0 ? session->player->entity_id : 0,
@@ -203,24 +212,23 @@ static void SendWelcome(ENetPeer* peer, const ServerSession* session,
   };
 
   enet_peer_send(peer, SHROOM_ENET_CHANNEL_CONTROL,
-                 CreatePacket(&packet, sizeof(packet), ENET_PACKET_FLAG_RELIABLE));
+                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_WELCOME));
 }
 
 static void SendPong(ENetPeer* peer, uint32_t nonce) {
   const ShroomPongPacket packet = {
-      .header = {SHROOM_PACKET_PONG, 0, sizeof(ShroomPongPacket)},
+      .header = {SHROOM_PACKET_PONG, SHROOM_ENET_CHANNEL_CONTROL, sizeof(ShroomPongPacket)},
       .nonce = nonce,
   };
 
   enet_peer_send(peer, SHROOM_ENET_CHANNEL_CONTROL,
-                 CreatePacket(&packet, sizeof(packet), ENET_PACKET_FLAG_RELIABLE));
+                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_PONG));
 }
 
 static void SendAuthResponse(ENetPeer* peer, ShroomAuthResult result, uint32_t player_id,
                              const char* token, const char* message) {
   ShroomAuthResponsePacket packet = {0};
-  packet.header.type = SHROOM_PACKET_AUTH_RESPONSE;
-  packet.header.size = sizeof(packet);
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_AUTH_RESPONSE, sizeof(packet));
   packet.result = (uint8_t)result;
   packet.player_id = player_id;
   if (token != NULL) {
@@ -233,7 +241,7 @@ static void SendAuthResponse(ENetPeer* peer, ShroomAuthResult result, uint32_t p
   }
 
   enet_peer_send(peer, SHROOM_ENET_CHANNEL_CONTROL,
-                 CreatePacket(&packet, sizeof(packet), ENET_PACKET_FLAG_RELIABLE));
+                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_AUTH_RESPONSE));
 }
 
 static void SendSnapshot(ENetPeer* peer, const ServerSession* session,
@@ -247,7 +255,8 @@ static void SendSnapshot(ENetPeer* peer, const ServerSession* session,
   }
 
   packet = (ShroomSnapshotPacket){
-      .header = {SHROOM_PACKET_SNAPSHOT, 0, sizeof(ShroomSnapshotPacket)},
+      .header = {SHROOM_PACKET_SNAPSHOT, SHROOM_ENET_CHANNEL_SNAPSHOT,
+                 sizeof(ShroomSnapshotPacket)},
       .tick = world->tick,
       .last_processed_input_sequence = session->last_processed_input_sequence,
       .player_id = session->player_id,
@@ -276,7 +285,8 @@ static void SendSnapshot(ENetPeer* peer, const ServerSession* session,
 
   packet.player_count = player_count;
 
-  enet_peer_send(peer, SHROOM_ENET_CHANNEL_SNAPSHOT, CreatePacket(&packet, sizeof(packet), 0));
+  enet_peer_send(peer, SHROOM_ENET_CHANNEL_SNAPSHOT,
+                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_SNAPSHOT));
 }
 
 static void SendSporeState(ENetPeer* peer, const ShroomWorldState* world) {
@@ -299,9 +309,7 @@ static void SendSporeState(ENetPeer* peer, const ShroomWorldState* world) {
     ShroomSporeStatePacket* packet = (ShroomSporeStatePacket*)enet_packet->data;
     uint16_t i = 0;
 
-    packet->header.type = SHROOM_PACKET_SPORE_STATE;
-    packet->header.reserved = 0;
-    packet->header.size = (uint16_t)packet_size;
+    ShroomPacketHeaderInit(&packet->header, SHROOM_PACKET_SPORE_STATE, (uint16_t)packet_size);
     packet->tick = world->tick;
     packet->spore_count = spore_count;
     packet->reserved = 0;
@@ -339,6 +347,33 @@ static void DisconnectSession(ServerSession* session) {
   }
 
   *session = (ServerSession){0};
+}
+
+static void LogPeerLatency(ENetPeer* peer, ServerSession* session, uint64_t now_ms) {
+  uint32_t rtt_ms;
+
+  if ((peer == 0) || (session == 0) || !session->active) {
+    return;
+  }
+
+  rtt_ms = peer->roundTripTime;
+  if (rtt_ms < SHROOM_LATENCY_WARNING_MS) {
+    return;
+  }
+  if ((session->last_logged_rtt_ms == rtt_ms) &&
+      ((now_ms - session->last_latency_log_time_ms) < 10000ull)) {
+    return;
+  }
+
+  session->last_logged_rtt_ms = rtt_ms;
+  session->last_latency_log_time_ms = now_ms;
+  if (rtt_ms >= SHROOM_LATENCY_UNPLAYABLE_MS) {
+    LOG_WARN("high latency peer: slot=%u player_id=%u rtt=%ums", (unsigned)peer->incomingPeerID,
+             session->player_id, rtt_ms);
+  } else {
+    LOG_INFO("latency warning peer: slot=%u player_id=%u rtt=%ums", (unsigned)peer->incomingPeerID,
+             session->player_id, rtt_ms);
+  }
 }
 
 static void HandleHelloPacket(ENetPeer* peer, ServerSession* session, ShroomWorldState* world,
@@ -463,7 +498,7 @@ static void HandleAuthRequestPacket(ENetPeer* peer, ServerSession* session,
 
 static void HandlePacket(ENetPeer* peer, ServerSession* session, ShroomWorldState* world,
                          ShroomAuthContext* auth_ctx, const ENetPacket* enet_packet,
-                         uint32_t* next_player_id) {
+                         uint8_t channel_id, uint32_t* next_player_id) {
   const ShroomPacketHeader* header;
 
   if ((enet_packet == 0) || (enet_packet->dataLength < sizeof(ShroomPacketHeader))) {
@@ -471,6 +506,10 @@ static void HandlePacket(ENetPeer* peer, ServerSession* session, ShroomWorldStat
   }
 
   header = (const ShroomPacketHeader*)enet_packet->data;
+  if (!ShroomPacketHeaderUsesExpectedChannel(header, channel_id)) {
+    return;
+  }
+
   switch ((ShroomPacketType)header->type) {
   case SHROOM_PACKET_HELLO:
     HandleHelloPacket(peer, session, world, enet_packet, next_player_id);
@@ -560,6 +599,7 @@ int main(void) {
   while (ShroomLifecycleIsRunning(&g_lifecycle) &&
          !ShroomLifecycleIsShutdownRequested(&g_lifecycle)) {
     ENetEvent event;
+    const uint64_t now_ms = GetTimeMillis();
 
     while (enet_host_service(host, &event, 0) > 0) {
       switch (event.type) {
@@ -574,7 +614,7 @@ int main(void) {
         break;
       case ENET_EVENT_TYPE_RECEIVE:
         HandlePacket(event.peer, (ServerSession*)event.peer->data, &world, &auth_ctx, event.packet,
-                     &next_player_id);
+                     event.channelID, &next_player_id);
         enet_packet_destroy(event.packet);
         break;
       case ENET_EVENT_TYPE_DISCONNECT:
@@ -594,6 +634,7 @@ int main(void) {
 
       for (index = 0; index < host->peerCount; ++index) {
         if (host->peers[index].state == ENET_PEER_STATE_CONNECTED) {
+          LogPeerLatency(&host->peers[index], (ServerSession*)host->peers[index].data, now_ms);
           SendSnapshot(&host->peers[index], (ServerSession*)host->peers[index].data, &world);
         }
       }
