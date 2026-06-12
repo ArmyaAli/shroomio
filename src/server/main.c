@@ -1,4 +1,5 @@
 #include <signal.h>
+#include <sqlite3.h>
 #include <stdint.h>
 #include <string.h>
 #include <time.h>
@@ -8,13 +9,17 @@
 #include "shared/lifecycle.h"
 #include "shared/protocol.h"
 #include "shared/sim.h"
+#include "auth.h"
 #include "logger.h"
 
 typedef struct ServerSession {
   bool active;
+  bool authenticated;
   uint32_t player_id;
+  uint32_t user_id;
   uint32_t last_processed_input_sequence;
   ShroomPlayerState* player;
+  char auth_token[SHROOM_AUTH_TOKEN_LENGTH + 1];
 } ServerSession;
 
 static ShroomLifecycle g_lifecycle;
@@ -84,6 +89,26 @@ static void SendPong(ENetPeer* peer, uint32_t nonce) {
       .header = {SHROOM_PACKET_PONG, 0, sizeof(ShroomPongPacket)},
       .nonce = nonce,
   };
+
+  enet_peer_send(peer, SHROOM_ENET_CHANNEL_CONTROL,
+                 CreatePacket(&packet, sizeof(packet), ENET_PACKET_FLAG_RELIABLE));
+}
+
+static void SendAuthResponse(ENetPeer* peer, ShroomAuthResult result, uint32_t player_id,
+                             const char* token, const char* message) {
+  ShroomAuthResponsePacket packet = {0};
+  packet.header.type = SHROOM_PACKET_AUTH_RESPONSE;
+  packet.header.size = sizeof(packet);
+  packet.result = (uint8_t)result;
+  packet.player_id = player_id;
+  if (token != NULL) {
+    strncpy(packet.token, token, sizeof(packet.token) - 1);
+    packet.token[sizeof(packet.token) - 1] = '\0';
+  }
+  if (message != NULL) {
+    strncpy(packet.message, message, sizeof(packet.message) - 1);
+    packet.message[sizeof(packet.message) - 1] = '\0';
+  }
 
   enet_peer_send(peer, SHROOM_ENET_CHANNEL_CONTROL,
                  CreatePacket(&packet, sizeof(packet), ENET_PACKET_FLAG_RELIABLE));
@@ -235,8 +260,88 @@ static void HandleInputPacket(ServerSession* session, const ENetPacket* enet_pac
                        NormalizeInput((ShroomVec2){packet->direction_x, packet->direction_y}));
 }
 
+static void HandleAuthRequestPacket(ENetPeer* peer, ServerSession* session,
+                                    ShroomAuthContext* auth_ctx, const ENetPacket* enet_packet) {
+  const ShroomAuthRequestPacket* packet = (const ShroomAuthRequestPacket*)enet_packet->data;
+
+  if (enet_packet->dataLength < sizeof(*packet)) {
+    return;
+  }
+
+  if (session->authenticated) {
+    SendAuthResponse(peer, SHROOM_AUTH_INVALID_INPUT, 0, NULL, "Already authenticated");
+    return;
+  }
+
+  ShroomAuthMethod method = (ShroomAuthMethod)packet->auth_method;
+  bool is_register = packet->is_register != 0;
+
+  if (method == SHROOM_AUTH_PASSWORD) {
+    if (is_register) {
+      ShroomAuthUser user;
+      ShroomAuthResult result =
+          ShroomAuthRegister(auth_ctx, packet->username, packet->password, &user);
+      if (result == SHROOM_AUTH_SUCCESS) {
+        ShroomAuthToken token;
+        result = ShroomAuthLogin(auth_ctx, packet->username, packet->password, &token);
+        if (result == SHROOM_AUTH_SUCCESS) {
+          session->authenticated = true;
+          session->user_id = token.user_id;
+          strncpy(session->auth_token, token.token, sizeof(session->auth_token) - 1);
+          session->auth_token[sizeof(session->auth_token) - 1] = '\0';
+          SendAuthResponse(peer, result, user.player_id, token.token, "Registration successful");
+          LOG_INFO("Auth: User '%s' registered and logged in", packet->username);
+        } else {
+          SendAuthResponse(peer, result, 0, NULL, "Login after registration failed");
+        }
+      } else {
+        const char* msg = (result == SHROOM_AUTH_USERNAME_TAKEN) ? "Username already taken"
+                                                                 : "Registration failed";
+        SendAuthResponse(peer, result, 0, NULL, msg);
+      }
+    } else {
+      ShroomAuthToken token;
+      ShroomAuthResult result =
+          ShroomAuthLogin(auth_ctx, packet->username, packet->password, &token);
+      if (result == SHROOM_AUTH_SUCCESS) {
+        ShroomAuthUser user;
+        ShroomAuthValidateToken(auth_ctx, token.token, &user);
+        session->authenticated = true;
+        session->user_id = token.user_id;
+        strncpy(session->auth_token, token.token, sizeof(session->auth_token) - 1);
+        session->auth_token[sizeof(session->auth_token) - 1] = '\0';
+        SendAuthResponse(peer, result, user.player_id, token.token, "Login successful");
+        LOG_INFO("Auth: User '%s' logged in", packet->username);
+      } else {
+        const char* msg =
+            (result == SHROOM_AUTH_INVALID_CREDENTIALS) ? "Invalid username or password"
+                                                        : "Login failed";
+        SendAuthResponse(peer, result, 0, NULL, msg);
+      }
+    }
+  } else if (method == SHROOM_AUTH_ANONYMOUS) {
+    ShroomAuthToken token;
+    ShroomAuthResult result = ShroomAuthLoginAnonymous(auth_ctx, packet->username, &token);
+    if (result == SHROOM_AUTH_SUCCESS) {
+      ShroomAuthUser user;
+      ShroomAuthValidateToken(auth_ctx, token.token, &user);
+      session->authenticated = true;
+      session->user_id = token.user_id;
+      strncpy(session->auth_token, token.token, sizeof(session->auth_token) - 1);
+      session->auth_token[sizeof(session->auth_token) - 1] = '\0';
+      SendAuthResponse(peer, result, user.player_id, token.token, "Anonymous login successful");
+      LOG_INFO("Auth: Anonymous user '%s' logged in", packet->username);
+    } else {
+      SendAuthResponse(peer, result, 0, NULL, "Anonymous login failed");
+    }
+  } else {
+    SendAuthResponse(peer, SHROOM_AUTH_INVALID_INPUT, 0, NULL, "Unsupported auth method");
+  }
+}
+
 static void HandlePacket(ENetPeer* peer, ServerSession* session, ShroomWorldState* world,
-                         const ENetPacket* enet_packet, uint32_t* next_player_id) {
+                         ShroomAuthContext* auth_ctx, const ENetPacket* enet_packet,
+                         uint32_t* next_player_id) {
   const ShroomPacketHeader* header;
 
   if ((enet_packet == 0) || (enet_packet->dataLength < sizeof(ShroomPacketHeader))) {
@@ -250,6 +355,9 @@ static void HandlePacket(ENetPeer* peer, ServerSession* session, ShroomWorldStat
     break;
   case SHROOM_PACKET_INPUT:
     HandleInputPacket(session, enet_packet);
+    break;
+  case SHROOM_PACKET_AUTH_REQUEST:
+    HandleAuthRequestPacket(peer, session, auth_ctx, enet_packet);
     break;
   case SHROOM_PACKET_PING:
     if (enet_packet->dataLength >= sizeof(ShroomPingPacket)) {
@@ -273,6 +381,8 @@ int main(void) {
   static ServerSession sessions[SHROOM_SERVER_MAX_CLIENTS] = {0};
   uint32_t next_player_id = 1;
   uint64_t next_tick_time;
+  sqlite3* db = NULL;
+  ShroomAuthContext auth_ctx = {0};
 
   ShroomLifecycleInit(&g_lifecycle);
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_INIT);
@@ -281,8 +391,62 @@ int main(void) {
   signal(SIGINT, HandleSignal);
   signal(SIGTERM, HandleSignal);
 
+  if (sqlite3_open("shroomio.db", &db) != SQLITE_OK) {
+    LOG_ERROR("failed to open database: %s", sqlite3_errmsg(db));
+    ShroomLifecycleSetError(&g_lifecycle, 1, "Database initialization failed");
+    return 1;
+  }
+  LOG_INFO("database initialized");
+
+  char* err_msg = NULL;
+  const char* schema_sql =
+      "CREATE TABLE IF NOT EXISTS users ("
+      "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+      "player_id INTEGER NOT NULL UNIQUE,"
+      "username TEXT NOT NULL UNIQUE,"
+      "password_hash TEXT,"
+      "auth_method TEXT NOT NULL,"
+      "created_at TEXT DEFAULT CURRENT_TIMESTAMP,"
+      "last_login_at TEXT DEFAULT CURRENT_TIMESTAMP"
+      ");"
+      "CREATE TABLE IF NOT EXISTS auth_tokens ("
+      "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+      "user_id INTEGER NOT NULL,"
+      "token TEXT NOT NULL UNIQUE,"
+      "expires_at TEXT NOT NULL,"
+      "created_at TEXT DEFAULT CURRENT_TIMESTAMP,"
+      "FOREIGN KEY (user_id) REFERENCES users(id)"
+      ");"
+      "CREATE TABLE IF NOT EXISTS players ("
+      "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+      "player_uuid TEXT NOT NULL UNIQUE,"
+      "display_name TEXT NOT NULL,"
+      "created_at TEXT DEFAULT CURRENT_TIMESTAMP"
+      ");"
+      "CREATE TABLE IF NOT EXISTS player_stats ("
+      "player_id INTEGER PRIMARY KEY,"
+      "total_games INTEGER DEFAULT 0,"
+      "total_kills INTEGER DEFAULT 0,"
+      "total_deaths INTEGER DEFAULT 0,"
+      "highest_mass REAL DEFAULT 0,"
+      "longest_survival REAL DEFAULT 0,"
+      "FOREIGN KEY (player_id) REFERENCES players(id)"
+      ");";
+
+  if (sqlite3_exec(db, schema_sql, NULL, NULL, &err_msg) != SQLITE_OK) {
+    LOG_ERROR("failed to create schema: %s", err_msg);
+    sqlite3_free(err_msg);
+    sqlite3_close(db);
+    ShroomLifecycleSetError(&g_lifecycle, 1, "Database schema creation failed");
+    return 1;
+  }
+
+  ShroomAuthInit(&auth_ctx, db);
+
   if (enet_initialize() != 0) {
     LOG_ERROR("failed to initialize ENet");
+    ShroomAuthShutdown(&auth_ctx);
+    sqlite3_close(db);
     ShroomLifecycleSetError(&g_lifecycle, 1, "ENet initialization failed");
     return 1;
   }
@@ -298,6 +462,8 @@ int main(void) {
   if (host == 0) {
     LOG_ERROR("failed to create ENet host");
     enet_deinitialize();
+    ShroomAuthShutdown(&auth_ctx);
+    sqlite3_close(db);
     ShroomLifecycleSetError(&g_lifecycle, 2, "ENet host creation failed");
     return 1;
   }
@@ -322,7 +488,7 @@ int main(void) {
         }
         break;
       case ENET_EVENT_TYPE_RECEIVE:
-        HandlePacket(event.peer, (ServerSession*)event.peer->data, &world, event.packet,
+        HandlePacket(event.peer, (ServerSession*)event.peer->data, &world, &auth_ctx, event.packet,
                      &next_player_id);
         enet_packet_destroy(event.packet);
         break;
@@ -366,6 +532,8 @@ int main(void) {
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_STOP);
   enet_host_destroy(host);
   enet_deinitialize();
+  ShroomAuthShutdown(&auth_ctx);
+  sqlite3_close(db);
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_SHUTDOWN);
   LOG_INFO("shroomio server shutting down");
   return 0;
