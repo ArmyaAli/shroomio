@@ -66,21 +66,21 @@ static void SettingsDraw(ShroomScreenManager* manager) {
   }
 
   ShroomImGui_Text("Interface");
-  changed |= ShroomImGui_SliderInt("UI Scale", &g_settings_screen.pending.ui_scale_percent, 80,
-                                   160, "%d%%");
-  changed |= ShroomImGui_Combo("Preferred Region", &g_settings_screen.pending.preferred_region_index,
-                               kRegionItems, 3);
+  changed |= ShroomImGui_SliderInt("UI Scale", &g_settings_screen.pending.ui_scale_percent, 80, 160,
+                                   "%d%%");
+  changed |= ShroomImGui_Combo("Preferred Region",
+                               &g_settings_screen.pending.preferred_region_index, kRegionItems, 3);
   changed |= ShroomImGui_Combo("Palette", (int*)&g_settings_screen.pending.palette_preset,
                                kPaletteItems, 2);
 
   ShroomImGui_Separator();
   ShroomImGui_Text("Audio");
-  changed |= ShroomImGui_SliderInt("Master Volume", &g_settings_screen.pending.master_volume_percent,
-                                   0, 100, "%d%%");
+  changed |= ShroomImGui_SliderInt(
+      "Master Volume", &g_settings_screen.pending.master_volume_percent, 0, 100, "%d%%");
   changed |= ShroomImGui_SliderInt("Music Volume", &g_settings_screen.pending.music_volume_percent,
                                    0, 100, "%d%%");
-  changed |= ShroomImGui_SliderInt("Effects Volume", &g_settings_screen.pending.effects_volume_percent,
-                                   0, 100, "%d%%");
+  changed |= ShroomImGui_SliderInt(
+      "Effects Volume", &g_settings_screen.pending.effects_volume_percent, 0, 100, "%d%%");
 
   ShroomImGui_Separator();
   ShroomImGui_Text("Gameplay");

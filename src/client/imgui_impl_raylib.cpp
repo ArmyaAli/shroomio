@@ -94,7 +94,8 @@ static void RenderVertex(const ImDrawVert& vertex) {
   rlVertex2f(vertex.pos.x, vertex.pos.y);
 }
 
-static void RenderTriangles(unsigned int count, int index_start, const ImVector<ImDrawIdx>& index_buffer,
+static void RenderTriangles(unsigned int count, int index_start,
+                            const ImVector<ImDrawIdx>& index_buffer,
                             const ImVector<ImDrawVert>& vertex_buffer, ImTextureID texture_id) {
   if (count < 3) {
     return;
