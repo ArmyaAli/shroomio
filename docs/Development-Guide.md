@@ -4,6 +4,22 @@
 
 All build targets use the root `Makefile`. The Makefile downloads raylib source on first build and compiles it statically.
 
+## Devcontainer Tooling
+
+The project devcontainer includes:
+
+- `gh` via the GitHub CLI devcontainer feature
+- Docker client access from the non-root `dev` user via Docker-outside-of-Docker
+
+After rebuilding the container you should be able to run:
+
+```bash
+gh auth status
+docker version
+```
+
+If Docker access fails after a rebuild, reopen the workspace in the container so the updated group mapping is applied.
+
 ### Linux Client
 
 ```bash

@@ -4,7 +4,18 @@
     "dockerfile": "Dockerfile",
     "context": ".."
   },
+  "features": {
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+      "version": "latest",
+      "enableNonRootDocker": "true"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
   "remoteUser": "dev",
+  "runArgs": [
+    "--group-add",
+    "1001"
+  ],
   "customizations": {
     "vscode": {
       "extensions": [
