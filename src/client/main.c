@@ -1,6 +1,7 @@
 #include "game.h"
 #include "screen.h"
 #include "shared/lifecycle.h"
+
 #include "raylib.h"
 
 static ShroomLifecycle g_lifecycle;
@@ -17,6 +18,9 @@ int main(void) {
   InitWindow(screen_width, screen_height, "shroomio");
   SetExitKey(KEY_NULL);
   SetTargetFPS(60);
+
+  ClientSettingsLoad(&g_game.settings);
+  SetMasterVolume((float)g_game.settings.master_volume_percent / 100.0f);
 
   ShroomScreenManagerInit(&g_screen_manager);
   g_screen_manager.user_data = &g_game;

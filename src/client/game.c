@@ -657,6 +657,7 @@ static ShroomVec2 GetMovementInput(const Game* game) {
 }
 
 void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode mode) {
+  ClientSettings settings = game->settings;
   char selected_server_host[sizeof(game->selected_server_host)] = {0};
   uint16_t selected_server_port = game->selected_server_port;
 
@@ -666,6 +667,7 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
 
   *game = (Game){0};
 
+  game->settings = settings;
   game->selected_mode = mode;
   game->active_mode = mode;
   game->selected_server_port = selected_server_port;
