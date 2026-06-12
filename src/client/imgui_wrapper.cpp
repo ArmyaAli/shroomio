@@ -73,13 +73,6 @@ static ImGuiSelectableFlags ToImGuiSelectableFlags(int flags) {
   return imgui_flags;
 }
 
-static bool ItemsGetter(const void* data, int index, const char** out_text) {
-  const char* const* items = static_cast<const char* const*>(data);
-
-  *out_text = items[index];
-  return true;
-}
-
 extern "C" {
 
 void ShroomImGui_Init(void) {
@@ -177,8 +170,32 @@ bool ShroomImGui_SliderInt(const char* label, int* value, int minimum, int maxim
 
 bool ShroomImGui_Combo(const char* label, int* current_item, const char* const items[],
                        int items_count) {
-  return ImGui::Combo(label, current_item, (bool (*)(void*, int, const char**))ItemsGetter,
-                      const_cast<char**>(items), items_count);
+  bool changed = false;
+  const char* preview_value;
+
+  if ((current_item == NULL) || (items == NULL) || (items_count <= 0)) {
+    return false;
+  }
+
+  preview_value = (*current_item >= 0) && (*current_item < items_count) ? items[*current_item] : "";
+  if (!ImGui::BeginCombo(label, preview_value)) {
+    return false;
+  }
+
+  for (int index = 0; index < items_count; ++index) {
+    const bool selected = index == *current_item;
+
+    if (ImGui::Selectable(items[index], selected)) {
+      *current_item = index;
+      changed = true;
+    }
+    if (selected) {
+      ImGui::SetItemDefaultFocus();
+    }
+  }
+
+  ImGui::EndCombo();
+  return changed;
 }
 
 bool ShroomImGui_InputText(const char* label, char* buffer, size_t buffer_size) {

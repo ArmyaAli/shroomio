@@ -163,7 +163,7 @@ static void LoadRecentServers(void) {
     CopyText(entry->name, sizeof(entry->name), line);
 
     {
-      char* const port_text = separator + 1;
+      const char* port_text = separator + 1;
 
       next_separator = strchr(port_text, '|');
       if (next_separator == NULL) {
@@ -174,7 +174,7 @@ static void LoadRecentServers(void) {
     }
 
     {
-      char* const port_value = next_separator + 1;
+      const char* port_value = next_separator + 1;
       char* const map_text = strchr(port_value, '|');
 
       if (map_text == NULL) {
