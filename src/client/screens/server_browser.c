@@ -459,3 +459,11 @@ void ShroomScreenRegisterServerBrowser(ShroomScreenManager* manager) {
   screen->draw = ServerBrowserDraw;
   screen->handle_input = ServerBrowserHandleInput;
 }
+
+#ifdef TEST_MODE
+const char* ShroomTestGetServerBrowserValidationMessage(void) {
+  return g_server_browser.validation_message;
+}
+
+int ShroomTestGetServerBrowserSelectedIndex(void) { return g_server_browser.selected_index; }
+#endif
