@@ -73,7 +73,7 @@ static ImGuiSelectableFlags ToImGuiSelectableFlags(int flags) {
   return imgui_flags;
 }
 
-static bool ItemsGetter(void* data, int index, const char** out_text) {
+static bool ItemsGetter(const void* data, int index, const char** out_text) {
   const char* const* items = static_cast<const char* const*>(data);
 
   *out_text = items[index];
@@ -177,7 +177,8 @@ bool ShroomImGui_SliderInt(const char* label, int* value, int minimum, int maxim
 
 bool ShroomImGui_Combo(const char* label, int* current_item, const char* const items[],
                        int items_count) {
-  return ImGui::Combo(label, current_item, ItemsGetter, const_cast<char**>(items), items_count);
+  return ImGui::Combo(label, current_item, (bool (*)(void*, int, const char**))ItemsGetter,
+                      const_cast<char**>(items), items_count);
 }
 
 bool ShroomImGui_InputText(const char* label, char* buffer, size_t buffer_size) {

@@ -799,9 +799,14 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
 }
 
 void GameUpdate(Game* game, float delta_time) {
-  const ShroomVec2 input_direction =
-      IsOverlayBlockingGameplay(game) ? (ShroomVec2){0} : GetMovementInput(game);
+  ShroomVec2 input_direction;
   const uint32_t previous_input_sequence = game->net.last_input_sequence;
+
+  if (IsOverlayBlockingGameplay(game)) {
+    input_direction = (ShroomVec2){0};
+  } else {
+    input_direction = GetMovementInput(game);
+  }
 
   if (IsOnlineMode(game->active_mode)) {
     ClientNetUpdate(&game->net, input_direction, delta_time);

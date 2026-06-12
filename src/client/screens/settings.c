@@ -29,7 +29,7 @@ static void ApplySettings(Game* game) {
 }
 
 static bool SettingsInit(ShroomScreenManager* manager) {
-  Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
+  const Game* game = manager != NULL ? (const Game*)manager->user_data : NULL;
 
   if (game == NULL) {
     return false;
