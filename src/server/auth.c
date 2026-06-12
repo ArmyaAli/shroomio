@@ -226,13 +226,12 @@ ShroomAuthResult ShroomAuthLogin(ShroomAuthContext* ctx, const char* username, c
     const char* stored_hash = (const char*)sqlite3_column_text(stmt, 2);
 
     if (stored_hash != NULL) {
-      char salt[AUTH_SALT_LENGTH * 2 + 1];
-      char computed_hash[AUTH_HASH_LENGTH + 1];
-
       const char* colon = strchr(stored_hash, ':');
       if (colon != NULL) {
         size_t salt_len = (size_t)(colon - stored_hash);
+        char salt[AUTH_SALT_LENGTH * 2 + 1];
         if (salt_len < sizeof(salt)) {
+          char computed_hash[AUTH_HASH_LENGTH + 1];
           strncpy(salt, stored_hash, salt_len);
           salt[salt_len] = '\0';
 
@@ -322,7 +321,7 @@ ShroomAuthResult ShroomAuthLoginAnonymous(ShroomAuthContext* ctx, const char* us
     }
     sqlite3_bind_int64(stmt, 1, user_id);
     if (sqlite3_step(stmt) == SQLITE_ROW) {
-      player_id = (uint32_t)sqlite3_column_int64(stmt, 0);
+      // Player exists, player_id retrieved but not needed for anonymous login flow
     }
     sqlite3_finalize(stmt);
   } else {
