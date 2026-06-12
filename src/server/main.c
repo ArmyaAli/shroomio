@@ -107,7 +107,8 @@ static const char* const DATABASE_SCHEMA[] = {
     "CREATE INDEX IF NOT EXISTS idx_players_last_seen ON players(last_seen_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status)",
-    "CREATE INDEX IF NOT EXISTS idx_session_participants_session ON session_participants(session_id)",
+    "CREATE INDEX IF NOT EXISTS idx_session_participants_session ON "
+    "session_participants(session_id)",
     "CREATE INDEX IF NOT EXISTS idx_session_participants_player ON session_participants(player_id)",
     "CREATE INDEX IF NOT EXISTS idx_player_stats_player ON player_stats(player_id)",
     "CREATE INDEX IF NOT EXISTS idx_match_events_session ON match_events(session_id)",
