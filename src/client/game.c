@@ -132,12 +132,13 @@ static ShroomVec2 ClampPlayerPosition(const ShroomWorldState* world, float radiu
 
 static void ApplyPredictedInputToPlayer(const ShroomWorldState* world, ShroomPlayerState* player,
                                         ShroomVec2 input_direction, float delta_time) {
-  const float speed = ShroomMassToSpeed(player->mass);
+  float speed;
 
   if ((player == NULL) || !player->alive) {
     return;
   }
 
+  speed = ShroomMassToSpeed(player->mass);
   player->input_direction = input_direction;
   player->position = ClampPlayerPosition(
       world, player->radius,
