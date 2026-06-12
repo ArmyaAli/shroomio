@@ -32,6 +32,18 @@ typedef struct LeaderboardEntry {
   float mass;
 } LeaderboardEntry;
 
+static bool IsOnlineMode(GameSessionMode mode) { return mode == SHROOM_SESSION_MODE_QUICK_PLAY; }
+
+static const char* GetSessionModeLabel(GameSessionMode mode) {
+  switch (mode) {
+  case SHROOM_SESSION_MODE_OFFLINE_PRACTICE:
+    return "Offline Practice";
+  case SHROOM_SESSION_MODE_QUICK_PLAY:
+  default:
+    return "Quick Play";
+  }
+}
+
 static Color GetLatencyColor(uint32_t rtt_ms) {
   if (rtt_ms >= SHROOM_LATENCY_UNPLAYABLE_MS) {
     return RED;
@@ -467,31 +479,20 @@ static void DrawStatusBanners(const Game* game) {
   }
 }
 
-static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard_count,
-                            ShroomZone zone, const LeaderboardEntry* leaderboard,
-                            size_t shown_count) {
+static void DrawLeaderboardOverlay(const Game* game, const LeaderboardEntry* leaderboard,
+                                   size_t shown_count) {
   size_t index;
 
-  DrawRectangle(24, 24, 388, 180, Fade(BLACK, 0.42f));
-  DrawRectangle(1016, 24, 240, 190, Fade(BLACK, 0.42f));
+  if (!game->leaderboard_overlay_open) {
+    return;
+  }
 
-  DrawText("shroomio", 40, 32, 34, RAYWHITE);
-  DrawText(TextFormat("Mass %.0f", game->local_player->mass), 40, 76, 28, RAYWHITE);
-  DrawText(TextFormat("Rank %d/%d", local_rank > 0 ? local_rank : (int)leaderboard_count,
-                      (int)leaderboard_count),
-           40, 110, 20, GRAY);
-  DrawText(TextFormat("Zone %s", GetZoneLabel(zone)), 40, 136, 20, GetZoneColor(zone));
-  DrawText(TextFormat("Players %d   Spores %d", (int)game->world.player_count,
-                      (int)game->world.spore_count),
-           40, 162, 20, GRAY);
+  DrawRectangle(0, 0, game->screen_width, game->screen_height, Fade(BLACK, 0.45f));
+  DrawRectangle(game->screen_width / 2 - 220, 110, 440, 236, Fade((Color){16, 20, 28, 255}, 0.96f));
+  DrawRectangleLines(game->screen_width / 2 - 220, 110, 440, 236, Fade(RAYWHITE, 0.18f));
+  DrawText("Leaderboard", game->screen_width / 2 - 70, 128, 28, RAYWHITE);
+  DrawText("Press Tab to close", game->screen_width / 2 - 78, 158, 18, GRAY);
 
-  DrawText(TextFormat("Ping %ums   Avg %ums", game->net.rtt_ms, game->net.rtt_average_ms), 214, 110,
-           20, GetLatencyColor(game->net.rtt_average_ms));
-  DrawText(TextFormat("Server %s", ClientNetStatusLabel(&game->net)), 214, 136, 20,
-           game->net.status == CLIENT_NET_CONNECTED ? GREEN : ORANGE);
-  DrawText(TextFormat("Snapshot %llu", game->net.last_snapshot_tick), 214, 162, 20, GRAY);
-
-  DrawText("Leaderboard", 1034, 36, 24, RAYWHITE);
   for (index = 0; index < shown_count; ++index) {
     const ShroomPlayerState* player = &game->world.players[leaderboard[index].index];
     const PlayerThreatState threat_state = GetThreatState(game->local_player, player);
@@ -499,10 +500,129 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
     const Color color =
         player == game->local_player ? RAYWHITE : GetThreatOutlineColor(threat_state);
 
-    DrawText(TextFormat("%d. %s %u", (int)(index + 1), label, player->player_id), 1034,
-             72 + ((int)index * 22), 20, color);
-    DrawText(TextFormat("%.0f", player->mass), 1188, 72 + ((int)index * 22), 20, color);
+    DrawText(TextFormat("%d.", (int)(index + 1)), game->screen_width / 2 - 182,
+             198 + ((int)index * 22), 20, color);
+    DrawText(TextFormat("%s %u", label, player->player_id), game->screen_width / 2 - 146,
+             198 + ((int)index * 22), 20, color);
+    DrawText(TextFormat("%.0f", player->mass), game->screen_width / 2 + 140,
+             198 + ((int)index * 22), 20, color);
   }
+}
+
+static void DrawMenuOverlay(const Game* game) {
+  if (!game->menu_overlay_open) {
+    return;
+  }
+
+  DrawRectangle(0, 0, game->screen_width, game->screen_height, Fade(BLACK, 0.5f));
+  DrawRectangle(game->screen_width / 2 - 220, game->screen_height / 2 - 140, 440, 280,
+                Fade((Color){14, 18, 24, 255}, 0.97f));
+  DrawRectangleLines(game->screen_width / 2 - 220, game->screen_height / 2 - 140, 440, 280,
+                     Fade(RAYWHITE, 0.18f));
+
+  if (game->active_mode == SHROOM_SESSION_MODE_OFFLINE_PRACTICE) {
+    DrawText("Offline Pause", game->screen_width / 2 - 92, game->screen_height / 2 - 112, 30,
+             RAYWHITE);
+    DrawText("Esc / Enter: Resume", game->screen_width / 2 - 136, game->screen_height / 2 - 58, 20,
+             GRAY);
+    DrawText("M: Return to main menu", game->screen_width / 2 - 136, game->screen_height / 2 - 30,
+             20, GRAY);
+    DrawText("Simulation pauses while this menu is open.", game->screen_width / 2 - 136,
+             game->screen_height / 2 + 28, 20, RAYWHITE);
+    return;
+  }
+
+  DrawText("Online Match", game->screen_width / 2 - 90, game->screen_height / 2 - 112, 30,
+           RAYWHITE);
+  DrawText("Esc / Enter: Resume", game->screen_width / 2 - 136, game->screen_height / 2 - 58, 20,
+           GRAY);
+  DrawText("L or M: Leave match", game->screen_width / 2 - 136, game->screen_height / 2 - 30, 20,
+           GRAY);
+  DrawText("Current Status", game->screen_width / 2 - 136, game->screen_height / 2 + 24, 22,
+           RAYWHITE);
+  DrawText(TextFormat("Server: %s", ClientNetStatusLabel(&game->net)), game->screen_width / 2 - 136,
+           game->screen_height / 2 + 58, 20,
+           game->net.status == CLIENT_NET_CONNECTED ? GREEN : ORANGE);
+  DrawText(TextFormat("Ping: %ums  Avg: %ums", game->net.rtt_ms, game->net.rtt_average_ms),
+           game->screen_width / 2 - 136, game->screen_height / 2 + 86, 20,
+           GetLatencyColor(game->net.rtt_average_ms));
+}
+
+static void DrawLeaveConfirmationOverlay(const Game* game) {
+  if (!game->leave_confirmation_open) {
+    return;
+  }
+
+  DrawRectangle(0, 0, game->screen_width, game->screen_height, Fade(BLACK, 0.58f));
+  DrawRectangle(game->screen_width / 2 - 220, game->screen_height / 2 - 104, 440, 208,
+                Fade((Color){18, 20, 28, 255}, 0.98f));
+  DrawRectangleLines(game->screen_width / 2 - 220, game->screen_height / 2 - 104, 440, 208,
+                     Fade(RAYWHITE, 0.18f));
+  DrawText("Leave Match?", game->screen_width / 2 - 86, game->screen_height / 2 - 72, 30, RAYWHITE);
+  DrawText("This closes the online session and returns to the main menu.",
+           game->screen_width / 2 - 184, game->screen_height / 2 - 20, 20, GRAY);
+  DrawText("Enter / Y: Leave", game->screen_width / 2 - 96, game->screen_height / 2 + 28, 20,
+           ORANGE);
+  DrawText("Esc / N: Stay", game->screen_width / 2 - 96, game->screen_height / 2 + 58, 20,
+           RAYWHITE);
+}
+
+static void DrawConnectionOverlay(const Game* game) {
+  if (!IsOnlineMode(game->active_mode) || game->net.welcome_received || game->menu_overlay_open ||
+      game->leave_confirmation_open) {
+    return;
+  }
+
+  DrawRectangle(0, 0, game->screen_width, game->screen_height, Fade(BLACK, 0.48f));
+  DrawRectangle(game->screen_width / 2 - 240, game->screen_height / 2 - 112, 480, 224,
+                Fade((Color){16, 20, 28, 255}, 0.97f));
+  DrawRectangleLines(game->screen_width / 2 - 240, game->screen_height / 2 - 112, 480, 224,
+                     Fade(RAYWHITE, 0.18f));
+  DrawText("Quick Play", game->screen_width / 2 - 70, game->screen_height / 2 - 78, 30, RAYWHITE);
+  DrawText(TextFormat("Status: %s", ClientNetStatusLabel(&game->net)), game->screen_width / 2 - 110,
+           game->screen_height / 2 - 26, 24, game->net.status == CLIENT_NET_ERROR ? RED : ORANGE);
+
+  if ((game->net.status == CLIENT_NET_ERROR) || (game->net.status == CLIENT_NET_DISCONNECTED)) {
+    DrawText("R: Retry connection", game->screen_width / 2 - 110, game->screen_height / 2 + 24, 20,
+             RAYWHITE);
+    DrawText("Esc / B: Back to menu", game->screen_width / 2 - 110, game->screen_height / 2 + 52,
+             20, GRAY);
+  } else {
+    DrawText("Esc: Cancel and return to menu", game->screen_width / 2 - 138,
+             game->screen_height / 2 + 38, 20, GRAY);
+  }
+}
+
+static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard_count,
+                            ShroomZone zone) {
+  DrawRectangle(24, 24, 344, 132, Fade(BLACK, 0.38f));
+  DrawRectangle(game->screen_width - 236, 24, 196, 116, Fade(BLACK, 0.38f));
+
+  DrawText("shroomio", 40, 32, 34, RAYWHITE);
+  DrawText(TextFormat("Mass %.0f", game->local_player->mass), 40, 76, 28, RAYWHITE);
+  DrawText(TextFormat("Rank %d/%d", local_rank > 0 ? local_rank : (int)leaderboard_count,
+                      (int)leaderboard_count),
+           40, 110, 20, GRAY);
+  DrawText(TextFormat("Zone %s", GetZoneLabel(zone)), 188, 110, 20, GetZoneColor(zone));
+  DrawText(TextFormat("Players %d   Spores %d", (int)game->world.player_count,
+                      (int)game->world.spore_count),
+           40, 136, 18, GRAY);
+  DrawText(GetSessionModeLabel(game->active_mode), 188, 136, 18,
+           IsOnlineMode(game->active_mode) ? SKYBLUE : LIME);
+
+  if (IsOnlineMode(game->active_mode)) {
+    DrawText(TextFormat("Ping %ums", game->net.rtt_average_ms), game->screen_width - 216, 40, 24,
+             GetLatencyColor(game->net.rtt_average_ms));
+    DrawText(TextFormat("Server %s", ClientNetStatusLabel(&game->net)), game->screen_width - 216,
+             72, 18, game->net.status == CLIENT_NET_CONNECTED ? GREEN : ORANGE);
+    DrawText(TextFormat("Snapshot %llu", game->net.last_snapshot_tick), game->screen_width - 216,
+             98, 18, GRAY);
+  } else {
+    DrawText("Offline session", game->screen_width - 216, 40, 24, LIME);
+    DrawText("Esc pauses local simulation", game->screen_width - 216, 74, 18, GRAY);
+  }
+
+  DrawText("Tab Leaderboard", game->screen_width - 216, 118, 18, GRAY);
 }
 
 static ShroomVec2 GetMovementInput(const Game* game) {
@@ -535,19 +655,25 @@ static ShroomVec2 GetMovementInput(const Game* game) {
   return (ShroomVec2){movement.x, movement.y};
 }
 
-void GameInit(Game* game, int screen_width, int screen_height) {
+void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode mode) {
   size_t bot_index;
 
   *game = (Game){0};
 
+  game->selected_mode = mode;
+  game->active_mode = mode;
   game->screen_width = screen_width;
   game->screen_height = screen_height;
 
-  ClientNetInit(&game->net, "127.0.0.1", SHROOM_SERVER_PORT);
   ShroomWorldInit(&game->world);
   game->local_player = ShroomWorldSpawnPlayer(&game->world, 1, false);
-  for (bot_index = 0; bot_index < SHROOM_BOT_COUNT; ++bot_index) {
-    ShroomWorldSpawnPlayer(&game->world, (ShroomPlayerId)(bot_index + 2), true);
+
+  if (IsOnlineMode(mode)) {
+    ClientNetInit(&game->net, "127.0.0.1", SHROOM_SERVER_PORT);
+  } else {
+    for (bot_index = 0; bot_index < SHROOM_BOT_COUNT; ++bot_index) {
+      ShroomWorldSpawnPlayer(&game->world, (ShroomPlayerId)(bot_index + 2), true);
+    }
   }
 
   game->camera.offset = (Vector2){screen_width / 2.0f, screen_height / 2.0f};
@@ -561,27 +687,36 @@ void GameInit(Game* game, int screen_width, int screen_height) {
 }
 
 void GameUpdate(Game* game, float delta_time) {
-  const ShroomVec2 input_direction = GetMovementInput(game);
-  const uint32_t previous_input_sequence = game->net.last_input_sequence;
+  const bool overlay_open =
+      game->leaderboard_overlay_open || game->menu_overlay_open || game->leave_confirmation_open;
+  const bool offline_paused = (game->active_mode == SHROOM_SESSION_MODE_OFFLINE_PRACTICE) &&
+                              (game->menu_overlay_open || game->leave_confirmation_open);
+  const ShroomVec2 input_direction = overlay_open ? (ShroomVec2){0} : GetMovementInput(game);
 
-  ClientNetUpdate(&game->net, input_direction, delta_time);
+  if (IsOnlineMode(game->active_mode)) {
+    const uint32_t previous_input_sequence = game->net.last_input_sequence;
 
-  if (game->net.last_input_sequence > previous_input_sequence) {
-    for (uint32_t sequence = previous_input_sequence + 1; sequence <= game->net.last_input_sequence;
-         ++sequence) {
-      AppendPendingInput(game, sequence, input_direction);
+    ClientNetUpdate(&game->net, input_direction, delta_time);
+
+    if (game->net.last_input_sequence > previous_input_sequence) {
+      for (uint32_t sequence = previous_input_sequence + 1;
+           sequence <= game->net.last_input_sequence; ++sequence) {
+        AppendPendingInput(game, sequence, input_direction);
+      }
+      game->tracked_input_sequence = game->net.last_input_sequence;
     }
-    game->tracked_input_sequence = game->net.last_input_sequence;
-  }
 
-  if (game->net.welcome_received && (game->net.snapshot_player_count > 0)) {
-    ApplyNetworkSnapshot(game);
-    if (game->local_player != NULL) {
-      ApplyPredictedInputToPlayer(&game->world, game->local_player, input_direction, delta_time);
+    if (game->net.welcome_received && (game->net.snapshot_player_count > 0)) {
+      ApplyNetworkSnapshot(game);
+      if (game->local_player != NULL) {
+        ApplyPredictedInputToPlayer(&game->world, game->local_player, input_direction, delta_time);
+      }
     }
   } else {
     ShroomPlayerSetInput(game->local_player, input_direction);
-    ShroomWorldStep(&game->world, delta_time);
+    if (!offline_paused) {
+      ShroomWorldStep(&game->world, delta_time);
+    }
   }
 
   SyncRenderPositions(game, delta_time);
@@ -615,9 +750,13 @@ void GameDraw(const Game* game) {
   EndMode2D();
 
   DrawOffscreenIndicators(game);
-  DrawGameplayHud(game, local_rank, leaderboard_count, zone, leaderboard, shown_count);
+  DrawGameplayHud(game, local_rank, leaderboard_count, zone);
   DrawZoneLegend(game);
   DrawStatusBanners(game);
+  DrawLeaderboardOverlay(game, leaderboard, shown_count);
+  DrawMenuOverlay(game);
+  DrawLeaveConfirmationOverlay(game);
+  DrawConnectionOverlay(game);
 
   EndDrawing();
 }

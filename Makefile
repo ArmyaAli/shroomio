@@ -25,6 +25,7 @@ PROJECT := shroomio
 
 RAYLIB_VERSION := 5.5
 RAYGUI_VERSION := 4.0
+ENET_VERSION   := 1.3.18
 UNITY_VERSION  := 2.6.0
 
 # =============================================================================
@@ -60,7 +61,8 @@ RAYGUI_DIR := vendor/raygui-$(RAYGUI_VERSION)
 RAYGUI_URL := https://github.com/raysan5/raygui/archive/refs/tags/$(RAYGUI_VERSION).tar.gz
 RAYGUI_SRC_DIR := $(RAYGUI_DIR)/src
 
-ENET_DIR := vendor/enet
+ENET_DIR := vendor/enet-$(ENET_VERSION)
+ENET_URL := https://github.com/lsalzman/enet/archive/refs/tags/v$(ENET_VERSION).tar.gz
 ENET_INCLUDE_DIR := $(ENET_DIR)/include
 
 UNITY_DIR := vendor/Unity-$(UNITY_VERSION)
@@ -97,7 +99,8 @@ DOCKER  ?= docker
 
 # Client compiler flags (raylib-based)
 COMMON_CFLAGS := -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
-                 -I$(RAYLIB_SRC_DIR) -I$(RAYLIB_GLFW_INCLUDE_DIR) -I$(RAYGUI_SRC_DIR)
+                 -I$(RAYLIB_SRC_DIR) -I$(RAYLIB_GLFW_INCLUDE_DIR) -I$(RAYGUI_SRC_DIR) \
+                 -I$(ENET_INCLUDE_DIR)
 LINUX_CFLAGS   := $(COMMON_CFLAGS) -DPLATFORM_DESKTOP -D_DEFAULT_SOURCE
 WINDOWS_CFLAGS := $(COMMON_CFLAGS) -DPLATFORM_DESKTOP
 
@@ -328,7 +331,12 @@ $(WINDOWS_BUILD_DIR)/vendor/enet/%.o: $(ENET_DIR)/%.c
 # =============================================================================
 .PHONY: vendor
 
-vendor: $(RAYLIB_DIR) $(RAYGUI_DIR) $(UNITY_DIR)
+vendor: $(RAYLIB_DIR) $(RAYGUI_DIR) $(ENET_DIR) $(UNITY_DIR)
+
+$(ENET_DIR):
+	$(MKDIR_P) vendor build
+	$(CURL) -L $(ENET_URL) -o build/enet.tar.gz
+	$(TAR) -xzf build/enet.tar.gz -C vendor
 
 $(RAYLIB_DIR):
 	@$(MKDIR_P) vendor $(BUILD_DIR)
