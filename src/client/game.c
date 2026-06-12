@@ -368,6 +368,55 @@ static void DrawPlayers(const Game* game) {
   }
 }
 
+static void DrawOffscreenIndicators(const Game* game) {
+  const Vector2 screen_center = {game->screen_width * 0.5f, game->screen_height * 0.5f};
+  const float horizontal_limit = (game->screen_width * 0.5f) - 44.0f;
+  const float vertical_limit = (game->screen_height * 0.5f) - 44.0f;
+
+  for (size_t index = 0; index < game->world.player_count; ++index) {
+    const ShroomPlayerState* player = &game->world.players[index];
+    const PlayerThreatState threat_state = GetThreatState(game->local_player, player);
+    const Color color = GetThreatOutlineColor(threat_state);
+    const Vector2 world_position = {game->render_positions[index].x,
+                                    game->render_positions[index].y};
+    const Vector2 screen_position = GetWorldToScreen2D(world_position, game->camera);
+    Vector2 direction;
+    Vector2 indicator_position;
+    Vector2 perpendicular;
+    Vector2 base_center;
+    float scale_x;
+    float scale_y;
+    float scale;
+
+    if (!player->alive || (threat_state == PLAYER_THREAT_NONE)) {
+      continue;
+    }
+    if ((screen_position.x >= 0.0f) && (screen_position.x <= (float)game->screen_width) &&
+        (screen_position.y >= 0.0f) && (screen_position.y <= (float)game->screen_height)) {
+      continue;
+    }
+
+    direction = Vector2Subtract(screen_position, screen_center);
+    if (Vector2LengthSqr(direction) <= 0.01f) {
+      continue;
+    }
+
+    scale_x = horizontal_limit / fmaxf(fabsf(direction.x), 0.0001f);
+    scale_y = vertical_limit / fmaxf(fabsf(direction.y), 0.0001f);
+    scale = fminf(scale_x, scale_y);
+    indicator_position = Vector2Add(screen_center, Vector2Scale(direction, scale));
+    direction = Vector2Normalize(direction);
+    perpendicular = (Vector2){-direction.y, direction.x};
+    base_center = Vector2Subtract(indicator_position, Vector2Scale(direction, 16.0f));
+
+    DrawLineEx(Vector2Subtract(indicator_position, Vector2Scale(direction, 24.0f)),
+               indicator_position, 3.0f, Fade(color, 0.7f));
+    DrawTriangle(indicator_position, Vector2Add(base_center, Vector2Scale(perpendicular, 8.0f)),
+                 Vector2Subtract(base_center, Vector2Scale(perpendicular, 8.0f)), color);
+    DrawCircleV(base_center, 4.0f, Fade(color, 0.75f));
+  }
+}
+
 static void UpdateStatusBanners(Game* game, float delta_time) {
   const ShroomZone zone = ShroomGetZoneAtPosition(&game->world, game->local_player->position);
   const float moved_distance =
@@ -565,6 +614,7 @@ void GameDraw(const Game* game) {
 
   EndMode2D();
 
+  DrawOffscreenIndicators(game);
   DrawGameplayHud(game, local_rank, leaderboard_count, zone, leaderboard, shown_count);
   DrawZoneLegend(game);
   DrawStatusBanners(game);
