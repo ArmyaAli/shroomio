@@ -691,7 +691,13 @@ void GameUpdate(Game* game, float delta_time) {
       game->leaderboard_overlay_open || game->menu_overlay_open || game->leave_confirmation_open;
   const bool offline_paused = (game->active_mode == SHROOM_SESSION_MODE_OFFLINE_PRACTICE) &&
                               (game->menu_overlay_open || game->leave_confirmation_open);
-  const ShroomVec2 input_direction = overlay_open ? (ShroomVec2){0} : GetMovementInput(game);
+  ShroomVec2 input_direction;
+
+  if (overlay_open) {
+    input_direction = (ShroomVec2){0};
+  } else {
+    input_direction = GetMovementInput(game);
+  }
 
   if (IsOnlineMode(game->active_mode)) {
     const uint32_t previous_input_sequence = game->net.last_input_sequence;
