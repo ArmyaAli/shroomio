@@ -1,8 +1,10 @@
 #include "client_settings.h"
 
 #include <stdbool.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 static const char* kClientSettingsPath = "client_settings.cfg";
 
@@ -100,14 +102,20 @@ bool ClientSettingsLoad(ClientSettings* settings) {
 }
 
 bool ClientSettingsSave(const ClientSettings* settings) {
+  const int file_descriptor = open(kClientSettingsPath, O_WRONLY | O_CREAT | O_TRUNC, 0600);
   FILE* file;
 
   if (settings == NULL) {
     return false;
   }
 
-  file = fopen(kClientSettingsPath, "w");
+  if (file_descriptor < 0) {
+    return false;
+  }
+
+  file = fdopen(file_descriptor, "w");
   if (file == NULL) {
+    close(file_descriptor);
     return false;
   }
 
