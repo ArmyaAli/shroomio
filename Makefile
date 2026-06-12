@@ -144,9 +144,17 @@ WINDOWS_RAYLIB_LIB := $(WINDOWS_BUILD_DIR)/libraylib.a
 
 # Dear ImGui source files
 IMGUI_CORE_SOURCES := imgui imgui_draw imgui_tables imgui_widgets imgui_demo
-IMGUI_SOURCES := $(addprefix $(IMGUI_SRC_DIR)/,$(addsuffix .cpp,$(IMGUI_CORE_SOURCES)))
-LINUX_IMGUI_OBJECTS := $(addprefix $(LINUX_BUILD_DIR)/imgui/,$(addsuffix .o,$(IMGUI_CORE_SOURCES)))
-WINDOWS_IMGUI_OBJECTS := $(addprefix $(WINDOWS_BUILD_DIR)/imgui/,$(addsuffix .o,$(IMGUI_CORE_SOURCES)))
+IMGUI_BACKEND_SOURCES := imgui_impl_raylib
+IMGUI_WRAPPER_SOURCES := imgui_wrapper
+IMGUI_SOURCES := $(addprefix $(IMGUI_SRC_DIR)/,$(addsuffix .cpp,$(IMGUI_CORE_SOURCES))) \
+                 $(CLIENT_SRC_DIR)/$(IMGUI_BACKEND_SOURCES).cpp \
+                 $(CLIENT_SRC_DIR)/$(IMGUI_WRAPPER_SOURCES).cpp
+LINUX_IMGUI_OBJECTS := $(addprefix $(LINUX_BUILD_DIR)/imgui/,$(addsuffix .o,$(IMGUI_CORE_SOURCES))) \
+                       $(LINUX_BUILD_DIR)/client/$(IMGUI_BACKEND_SOURCES).o \
+                       $(LINUX_BUILD_DIR)/client/$(IMGUI_WRAPPER_SOURCES).o
+WINDOWS_IMGUI_OBJECTS := $(addprefix $(WINDOWS_BUILD_DIR)/imgui/,$(addsuffix .o,$(IMGUI_CORE_SOURCES))) \
+                         $(WINDOWS_BUILD_DIR)/client/$(IMGUI_BACKEND_SOURCES).o \
+                         $(WINDOWS_BUILD_DIR)/client/$(IMGUI_WRAPPER_SOURCES).o
 
 # Client source files
 CLIENT_SOURCES := \
@@ -318,7 +326,23 @@ $(LINUX_BUILD_DIR)/imgui/%.o: $(IMGUI_SRC_DIR)/%.cpp $(IMGUI_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(LINUX_IMGUI_CFLAGS) -c $< -o $@
 
+$(LINUX_BUILD_DIR)/client/imgui_impl_raylib.o: $(CLIENT_SRC_DIR)/imgui_impl_raylib.cpp $(IMGUI_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(LINUX_IMGUI_CFLAGS) -c $< -o $@
+
+$(LINUX_BUILD_DIR)/client/imgui_wrapper.o: $(CLIENT_SRC_DIR)/imgui_wrapper.cpp $(IMGUI_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(LINUX_IMGUI_CFLAGS) -c $< -o $@
+
 $(WINDOWS_BUILD_DIR)/imgui/%.o: $(IMGUI_SRC_DIR)/%.cpp $(IMGUI_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(WINDOWS_CC) $(WINDOWS_IMGUI_CFLAGS) -c $< -o $@
+
+$(WINDOWS_BUILD_DIR)/client/imgui_impl_raylib.o: $(CLIENT_SRC_DIR)/imgui_impl_raylib.cpp $(IMGUI_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(WINDOWS_CC) $(WINDOWS_IMGUI_CFLAGS) -c $< -o $@
+
+$(WINDOWS_BUILD_DIR)/client/imgui_wrapper.o: $(CLIENT_SRC_DIR)/imgui_wrapper.cpp $(IMGUI_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(WINDOWS_CC) $(WINDOWS_IMGUI_CFLAGS) -c $< -o $@
 
