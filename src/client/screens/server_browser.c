@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include "game.h"
 #include "screen.h"
@@ -148,9 +150,16 @@ static void SortServerEntries(ServerBrowserState* browser, ServerBrowserEntry* e
 }
 
 static void SaveRecentServers(const ServerBrowserState* browser) {
-  FILE* file = fopen(kRecentServersPath, "w");
+  const int file_descriptor = open(kRecentServersPath, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+  FILE* file;
 
+  if (file_descriptor < 0) {
+    return;
+  }
+
+  file = fdopen(file_descriptor, "w");
   if (file == NULL) {
+    close(file_descriptor);
     return;
   }
 
