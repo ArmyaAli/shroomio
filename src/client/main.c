@@ -1,4 +1,5 @@
 #include "game.h"
+#include "imgui_wrapper.h"
 #include "screen.h"
 #include "shared/lifecycle.h"
 
@@ -19,6 +20,8 @@ int main(void) {
   SetExitKey(KEY_NULL);
   SetTargetFPS(60);
 
+  ShroomImGui_Init();
+
   ClientSettingsLoad(&g_game.settings);
   SetMasterVolume((float)g_game.settings.master_volume_percent / 100.0f);
 
@@ -38,11 +41,20 @@ int main(void) {
          ShroomScreenManagerIsRunning(&g_screen_manager)) {
     ShroomScreenManagerHandleInput(&g_screen_manager);
     ShroomScreenManagerUpdate(&g_screen_manager, GetFrameTime());
+
+    ShroomImGui_NewFrame();
+    ShroomImGui_ShowDemoWindow(NULL);
+
     ShroomScreenManagerDraw(&g_screen_manager);
+
+    ShroomImGui_Render();
   }
 
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_STOP);
   ShroomScreenManagerShutdown(&g_screen_manager);
+
+  ShroomImGui_Shutdown();
+
   CloseWindow();
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_SHUTDOWN);
   return 0;
