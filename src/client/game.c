@@ -656,8 +656,6 @@ static ShroomVec2 GetMovementInput(const Game* game) {
 }
 
 void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode mode) {
-  size_t bot_index;
-
   *game = (Game){0};
 
   game->selected_mode = mode;
@@ -671,6 +669,8 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
   if (IsOnlineMode(mode)) {
     ClientNetInit(&game->net, "127.0.0.1", SHROOM_SERVER_PORT);
   } else {
+    size_t bot_index;
+
     for (bot_index = 0; bot_index < SHROOM_BOT_COUNT; ++bot_index) {
       ShroomWorldSpawnPlayer(&game->world, (ShroomPlayerId)(bot_index + 2), true);
     }
