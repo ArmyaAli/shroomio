@@ -1,6 +1,7 @@
 #ifndef SHROOM_PROTOCOL_H
 #define SHROOM_PROTOCOL_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "config.h"
@@ -11,13 +12,20 @@
 #define SHROOM_MAX_PASSWORD_LENGTH 64u
 #define SHROOM_AUTH_TOKEN_LENGTH 64u
 #define SHROOM_SERVER_MAX_CLIENTS 128u
-#define SHROOM_ENET_CHANNEL_CONTROL 0u
-#define SHROOM_ENET_CHANNEL_INPUT 1u
-#define SHROOM_ENET_CHANNEL_SNAPSHOT 2u
-#define SHROOM_ENET_CHANNEL_COUNT 3u
 #define SHROOM_SNAPSHOT_RATE 15u
 #define SHROOM_MAX_SNAPSHOT_PLAYERS 128u
 #define SHROOM_SPORE_STATE_RATE 5u
+#define SHROOM_LATENCY_WARNING_MS 150u
+#define SHROOM_LATENCY_UNPLAYABLE_MS 200u
+
+typedef enum ShroomPacketChannel {
+  SHROOM_ENET_CHANNEL_CONTROL = 0u,
+  SHROOM_ENET_CHANNEL_SNAPSHOT = 1u,
+  SHROOM_ENET_CHANNEL_INPUT = 2u,
+  SHROOM_ENET_CHANNEL_CHAT = 3u,
+  SHROOM_ENET_CHANNEL_VOICE = 4u,
+  SHROOM_ENET_CHANNEL_COUNT = 5u,
+} ShroomPacketChannel;
 
 typedef enum ShroomPacketType {
   SHROOM_PACKET_HELLO = 1,
@@ -52,6 +60,63 @@ typedef struct ShroomPacketHeader {
   uint8_t reserved;
   uint16_t size;
 } ShroomPacketHeader;
+
+static inline uint8_t ShroomPacketTypeToChannel(ShroomPacketType type) {
+  switch (type) {
+  case SHROOM_PACKET_HELLO:
+  case SHROOM_PACKET_WELCOME:
+  case SHROOM_PACKET_PING:
+  case SHROOM_PACKET_PONG:
+  case SHROOM_PACKET_AUTH_REQUEST:
+  case SHROOM_PACKET_AUTH_RESPONSE:
+    return SHROOM_ENET_CHANNEL_CONTROL;
+  case SHROOM_PACKET_SNAPSHOT:
+  case SHROOM_PACKET_SPORE_STATE:
+    return SHROOM_ENET_CHANNEL_SNAPSHOT;
+  case SHROOM_PACKET_INPUT:
+    return SHROOM_ENET_CHANNEL_INPUT;
+  default:
+    return SHROOM_ENET_CHANNEL_CONTROL;
+  }
+}
+
+static inline bool ShroomPacketTypeUsesReliableDelivery(ShroomPacketType type) {
+  switch (type) {
+  case SHROOM_PACKET_HELLO:
+  case SHROOM_PACKET_WELCOME:
+  case SHROOM_PACKET_PING:
+  case SHROOM_PACKET_PONG:
+  case SHROOM_PACKET_AUTH_REQUEST:
+  case SHROOM_PACKET_AUTH_RESPONSE:
+    return true;
+  case SHROOM_PACKET_INPUT:
+  case SHROOM_PACKET_SNAPSHOT:
+  case SHROOM_PACKET_SPORE_STATE:
+  default:
+    return false;
+  }
+}
+
+static inline void ShroomPacketHeaderInit(ShroomPacketHeader* header, ShroomPacketType type,
+                                          uint16_t size) {
+  if (header == 0) {
+    return;
+  }
+
+  header->type = (uint8_t)type;
+  header->reserved = ShroomPacketTypeToChannel(type);
+  header->size = size;
+}
+
+static inline bool ShroomPacketHeaderUsesExpectedChannel(const ShroomPacketHeader* header,
+                                                         uint8_t actual_channel) {
+  if (header == 0) {
+    return false;
+  }
+
+  return (header->reserved == actual_channel) &&
+         (header->reserved == ShroomPacketTypeToChannel((ShroomPacketType)header->type));
+}
 
 typedef struct ShroomHelloPacket {
   ShroomPacketHeader header;

@@ -144,6 +144,7 @@ CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/screens/help.c \
 	$(CLIENT_SRC_DIR)/screens/credits.c \
 	$(CLIENT_SRC_DIR)/screens/server_browser.c \
+	$(CLIENT_SRC_DIR)/screens/gameplay.c \
 	$(SHARED_SRC_DIR)/sim.c \
 	$(SHARED_SRC_DIR)/lifecycle.c \
 	$(SHARED_SRC_DIR)/connection.c
@@ -453,6 +454,7 @@ DEVCONTAINER_IMAGE ?= shroomio-devcontainer:dev
 DEVCONTAINER_CONTAINER ?= shroomio-devcontainer
 DEVCONTAINER_SECRET_DIR ?= $(HOME)/.config/shroomio-devcontainer
 DEVCONTAINER_GITHUB_TOKEN_FILE ?= $(DEVCONTAINER_SECRET_DIR)/github-token
+DOCKER_SOCK_GID := $(shell stat -c '%g' /var/run/docker.sock 2>/dev/null || printf '0')
 GIT_USER_NAME := $(shell git config --global --get user.name)
 GIT_USER_EMAIL := $(shell git config --global --get user.email)
 
@@ -477,6 +479,7 @@ devcontainer-up:
 	$(DOCKER) rm -f $(DEVCONTAINER_CONTAINER) >/dev/null 2>&1 || true
 	$(DOCKER) run -d --name $(DEVCONTAINER_CONTAINER) \
 		-u dev \
+		--group-add $(DOCKER_SOCK_GID) \
 		-v "$(PWD):/workspaces/shroomio" \
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-v /tmp/.X11-unix:/tmp/.X11-unix \
