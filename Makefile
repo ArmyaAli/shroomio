@@ -45,6 +45,7 @@ BUILD_DIR       := build
 DIST_DIR        := dist
 TESTS_DIR       := tests
 UNIT_TESTS_DIR  := $(TESTS_DIR)/unit
+IMGUI_TESTS_DIR := $(TESTS_DIR)/imgui
 
 LINUX_BUILD_DIR   := $(BUILD_DIR)/linux
 WINDOWS_BUILD_DIR := $(BUILD_DIR)/windows
@@ -70,6 +71,11 @@ IMGUI_URL := https://github.com/ocornut/imgui/archive/refs/tags/v$(IMGUI_VERSION
 IMGUI_SRC_DIR := $(IMGUI_DIR)
 IMGUI_BACKENDS_DIR := $(IMGUI_DIR)/backends
 
+IMGUI_TEST_ENGINE_REF := d3d44963413cfc64c80a67aa0acf953021dd7636
+IMGUI_TEST_ENGINE_DIR := vendor/imgui_test_engine-$(IMGUI_TEST_ENGINE_REF)
+IMGUI_TEST_ENGINE_URL := https://github.com/ocornut/imgui_test_engine/archive/$(IMGUI_TEST_ENGINE_REF).tar.gz
+IMGUI_TEST_ENGINE_SRC_DIR := $(IMGUI_TEST_ENGINE_DIR)/imgui_test_engine
+
 ENET_DIR := vendor/enet
 ENET_INCLUDE_DIR := $(ENET_DIR)/include
 
@@ -90,6 +96,14 @@ COMMON_INCLUDE_DIRS := -I$(SRC_DIR) -I$(CLIENT_SRC_DIR) -I$(SERVER_SRC_DIR) -I$(
 TEST_CFLAGS := -std=c11 -O0 -g $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
                $(UNITY_INCLUDE) -DTEST_MODE -D_POSIX_C_SOURCE=199309L -D_DEFAULT_SOURCE
 TEST_LIBS   := -lm
+IMGUI_TEST_CFLAGS := -std=c11 -O0 -g $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
+	-I$(RAYLIB_SRC_DIR) -I$(RAYLIB_GLFW_INCLUDE_DIR) -I$(ENET_INCLUDE_DIR) \
+	-DTEST_MODE -D_POSIX_C_SOURCE=199309L -D_DEFAULT_SOURCE
+IMGUI_TEST_CXXFLAGS := -O0 -g $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
+	-I. \
+	-I$(RAYLIB_SRC_DIR) -I$(RAYLIB_GLFW_INCLUDE_DIR) -I$(ENET_INCLUDE_DIR) \
+	-I$(IMGUI_SRC_DIR) -I$(IMGUI_TEST_ENGINE_DIR) -I$(IMGUI_TEST_ENGINE_SRC_DIR) \
+	-DTEST_MODE -DIMGUI_USER_CONFIG=\"tests/imgui/shroom_imgui_test_imconfig.h\" -pthread
 
 #== == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==   \
     == == == == == == =
@@ -217,6 +231,30 @@ SERVER_ENET_OBJECTS := $(LINUX_ENET_OBJECTS)
 #Test files
 TEST_SRCS := $(wildcard $(UNIT_TESTS_DIR)/*.c)
 TEST_BINS := $(patsubst $(UNIT_TESTS_DIR)/%.c,$(TEST_BUILD_DIR)/%,$(TEST_SRCS))
+IMGUI_TEST_ENGINE_SOURCE_NAMES := imgui_capture_tool imgui_te_context imgui_te_coroutine \
+	imgui_te_engine imgui_te_exporters imgui_te_perftool imgui_te_ui imgui_te_utils
+IMGUI_TEST_CLIENT_SOURCES := \
+	$(CLIENT_SRC_DIR)/client_settings.c \
+	$(CLIENT_SRC_DIR)/game.c \
+	$(CLIENT_SRC_DIR)/net.c \
+	$(CLIENT_SRC_DIR)/screen.c \
+	$(CLIENT_SRC_DIR)/screens/main_menu.c \
+	$(CLIENT_SRC_DIR)/screens/settings.c \
+	$(CLIENT_SRC_DIR)/screens/help.c \
+	$(CLIENT_SRC_DIR)/screens/credits.c \
+	$(CLIENT_SRC_DIR)/screens/server_browser.c \
+	$(CLIENT_SRC_DIR)/screens/gameplay.c \
+	$(SHARED_SRC_DIR)/sim.c \
+	$(SHARED_SRC_DIR)/lifecycle.c \
+	$(SHARED_SRC_DIR)/connection.c
+IMGUI_TEST_CPP_SOURCES := $(IMGUI_TESTS_DIR)/main.cpp $(IMGUI_TESTS_DIR)/tests.cpp
+IMGUI_TEST_BIN := $(TEST_BUILD_DIR)/imgui/shroomio-imgui-tests
+IMGUI_TEST_CLIENT_OBJECTS := $(patsubst $(SRC_DIR)/%.c,$(TEST_BUILD_DIR)/imgui/%.o,$(IMGUI_TEST_CLIENT_SOURCES))
+IMGUI_TEST_CPP_OBJECTS := $(patsubst $(TESTS_DIR)/imgui/%.cpp,$(TEST_BUILD_DIR)/imgui/tests/%.o,$(IMGUI_TEST_CPP_SOURCES))
+IMGUI_TEST_IMGUI_OBJECTS := $(addprefix $(TEST_BUILD_DIR)/imgui/imgui/,$(addsuffix .o,$(IMGUI_CORE_SOURCES))) \
+	$(TEST_BUILD_DIR)/imgui/client/imgui_impl_raylib.o \
+	$(TEST_BUILD_DIR)/imgui/client/imgui_wrapper.o
+IMGUI_TEST_ENGINE_OBJECTS := $(addprefix $(TEST_BUILD_DIR)/imgui/engine/,$(addsuffix .o,$(IMGUI_TEST_ENGINE_SOURCE_NAMES)))
 
 # =============================================================================
 # 5. Build Targets
@@ -239,7 +277,8 @@ help:
 	@echo "  make run-windows    Build and run the Windows client (via WSL)"
 	@echo ""
 	@echo "Quality targets:"
-	@echo "  make test           Run all unit tests"
+	@echo "  make test           Run unit tests + ImGui tests"
+	@echo "  make imgui-test     Run ImGui screen tests"
 	@echo "  make test-coverage  Run tests with coverage report"
 	@echo "  make lint           Run all linters (format-check + cppcheck)"
 	@echo "  make format-check   Check code formatting (clang-format)"
@@ -356,6 +395,34 @@ $(WINDOWS_BUILD_DIR)/client/imgui_wrapper.o: $(CLIENT_SRC_DIR)/imgui_wrapper.cpp
 	@$(MKDIR_P) $(dir $@)
 	$(WINDOWS_CXX) $(WINDOWS_CXXFLAGS) -c $< -o $@
 
+$(TEST_BUILD_DIR)/imgui/client/%.o: $(CLIENT_SRC_DIR)/%.c $(CLIENT_SRC_DIR)/game.h $(CLIENT_SRC_DIR)/net.h $(SHARED_HEADERS) $(RAYLIB_DIR) $(IMGUI_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(IMGUI_TEST_CFLAGS) -c $< -o $@
+
+$(TEST_BUILD_DIR)/imgui/shared/%.o: $(SHARED_SRC_DIR)/%.c $(SHARED_HEADERS) $(RAYLIB_DIR) $(IMGUI_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(IMGUI_TEST_CFLAGS) -c $< -o $@
+
+$(TEST_BUILD_DIR)/imgui/tests/%.o: $(IMGUI_TESTS_DIR)/%.cpp $(IMGUI_TEST_ENGINE_DIR) $(IMGUI_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CXX) $(IMGUI_TEST_CXXFLAGS) -c $< -o $@
+
+$(TEST_BUILD_DIR)/imgui/imgui/%.o: $(IMGUI_SRC_DIR)/%.cpp $(IMGUI_DIR) $(IMGUI_TEST_ENGINE_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CXX) $(IMGUI_TEST_CXXFLAGS) -c $< -o $@
+
+$(TEST_BUILD_DIR)/imgui/client/imgui_impl_raylib.o: $(CLIENT_SRC_DIR)/imgui_impl_raylib.cpp $(IMGUI_DIR) $(IMGUI_TEST_ENGINE_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CXX) $(IMGUI_TEST_CXXFLAGS) -c $< -o $@
+
+$(TEST_BUILD_DIR)/imgui/client/imgui_wrapper.o: $(CLIENT_SRC_DIR)/imgui_wrapper.cpp $(IMGUI_DIR) $(IMGUI_TEST_ENGINE_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CXX) $(IMGUI_TEST_CXXFLAGS) -c $< -o $@
+
+$(TEST_BUILD_DIR)/imgui/engine/%.o: $(IMGUI_TEST_ENGINE_SRC_DIR)/%.cpp $(IMGUI_TEST_ENGINE_DIR) $(IMGUI_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CXX) $(IMGUI_TEST_CXXFLAGS) -c $< -o $@
+
 # Shared object compilation
 $(LINUX_BUILD_DIR)/shared/%.o: $(SHARED_SRC_DIR)/%.c $(SHARED_HEADERS)
 	@$(MKDIR_P) $(dir $@)
@@ -384,8 +451,7 @@ $(WINDOWS_BUILD_DIR)/vendor/enet/%.o: $(ENET_DIR)/%.c
 # =============================================================================
 .PHONY: vendor
 
-vendor: $(RAYLIB_DIR) $(IMGUI_DIR) $(UNITY_DIR)
-vendor: $(RAYLIB_DIR) $(IMGUI_DIR) $(UNITY_DIR)
+vendor: $(RAYLIB_DIR) $(IMGUI_DIR) $(IMGUI_TEST_ENGINE_DIR) $(UNITY_DIR)
 
 $(RAYLIB_DIR):
 	@$(MKDIR_P) vendor $(BUILD_DIR)
@@ -398,6 +464,11 @@ $(IMGUI_DIR):
 	$(CURL) -L $(IMGUI_URL) -o $(BUILD_DIR)/imgui.tar.gz
 	$(TAR) -xzf $(BUILD_DIR)/imgui.tar.gz -C vendor
 
+$(IMGUI_TEST_ENGINE_DIR):
+	@$(MKDIR_P) vendor $(BUILD_DIR)
+	$(CURL) -L $(IMGUI_TEST_ENGINE_URL) -o $(BUILD_DIR)/imgui_test_engine.tar.gz
+	$(TAR) -xzf $(BUILD_DIR)/imgui_test_engine.tar.gz -C vendor
+
 $(UNITY_DIR):
 	@$(MKDIR_P) vendor $(BUILD_DIR)
 	$(CURL) -L $(UNITY_URL) -o $(BUILD_DIR)/unity.tar.gz
@@ -406,9 +477,11 @@ $(UNITY_DIR):
 # =============================================================================
 # 8. Test Targets
 # =============================================================================
-.PHONY: test test-coverage test-clean
+.PHONY: test unit-test imgui-test test-coverage test-clean
 
-test: $(TEST_BINS)
+test: unit-test imgui-test
+
+unit-test: $(TEST_BINS)
 	@echo "Running unit tests..."
 	@failed=0; total=0; \
 	for test in $(TEST_BINS); do \
@@ -426,6 +499,14 @@ test: $(TEST_BINS)
 	echo "=== Test Summary ==="; \
 	echo "Total: $$total, Passed: $$((total - failed)), Failed: $$failed"; \
 	if [ $$failed -gt 0 ]; then exit 1; fi
+
+$(IMGUI_TEST_BIN): $(IMGUI_TEST_CLIENT_OBJECTS) $(IMGUI_TEST_CPP_OBJECTS) $(IMGUI_TEST_IMGUI_OBJECTS) $(IMGUI_TEST_ENGINE_OBJECTS) $(LINUX_RAYLIB_LIB) $(LINUX_ENET_OBJECTS)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CXX) $(IMGUI_TEST_CLIENT_OBJECTS) $(IMGUI_TEST_CPP_OBJECTS) $(IMGUI_TEST_IMGUI_OBJECTS) $(IMGUI_TEST_ENGINE_OBJECTS) $(LINUX_RAYLIB_LIB) $(LINUX_ENET_OBJECTS) -o $@ $(LINUX_LIBS) -pthread
+
+imgui-test: $(IMGUI_TEST_BIN)
+	@echo "Running ImGui tests..."
+	@if command -v xvfb-run >/dev/null 2>&1; then xvfb-run -a ./$(IMGUI_TEST_BIN); else ./$(IMGUI_TEST_BIN); fi
 
 # Test with coverage (requires gcovr)
 test-coverage:

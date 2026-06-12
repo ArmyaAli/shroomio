@@ -25,6 +25,7 @@ If Docker access fails after a rebuild, reopen the workspace in the container so
 ```bash
 make linux       # Builds dist/shroomio
 make run         # Builds and launches the client
+make imgui-test  # Builds and runs the ImGui UI test harness
 ```
 
 ### Linux Headless Server
@@ -163,6 +164,11 @@ latexmk -pdf -output-directory=. design/shroomio-specification.tex
 The PDF is written to `shroomio-specification.pdf` at the repo root.
 
 ## Testing
+
+Automated testing workflow:
+
+1. `make test` runs the C unit suite plus the ImGui screen tests.
+2. `make imgui-test` runs only the ImGui screen harness.
 
 Manual testing workflow:
 

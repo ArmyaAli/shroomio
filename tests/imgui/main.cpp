@@ -1,0 +1,143 @@
+#include "app.h"
+
+#include "client/client_settings.h"
+#include "client/imgui_wrapper.h"
+#include "imgui.h"
+#include "imgui_test_engine/imgui_te_engine.h"
+#include "raylib.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+ShroomImGuiTestApp g_imgui_test_app = {};
+
+extern void ShroomRegisterImGuiTests(ImGuiTestEngine* engine);
+
+static void RegisterScreens(ShroomScreenManager* manager) {
+  ShroomScreenRegisterMainMenu(manager);
+  ShroomScreenRegisterSettings(manager);
+  ShroomScreenRegisterHelp(manager);
+  ShroomScreenRegisterCredits(manager);
+  ShroomScreenRegisterServerBrowser(manager);
+  ShroomScreenRegisterGame(manager);
+}
+
+static void ResetPersistentFiles(void) {
+  unlink("client_settings.cfg");
+  unlink("server_browser_recent.txt");
+  unlink("imgui.ini");
+}
+
+void ShroomImGuiTestAppReset(bool reset_files) {
+  if (g_imgui_test_app.screen_manager_initialized) {
+    ShroomScreenManagerShutdown(&g_imgui_test_app.screen_manager);
+    g_imgui_test_app.screen_manager_initialized = false;
+  }
+
+  if (reset_files) {
+    ResetPersistentFiles();
+  }
+
+  memset(&g_imgui_test_app.game, 0, sizeof(g_imgui_test_app.game));
+  ClientSettingsSetDefaults(&g_imgui_test_app.game.settings);
+  SetMasterVolume((float)g_imgui_test_app.game.settings.master_volume_percent / 100.0f);
+  snprintf(g_imgui_test_app.game.selected_server_host,
+           sizeof(g_imgui_test_app.game.selected_server_host), "%s", "127.0.0.1");
+  g_imgui_test_app.game.selected_server_port = SHROOM_SERVER_PORT;
+  g_imgui_test_app.game.selected_mode = SHROOM_SESSION_MODE_QUICK_PLAY;
+
+  ShroomScreenManagerInit(&g_imgui_test_app.screen_manager);
+  g_imgui_test_app.screen_manager.user_data = &g_imgui_test_app.game;
+  RegisterScreens(&g_imgui_test_app.screen_manager);
+  ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_MAIN_MENU);
+  g_imgui_test_app.screen_manager_initialized = true;
+}
+
+static bool SetupWorkingDirectory(void) {
+  char template_path[] = "/tmp/shroomio-imgui-tests-XXXXXX";
+  char* temp_dir = mkdtemp(template_path);
+
+  if (temp_dir == NULL) {
+    perror("mkdtemp");
+    return false;
+  }
+
+  snprintf(g_imgui_test_app.temp_dir, sizeof(g_imgui_test_app.temp_dir), "%s", temp_dir);
+  if (chdir(g_imgui_test_app.temp_dir) != 0) {
+    perror("chdir");
+    return false;
+  }
+
+  return true;
+}
+
+int main(void) {
+  ImGuiTestEngine* engine;
+  ImGuiTestEngineResultSummary summary;
+  ImGuiTestEngineIO* test_io;
+  int exit_code = 0;
+
+  if (!SetupWorkingDirectory()) {
+    return 1;
+  }
+
+  InitWindow(1280, 720, "shroomio imgui tests");
+  SetExitKey(KEY_NULL);
+  SetTargetFPS(60);
+
+  ShroomImGui_Init();
+  ShroomImGuiTestAppReset(true);
+
+  engine = ImGuiTestEngine_CreateContext();
+  test_io = &ImGuiTestEngine_GetIO(engine);
+  test_io->ConfigSavedSettings = false;
+  test_io->ConfigCaptureEnabled = false;
+  test_io->ConfigNoThrottle = true;
+  test_io->ConfigLogToTTY = true;
+  test_io->ConfigRunSpeed = ImGuiTestRunSpeed_Fast;
+  test_io->ConfigVerboseLevel = ImGuiTestVerboseLevel_Info;
+  test_io->ConfigVerboseLevelOnError = ImGuiTestVerboseLevel_Debug;
+
+  ImGuiTestEngine_Start(engine, ImGui::GetCurrentContext());
+  ImGuiTestEngine_InstallDefaultCrashHandler();
+  ShroomRegisterImGuiTests(engine);
+  ImGuiTestEngine_QueueTests(engine, ImGuiTestGroup_Tests);
+
+  while (!WindowShouldClose()) {
+    ShroomScreenManagerHandleInput(&g_imgui_test_app.screen_manager);
+    ShroomScreenManagerUpdate(&g_imgui_test_app.screen_manager, GetFrameTime());
+
+    ShroomImGui_ApplyTheme(g_imgui_test_app.game.settings.palette_preset ==
+                           CLIENT_PALETTE_HIGH_CONTRAST);
+    ShroomImGui_SetUiScale((float)g_imgui_test_app.game.settings.ui_scale_percent / 100.0f);
+    ShroomImGui_NewFrame();
+
+    BeginDrawing();
+    ShroomScreenManagerDraw(&g_imgui_test_app.screen_manager);
+    ShroomImGui_Render();
+    ImGuiTestEngine_PreSwap(engine);
+    EndDrawing();
+    ImGuiTestEngine_PostSwap(engine);
+
+    if (ImGuiTestEngine_IsTestQueueEmpty(engine) && !test_io->IsRunningTests) {
+      break;
+    }
+  }
+
+  ImGuiTestEngine_Stop(engine);
+  ImGuiTestEngine_GetResultSummary(engine, &summary);
+  fprintf(stderr, "ImGui tests: tested=%d success=%d queued=%d\n", summary.CountTested,
+          summary.CountSuccess, summary.CountInQueue);
+  if ((summary.CountTested == 0) || (summary.CountTested != summary.CountSuccess) ||
+      (summary.CountInQueue != 0)) {
+    exit_code = 1;
+  }
+
+  ShroomScreenManagerShutdown(&g_imgui_test_app.screen_manager);
+  ShroomImGui_Shutdown();
+  CloseWindow();
+  ImGuiTestEngine_DestroyContext(engine);
+  return exit_code;
+}

@@ -33,9 +33,10 @@ jobs:
             libx11-dev \
             libxcursor-dev \
             libxi-dev \
-            libxinerama-dev \
-            libxrandr-dev \
-            make
+             libxinerama-dev \
+             libxrandr-dev \
+             make \
+             xvfb
 
       - name: Check code formatting
         run: make format-check
