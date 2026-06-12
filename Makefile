@@ -78,7 +78,7 @@ COMMON_INCLUDE_DIRS := -I$(SRC_DIR) -I$(CLIENT_SRC_DIR) -I$(SERVER_SRC_DIR) -I$(
 
 # Test compiler flags
 TEST_CFLAGS := -std=c11 -O0 -g $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
-               $(UNITY_INCLUDE) -DTEST_MODE
+               $(UNITY_INCLUDE) -DTEST_MODE -D_POSIX_C_SOURCE=199309L -D_DEFAULT_SOURCE
 TEST_LIBS   := -lm
 
 # =============================================================================
@@ -152,6 +152,7 @@ CLIENT_SOURCES := \
 SERVER_SOURCES := \
 	$(SERVER_SRC_DIR)/main.c \
 	$(SERVER_SRC_DIR)/logger.c \
+	$(SERVER_SRC_DIR)/auth.c \
 	$(SHARED_SRC_DIR)/sim.c \
 	$(SHARED_SRC_DIR)/lifecycle.c \
 	$(SHARED_SRC_DIR)/connection.c
@@ -164,7 +165,8 @@ SHARED_HEADERS := \
 	$(SHARED_SRC_DIR)/sim.h \
 	$(SHARED_SRC_DIR)/protocol.h \
 	$(SHARED_SRC_DIR)/lifecycle.h \
-	$(SHARED_SRC_DIR)/connection.h
+	$(SHARED_SRC_DIR)/connection.h \
+	$(SERVER_SRC_DIR)/auth.h
 
 # ENet source files
 ENET_COMMON_SOURCE_NAMES  := callbacks compress host list packet peer protocol
@@ -426,6 +428,10 @@ $(TEST_BUILD_DIR)/test_screen: $(UNIT_TESTS_DIR)/test_screen.c $(UNITY_SRC) $(CL
 $(TEST_BUILD_DIR)/test_connection: $(UNIT_TESTS_DIR)/test_connection.c $(UNITY_SRC) $(SHARED_SRC_DIR)/connection.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_auth: $(UNIT_TESTS_DIR)/test_auth.c $(UNITY_SRC) $(SERVER_SRC_DIR)/auth.c $(SERVER_SRC_DIR)/logger.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) -I$(SERVER_SRC_DIR) $^ -o $@ $(TEST_LIBS) -lsqlite3
 
 $(TEST_BUILD_DIR)/%: $(UNIT_TESTS_DIR)/%.c $(UNITY_SRC) | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
