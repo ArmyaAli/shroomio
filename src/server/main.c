@@ -1,6 +1,8 @@
 #include <signal.h>
 #include <sqlite3.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -11,6 +13,39 @@
 #include "shared/sim.h"
 #include "auth.h"
 #include "logger.h"
+
+static char* LoadSchemaFile(const char* path) {
+  FILE* file = fopen(path, "rb");
+  if (file == NULL) {
+    return NULL;
+  }
+
+  fseek(file, 0, SEEK_END);
+  long size = ftell(file);
+  fseek(file, 0, SEEK_SET);
+
+  if (size <= 0) {
+    fclose(file);
+    return NULL;
+  }
+
+  char* buffer = (char*)malloc((size_t)size + 1);
+  if (buffer == NULL) {
+    fclose(file);
+    return NULL;
+  }
+
+  size_t read = fread(buffer, 1, (size_t)size, file);
+  fclose(file);
+
+  if (read != (size_t)size) {
+    free(buffer);
+    return NULL;
+  }
+
+  buffer[size] = '\0';
+  return buffer;
+}
 
 typedef struct ServerSession {
   bool active;
@@ -398,47 +433,25 @@ int main(void) {
   }
   LOG_INFO("database initialized");
 
-  char* err_msg = NULL;
-  const char* schema_sql = "CREATE TABLE IF NOT EXISTS users ("
-                           "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-                           "player_id INTEGER NOT NULL UNIQUE,"
-                           "username TEXT NOT NULL UNIQUE,"
-                           "password_hash TEXT,"
-                           "auth_method TEXT NOT NULL,"
-                           "created_at TEXT DEFAULT CURRENT_TIMESTAMP,"
-                           "last_login_at TEXT DEFAULT CURRENT_TIMESTAMP"
-                           ");"
-                           "CREATE TABLE IF NOT EXISTS auth_tokens ("
-                           "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-                           "user_id INTEGER NOT NULL,"
-                           "token TEXT NOT NULL UNIQUE,"
-                           "expires_at TEXT NOT NULL,"
-                           "created_at TEXT DEFAULT CURRENT_TIMESTAMP,"
-                           "FOREIGN KEY (user_id) REFERENCES users(id)"
-                           ");"
-                           "CREATE TABLE IF NOT EXISTS players ("
-                           "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-                           "player_uuid TEXT NOT NULL UNIQUE,"
-                           "display_name TEXT NOT NULL,"
-                           "created_at TEXT DEFAULT CURRENT_TIMESTAMP"
-                           ");"
-                           "CREATE TABLE IF NOT EXISTS player_stats ("
-                           "player_id INTEGER PRIMARY KEY,"
-                           "total_games INTEGER DEFAULT 0,"
-                           "total_kills INTEGER DEFAULT 0,"
-                           "total_deaths INTEGER DEFAULT 0,"
-                           "highest_mass REAL DEFAULT 0,"
-                           "longest_survival REAL DEFAULT 0,"
-                           "FOREIGN KEY (player_id) REFERENCES players(id)"
-                           ");";
+  char* schema_sql = LoadSchemaFile("database/schema.sql");
+  if (schema_sql == NULL) {
+    LOG_ERROR("failed to load schema file: database/schema.sql");
+    sqlite3_close(db);
+    ShroomLifecycleSetError(&g_lifecycle, 1, "Database schema file not found");
+    return 1;
+  }
 
+  char* err_msg = NULL;
   if (sqlite3_exec(db, schema_sql, NULL, NULL, &err_msg) != SQLITE_OK) {
     LOG_ERROR("failed to create schema: %s", err_msg);
     sqlite3_free(err_msg);
+    free(schema_sql);
     sqlite3_close(db);
     ShroomLifecycleSetError(&g_lifecycle, 1, "Database schema creation failed");
     return 1;
   }
+
+  free(schema_sql);
 
   ShroomAuthInit(&auth_ctx, db);
 

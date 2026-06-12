@@ -1,9 +1,12 @@
 -- Shroomio Database Schema
--- Version: 1.0.0
--- Description: Initial schema for persistent player statistics and session tracking
+-- Consolidated schema for pre-production development
 
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
+
+-- ============================================================================
+-- Core Game Tables
+-- ============================================================================
 
 -- Players table: tracks all known players by their unique identifier
 CREATE TABLE IF NOT EXISTS players (
@@ -86,6 +89,40 @@ CREATE TABLE IF NOT EXISTS match_events (
     FOREIGN KEY (target_player_id) REFERENCES players(id) ON DELETE SET NULL
 );
 
+-- ============================================================================
+-- Authentication Tables
+-- ============================================================================
+
+-- Users table: authentication accounts linked to players
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL UNIQUE,
+    username TEXT NOT NULL UNIQUE,
+    email TEXT,
+    password_hash TEXT,
+    discord_id TEXT UNIQUE,
+    auth_method TEXT NOT NULL CHECK (auth_method IN ('password', 'discord', 'anonymous')),
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    last_login_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE
+);
+
+-- Auth tokens table: active session tokens for authenticated users
+CREATE TABLE IF NOT EXISTS auth_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    token TEXT NOT NULL UNIQUE,
+    token_type TEXT NOT NULL DEFAULT 'jwt',
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    revoked_at TEXT,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- ============================================================================
+-- Views
+-- ============================================================================
+
 -- Leaderboard view: shows top players by various metrics
 CREATE VIEW IF NOT EXISTS leaderboard_by_mass AS
 SELECT 
@@ -111,7 +148,11 @@ JOIN player_stats ps ON p.id = ps.player_id
 WHERE ps.total_kills > 0
 ORDER BY ps.total_kills DESC;
 
--- Indexes for performance
+-- ============================================================================
+-- Indexes
+-- ============================================================================
+
+-- Core game indexes
 CREATE INDEX IF NOT EXISTS idx_players_uuid ON players(player_uuid);
 CREATE INDEX IF NOT EXISTS idx_players_last_seen ON players(last_seen_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started_at DESC);
@@ -122,3 +163,11 @@ CREATE INDEX IF NOT EXISTS idx_player_stats_player ON player_stats(player_id);
 CREATE INDEX IF NOT EXISTS idx_match_events_session ON match_events(session_id);
 CREATE INDEX IF NOT EXISTS idx_match_events_type ON match_events(event_type);
 CREATE INDEX IF NOT EXISTS idx_match_events_timestamp ON match_events(event_timestamp DESC);
+
+-- Authentication indexes
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+CREATE INDEX IF NOT EXISTS idx_users_discord_id ON users(discord_id);
+CREATE INDEX IF NOT EXISTS idx_users_player_id ON users(player_id);
+CREATE INDEX IF NOT EXISTS idx_auth_tokens_token ON auth_tokens(token);
+CREATE INDEX IF NOT EXISTS idx_auth_tokens_user_id ON auth_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_auth_tokens_expires_at ON auth_tokens(expires_at);
