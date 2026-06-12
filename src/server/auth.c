@@ -85,8 +85,8 @@ static bool ValidateUsername(const char* username) {
   }
   for (size_t i = 0; i < len; ++i) {
     char c = username[i];
-    if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
-          c == '_' || c == '-')) {
+    if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' ||
+          c == '-')) {
       return false;
     }
   }
@@ -402,11 +402,10 @@ ShroomAuthResult ShroomAuthValidateToken(ShroomAuthContext* ctx, const char* tok
   }
 
   sqlite3_stmt* stmt = NULL;
-  const char* sql =
-      "SELECT t.user_id, u.player_id, u.username, u.auth_method, t.expires_at "
-      "FROM auth_tokens t "
-      "JOIN users u ON t.user_id = u.id "
-      "WHERE t.token = ? AND t.revoked_at IS NULL";
+  const char* sql = "SELECT t.user_id, u.player_id, u.username, u.auth_method, t.expires_at "
+                    "FROM auth_tokens t "
+                    "JOIN users u ON t.user_id = u.id "
+                    "WHERE t.token = ? AND t.revoked_at IS NULL";
 
   if (sqlite3_prepare_v2(ctx->db, sql, -1, &stmt, NULL) != SQLITE_OK) {
     return SHROOM_AUTH_DATABASE_ERROR;

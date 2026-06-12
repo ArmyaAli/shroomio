@@ -313,9 +313,9 @@ static void HandleAuthRequestPacket(ENetPeer* peer, ServerSession* session,
         SendAuthResponse(peer, result, user.player_id, token.token, "Login successful");
         LOG_INFO("Auth: User '%s' logged in", packet->username);
       } else {
-        const char* msg =
-            (result == SHROOM_AUTH_INVALID_CREDENTIALS) ? "Invalid username or password"
-                                                        : "Login failed";
+        const char* msg = (result == SHROOM_AUTH_INVALID_CREDENTIALS)
+                              ? "Invalid username or password"
+                              : "Login failed";
         SendAuthResponse(peer, result, 0, NULL, msg);
       }
     }
@@ -399,39 +399,38 @@ int main(void) {
   LOG_INFO("database initialized");
 
   char* err_msg = NULL;
-  const char* schema_sql =
-      "CREATE TABLE IF NOT EXISTS users ("
-      "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-      "player_id INTEGER NOT NULL UNIQUE,"
-      "username TEXT NOT NULL UNIQUE,"
-      "password_hash TEXT,"
-      "auth_method TEXT NOT NULL,"
-      "created_at TEXT DEFAULT CURRENT_TIMESTAMP,"
-      "last_login_at TEXT DEFAULT CURRENT_TIMESTAMP"
-      ");"
-      "CREATE TABLE IF NOT EXISTS auth_tokens ("
-      "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-      "user_id INTEGER NOT NULL,"
-      "token TEXT NOT NULL UNIQUE,"
-      "expires_at TEXT NOT NULL,"
-      "created_at TEXT DEFAULT CURRENT_TIMESTAMP,"
-      "FOREIGN KEY (user_id) REFERENCES users(id)"
-      ");"
-      "CREATE TABLE IF NOT EXISTS players ("
-      "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-      "player_uuid TEXT NOT NULL UNIQUE,"
-      "display_name TEXT NOT NULL,"
-      "created_at TEXT DEFAULT CURRENT_TIMESTAMP"
-      ");"
-      "CREATE TABLE IF NOT EXISTS player_stats ("
-      "player_id INTEGER PRIMARY KEY,"
-      "total_games INTEGER DEFAULT 0,"
-      "total_kills INTEGER DEFAULT 0,"
-      "total_deaths INTEGER DEFAULT 0,"
-      "highest_mass REAL DEFAULT 0,"
-      "longest_survival REAL DEFAULT 0,"
-      "FOREIGN KEY (player_id) REFERENCES players(id)"
-      ");";
+  const char* schema_sql = "CREATE TABLE IF NOT EXISTS users ("
+                           "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                           "player_id INTEGER NOT NULL UNIQUE,"
+                           "username TEXT NOT NULL UNIQUE,"
+                           "password_hash TEXT,"
+                           "auth_method TEXT NOT NULL,"
+                           "created_at TEXT DEFAULT CURRENT_TIMESTAMP,"
+                           "last_login_at TEXT DEFAULT CURRENT_TIMESTAMP"
+                           ");"
+                           "CREATE TABLE IF NOT EXISTS auth_tokens ("
+                           "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                           "user_id INTEGER NOT NULL,"
+                           "token TEXT NOT NULL UNIQUE,"
+                           "expires_at TEXT NOT NULL,"
+                           "created_at TEXT DEFAULT CURRENT_TIMESTAMP,"
+                           "FOREIGN KEY (user_id) REFERENCES users(id)"
+                           ");"
+                           "CREATE TABLE IF NOT EXISTS players ("
+                           "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                           "player_uuid TEXT NOT NULL UNIQUE,"
+                           "display_name TEXT NOT NULL,"
+                           "created_at TEXT DEFAULT CURRENT_TIMESTAMP"
+                           ");"
+                           "CREATE TABLE IF NOT EXISTS player_stats ("
+                           "player_id INTEGER PRIMARY KEY,"
+                           "total_games INTEGER DEFAULT 0,"
+                           "total_kills INTEGER DEFAULT 0,"
+                           "total_deaths INTEGER DEFAULT 0,"
+                           "highest_mass REAL DEFAULT 0,"
+                           "longest_survival REAL DEFAULT 0,"
+                           "FOREIGN KEY (player_id) REFERENCES players(id)"
+                           ");";
 
   if (sqlite3_exec(db, schema_sql, NULL, NULL, &err_msg) != SQLITE_OK) {
     LOG_ERROR("failed to create schema: %s", err_msg);
