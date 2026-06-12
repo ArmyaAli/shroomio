@@ -7,6 +7,7 @@ on:
       - 'src/**'
       - 'Makefile'
       - '.github/workflows/**'
+      - '.devcontainer/**'
       - 'design/**'
       - 'docs/**'
 
