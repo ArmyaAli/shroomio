@@ -244,7 +244,9 @@ ShroomAuthResult ShroomAuthLogin(ShroomAuthContext* ctx, const char* username, c
             time_t now = time(NULL);
             time_t expires = now + (AUTH_TOKEN_EXPIRY_HOURS * 3600);
             char expires_str[32];
-            strftime(expires_str, sizeof(expires_str), "%Y-%m-%dT%H:%M:%SZ", gmtime(&expires));
+            struct tm tm_result;
+            gmtime_r(&expires, &tm_result);
+            strftime(expires_str, sizeof(expires_str), "%Y-%m-%dT%H:%M:%SZ", &tm_result);
 
             sqlite3_finalize(stmt);
 
@@ -366,7 +368,9 @@ ShroomAuthResult ShroomAuthLoginAnonymous(ShroomAuthContext* ctx, const char* us
   time_t now = time(NULL);
   time_t expires = now + (AUTH_TOKEN_EXPIRY_HOURS * 3600);
   char expires_str[32];
-  strftime(expires_str, sizeof(expires_str), "%Y-%m-%dT%H:%M:%SZ", gmtime(&expires));
+  struct tm tm_result;
+  gmtime_r(&expires, &tm_result);
+  strftime(expires_str, sizeof(expires_str), "%Y-%m-%dT%H:%M:%SZ", &tm_result);
 
   const char* insert_token_sql =
       "INSERT INTO auth_tokens (user_id, token, expires_at) VALUES (?, ?, ?)";
