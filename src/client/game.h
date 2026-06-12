@@ -39,7 +39,10 @@ typedef struct Game {
   bool leaderboard_overlay_open;
   bool menu_overlay_open;
   bool leave_confirmation_open;
+  bool diagnostics_overlay_open;
   float previous_local_mass;
+  float recent_correction_distance;
+  float snapshot_age_seconds;
   float zone_callout_timer;
   float respawn_banner_timer;
   int screen_width;
