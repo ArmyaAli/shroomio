@@ -1,18 +1,30 @@
-#include <stddef.h>
-
 #include "game.h"
 #include "screen.h"
 
-#include "raygui.h"
+#include "imgui_wrapper.h"
 #include "raylib.h"
 
-static void SaveSettings(Game* game) {
-  if (game == NULL) {
-    return;
-  }
+typedef struct SettingsScreenState {
+  ClientSettings pending;
+  bool dirty;
+  bool save_succeeded;
+} SettingsScreenState;
 
-  ClientSettingsValidate(&game->settings);
-  ClientSettingsSave(&game->settings);
+static SettingsScreenState g_settings_screen;
+
+static const char* const kRegionItems[] = {
+    "Auto",
+    "Europe",
+    "North America",
+};
+
+static const char* const kPaletteItems[] = {
+    "Classic",
+    "High Contrast",
+};
+
+static void ApplySettings(Game* game) {
+  game->settings = g_settings_screen.pending;
   SetMasterVolume((float)game->settings.master_volume_percent / 100.0f);
 }
 
@@ -23,124 +35,86 @@ static bool SettingsInit(ShroomScreenManager* manager) {
     return false;
   }
 
-  ClientSettingsValidate(&game->settings);
+  g_settings_screen.pending = game->settings;
+  g_settings_screen.dirty = false;
+  g_settings_screen.save_succeeded = false;
   return true;
-}
-
-static void DrawSettingsSection(int x, int y, int width, int height, const char* title) {
-  DrawRectangle(x, y, width, height, Fade(BLACK, 0.24f));
-  DrawRectangleLines(x, y, width, height, Fade(RAYWHITE, 0.14f));
-  DrawText(title, x + 18, y + 12, 24, RAYWHITE);
 }
 
 static void SettingsDraw(ShroomScreenManager* manager) {
   Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
-  int preferred_region_index;
-  int palette_index;
-  int invert_mouse;
-  int diagnostics_enabled;
-  int show_ping_ms;
-  bool settings_changed = false;
+  bool changed = false;
+  const int screen_width = GetScreenWidth();
+  const int screen_height = GetScreenHeight();
 
   if (game == NULL) {
     return;
   }
 
-  preferred_region_index = game->settings.preferred_region_index;
-  palette_index = (int)game->settings.palette_preset;
-  invert_mouse = game->settings.invert_mouse ? 1 : 0;
-  diagnostics_enabled = game->settings.diagnostics_enabled ? 1 : 0;
-  show_ping_ms = game->settings.show_ping_ms ? 1 : 0;
+  ClearBackground((Color){18, 20, 32, 255});
 
-  BeginDrawing();
-  ClearBackground((Color){28, 30, 46, 255});
-
-  DrawText("SETTINGS", GetScreenWidth() / 2 - 86, 34, 36, RAYWHITE);
-  DrawText("Changes save automatically and are restored on the next launch.",
-           GetScreenWidth() / 2 - 288, 78, 22, GRAY);
-
-  DrawSettingsSection(62, 126, 560, 212, "Graphics / UI");
-  DrawText("UI Scale", 84, 176, 20, LIGHTGRAY);
-  if (GuiSliderBar((Rectangle){244, 178, 280, 20}, NULL,
-                   TextFormat("%d%%", game->settings.ui_scale_percent),
-                   (float*)&game->settings.ui_scale_percent, 80.0f, 140.0f)) {
-    settings_changed = true;
-  }
-  DrawText("Palette Preset", 84, 222, 20, LIGHTGRAY);
-  if (GuiDropdownBox((Rectangle){244, 218, 188, 32}, "Classic;High Contrast", &palette_index,
-                     false)) {
-    (void)0;
-  }
-  if (palette_index != (int)game->settings.palette_preset) {
-    game->settings.palette_preset = (ClientPalettePreset)palette_index;
-    settings_changed = true;
-  }
-  DrawText("Show Ping in HUD", 84, 270, 20, LIGHTGRAY);
-  if (GuiCheckBox((Rectangle){244, 268, 24, 24}, NULL, &show_ping_ms)) {
-    settings_changed = true;
-  }
-  game->settings.show_ping_ms = show_ping_ms != 0;
-
-  DrawSettingsSection(658, 126, 560, 212, "Audio");
-  DrawText("Master Volume", 680, 176, 20, LIGHTGRAY);
-  if (GuiSliderBar((Rectangle){850, 178, 280, 20}, NULL,
-                   TextFormat("%d%%", game->settings.master_volume_percent),
-                   (float*)&game->settings.master_volume_percent, 0.0f, 100.0f)) {
-    settings_changed = true;
-  }
-  DrawText("Music Volume", 680, 222, 20, LIGHTGRAY);
-  if (GuiSliderBar((Rectangle){850, 224, 280, 20}, NULL,
-                   TextFormat("%d%%", game->settings.music_volume_percent),
-                   (float*)&game->settings.music_volume_percent, 0.0f, 100.0f)) {
-    settings_changed = true;
-  }
-  DrawText("Effects Volume", 680, 268, 20, LIGHTGRAY);
-  if (GuiSliderBar((Rectangle){850, 270, 280, 20}, NULL,
-                   TextFormat("%d%%", game->settings.effects_volume_percent),
-                   (float*)&game->settings.effects_volume_percent, 0.0f, 100.0f)) {
-    settings_changed = true;
+  ShroomImGui_SetNextWindowPos((float)screen_width * 0.18f, (float)screen_height * 0.1f,
+                               SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowSize((float)screen_width * 0.64f, (float)screen_height * 0.8f,
+                                SHROOM_IMGUI_COND_ALWAYS);
+  if (!ShroomImGui_Begin("Settings", NULL,
+                         SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
+                             SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
+                             SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
+    ShroomImGui_End();
+    return;
   }
 
-  DrawSettingsSection(62, 370, 560, 212, "Controls");
-  DrawText("Invert Mouse Aim", 84, 420, 20, LIGHTGRAY);
-  if (GuiCheckBox((Rectangle){244, 418, 24, 24}, NULL, &invert_mouse)) {
-    settings_changed = true;
-  }
-  game->settings.invert_mouse = invert_mouse != 0;
-  DrawText("Keyboard Layout", 84, 468, 20, LIGHTGRAY);
-  DrawText("WASD and Arrow Keys are both available in-game.", 244, 468, 20, GRAY);
-  DrawText("More rebind options will land in the dedicated keybinding issue.", 84, 510, 18, GRAY);
+  ShroomImGui_Text("Interface");
+  changed |= ShroomImGui_SliderInt("UI Scale", &g_settings_screen.pending.ui_scale_percent, 80,
+                                   160, "%d%%");
+  changed |= ShroomImGui_Combo("Preferred Region", &g_settings_screen.pending.preferred_region_index,
+                               kRegionItems, 3);
+  changed |= ShroomImGui_Combo("Palette", (int*)&g_settings_screen.pending.palette_preset,
+                               kPaletteItems, 2);
 
-  DrawSettingsSection(658, 370, 560, 212, "Network");
-  DrawText("Preferred Region", 680, 420, 20, LIGHTGRAY);
-  if (GuiDropdownBox((Rectangle){850, 416, 210, 32}, "Auto;Europe;North America",
-                     &preferred_region_index, false)) {
-    (void)0;
-  }
-  if (preferred_region_index != game->settings.preferred_region_index) {
-    game->settings.preferred_region_index = preferred_region_index;
-    settings_changed = true;
-  }
-  DrawText("Diagnostics Panel", 680, 468, 20, LIGHTGRAY);
-  if (GuiCheckBox((Rectangle){850, 466, 24, 24}, NULL, &diagnostics_enabled)) {
-    settings_changed = true;
-  }
-  game->settings.diagnostics_enabled = diagnostics_enabled != 0;
-  DrawText(ClientSettingsPreferredRegionLabel(game->settings.preferred_region_index), 1080, 420, 18,
-           GRAY);
-  DrawText(ClientSettingsPaletteLabel(game->settings.palette_preset), 446, 224, 18, GRAY);
+  ShroomImGui_Separator();
+  ShroomImGui_Text("Audio");
+  changed |= ShroomImGui_SliderInt("Master Volume", &g_settings_screen.pending.master_volume_percent,
+                                   0, 100, "%d%%");
+  changed |= ShroomImGui_SliderInt("Music Volume", &g_settings_screen.pending.music_volume_percent,
+                                   0, 100, "%d%%");
+  changed |= ShroomImGui_SliderInt("Effects Volume", &g_settings_screen.pending.effects_volume_percent,
+                                   0, 100, "%d%%");
 
-  if (settings_changed) {
-    SaveSettings(game);
+  ShroomImGui_Separator();
+  ShroomImGui_Text("Gameplay");
+  changed |= ShroomImGui_Checkbox("Invert Mouse", &g_settings_screen.pending.invert_mouse);
+  changed |= ShroomImGui_Checkbox("Show Diagnostics On Launch",
+                                  &g_settings_screen.pending.diagnostics_enabled);
+  changed |= ShroomImGui_Checkbox("Show Ping In HUD", &g_settings_screen.pending.show_ping_ms);
+
+  if (changed) {
+    ClientSettingsValidate(&g_settings_screen.pending);
+    g_settings_screen.dirty = true;
+    g_settings_screen.save_succeeded = false;
+    ApplySettings(game);
   }
 
-  DrawText("Safe fallback behavior: missing or invalid settings revert to defaults.", 62, 620, 18,
-           GRAY);
-  if (GuiButton((Rectangle){GetScreenWidth() / 2 - 100, 650, 200, 44}, "BACK")) {
+  ShroomImGui_Spacing();
+  if (g_settings_screen.save_succeeded) {
+    ShroomImGui_Text("Saved to client_settings.cfg");
+  } else if (g_settings_screen.dirty) {
+    ShroomImGui_Text("Unsaved changes");
+  }
+
+  if (ShroomImGui_Button("Save", 140.0f, 36.0f)) {
+    ClientSettingsValidate(&g_settings_screen.pending);
+    ApplySettings(game);
+    g_settings_screen.save_succeeded = ClientSettingsSave(&game->settings);
+    g_settings_screen.dirty = !g_settings_screen.save_succeeded;
+  }
+  ShroomImGui_SameLine();
+  if (ShroomImGui_Button("Back", 140.0f, 36.0f)) {
     ShroomScreenManagerGoBack(manager);
   }
 
-  EndDrawing();
+  ShroomImGui_End();
 }
 
 static void SettingsHandleInput(ShroomScreenManager* manager) {
@@ -150,11 +124,13 @@ static void SettingsHandleInput(ShroomScreenManager* manager) {
 }
 
 void ShroomScreenRegisterSettings(ShroomScreenManager* manager) {
+  ShroomScreen* screen;
+
   if (manager == NULL) {
     return;
   }
 
-  ShroomScreen* screen = &manager->screens[SHROOM_SCREEN_SETTINGS];
+  screen = &manager->screens[SHROOM_SCREEN_SETTINGS];
   screen->type = SHROOM_SCREEN_SETTINGS;
   screen->name = "Settings";
   screen->init = SettingsInit;

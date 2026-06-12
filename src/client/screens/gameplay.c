@@ -37,6 +37,11 @@ static void GameplayDraw(ShroomScreenManager* manager) {
   }
 
   GameDraw(game);
+
+  if (game->return_to_menu_requested) {
+    game->return_to_menu_requested = false;
+    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_MAIN_MENU);
+  }
 }
 
 static void GameplayHandleInput(ShroomScreenManager* manager) {
@@ -52,31 +57,22 @@ static void GameplayHandleInput(ShroomScreenManager* manager) {
         RestartQuickPlaySession(game);
       }
       if (IsKeyPressed(KEY_B) || IsKeyPressed(KEY_ESCAPE)) {
-        ShroomScreenManagerTransition(manager, SHROOM_SCREEN_MAIN_MENU);
+        game->return_to_menu_requested = true;
       }
       return;
     }
 
     if (IsKeyPressed(KEY_ESCAPE)) {
-      ShroomScreenManagerTransition(manager, SHROOM_SCREEN_MAIN_MENU);
+      game->return_to_menu_requested = true;
       return;
     }
-  }
-
-  if (game->leave_confirmation_open) {
-    if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_Y)) {
-      ShroomScreenManagerTransition(manager, SHROOM_SCREEN_MAIN_MENU);
-    } else if (IsKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_N)) {
-      game->leave_confirmation_open = false;
-      game->menu_overlay_open = true;
-    }
-    return;
   }
 
   if (IsKeyPressed(KEY_TAB)) {
     game->leaderboard_overlay_open = !game->leaderboard_overlay_open;
     if (game->leaderboard_overlay_open) {
       game->menu_overlay_open = false;
+      game->leave_confirmation_open = false;
     }
   }
 
@@ -89,10 +85,11 @@ static void GameplayHandleInput(ShroomScreenManager* manager) {
   if (IsKeyPressed(KEY_ESCAPE)) {
     if (game->leaderboard_overlay_open) {
       game->leaderboard_overlay_open = false;
+    } else if (game->leave_confirmation_open) {
+      game->leave_confirmation_open = false;
     } else {
       game->menu_overlay_open = !game->menu_overlay_open;
       if (game->menu_overlay_open) {
-        game->leave_confirmation_open = false;
         game->leaderboard_overlay_open = false;
       }
     }
@@ -102,22 +99,23 @@ static void GameplayHandleInput(ShroomScreenManager* manager) {
     if (IsKeyPressed(KEY_ENTER)) {
       game->menu_overlay_open = false;
     }
-
-    if (game->active_mode == SHROOM_SESSION_MODE_OFFLINE_PRACTICE) {
-      if (IsKeyPressed(KEY_M)) {
-        ShroomScreenManagerTransition(manager, SHROOM_SCREEN_MAIN_MENU);
-      }
+    if ((game->active_mode == SHROOM_SESSION_MODE_OFFLINE_PRACTICE) && IsKeyPressed(KEY_M)) {
+      game->return_to_menu_requested = true;
       return;
     }
-
-    if (IsKeyPressed(KEY_L) || IsKeyPressed(KEY_M)) {
-      game->menu_overlay_open = false;
+    if (IsKeyPressed(KEY_M)) {
       game->leave_confirmation_open = true;
+      game->menu_overlay_open = false;
     }
   }
 
   if (game->leaderboard_overlay_open && IsKeyPressed(KEY_ENTER)) {
     game->leaderboard_overlay_open = false;
+  }
+
+  if ((game->active_mode == SHROOM_SESSION_MODE_QUICK_PLAY) &&
+      (game->net.status != CLIENT_NET_CONNECTED) && IsKeyPressed(KEY_B)) {
+    game->return_to_menu_requested = true;
   }
 }
 

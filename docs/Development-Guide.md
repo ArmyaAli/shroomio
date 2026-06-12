@@ -83,6 +83,19 @@ Or with Docker Compose:
 docker compose up --build server
 ```
 
+## Devcontainer
+
+Use the devcontainer targets when you need tooling that only exists in the container, such as `gh`.
+
+```bash
+make devcontainer-build
+make devcontainer-up
+make devcontainer-exec CMD="make test"
+make devcontainer-gh ARGS="issue list --limit 20"
+```
+
+`make devcontainer-shell` opens an interactive shell if you want to work inside the container directly.
+
 ## Project Structure
 
 ```
@@ -151,7 +164,7 @@ The PDF is written to `shroomio-specification.pdf` at the repo root.
 
 ## Testing
 
-There is no formal test suite. Manual testing workflow:
+Manual testing workflow:
 
 1. **Offline**: `make run` — verify rendering, input, spore collection, consumption, respawn, leaderboard.
 2. **Server**: `make run-server` then `make run` — verify handshake, snapshots, bot behavior.

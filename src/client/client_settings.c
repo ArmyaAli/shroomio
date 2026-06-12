@@ -1,6 +1,5 @@
 #include "client_settings.h"
 
-#include <stdbool.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
@@ -31,7 +30,7 @@ void ClientSettingsValidate(ClientSettings* settings) {
     return;
   }
 
-  if ((settings->ui_scale_percent < 80) || (settings->ui_scale_percent > 140)) {
+  if ((settings->ui_scale_percent < 80) || (settings->ui_scale_percent > 160)) {
     settings->ui_scale_percent = 100;
   }
   if ((settings->master_volume_percent < 0) || (settings->master_volume_percent > 100)) {
@@ -102,13 +101,14 @@ bool ClientSettingsLoad(ClientSettings* settings) {
 }
 
 bool ClientSettingsSave(const ClientSettings* settings) {
-  const int file_descriptor = open(kClientSettingsPath, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+  int file_descriptor;
   FILE* file;
 
   if (settings == NULL) {
     return false;
   }
 
+  file_descriptor = open(kClientSettingsPath, O_WRONLY | O_CREAT | O_TRUNC, 0600);
   if (file_descriptor < 0) {
     return false;
   }
