@@ -177,8 +177,8 @@ static void LoadRecentServers(ServerBrowserState* browser) {
          (fgets(line, sizeof(line), file) != NULL)) {
     ServerBrowserEntry* entry = &browser->recent_servers[browser->recent_count];
     char* separator;
-    char* port_text;
-    char* map_label;
+    const char* port_text;
+    const char* map_label;
 
     line[strcspn(line, "\r\n")] = '\0';
     separator = strchr(line, '|');
