@@ -80,6 +80,12 @@ static void GameplayHandleInput(ShroomScreenManager* manager) {
     }
   }
 
+  if (IsKeyPressed(KEY_F3)) {
+    game->diagnostics_overlay_open = !game->diagnostics_overlay_open;
+    game->settings.diagnostics_enabled = game->diagnostics_overlay_open;
+    ClientSettingsSave(&game->settings);
+  }
+
   if (IsKeyPressed(KEY_ESCAPE)) {
     if (game->leaderboard_overlay_open) {
       game->leaderboard_overlay_open = false;

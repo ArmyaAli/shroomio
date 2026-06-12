@@ -260,10 +260,30 @@ static void SyncRenderPositions(Game* game, float delta_time) {
 
 static void ApplyNetworkSnapshot(Game* game) {
   size_t index;
+  float correction_distance = 0.0f;
+
+  if ((game->local_player != NULL) && game->net.welcome_received) {
+    const ShroomSnapshotPlayerState* local_snapshot = NULL;
+
+    for (index = 0; index < game->net.snapshot_player_count; ++index) {
+      if (game->net.snapshot_players[index].player_id == game->net.player_id) {
+        local_snapshot = &game->net.snapshot_players[index];
+        break;
+      }
+    }
+
+    if (local_snapshot != NULL) {
+      correction_distance = sqrtf(
+          ShroomDistanceSqr(game->local_player->position,
+                            (ShroomVec2){local_snapshot->position_x, local_snapshot->position_y}));
+    }
+  }
 
   game->world.tick = game->net.last_snapshot_tick;
   game->world.player_count = game->net.snapshot_player_count;
   game->world.spore_count = game->net.spore_count;
+  game->recent_correction_distance = correction_distance;
+  game->snapshot_age_seconds = 0.0f;
 
   for (index = 0; index < game->net.snapshot_player_count; ++index) {
     const ShroomSnapshotPlayerState* snapshot_player = &game->net.snapshot_players[index];
@@ -631,6 +651,27 @@ static void DrawConnectionOverlay(const Game* game) {
   }
 }
 
+static void DrawDiagnosticsOverlay(const Game* game) {
+  const uint32_t input_gap = game->tracked_input_sequence - game->net.last_processed_input_sequence;
+
+  if (!game->diagnostics_overlay_open || !IsOnlineMode(game->active_mode)) {
+    return;
+  }
+
+  DrawRectangle(game->screen_width - 292, 152, 252, 150, Fade(BLACK, 0.5f));
+  DrawRectangleLines(game->screen_width - 292, 152, 252, 150, Fade(RAYWHITE, 0.18f));
+  DrawText("Net Diagnostics", game->screen_width - 272, 168, 24, RAYWHITE);
+  DrawText(TextFormat("RTT: %u ms", game->net.rtt_ms), game->screen_width - 272, 202, 18,
+           LIGHTGRAY);
+  DrawText(TextFormat("Avg RTT: %u ms", game->net.rtt_average_ms), game->screen_width - 272, 224,
+           18, LIGHTGRAY);
+  DrawText(TextFormat("Snapshot Age: %.0f ms", game->snapshot_age_seconds * 1000.0f),
+           game->screen_width - 272, 246, 18, LIGHTGRAY);
+  DrawText(TextFormat("Input Gap: %u", input_gap), game->screen_width - 272, 268, 18, LIGHTGRAY);
+  DrawText(TextFormat("Correction: %.1f px", game->recent_correction_distance),
+           game->screen_width - 272, 290, 18, LIGHTGRAY);
+}
+
 static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard_count,
                             ShroomZone zone) {
   DrawRectangle(24, 24, 344, 132, Fade(BLACK, 0.38f));
@@ -714,6 +755,7 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
   }
   game->screen_width = screen_width;
   game->screen_height = screen_height;
+  game->diagnostics_overlay_open = game->settings.diagnostics_enabled;
 
   ShroomWorldInit(&game->world);
   game->local_player = ShroomWorldSpawnPlayer(&game->world, 1, false);
@@ -756,6 +798,7 @@ void GameUpdate(Game* game, float delta_time) {
   }
 
   if (IsOnlineMode(game->active_mode)) {
+    game->snapshot_age_seconds += delta_time;
     const uint32_t previous_input_sequence = game->net.last_input_sequence;
 
     ClientNetUpdate(&game->net, input_direction, delta_time);
@@ -815,6 +858,7 @@ void GameDraw(const Game* game) {
   DrawGameplayHud(game, local_rank, leaderboard_count, zone);
   DrawZoneLegend(game);
   DrawStatusBanners(game);
+  DrawDiagnosticsOverlay(game);
   DrawLeaderboardOverlay(game, leaderboard, shown_count);
   DrawMenuOverlay(game);
   DrawLeaveConfirmationOverlay(game);
