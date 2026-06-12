@@ -1,0 +1,148 @@
+#include "client_settings.h"
+
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+
+static const char* kClientSettingsPath = "client_settings.cfg";
+
+void ClientSettingsSetDefaults(ClientSettings* settings) {
+  if (settings == NULL) {
+    return;
+  }
+
+  *settings = (ClientSettings){
+      .ui_scale_percent = 100,
+      .master_volume_percent = 80,
+      .music_volume_percent = 70,
+      .effects_volume_percent = 85,
+      .invert_mouse = false,
+      .diagnostics_enabled = false,
+      .show_ping_ms = true,
+      .preferred_region_index = 0,
+      .palette_preset = CLIENT_PALETTE_CLASSIC,
+  };
+}
+
+void ClientSettingsValidate(ClientSettings* settings) {
+  if (settings == NULL) {
+    return;
+  }
+
+  if ((settings->ui_scale_percent < 80) || (settings->ui_scale_percent > 140)) {
+    settings->ui_scale_percent = 100;
+  }
+  if ((settings->master_volume_percent < 0) || (settings->master_volume_percent > 100)) {
+    settings->master_volume_percent = 80;
+  }
+  if ((settings->music_volume_percent < 0) || (settings->music_volume_percent > 100)) {
+    settings->music_volume_percent = 70;
+  }
+  if ((settings->effects_volume_percent < 0) || (settings->effects_volume_percent > 100)) {
+    settings->effects_volume_percent = 85;
+  }
+  if ((settings->preferred_region_index < 0) || (settings->preferred_region_index > 2)) {
+    settings->preferred_region_index = 0;
+  }
+  if ((settings->palette_preset < CLIENT_PALETTE_CLASSIC) ||
+      (settings->palette_preset > CLIENT_PALETTE_HIGH_CONTRAST)) {
+    settings->palette_preset = CLIENT_PALETTE_CLASSIC;
+  }
+}
+
+bool ClientSettingsLoad(ClientSettings* settings) {
+  FILE* file;
+  char line[128];
+
+  if (settings == NULL) {
+    return false;
+  }
+
+  ClientSettingsSetDefaults(settings);
+
+  file = fopen(kClientSettingsPath, "r");
+  if (file == NULL) {
+    return false;
+  }
+
+  while (fgets(line, sizeof(line), file) != NULL) {
+    char key[48] = {0};
+    int value = 0;
+
+    if (sscanf(line, "%47[^=]=%d", key, &value) != 2) {
+      continue;
+    }
+
+    if (strcmp(key, "ui_scale_percent") == 0) {
+      settings->ui_scale_percent = value;
+    } else if (strcmp(key, "master_volume_percent") == 0) {
+      settings->master_volume_percent = value;
+    } else if (strcmp(key, "music_volume_percent") == 0) {
+      settings->music_volume_percent = value;
+    } else if (strcmp(key, "effects_volume_percent") == 0) {
+      settings->effects_volume_percent = value;
+    } else if (strcmp(key, "invert_mouse") == 0) {
+      settings->invert_mouse = value != 0;
+    } else if (strcmp(key, "diagnostics_enabled") == 0) {
+      settings->diagnostics_enabled = value != 0;
+    } else if (strcmp(key, "show_ping_ms") == 0) {
+      settings->show_ping_ms = value != 0;
+    } else if (strcmp(key, "preferred_region_index") == 0) {
+      settings->preferred_region_index = value;
+    } else if (strcmp(key, "palette_preset") == 0) {
+      settings->palette_preset = (ClientPalettePreset)value;
+    }
+  }
+
+  fclose(file);
+  ClientSettingsValidate(settings);
+  return true;
+}
+
+bool ClientSettingsSave(const ClientSettings* settings) {
+  FILE* file;
+
+  if (settings == NULL) {
+    return false;
+  }
+
+  file = fopen(kClientSettingsPath, "w");
+  if (file == NULL) {
+    return false;
+  }
+
+  fprintf(file, "ui_scale_percent=%d\n", settings->ui_scale_percent);
+  fprintf(file, "master_volume_percent=%d\n", settings->master_volume_percent);
+  fprintf(file, "music_volume_percent=%d\n", settings->music_volume_percent);
+  fprintf(file, "effects_volume_percent=%d\n", settings->effects_volume_percent);
+  fprintf(file, "invert_mouse=%d\n", settings->invert_mouse ? 1 : 0);
+  fprintf(file, "diagnostics_enabled=%d\n", settings->diagnostics_enabled ? 1 : 0);
+  fprintf(file, "show_ping_ms=%d\n", settings->show_ping_ms ? 1 : 0);
+  fprintf(file, "preferred_region_index=%d\n", settings->preferred_region_index);
+  fprintf(file, "palette_preset=%d\n", (int)settings->palette_preset);
+
+  fclose(file);
+  return true;
+}
+
+const char* ClientSettingsPreferredRegionLabel(int region_index) {
+  switch (region_index) {
+  case 1:
+    return "Europe";
+  case 2:
+    return "North America";
+  case 0:
+  default:
+    return "Auto";
+  }
+}
+
+const char* ClientSettingsPaletteLabel(ClientPalettePreset preset) {
+  switch (preset) {
+  case CLIENT_PALETTE_HIGH_CONTRAST:
+    return "High Contrast";
+  case CLIENT_PALETTE_CLASSIC:
+  default:
+    return "Classic";
+  }
+}

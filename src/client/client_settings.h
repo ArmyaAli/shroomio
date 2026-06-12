@@ -1,0 +1,30 @@
+#ifndef SHROOM_CLIENT_SETTINGS_H
+#define SHROOM_CLIENT_SETTINGS_H
+
+#include <stdbool.h>
+
+typedef enum ClientPalettePreset {
+  CLIENT_PALETTE_CLASSIC = 0,
+  CLIENT_PALETTE_HIGH_CONTRAST,
+} ClientPalettePreset;
+
+typedef struct ClientSettings {
+  int ui_scale_percent;
+  int master_volume_percent;
+  int music_volume_percent;
+  int effects_volume_percent;
+  bool invert_mouse;
+  bool diagnostics_enabled;
+  bool show_ping_ms;
+  int preferred_region_index;
+  ClientPalettePreset palette_preset;
+} ClientSettings;
+
+void ClientSettingsSetDefaults(ClientSettings* settings);
+void ClientSettingsValidate(ClientSettings* settings);
+bool ClientSettingsLoad(ClientSettings* settings);
+bool ClientSettingsSave(const ClientSettings* settings);
+const char* ClientSettingsPreferredRegionLabel(int region_index);
+const char* ClientSettingsPaletteLabel(ClientPalettePreset preset);
+
+#endif

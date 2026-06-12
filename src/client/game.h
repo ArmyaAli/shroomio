@@ -3,6 +3,7 @@
 
 #include "raylib.h"
 
+#include "client_settings.h"
 #include "net.h"
 #include "shared/world.h"
 
@@ -23,6 +24,7 @@ typedef struct Game {
   ClientNetState net;
   ShroomWorldState world;
   ShroomPlayerState* local_player;
+  ClientSettings settings;
   GameSessionMode selected_mode;
   GameSessionMode active_mode;
   char selected_server_host[64];

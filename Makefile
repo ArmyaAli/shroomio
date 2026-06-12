@@ -138,6 +138,7 @@ WINDOWS_RAYLIB_LIB := $(WINDOWS_BUILD_DIR)/libraylib.a
 # Client source files
 CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/main.c \
+	$(CLIENT_SRC_DIR)/client_settings.c \
 	$(CLIENT_SRC_DIR)/game.c \
 	$(CLIENT_SRC_DIR)/net.c \
 	$(CLIENT_SRC_DIR)/screen.c \
