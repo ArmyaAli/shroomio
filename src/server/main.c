@@ -198,6 +198,14 @@ static ENetPacket* CreateProtocolPacket(const void* data, size_t size, ShroomPac
                       ShroomPacketTypeUsesReliableDelivery(type) ? ENET_PACKET_FLAG_RELIABLE : 0);
 }
 
+static void SetDefaultPlayerName(ShroomPlayerState* player, const char* prefix) {
+  if (player == NULL) {
+    return;
+  }
+
+  snprintf(player->name, sizeof(player->name), "%s %u", prefix, player->player_id);
+}
+
 static void SendWelcome(ENetPeer* peer, const ServerSession* session,
                         const ShroomWorldState* world) {
   const ShroomWelcomePacket packet = {
@@ -281,6 +289,8 @@ static void SendSnapshot(ENetPeer* peer, const ServerSession* session,
         .alive = 1u,
         .is_bot = player->is_bot ? 1u : 0u,
     };
+    snprintf(packet.players[player_count - 1].name, sizeof(packet.players[player_count - 1].name),
+             "%s", player->name);
   }
 
   packet.player_count = player_count;
@@ -399,6 +409,10 @@ static void HandleHelloPacket(ENetPeer* peer, ServerSession* session, ShroomWorl
 
   session->active = true;
   session->player_id = session->player->player_id;
+  snprintf(session->player->name, sizeof(session->player->name), "%s", packet->name);
+  if (session->player->name[0] == '\0') {
+    SetDefaultPlayerName(session->player, "Player");
+  }
   SendWelcome(peer, session, world);
 }
 
@@ -577,7 +591,8 @@ int main(void) {
 
   ShroomWorldInit(&world);
   while (world.player_count < SHROOM_BOT_COUNT) {
-    ShroomWorldSpawnPlayer(&world, next_player_id++, true);
+    ShroomPlayerState* bot = ShroomWorldSpawnPlayer(&world, next_player_id++, true);
+    SetDefaultPlayerName(bot, "Bot");
   }
 
   address.host = ENET_HOST_ANY;
