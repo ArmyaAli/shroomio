@@ -3,7 +3,7 @@
 
 static ShroomWorldState world;
 
-void setUp(void) { ShroomWorldInit(&world); }
+void setUp(void) { ShroomWorldInitWithSeed(&world, 7u); }
 
 void tearDown(void) {}
 
@@ -18,8 +18,35 @@ void test_world_init_sets_expected_defaults(void) {
   TEST_ASSERT_EQUAL_UINT64(0, world.tick);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_WORLD_WIDTH, world.width);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_WORLD_HEIGHT, world.height);
+  TEST_ASSERT_EQUAL_UINT32(7u, world.random_seed);
   TEST_ASSERT_EQUAL_size_t(SHROOM_SPORE_TARGET_COUNT, world.spore_count);
   TEST_ASSERT_EQUAL_UINT32((uint32_t)(SHROOM_SPORE_TARGET_COUNT + 1), world.next_entity_id);
+}
+
+void test_world_init_with_seed_repeats_same_layout(void) {
+  ShroomWorldState a;
+  ShroomWorldState b;
+
+  ShroomWorldInitWithSeed(&a, 1234u);
+  ShroomWorldInitWithSeed(&b, 1234u);
+
+  TEST_ASSERT_EQUAL_UINT32(a.random_seed, b.random_seed);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, a.spores[0].position.x, b.spores[0].position.x);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, a.spores[0].position.y, b.spores[0].position.y);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, a.spores[1].position.x, b.spores[1].position.x);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, a.spores[1].position.y, b.spores[1].position.y);
+}
+
+void test_world_init_with_different_seed_changes_layout(void) {
+  ShroomWorldState a;
+  ShroomWorldState b;
+
+  ShroomWorldInitWithSeed(&a, 1234u);
+  ShroomWorldInitWithSeed(&b, 5678u);
+
+  TEST_ASSERT_NOT_EQUAL_UINT32(a.random_seed, b.random_seed);
+  TEST_ASSERT_TRUE((a.spores[0].position.x != b.spores[0].position.x) ||
+                   (a.spores[0].position.y != b.spores[0].position.y));
 }
 
 void test_world_init_populates_active_spores_with_value(void) {
@@ -264,6 +291,8 @@ void test_bot_flees_nearby_threat_even_with_available_prey(void) {
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_world_init_sets_expected_defaults);
+  RUN_TEST(test_world_init_with_seed_repeats_same_layout);
+  RUN_TEST(test_world_init_with_different_seed_changes_layout);
   RUN_TEST(test_world_init_populates_active_spores_with_value);
   RUN_TEST(test_zone_classification_matches_center_mid_and_outer);
   RUN_TEST(test_mass_helpers_respect_expected_scaling_and_bounds);

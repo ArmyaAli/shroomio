@@ -4,6 +4,7 @@
 #include "world.h"
 
 void ShroomWorldInit(ShroomWorldState* world);
+void ShroomWorldInitWithSeed(ShroomWorldState* world, uint32_t seed);
 void ShroomWorldStep(ShroomWorldState* world, float delta_time);
 
 ShroomPlayerState* ShroomWorldSpawnPlayer(ShroomWorldState* world, ShroomPlayerId player_id,
