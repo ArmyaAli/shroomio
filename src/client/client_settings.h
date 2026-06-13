@@ -16,6 +16,7 @@ typedef struct ClientSettings {
   bool invert_mouse;
   bool diagnostics_enabled;
   bool show_ping_ms;
+  float camera_zoom;
   int preferred_region_index;
   ClientPalettePreset palette_preset;
 } ClientSettings;

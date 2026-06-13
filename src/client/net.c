@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "shared/config.h"
 
@@ -187,6 +188,7 @@ static void HandleChat(ClientNetState* net, const ENetPacket* enet_packet) {
 
   slot = &net->chat_history[net->chat_history_head % SHROOM_CLIENT_CHAT_HISTORY_COUNT];
   slot->sender_id = packet->sender_id;
+  slot->timestamp_sec = (uint32_t)time(NULL);
   snprintf(slot->sender_name, sizeof(slot->sender_name), "%s", packet->sender_name);
 
   msg_len = sizeof(packet->message);

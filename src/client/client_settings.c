@@ -20,6 +20,7 @@ void ClientSettingsSetDefaults(ClientSettings* settings) {
       .invert_mouse = false,
       .diagnostics_enabled = false,
       .show_ping_ms = true,
+      .camera_zoom = 1.0f,
       .preferred_region_index = 0,
       .palette_preset = CLIENT_PALETTE_CLASSIC,
   };
@@ -44,6 +45,9 @@ void ClientSettingsValidate(ClientSettings* settings) {
   }
   if ((settings->preferred_region_index < 0) || (settings->preferred_region_index > 2)) {
     settings->preferred_region_index = 0;
+  }
+  if ((settings->camera_zoom < 0.35f) || (settings->camera_zoom > 2.0f)) {
+    settings->camera_zoom = 1.0f;
   }
   if ((settings->palette_preset < CLIENT_PALETTE_CLASSIC) ||
       (settings->palette_preset > CLIENT_PALETTE_HIGH_CONTRAST)) {
@@ -92,6 +96,8 @@ bool ClientSettingsLoad(ClientSettings* settings) {
       settings->preferred_region_index = value;
     } else if (strcmp(key, "palette_preset") == 0) {
       settings->palette_preset = (ClientPalettePreset)value;
+    } else if (strcmp(key, "camera_zoom_x100") == 0) {
+      settings->camera_zoom = (float)value / 100.0f;
     }
   }
 
@@ -128,6 +134,7 @@ bool ClientSettingsSave(const ClientSettings* settings) {
   fprintf(file, "show_ping_ms=%d\n", settings->show_ping_ms ? 1 : 0);
   fprintf(file, "preferred_region_index=%d\n", settings->preferred_region_index);
   fprintf(file, "palette_preset=%d\n", (int)settings->palette_preset);
+  fprintf(file, "camera_zoom_x100=%d\n", (int)(settings->camera_zoom * 100.0f));
 
   fclose(file);
   return true;

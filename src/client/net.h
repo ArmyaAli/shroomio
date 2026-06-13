@@ -11,6 +11,7 @@
 
 typedef struct ChatMessage {
   uint32_t sender_id;
+  uint32_t timestamp_sec; /* local wall-clock time at receive */
   char sender_name[SHROOM_MAX_NAME_LENGTH];
   char message[SHROOM_CHAT_MAX_MESSAGE_LENGTH + 1u];
 } ChatMessage;

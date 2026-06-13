@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "imgui_wrapper.h"
 #include "raymath.h"
@@ -731,31 +732,45 @@ static void DrawInspectOverlay(Game* game) {
 
 static void DrawOffscreenIndicators(const Game* game) {
   const Vector2 screen_center = {game->screen_width * 0.5f, game->screen_height * 0.5f};
+
+  if (game->local_player == NULL) {
+    return;
+  }
   const float horizontal_limit = (game->screen_width * 0.5f) - 44.0f;
   const float vertical_limit = (game->screen_height * 0.5f) - 44.0f;
 
   for (size_t index = 0; index < game->world.player_count; ++index) {
     const ShroomPlayerState* player = &game->world.players[index];
-    const PlayerThreatState threat_state = GetThreatState(game->local_player, player);
-    const Color color = GetThreatOutlineColor(threat_state);
-    const Vector2 world_position = {game->render_positions[index].x,
-                                    game->render_positions[index].y};
-    const Vector2 screen_position = GetWorldToScreen2D(world_position, game->camera);
+    PlayerThreatState threat_state;
+    Color color;
+    Vector2 world_position;
+    Vector2 screen_position;
     Vector2 direction;
     Vector2 indicator_position;
-    Vector2 perpendicular;
-    Vector2 base_center;
     float scale_x;
     float scale_y;
     float scale;
 
-    if (!player->alive || (threat_state == PLAYER_THREAT_NONE)) {
+    /* Skip dead players and the local player before any other computation. */
+    if (!player->alive || (player == game->local_player)) {
       continue;
     }
+
+    world_position = (Vector2){game->render_positions[index].x, game->render_positions[index].y};
+    screen_position = GetWorldToScreen2D(world_position, game->camera);
+
+    /* Skip players that are visible on screen. */
     if ((screen_position.x >= 0.0f) && (screen_position.x <= (float)game->screen_width) &&
         (screen_position.y >= 0.0f) && (screen_position.y <= (float)game->screen_height)) {
       continue;
     }
+
+    threat_state = GetThreatState(game->local_player, player);
+    /* Neutral players get a dim but visible tint so all off-screen players
+     * show an indicator regardless of mass relationship. */
+    color = (threat_state == PLAYER_THREAT_NONE)
+                ? (player->is_bot ? Fade(LIGHTGRAY, 0.55f) : Fade(RAYWHITE, 0.55f))
+                : GetThreatOutlineColor(threat_state);
 
     direction = Vector2Subtract(screen_position, screen_center);
     if (Vector2LengthSqr(direction) <= 0.01f) {
@@ -767,15 +782,35 @@ static void DrawOffscreenIndicators(const Game* game) {
     scale = fminf(scale_x, scale_y);
     indicator_position = Vector2Add(screen_center, Vector2Scale(direction, scale));
     direction = Vector2Normalize(direction);
-    perpendicular = (Vector2){-direction.y, direction.x};
-    base_center = Vector2Subtract(indicator_position, Vector2Scale(direction, 10.0f));
 
-    DrawLineEx(Vector2Subtract(indicator_position, Vector2Scale(direction, 14.0f)),
-               indicator_position, 5.0f, Fade(color, 0.76f));
-    DrawTriangle(indicator_position, Vector2Add(base_center, Vector2Scale(perpendicular, 12.0f)),
-                 Vector2Subtract(base_center, Vector2Scale(perpendicular, 12.0f)), color);
-    DrawCircleV(Vector2Subtract(base_center, Vector2Scale(direction, 6.0f)), 6.0f,
-                Fade(color, 0.82f));
+    /* Arrow: thick shaft + two angled head lines. */
+    {
+      const float shaft_len = 22.0f;
+      const float head_len = 14.0f;
+      const float head_angle_cos = 0.766f; /* cos(40°) */
+      const float head_angle_sin = 0.643f; /* sin(40°) */
+      const Vector2 shaft_base =
+          Vector2Subtract(indicator_position, Vector2Scale(direction, shaft_len));
+      /* Left head line: rotate direction by +40° */
+      const Vector2 head_left_dir = {direction.x * head_angle_cos - direction.y * head_angle_sin,
+                                     direction.x * head_angle_sin + direction.y * head_angle_cos};
+      /* Right head line: rotate direction by -40° */
+      const Vector2 head_right_dir = {direction.x * head_angle_cos + direction.y * head_angle_sin,
+                                      -direction.x * head_angle_sin + direction.y * head_angle_cos};
+      const Vector2 head_left_end =
+          Vector2Subtract(indicator_position, Vector2Scale(head_left_dir, head_len));
+      const Vector2 head_right_end =
+          Vector2Subtract(indicator_position, Vector2Scale(head_right_dir, head_len));
+
+      /* Dark outline (draw slightly thicker in black first). */
+      DrawLineEx(shaft_base, indicator_position, 7.0f, Fade(BLACK, 0.45f));
+      DrawLineEx(indicator_position, head_left_end, 7.0f, Fade(BLACK, 0.45f));
+      DrawLineEx(indicator_position, head_right_end, 7.0f, Fade(BLACK, 0.45f));
+      /* Coloured fill on top. */
+      DrawLineEx(shaft_base, indicator_position, 4.0f, color);
+      DrawLineEx(indicator_position, head_left_end, 4.0f, color);
+      DrawLineEx(indicator_position, head_right_end, 4.0f, color);
+    }
   }
 }
 
@@ -1130,6 +1165,14 @@ static void DrawChatDock(Game* game) {
             &game->net.chat_history[(start_index + i) % SHROOM_CLIENT_CHAT_HISTORY_COUNT];
         const bool is_local =
             (game->local_player != NULL) && (msg->sender_id == game->net.player_id);
+        if (msg->timestamp_sec > 0u) {
+          time_t ts = (time_t)msg->timestamp_sec;
+          struct tm tm_local;
+          localtime_r(&ts, &tm_local);
+          ShroomImGui_TextColored(ToImGuiColor((Color){130, 130, 130, 200}),
+                                  TextFormat("%02d:%02d", tm_local.tm_hour, tm_local.tm_min));
+          ShroomImGui_SameLine();
+        }
         ShroomImGui_TextColored(
             ToImGuiColor(is_local ? (Color){180, 230, 180, 255} : (Color){210, 210, 255, 255}),
             TextFormat("%.31s", msg->sender_name));
@@ -1369,7 +1412,8 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
     game->screen_height = screen_height;
     game->camera.offset = (Vector2){screen_width / 2.0f, screen_height / 2.0f};
     game->camera.target = (Vector2){game->net.world_width * 0.5f, game->net.world_height * 0.5f};
-    game->camera.zoom = 1.0f;
+    game->camera.zoom = game->settings.camera_zoom;
+    game->camera_zoom_target = game->settings.camera_zoom;
     game->diagnostics_overlay_open = game->settings.diagnostics_enabled;
     ShroomWorldInit(&game->world);
     /* local_player is NULL until first snapshot from server. */
@@ -1411,7 +1455,8 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
                                                                game->local_player->position.y}
                                                    : (Vector2){0};
   game->camera.rotation = 0.0f;
-  game->camera.zoom = 1.0f;
+  game->camera.zoom = game->settings.camera_zoom;
+  game->camera_zoom_target = game->settings.camera_zoom;
   if (game->local_player != NULL) {
     game->current_zone = ShroomGetZoneAtPosition(&game->world, game->local_player->position);
     game->previous_local_position = game->local_player->position;
@@ -1430,6 +1475,17 @@ void GameUpdate(Game* game, float delta_time) {
   } else {
     input_direction = GetMovementInput(game);
   }
+
+  /* Scroll-wheel zoom — guarded so inspect overlay and chat scrolling are unaffected. */
+  if (!IsKeyDown(KEY_I) && !game->chat_open && !IsOverlayBlockingGameplay(game)) {
+    const float wheel = GetMouseWheelMove();
+    if (wheel != 0.0f) {
+      game->camera_zoom_target = Clamp(game->camera_zoom_target + wheel * 0.1f, 0.35f, 2.0f);
+      game->settings.camera_zoom = game->camera_zoom_target;
+      ClientSettingsSave(&game->settings);
+    }
+  }
+  game->camera.zoom += (game->camera_zoom_target - game->camera.zoom) * delta_time * 9.0f;
 
   if (IsOnlineMode(game->active_mode)) {
     ClientNetUpdate(&game->net, input_direction, delta_time);

@@ -43,6 +43,7 @@ typedef struct Game {
   bool leave_confirmation_open;
   bool inspect_overlay_open;
   bool return_to_menu_requested;
+  float camera_zoom_target;
   bool auto_join_lobby; /* set by Play Online — join best lobby on list receipt */
   bool chat_open;
   bool chat_minimized;
