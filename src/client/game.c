@@ -26,6 +26,24 @@ static const float kStatusBannerDuration = 2.0f;
 
 static bool IsOnlineMode(GameSessionMode mode) { return mode == SHROOM_SESSION_MODE_QUICK_PLAY; }
 
+static const char* GetPlayerDisplayName(const Game* game, const ShroomPlayerState* player) {
+  static char fallback_name[32];
+
+  if (player == NULL) {
+    return "Unknown";
+  }
+  if ((game != NULL) && (player == game->local_player)) {
+    return "You";
+  }
+  if (player->name[0] != '\0') {
+    return player->name;
+  }
+
+  snprintf(fallback_name, sizeof(fallback_name), "%s %u", player->is_bot ? "Bot" : "Player",
+           player->player_id);
+  return fallback_name;
+}
+
 typedef enum PlayerThreatState {
   PLAYER_THREAT_NONE = 0,
   PLAYER_THREAT_PREY,
@@ -247,6 +265,7 @@ static void ApplyNetworkSnapshot(Game* game) {
         .alive = snapshot_player->alive != 0,
         .is_bot = snapshot_player->is_bot != 0,
     };
+    snprintf(player->name, sizeof(player->name), "%s", snapshot_player->name);
 
     if (player->player_id == game->net.player_id) {
       game->local_player = player;
@@ -397,6 +416,18 @@ static void DrawPlayers(const Game* game) {
     if (player == game->local_player) {
       DrawCircleLines((int)position.x, (int)position.y, player->radius + 8.0f, RAYWHITE);
     }
+
+    {
+      const char* player_name = GetPlayerDisplayName(game, player);
+      const int font_size = 16;
+      const int text_width = MeasureText(player_name, font_size);
+      const Color text_color = player == game->local_player ? RAYWHITE : Fade(RAYWHITE, 0.92f);
+      const int text_x = (int)(position.x - ((float)text_width * 0.5f));
+      const int text_y = (int)(position.y - player->radius - 22.0f);
+
+      DrawText(player_name, text_x + 1, text_y + 1, font_size, Fade(BLACK, 0.8f));
+      DrawText(player_name, text_x, text_y, font_size, text_color);
+    }
   }
 }
 
@@ -529,13 +560,12 @@ static void DrawLeaderboardOverlay(Game* game, const LeaderboardEntry* leaderboa
   for (size_t index = 0; index < shown_count; ++index) {
     const ShroomPlayerState* player = &game->world.players[leaderboard[index].index];
     const PlayerThreatState threat_state = GetThreatState(game->local_player, player);
-    const char* label = player == game->local_player ? "You" : (player->is_bot ? "Bot" : "Player");
+    const char* label = GetPlayerDisplayName(game, player);
     const Color color =
         player == game->local_player ? RAYWHITE : GetThreatOutlineColor(threat_state);
 
-    ShroomImGui_TextColored(ToImGuiColor(color),
-                            TextFormat("%d. %s %u   %.0f mass", (int)(index + 1), label,
-                                       player->player_id, player->mass));
+    ShroomImGui_TextColored(ToImGuiColor(color), TextFormat("%d. %s   %.0f mass", (int)(index + 1),
+                                                            label, player->mass));
   }
 
   if (ShroomImGui_Button("Close", 120.0f, 0.0f)) {
@@ -783,8 +813,14 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
   }
   ShroomWorldInit(&game->world);
   game->local_player = ShroomWorldSpawnPlayer(&game->world, 1, false);
+  snprintf(game->local_player->name, sizeof(game->local_player->name), "%s",
+           IsOnlineMode(mode) ? "local-client" : "You");
   for (bot_index = 0; bot_index < SHROOM_BOT_COUNT; ++bot_index) {
-    ShroomWorldSpawnPlayer(&game->world, (ShroomPlayerId)(bot_index + 2), true);
+    ShroomPlayerState* bot =
+        ShroomWorldSpawnPlayer(&game->world, (ShroomPlayerId)(bot_index + 2), true);
+    if (bot != NULL) {
+      snprintf(bot->name, sizeof(bot->name), "Bot %zu", bot_index + 1);
+    }
   }
 
   game->camera.offset = (Vector2){screen_width / 2.0f, screen_height / 2.0f};

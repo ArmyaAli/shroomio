@@ -8,7 +8,6 @@
 
 #define SHROOM_PROTOCOL_VERSION 1u
 #define SHROOM_SERVER_PORT 7777u
-#define SHROOM_MAX_NAME_LENGTH 32u
 #define SHROOM_MAX_PASSWORD_LENGTH 64u
 #define SHROOM_AUTH_TOKEN_LENGTH 64u
 #define SHROOM_SERVER_MAX_CLIENTS 128u
@@ -149,6 +148,7 @@ typedef struct ShroomSnapshotPlayerState {
   float position_y;
   float mass;
   float radius;
+  char name[SHROOM_MAX_NAME_LENGTH];
   uint8_t alive;
   uint8_t is_bot;
   uint16_t reserved;

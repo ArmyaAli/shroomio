@@ -30,7 +30,7 @@ void test_pong_packet_size(void) {
 }
 
 void test_snapshot_player_state_size(void) {
-  TEST_ASSERT_EQUAL(4 + 4 + 4 + 4 + 4 + 4 + 1 + 1 + 2, sizeof(ShroomSnapshotPlayerState));
+  TEST_ASSERT_EQUAL(4 + 4 + 4 + 4 + 4 + 4 + 32 + 1 + 1 + 2, sizeof(ShroomSnapshotPlayerState));
 }
 
 void test_packet_type_values(void) {
@@ -177,6 +177,7 @@ void test_snapshot_player_state_initialization(void) {
   state.position_y = 2000.0f;
   state.mass = 150.0f;
   state.radius = 20.0f;
+  strncpy(state.name, "ArenaScout", SHROOM_MAX_NAME_LENGTH);
   state.alive = 1;
   state.is_bot = 0;
 
@@ -186,6 +187,7 @@ void test_snapshot_player_state_initialization(void) {
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 2000.0f, state.position_y);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 150.0f, state.mass);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 20.0f, state.radius);
+  TEST_ASSERT_EQUAL_STRING("ArenaScout", state.name);
   TEST_ASSERT_EQUAL(1, state.alive);
   TEST_ASSERT_EQUAL(0, state.is_bot);
 }
