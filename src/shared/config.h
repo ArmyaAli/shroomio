@@ -13,6 +13,9 @@
 
 #define SHROOM_DEFAULT_PLAYER_MASS 96.0f
 #define SHROOM_BOT_COUNT 18
+#define SHROOM_BOT_FLOOR 4u
+#define SHROOM_BOT_TARGET_TOTAL 16u
+#define SHROOM_BOT_REAL_PLAYER_WEIGHT 2u
 
 // Keep small colonies nimble while letting large colonies become catchable.
 #define SHROOM_MIN_PLAYER_SPEED 132.0f

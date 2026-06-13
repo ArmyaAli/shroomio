@@ -411,12 +411,22 @@ void ShroomWorldInit(ShroomWorldState* world) {
 ShroomPlayerState* ShroomWorldSpawnPlayer(ShroomWorldState* world, ShroomPlayerId player_id,
                                           bool is_bot) {
   ShroomPlayerState* player;
+  size_t index;
+
+  for (index = 0; index < world->player_count; ++index) {
+    if (!world->players[index].alive) {
+      player = &world->players[index];
+      goto initialize_player;
+    }
+  }
 
   if (world->player_count >= SHROOM_MAX_PLAYERS) {
     return 0;
   }
 
   player = &world->players[world->player_count++];
+
+initialize_player:
   *player = (ShroomPlayerState){
       .player_id = player_id,
       .entity_id = world->next_entity_id++,

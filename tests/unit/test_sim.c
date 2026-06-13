@@ -210,6 +210,28 @@ void test_world_step_does_not_consume_without_required_mass_advantage(void) {
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 3000.0f, victim->position.y);
 }
 
+void test_spawn_player_reuses_inactive_slot(void) {
+  ShroomPlayerState* first;
+  ShroomPlayerState* second;
+
+  ResetWorldForPlayers();
+
+  first = ShroomWorldSpawnPlayer(&world, 1, false);
+  TEST_ASSERT_NOT_NULL(first);
+  first->alive = false;
+  first->mass = 0.0f;
+  first->radius = 0.0f;
+
+  second = ShroomWorldSpawnPlayer(&world, 2, true);
+
+  TEST_ASSERT_NOT_NULL(second);
+  TEST_ASSERT_EQUAL_PTR(first, second);
+  TEST_ASSERT_EQUAL_size_t(1, world.player_count);
+  TEST_ASSERT_TRUE(second->alive);
+  TEST_ASSERT_TRUE(second->is_bot);
+  TEST_ASSERT_EQUAL_UINT32(2u, second->player_id);
+}
+
 void test_small_bot_prefers_safer_spore_over_slightly_closer_center_spore(void) {
   ShroomPlayerState* bot;
 
@@ -302,6 +324,7 @@ int main(void) {
   RUN_TEST(test_world_step_collects_spores_and_gains_mass);
   RUN_TEST(test_world_step_consumes_player_when_mass_advantage_and_overlap_match);
   RUN_TEST(test_world_step_does_not_consume_without_required_mass_advantage);
+  RUN_TEST(test_spawn_player_reuses_inactive_slot);
   RUN_TEST(test_small_bot_prefers_safer_spore_over_slightly_closer_center_spore);
   RUN_TEST(test_large_bot_prefers_center_pressure_spore_choice);
   RUN_TEST(test_bot_flees_nearby_threat_even_with_available_prey);
