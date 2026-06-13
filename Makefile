@@ -382,8 +382,9 @@ $(TEST_BUILD_DIR)/imgui/tests/%.o: $(IMGUI_TESTS_DIR)/%.cpp $(IMGUI_TEST_ENGINE_
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CXX) $(IMGUI_TEST_CXXFLAGS) -I$(IMGUI_TESTS_DIR) -c $< -o $@
 
-# C test driver compilation (main.c, tests.c)
-$(TEST_BUILD_DIR)/imgui/tests/%.o: $(IMGUI_TESTS_DIR)/%.c | $(VCPKG_LINUX_STAMP)
+# C test driver compilation (main.c, tests.c) — depends on game.h/net.h so
+# layout changes automatically rebuild test objects.
+$(TEST_BUILD_DIR)/imgui/tests/%.o: $(IMGUI_TESTS_DIR)/%.c $(CLIENT_SRC_DIR)/game.h $(CLIENT_SRC_DIR)/net.h $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(IMGUI_TEST_CFLAGS) -I$(IMGUI_TESTS_DIR) -c $< -o $@
 

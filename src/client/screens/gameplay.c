@@ -99,10 +99,17 @@ static void GameplayHandleInput(ShroomScreenManager* manager) {
     }
   }
 
-  /* Space: request a split (only allowed at max mass; sim enforces the threshold). */
-  if (IsKeyPressed(KEY_SPACE) && !game->menu_overlay_open && !game->leaderboard_overlay_open &&
-      !game->leave_confirmation_open && (game->local_player != NULL) && game->local_player->alive) {
-    game->split_requested = true;
+  /* Hold Space to split — only when not already split (must merge back first). */
+  if (IsKeyDown(KEY_SPACE) && !game->menu_overlay_open && !game->leaderboard_overlay_open &&
+      !game->leave_confirmation_open && (game->local_player != NULL) && game->local_player->alive &&
+      (game->local_player->mass >= SHROOM_SPLIT_MIN_MASS) && (game->local_piece_count == 1)) {
+    game->split_hold_timer += GetFrameTime();
+    if (game->split_hold_timer >= SHROOM_SPLIT_HOLD_SECONDS) {
+      game->split_requested = true;
+      game->split_hold_timer = 0.0f;
+    }
+  } else {
+    game->split_hold_timer = 0.0f;
   }
 
   if (IsKeyPressed(KEY_TAB)) {
@@ -131,6 +138,8 @@ static void GameplayHandleInput(ShroomScreenManager* manager) {
 
         if (piece_count > 1) {
           game->focused_piece_entity_id = pieces[(current_idx + 1) % piece_count];
+          game->piece_focus_changed = true;
+          game->split_hold_timer = 0.0f;
         }
       }
     } else {

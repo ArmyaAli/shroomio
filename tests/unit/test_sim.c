@@ -276,8 +276,9 @@ void test_world_step_caps_mass_gain_at_configured_maximum(void) {
 
   ResetWorldForPlayers();
 
-  /* Use a bot: bots are exempt from forced splits so this test can verify
-   * the mass cap in isolation without the split mechanic interfering. */
+  /* All players (including bots) are now force-split at SHROOM_SPLIT_MASS_THRESHOLD.
+   * Collect a spore that pushes a bot to the mass cap, then verify it was
+   * capped at SHROOM_MAX_PLAYER_MASS and immediately halved by forced split. */
   player = ShroomWorldSpawnPlayer(&world, 1, true);
   TEST_ASSERT_NOT_NULL(player);
 
@@ -293,7 +294,9 @@ void test_world_step_caps_mass_gain_at_configured_maximum(void) {
 
   ShroomWorldStep(&world, 0.0f);
 
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_MAX_PLAYER_MASS, player->mass);
+  /* Mass was capped at SHROOM_MAX_PLAYER_MASS, then halved by forced split. */
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_MAX_PLAYER_MASS / 2.0f, player->mass);
+  TEST_ASSERT_EQUAL(2, world.player_count);
 }
 
 void test_world_step_decays_oversized_player_and_ejects_spore_mass(void) {

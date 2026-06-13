@@ -504,7 +504,7 @@ static void SyncRenderPositions(Game* game, float delta_time) {
       continue;
     }
 
-    if ((player == game->local_player) || !game->net.welcome_received) {
+    if (IsLocalPlayerPiece(game, player) || !game->net.welcome_received) {
       game->render_positions[index] = player->position;
       game->render_position_initialized[index] = true;
       continue;
@@ -724,6 +724,13 @@ static void DrawPlayers(const Game* game) {
       if (IsDecayMassActive(player)) {
         DrawCircleLines((int)position.x, (int)position.y, player->radius + 11.0f,
                         Fade(RED, decay_pulse));
+      }
+      /* Hold-to-split charge arc on the focused piece. */
+      if (is_focused && (game->split_hold_timer > 0.0f)) {
+        const float progress = game->split_hold_timer / SHROOM_SPLIT_HOLD_SECONDS;
+        const Color arc_color = (progress >= 1.0f) ? RAYWHITE : SKYBLUE;
+        DrawRing(position, player->radius + 14.0f, player->radius + 18.0f, -90.0f,
+                 -90.0f + (progress * 360.0f), 36, Fade(arc_color, 0.85f));
       }
     }
 
@@ -1311,7 +1318,7 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
       ShroomImGui_TextColored(ToImGuiColor(YELLOW),
                               TextFormat("Pieces %d  Tab to switch", game->local_piece_count));
     } else if (game->local_player->mass >= SHROOM_SPLIT_MIN_MASS) {
-      ShroomImGui_TextColored(ToImGuiColor(SKYBLUE), "Max size  Space to split");
+      ShroomImGui_TextColored(ToImGuiColor(SKYBLUE), "Hold Space to split");
     }
     ShroomImGui_Text(TextFormat("Players %d   Spores %d", (int)game->world.player_count,
                                 (int)game->world.spore_count));
@@ -1432,11 +1439,27 @@ static void DrawProximityMap(const Game* game) {
 static ShroomVec2 GetMovementInput(const Game* game) {
   const Vector2 mouse_screen = GetMousePosition();
   const Vector2 mouse_world = GetScreenToWorld2D(mouse_screen, game->camera);
-  const Vector2 player_world =
-      game->local_player != NULL
-          ? (Vector2){game->local_player->position.x, game->local_player->position.y}
-          : (Vector2){0};
-  Vector2 movement = Vector2Subtract(mouse_world, player_world);
+  /* Use the focused piece as the movement origin so that after Tab-switching
+   * to a split fragment the mouse direction is correct for that piece. */
+  const ShroomPlayerState* input_ref = game->local_player;
+  Vector2 player_world = {0.0f, 0.0f};
+  Vector2 movement;
+  size_t pi;
+
+  if (game->focused_piece_entity_id != 0) {
+    for (pi = 0; pi < game->world.player_count; ++pi) {
+      const ShroomPlayerState* p = &game->world.players[pi];
+      if (p->alive && (p->entity_id == game->focused_piece_entity_id)) {
+        input_ref = p;
+        break;
+      }
+    }
+  }
+  if (input_ref != NULL) {
+    player_world = (Vector2){input_ref->position.x, input_ref->position.y};
+  }
+
+  movement = Vector2Subtract(mouse_world, player_world);
 
   if (game->settings.invert_mouse) {
     movement = Vector2Scale(movement, -1.0f);
@@ -1582,10 +1605,12 @@ void GameUpdate(Game* game, float delta_time) {
     }
     if (!focused_alive) {
       game->focused_piece_entity_id = 0;
+      game->piece_focus_changed = false;
     }
     /* If only one piece remains, clear focus so Tab goes back to leaderboard. */
     if (game->local_piece_count <= 1) {
       game->focused_piece_entity_id = 0;
+      game->piece_focus_changed = false;
     }
   }
 
@@ -1676,7 +1701,24 @@ void GameUpdate(Game* game, float delta_time) {
         }
       }
     }
-    game->camera.target = (Vector2){cam_target->position.x, cam_target->position.y};
+    if (game->piece_focus_changed) {
+      /* Smooth pan to newly focused piece; snap once close enough. */
+      const float blend = fminf(1.0f, delta_time * 5.0f);
+      const float tx = cam_target->position.x;
+      const float ty = cam_target->position.y;
+      const float dx = tx - game->camera.target.x;
+      const float dy = ty - game->camera.target.y;
+
+      game->camera.target.x += dx * blend;
+      game->camera.target.y += dy * blend;
+      if ((dx * dx + dy * dy) < 4.0f) {
+        game->camera.target.x = tx;
+        game->camera.target.y = ty;
+        game->piece_focus_changed = false;
+      }
+    } else {
+      game->camera.target = (Vector2){cam_target->position.x, cam_target->position.y};
+    }
   }
 }
 
