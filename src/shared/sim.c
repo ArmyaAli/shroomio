@@ -149,33 +149,33 @@ static void ShroomInitializeSpores(ShroomWorldState* world) {
 static float ShroomBotSporeZoneWeight(float bot_mass, ShroomZone zone) {
   if (bot_mass < (SHROOM_DEFAULT_PLAYER_MASS * 1.25f)) {
     switch (zone) {
-      case SHROOM_ZONE_OUTER:
-        return 1.15f;
-      case SHROOM_ZONE_MID:
-        return 1.0f;
-      case SHROOM_ZONE_CENTER:
-        return 0.65f;
+    case SHROOM_ZONE_OUTER:
+      return 1.15f;
+    case SHROOM_ZONE_MID:
+      return 1.0f;
+    case SHROOM_ZONE_CENTER:
+      return 0.65f;
     }
   }
 
   if (bot_mass > (SHROOM_DEFAULT_PLAYER_MASS * 1.8f)) {
     switch (zone) {
-      case SHROOM_ZONE_OUTER:
-        return 0.8f;
-      case SHROOM_ZONE_MID:
-        return 1.0f;
-      case SHROOM_ZONE_CENTER:
-        return 1.35f;
+    case SHROOM_ZONE_OUTER:
+      return 0.8f;
+    case SHROOM_ZONE_MID:
+      return 1.0f;
+    case SHROOM_ZONE_CENTER:
+      return 1.35f;
     }
   }
 
   switch (zone) {
-    case SHROOM_ZONE_OUTER:
-      return 0.95f;
-    case SHROOM_ZONE_MID:
-      return 1.05f;
-    case SHROOM_ZONE_CENTER:
-      return 1.0f;
+  case SHROOM_ZONE_OUTER:
+    return 0.95f;
+  case SHROOM_ZONE_MID:
+    return 1.05f;
+  case SHROOM_ZONE_CENTER:
+    return 1.0f;
   }
 
   return 1.0f;
@@ -264,9 +264,9 @@ static void ShroomUpdateBotInput(ShroomWorldState* world, ShroomPlayerState* bot
   }
 
   if ((bot->mass > (SHROOM_DEFAULT_PLAYER_MASS * 1.5f)) && (current_zone != SHROOM_ZONE_CENTER)) {
-    const ShroomVec2 center_push = ShroomVec2Scale(
-        ShroomVec2Sub(ShroomWorldCenter(world), bot->position),
-        ShroomBotCenterPressureWeight(bot->mass, current_zone));
+    const ShroomVec2 center_push =
+        ShroomVec2Scale(ShroomVec2Sub(ShroomWorldCenter(world), bot->position),
+                        ShroomBotCenterPressureWeight(bot->mass, current_zone));
 
     if ((best_spore == 0) || (best_spore_score < 0.00002f)) {
       bot->input_direction = ShroomNormalizeOrZero(center_push);
