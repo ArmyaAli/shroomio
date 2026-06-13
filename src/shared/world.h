@@ -24,6 +24,7 @@ typedef struct ShroomPlayerState {
   ShroomVec2 input_direction;
   float mass;
   float radius;
+  float decay_spore_accumulator;
   char name[SHROOM_MAX_NAME_LENGTH];
   bool alive;
   bool is_bot;

@@ -158,6 +158,10 @@ static Color GetThreatOutlineColor(PlayerThreatState state) {
   }
 }
 
+static bool IsDecayMassActive(const ShroomPlayerState* player) {
+  return (player != NULL) && player->alive && (player->mass > SHROOM_DECAY_MASS_THRESHOLD);
+}
+
 static int GetLocalPlayerRank(const Game* game, const LeaderboardEntry* leaderboard,
                               size_t leaderboard_count) {
   for (size_t index = 0; index < leaderboard_count; ++index) {
@@ -650,6 +654,8 @@ static void DrawPlayers(const Game* game) {
     const Color fill = GetPlayerFillColor(game, player);
     const PlayerThreatState threat_state = GetThreatState(game->local_player, player);
     const Color threat_outline = GetThreatOutlineColor(threat_state);
+    const float decay_pulse =
+        0.45f + (0.35f * (0.5f + (0.5f * sinf(game->inspect_prompt_timer * 5.0f))));
 
     if (!player->alive) {
       continue;
@@ -663,6 +669,10 @@ static void DrawPlayers(const Game* game) {
 
     if (player == game->local_player) {
       DrawCircleLines((int)position.x, (int)position.y, player->radius + 8.0f, RAYWHITE);
+    }
+    if (IsDecayMassActive(player)) {
+      DrawCircleLines((int)position.x, (int)position.y, player->radius + 11.0f,
+                      Fade(RED, decay_pulse));
     }
 
     DrawPlayerName(game, player, position);
@@ -1223,7 +1233,7 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
     return;
   }
   ShroomImGui_SetNextWindowPos(18.0f, 18.0f, SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowSize(316.0f, 124.0f, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowSize(316.0f, 142.0f, SHROOM_IMGUI_COND_ALWAYS);
   ShroomImGui_SetNextWindowBgAlpha(0.66f);
   if (ShroomImGui_Begin("HUD Left", NULL,
                         SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
@@ -1236,6 +1246,11 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
                                 (int)leaderboard_count));
     ShroomImGui_TextColored(ToImGuiColor(GetZoneColor(zone)),
                             TextFormat("Zone %s", GetZoneLabel(zone)));
+    if (IsDecayMassActive(game->local_player)) {
+      ShroomImGui_TextColored(ToImGuiColor(RED),
+                              TextFormat("Decaying  excess %.0f",
+                                         game->local_player->mass - SHROOM_DECAY_MASS_THRESHOLD));
+    }
     ShroomImGui_Text(TextFormat("Players %d   Spores %d", (int)game->world.player_count,
                                 (int)game->world.spore_count));
   }
