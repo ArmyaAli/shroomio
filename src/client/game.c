@@ -833,6 +833,28 @@ static void DrawStatusBanners(const Game* game) {
     }
     ShroomImGui_End();
   }
+
+  if (IsOnlineMode(game->active_mode) && (game->net.status == CLIENT_NET_CONNECTED) &&
+      (game->net.rtt_sample_count > 0u) &&
+      (game->net.rtt_average_ms >= SHROOM_LATENCY_WARNING_MS)) {
+    const bool unplayable = game->net.rtt_average_ms >= SHROOM_LATENCY_UNPLAYABLE_MS;
+    const Color warn_color = unplayable ? RED : ORANGE;
+    ShroomImGui_SetNextWindowPos((game->screen_width - 300.0f) * 0.5f, 162.0f,
+                                 SHROOM_IMGUI_COND_ALWAYS);
+    ShroomImGui_SetNextWindowSize(300.0f, 44.0f, SHROOM_IMGUI_COND_ALWAYS);
+    ShroomImGui_SetNextWindowBgAlpha(0.78f);
+    if (ShroomImGui_Begin("Latency Warning", NULL,
+                          SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
+                              SHROOM_IMGUI_WINDOW_NO_MOVE | SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
+                              SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS |
+                              SHROOM_IMGUI_WINDOW_NO_SCROLLBAR)) {
+      ShroomImGui_TextColored(ToImGuiColor(warn_color),
+                              unplayable ? "Unplayable latency" : "High latency");
+      ShroomImGui_SameLine();
+      ShroomImGui_Text(TextFormat("avg RTT %ums", game->net.rtt_average_ms));
+    }
+    ShroomImGui_End();
+  }
 }
 
 static void DrawLeaderboardOverlay(Game* game, const LeaderboardEntry* leaderboard,
@@ -1187,7 +1209,7 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
 }
 
 static void DrawProximityMap(const Game* game) {
-  const Vector2 center = {98.0f, game->screen_height - 98.0f};
+  const Vector2 center = {98.0f, game->screen_height - 126.0f};
   const float inner_radius = kProximityMapRadius - 10.0f;
   const float pulse_phase = 0.5f + (0.5f * sinf(game->inspect_prompt_timer * 3.6f));
   const float pulse = 0.68f + (0.32f * pulse_phase);
