@@ -1444,9 +1444,9 @@ static ShroomVec2 GetMovementInput(const Game* game) {
   const ShroomPlayerState* input_ref = game->local_player;
   Vector2 player_world = {0.0f, 0.0f};
   Vector2 movement;
-  size_t pi;
 
   if (game->focused_piece_entity_id != 0) {
+    size_t pi;
     for (pi = 0; pi < game->world.player_count; ++pi) {
       const ShroomPlayerState* p = &game->world.players[pi];
       if (p->alive && (p->entity_id == game->focused_piece_entity_id)) {
