@@ -55,6 +55,14 @@ typedef struct ClientNetState {
   uint32_t chat_history_count;
   uint32_t chat_history_head;
   uint32_t chat_unread_count;
+  /* Lobby state */
+  bool handshake_received; /* set on WELCOME (version ack) */
+  bool spectating;
+  uint32_t lobby_id;
+  float world_width;
+  float world_height;
+  uint8_t lobby_count;
+  ShroomLobbyEntry lobby_list[SHROOM_MAX_LOBBIES];
 } ClientNetState;
 
 bool ClientNetInit(ClientNetState* net, const char* host_name, uint16_t port);
@@ -63,5 +71,9 @@ void ClientNetShutdown(ClientNetState* net);
 const char* ClientNetStatusLabel(const ClientNetState* net);
 bool ClientNetSendChat(ClientNetState* net, uint32_t player_id, const char* sender_name,
                        const char* message);
+void ClientNetSendLobbyListQuery(ClientNetState* net);
+void ClientNetSendLobbyJoin(ClientNetState* net, uint32_t lobby_id, bool spectate);
+void ClientNetSendLobbyLeave(ClientNetState* net);
+void ClientNetSendLobbyCreate(ClientNetState* net, const char* name, uint16_t max_players);
 
 #endif

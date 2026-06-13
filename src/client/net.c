@@ -96,10 +96,47 @@ static void HandleWelcome(ClientNetState* net, const ENetPacket* enet_packet) {
     return;
   }
 
-  net->welcome_received = true;
-  net->player_id = packet->player_id;
-  net->entity_id = packet->entity_id;
+  /* WELCOME is now a lightweight version handshake only.
+   * welcome_received and player_id are set by LOBBY_JOINED. */
+  net->handshake_received = true;
   SetStatus(net, CLIENT_NET_CONNECTED, "Connected");
+}
+
+static void HandleLobbyList(ClientNetState* net, const ENetPacket* enet_packet) {
+  const ShroomLobbyListPacket* packet = (const ShroomLobbyListPacket*)enet_packet->data;
+  uint8_t count;
+
+  if (enet_packet->dataLength < sizeof(*packet)) {
+    return;
+  }
+
+  count = packet->lobby_count;
+  if (count > SHROOM_MAX_LOBBIES) {
+    count = SHROOM_MAX_LOBBIES;
+  }
+  net->lobby_count = count;
+  if (count > 0) {
+    memcpy(net->lobby_list, packet->lobbies, (size_t)count * sizeof(net->lobby_list[0]));
+  }
+}
+
+static void HandleLobbyJoined(ClientNetState* net, const ENetPacket* enet_packet) {
+  const ShroomLobbyJoinedPacket* packet = (const ShroomLobbyJoinedPacket*)enet_packet->data;
+
+  if (enet_packet->dataLength < sizeof(*packet)) {
+    return;
+  }
+
+  net->lobby_id = packet->lobby_id;
+  net->spectating = (packet->spectating != 0);
+  net->world_width = packet->world_width;
+  net->world_height = packet->world_height;
+
+  if (!net->spectating) {
+    net->player_id = packet->player_id;
+    net->entity_id = packet->entity_id;
+    net->welcome_received = true;
+  }
 }
 
 static void HandlePong(ClientNetState* net, const ENetPacket* enet_packet) {
@@ -278,6 +315,19 @@ void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, float delt
             HandleChat(net, event.packet);
           }
           break;
+        case SHROOM_PACKET_LOBBY_LIST:
+          if (ShroomPacketHeaderUsesExpectedChannel(header, event.channelID)) {
+            HandleLobbyList(net, event.packet);
+          }
+          break;
+        case SHROOM_PACKET_LOBBY_JOINED:
+          if (ShroomPacketHeaderUsesExpectedChannel(header, event.channelID)) {
+            HandleLobbyJoined(net, event.packet);
+          }
+          break;
+        case SHROOM_PACKET_LOBBY_CREATED:
+          /* Handled by the lobby browser screen via net->lobby_count refresh. */
+          break;
         case SHROOM_PACKET_PING:
         case SHROOM_PACKET_HELLO:
         case SHROOM_PACKET_INPUT:
@@ -333,6 +383,64 @@ void ClientNetShutdown(ClientNetState* net) {
 
 const char* ClientNetStatusLabel(const ClientNetState* net) {
   return net->status_text[0] != '\0' ? net->status_text : "Offline";
+}
+
+void ClientNetSendLobbyListQuery(ClientNetState* net) {
+  ShroomPacketHeader packet = {0};
+
+  if ((net == NULL) || (net->peer == NULL) || (net->peer->state != ENET_PEER_STATE_CONNECTED)) {
+    return;
+  }
+
+  ShroomPacketHeaderInit(&packet, SHROOM_PACKET_LOBBY_LIST_QUERY, sizeof(packet));
+  enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CONTROL,
+                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_LOBBY_LIST_QUERY));
+}
+
+void ClientNetSendLobbyJoin(ClientNetState* net, uint32_t lobby_id, bool spectate) {
+  ShroomLobbyJoinPacket packet = {0};
+
+  if ((net == NULL) || (net->peer == NULL) || (net->peer->state != ENET_PEER_STATE_CONNECTED)) {
+    return;
+  }
+
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_JOIN, sizeof(packet));
+  packet.lobby_id = lobby_id;
+  packet.spectate = spectate ? 1u : 0u;
+  enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CONTROL,
+                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_LOBBY_JOIN));
+}
+
+void ClientNetSendLobbyLeave(ClientNetState* net) {
+  ShroomLobbyLeavePacket packet = {0};
+
+  if ((net == NULL) || (net->peer == NULL) || (net->peer->state != ENET_PEER_STATE_CONNECTED)) {
+    return;
+  }
+
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_LEAVE, sizeof(packet));
+  packet.lobby_id = net->lobby_id;
+  enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CONTROL,
+                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_LOBBY_LEAVE));
+  net->welcome_received = false;
+  net->lobby_id = 0;
+  net->spectating = false;
+}
+
+void ClientNetSendLobbyCreate(ClientNetState* net, const char* name, uint16_t max_players) {
+  ShroomLobbyCreatePacket packet = {0};
+
+  if ((net == NULL) || (net->peer == NULL) || (net->peer->state != ENET_PEER_STATE_CONNECTED)) {
+    return;
+  }
+
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_CREATE, sizeof(packet));
+  if (name != NULL && name[0] != '\0') {
+    snprintf(packet.name, sizeof(packet.name), "%s", name);
+  }
+  packet.max_players = max_players;
+  enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CONTROL,
+                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_LOBBY_CREATE));
 }
 
 bool ClientNetSendChat(ClientNetState* net, uint32_t player_id, const char* sender_name,

@@ -40,16 +40,14 @@ static void MainMenuDraw(ShroomScreenManager* manager) {
       "Grow by collecting spores, out-position bigger threats, and take over the arena.");
   ShroomImGui_Spacing();
 
-  if (ShroomImGui_Button("Quick Play", -1.0f, 38.0f)) {
+  if (ShroomImGui_Button("Play Online", -1.0f, 38.0f)) {
     if (game != NULL) {
-      game->selected_mode = SHROOM_SESSION_MODE_QUICK_PLAY;
+      ClientNetInit(&game->net, game->selected_server_host, game->selected_server_port);
+      game->auto_join_lobby = true; /* auto-pick best lobby on list receipt */
     }
-    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
+    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_LOBBY);
   }
-  if (ShroomImGui_Button("Server Browser", -1.0f, 38.0f)) {
-    if (game != NULL) {
-      game->selected_mode = SHROOM_SESSION_MODE_QUICK_PLAY;
-    }
+  if (ShroomImGui_Button("Custom Server", -1.0f, 38.0f)) {
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
   }
   if (ShroomImGui_Button("Offline Practice", -1.0f, 38.0f)) {

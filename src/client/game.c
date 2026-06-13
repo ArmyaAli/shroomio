@@ -26,7 +26,9 @@ static const float kStatusBannerDuration = 2.0f;
 static const float kProximityMapRadius = 74.0f;
 static const float kProximityMapRange = 1400.0f;
 
-static bool IsOnlineMode(GameSessionMode mode) { return mode == SHROOM_SESSION_MODE_QUICK_PLAY; }
+static bool IsOnlineMode(GameSessionMode mode) {
+  return mode == SHROOM_SESSION_MODE_QUICK_PLAY || mode == SHROOM_SESSION_MODE_LOBBY_PLAY;
+}
 
 static const char* GetPlayerDisplayName(const Game* game, const ShroomPlayerState* player) {
   static char fallback_name[32];
@@ -778,7 +780,12 @@ static void DrawOffscreenIndicators(const Game* game) {
 }
 
 static void UpdateStatusBanners(Game* game, float delta_time) {
-  const ShroomZone zone = ShroomGetZoneAtPosition(&game->world, game->local_player->position);
+  ShroomZone zone;
+
+  if (game->local_player == NULL) {
+    return;
+  }
+  zone = ShroomGetZoneAtPosition(&game->world, game->local_player->position);
   const float moved_distance =
       sqrtf(ShroomDistanceSqr(game->local_player->position, game->previous_local_position));
 
@@ -1002,7 +1009,7 @@ static void DrawConnectionOverlay(Game* game) {
 }
 
 static void DrawDiagnosticsOverlay(const Game* game) {
-  if (!game->diagnostics_overlay_open) {
+  if (!game->diagnostics_overlay_open || (game->local_player == NULL)) {
     return;
   }
 
@@ -1169,6 +1176,9 @@ static void DrawChatDock(Game* game) {
 
 static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard_count,
                             ShroomZone zone) {
+  if (game->local_player == NULL) {
+    return;
+  }
   ShroomImGui_SetNextWindowPos(18.0f, 18.0f, SHROOM_IMGUI_COND_ALWAYS);
   ShroomImGui_SetNextWindowSize(316.0f, 124.0f, SHROOM_IMGUI_COND_ALWAYS);
   ShroomImGui_SetNextWindowBgAlpha(0.66f);
@@ -1209,6 +1219,9 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
 }
 
 static void DrawProximityMap(const Game* game) {
+  if (game->local_player == NULL) {
+    return;
+  }
   const Vector2 center = {98.0f, game->screen_height - 126.0f};
   const float inner_radius = kProximityMapRadius - 10.0f;
   const float pulse_phase = 0.5f + (0.5f * sinf(game->inspect_prompt_timer * 3.6f));
@@ -1299,7 +1312,10 @@ static void DrawProximityMap(const Game* game) {
 static ShroomVec2 GetMovementInput(const Game* game) {
   const Vector2 mouse_screen = GetMousePosition();
   const Vector2 mouse_world = GetScreenToWorld2D(mouse_screen, game->camera);
-  const Vector2 player_world = {game->local_player->position.x, game->local_player->position.y};
+  const Vector2 player_world =
+      game->local_player != NULL
+          ? (Vector2){game->local_player->position.x, game->local_player->position.y}
+          : (Vector2){0};
   Vector2 movement = Vector2Subtract(mouse_world, player_world);
 
   if (game->settings.invert_mouse) {
@@ -1340,6 +1356,26 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
     selected_server_port = SHROOM_SERVER_PORT;
   }
 
+  if (mode == SHROOM_SESSION_MODE_LOBBY_PLAY) {
+    /* Connection and auth already done via lobby browser.
+     * Preserve the entire net state and just set up rendering. */
+    ClientNetState saved_net = game->net;
+    *game = (Game){0};
+    game->net = saved_net;
+    game->settings = settings;
+    game->selected_mode = selected_mode;
+    game->active_mode = mode;
+    game->screen_width = screen_width;
+    game->screen_height = screen_height;
+    game->camera.offset = (Vector2){screen_width / 2.0f, screen_height / 2.0f};
+    game->camera.target = (Vector2){game->net.world_width * 0.5f, game->net.world_height * 0.5f};
+    game->camera.zoom = 1.0f;
+    game->diagnostics_overlay_open = game->settings.diagnostics_enabled;
+    ShroomWorldInit(&game->world);
+    /* local_player is NULL until first snapshot from server. */
+    return;
+  }
+
   *game = (Game){0};
   game->settings = settings;
   game->selected_mode = selected_mode;
@@ -1350,7 +1386,7 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
   game->screen_width = screen_width;
   game->screen_height = screen_height;
 
-  if (IsOnlineMode(mode)) {
+  if (mode == SHROOM_SESSION_MODE_QUICK_PLAY) {
     ClientNetInit(&game->net, game->selected_server_host, game->selected_server_port);
   } else {
     game->net.status = CLIENT_NET_CONNECTED;
@@ -1358,8 +1394,10 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
   }
   ShroomWorldInit(&game->world);
   game->local_player = ShroomWorldSpawnPlayer(&game->world, 1, false);
-  snprintf(game->local_player->name, sizeof(game->local_player->name), "%s",
-           IsOnlineMode(mode) ? "local-client" : "You");
+  if (game->local_player != NULL) {
+    snprintf(game->local_player->name, sizeof(game->local_player->name), "%s",
+             (mode == SHROOM_SESSION_MODE_QUICK_PLAY) ? "local-client" : "You");
+  }
   for (bot_index = 0; bot_index < SHROOM_BOT_COUNT; ++bot_index) {
     ShroomPlayerState* bot =
         ShroomWorldSpawnPlayer(&game->world, (ShroomPlayerId)(bot_index + 2), true);
@@ -1369,12 +1407,16 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
   }
 
   game->camera.offset = (Vector2){screen_width / 2.0f, screen_height / 2.0f};
-  game->camera.target = (Vector2){game->local_player->position.x, game->local_player->position.y};
+  game->camera.target = game->local_player != NULL ? (Vector2){game->local_player->position.x,
+                                                               game->local_player->position.y}
+                                                   : (Vector2){0};
   game->camera.rotation = 0.0f;
   game->camera.zoom = 1.0f;
-  game->current_zone = ShroomGetZoneAtPosition(&game->world, game->local_player->position);
-  game->previous_local_position = game->local_player->position;
-  game->previous_local_mass = game->local_player->mass;
+  if (game->local_player != NULL) {
+    game->current_zone = ShroomGetZoneAtPosition(&game->world, game->local_player->position);
+    game->previous_local_position = game->local_player->position;
+    game->previous_local_mass = game->local_player->mass;
+  }
   game->zone_callout_timer = kStatusBannerDuration;
   game->diagnostics_overlay_open = game->settings.diagnostics_enabled;
 }
@@ -1417,14 +1459,18 @@ void GameUpdate(Game* game, float delta_time) {
   UpdateStatusBanners(game, delta_time);
   UpdateInspectOverlay(game, delta_time);
   UpdateChatState(game, delta_time);
-  game->camera.target = (Vector2){game->local_player->position.x, game->local_player->position.y};
+  if (game->local_player != NULL) {
+    game->camera.target = (Vector2){game->local_player->position.x, game->local_player->position.y};
+  }
 }
 
 void GameDraw(Game* game) {
   LeaderboardEntry leaderboard[SHROOM_MAX_PLAYERS];
   size_t leaderboard_count = 0;
   size_t shown_count;
-  const ShroomZone zone = ShroomGetZoneAtPosition(&game->world, game->local_player->position);
+  const ShroomZone zone = (game->local_player != NULL)
+                              ? ShroomGetZoneAtPosition(&game->world, game->local_player->position)
+                              : SHROOM_ZONE_OUTER;
   int local_rank;
 
   BuildLeaderboard(game, leaderboard, &leaderboard_count);

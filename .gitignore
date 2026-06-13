@@ -10,3 +10,9 @@ vendor/
 *.toc
 *.synctex.gz
 .worktrees/
+TODO.md
+client_settings.cfg
+imgui.ini
+server_browser_recent.txt
+shroomio.db
+.opencode/

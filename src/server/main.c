@@ -135,9 +135,26 @@ static bool InitializeDatabaseSchema(sqlite3* db) {
   return true;
 }
 
+static const char* const kBotNamePrefixes[] = {
+    "Mycelium", "Sporecap", "Hyphae", "Spore", "Fungal", "Myco", "Shroom", "Mold",
+};
+#define BOT_NAME_PREFIX_COUNT 8u
+
+typedef struct ShroomLobby {
+  uint32_t lobby_id;
+  char name[SHROOM_LOBBY_MAX_NAME_LENGTH];
+  ShroomWorldState world;
+  bool active;
+  bool is_dynamic;
+  uint64_t empty_since_ms;
+} ShroomLobby;
+
 typedef struct ServerSession {
   bool active;
   bool authenticated;
+  bool handshake_received;
+  bool spectating;
+  uint32_t lobby_id;
   uint32_t player_id;
   uint32_t user_id;
   uint32_t last_processed_input_sequence;
@@ -147,6 +164,7 @@ typedef struct ServerSession {
   uint64_t chat_window_start_ms;
   ShroomPlayerState* player;
   char auth_token[SHROOM_AUTH_TOKEN_LENGTH + 1];
+  char display_name[SHROOM_MAX_NAME_LENGTH];
 } ServerSession;
 
 static ShroomLifecycle g_lifecycle;
@@ -201,29 +219,119 @@ static ENetPacket* CreateProtocolPacket(const void* data, size_t size, ShroomPac
                       ShroomPacketTypeUsesReliableDelivery(type) ? ENET_PACKET_FLAG_RELIABLE : 0);
 }
 
-static void SetDefaultPlayerName(ShroomPlayerState* player, const char* prefix) {
-  if (player == NULL) {
-    return;
-  }
-
-  snprintf(player->name, sizeof(player->name), "%s %u", prefix, player->player_id);
-}
-
-static void SendWelcome(ENetPeer* peer, const ServerSession* session,
-                        const ShroomWorldState* world) {
+/* Lightweight handshake ack — player/world data comes via LOBBY_JOINED. */
+static void SendWelcome(ENetPeer* peer) {
   const ShroomWelcomePacket packet = {
       .header = {SHROOM_PACKET_WELCOME, SHROOM_ENET_CHANNEL_CONTROL, sizeof(ShroomWelcomePacket)},
       .protocol_version = SHROOM_PROTOCOL_VERSION,
-      .player_id = session->player_id,
-      .entity_id = session->player != 0 ? session->player->entity_id : 0,
-      .server_tick_rate = (uint16_t)SHROOM_SERVER_TICK_RATE,
-      .snapshot_rate = SHROOM_SNAPSHOT_RATE,
-      .world_width = world->width,
-      .world_height = world->height,
   };
 
   enet_peer_send(peer, SHROOM_ENET_CHANNEL_CONTROL,
                  CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_WELCOME));
+}
+
+static uint16_t CountLobbyRealPlayers(const ENetHost* host, uint32_t lobby_id) {
+  uint16_t count = 0;
+  size_t i;
+
+  for (i = 0; i < host->peerCount; ++i) {
+    const ServerSession* s = (const ServerSession*)host->peers[i].data;
+
+    if (s != NULL && s->active && !s->spectating && s->lobby_id == lobby_id) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+static uint16_t CountLobbySpectators(const ENetHost* host, uint32_t lobby_id) {
+  uint16_t count = 0;
+  size_t i;
+
+  for (i = 0; i < host->peerCount; ++i) {
+    const ServerSession* s = (const ServerSession*)host->peers[i].data;
+
+    if (s != NULL && s->active && s->spectating && s->lobby_id == lobby_id) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+static ShroomLobby* FindLobbyById(ShroomLobby* lobbies, uint32_t lobby_id) {
+  size_t i;
+
+  if (lobby_id == 0) {
+    return NULL;
+  }
+  for (i = 0; i < SHROOM_MAX_LOBBIES; ++i) {
+    if (lobbies[i].active && lobbies[i].lobby_id == lobby_id) {
+      return &lobbies[i];
+    }
+  }
+  return NULL;
+}
+
+static void SendLobbyList(ENetPeer* peer, ShroomLobby* lobbies, const ENetHost* host) {
+  ShroomLobbyListPacket packet = {0};
+  uint8_t count = 0;
+  size_t i;
+
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_LIST, sizeof(packet));
+  for (i = 0; i < SHROOM_MAX_LOBBIES && count < SHROOM_MAX_LOBBIES; ++i) {
+    ShroomLobby* lobby = &lobbies[i];
+    uint16_t real_count;
+    uint16_t bot_count;
+
+    if (!lobby->active) {
+      continue;
+    }
+    real_count = CountLobbyRealPlayers(host, lobby->lobby_id);
+    bot_count =
+        (uint16_t)(lobby->world.player_count > real_count ? lobby->world.player_count - real_count
+                                                          : 0u);
+    packet.lobbies[count] = (ShroomLobbyEntry){
+        .lobby_id = lobby->lobby_id,
+        .player_count = real_count,
+        .bot_count = bot_count,
+        .max_players = (uint16_t)(SHROOM_MAX_PLAYERS - SHROOM_BOT_COUNT),
+        .spectator_count = CountLobbySpectators(host, lobby->lobby_id),
+        .is_dynamic = lobby->is_dynamic ? 1u : 0u,
+    };
+    snprintf(packet.lobbies[count].name, sizeof(packet.lobbies[count].name), "%s", lobby->name);
+    ++count;
+  }
+  packet.lobby_count = count;
+  enet_peer_send(peer, SHROOM_ENET_CHANNEL_CONTROL,
+                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_LOBBY_LIST));
+}
+
+static void SendLobbyJoined(ENetPeer* peer, const ServerSession* session,
+                            const ShroomLobby* lobby) {
+  ShroomLobbyJoinedPacket packet = {0};
+
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_JOINED, sizeof(packet));
+  packet.lobby_id = lobby->lobby_id;
+  packet.spectating = session->spectating ? 1u : 0u;
+  packet.player_id = session->player_id;
+  packet.entity_id = session->player != NULL ? session->player->entity_id : 0u;
+  packet.server_tick_rate = (uint16_t)SHROOM_SERVER_TICK_RATE;
+  packet.snapshot_rate = SHROOM_SNAPSHOT_RATE;
+  packet.world_width = lobby->world.width;
+  packet.world_height = lobby->world.height;
+  snprintf(packet.lobby_name, sizeof(packet.lobby_name), "%s", lobby->name);
+  enet_peer_send(peer, SHROOM_ENET_CHANNEL_CONTROL,
+                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_LOBBY_JOINED));
+}
+
+static void SendLobbyCreated(ENetPeer* peer, const ShroomLobby* lobby) {
+  ShroomLobbyCreatedPacket packet = {0};
+
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_CREATED, sizeof(packet));
+  packet.lobby_id = lobby->lobby_id;
+  snprintf(packet.name, sizeof(packet.name), "%s", lobby->name);
+  enet_peer_send(peer, SHROOM_ENET_CHANNEL_CONTROL,
+                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_LOBBY_CREATED));
 }
 
 static void SendPong(ENetPeer* peer, uint32_t nonce) {
@@ -261,7 +369,10 @@ static void SendSnapshot(ENetPeer* peer, const ServerSession* session,
   uint16_t player_count = 0;
   size_t index;
 
-  if ((session == 0) || !session->active || (session->player == 0)) {
+  if ((session == NULL) || !session->active) {
+    return;
+  }
+  if (!session->spectating && session->player == NULL) {
     return;
   }
 
@@ -271,7 +382,7 @@ static void SendSnapshot(ENetPeer* peer, const ServerSession* session,
       .tick = world->tick,
       .last_processed_input_sequence = session->last_processed_input_sequence,
       .player_id = session->player_id,
-      .entity_id = session->player->entity_id,
+      .entity_id = (session->player != NULL) ? session->player->entity_id : 0u,
   };
 
   for (index = 0; (index < world->player_count) && (player_count < SHROOM_MAX_SNAPSHOT_PLAYERS);
@@ -348,11 +459,11 @@ static void SendSporeState(ENetPeer* peer, const ShroomWorldState* world) {
 }
 
 static void DisconnectSession(ServerSession* session) {
-  if ((session == 0) || !session->active) {
+  if ((session == NULL) || !session->active) {
     return;
   }
 
-  if (session->player != 0) {
+  if (session->player != NULL) {
     session->player->alive = false;
     session->player->input_direction = (ShroomVec2){0};
     session->player->mass = 0.0f;
@@ -389,8 +500,8 @@ static void LogPeerLatency(ENetPeer* peer, ServerSession* session, uint64_t now_
   }
 }
 
-static void HandleHelloPacket(ENetPeer* peer, ServerSession* session, ShroomWorldState* world,
-                              const ENetPacket* enet_packet, uint32_t* next_player_id) {
+static void HandleHelloPacket(ENetPeer* peer, ServerSession* session,
+                              const ENetPacket* enet_packet) {
   const ShroomHelloPacket* packet = (const ShroomHelloPacket*)enet_packet->data;
 
   if (enet_packet->dataLength < sizeof(*packet)) {
@@ -400,29 +511,23 @@ static void HandleHelloPacket(ENetPeer* peer, ServerSession* session, ShroomWorl
     enet_peer_disconnect(peer, 0);
     return;
   }
-  if (session->active) {
-    return;
-  }
-
-  session->player = ShroomWorldSpawnPlayer(world, (*next_player_id)++, false);
-  if (session->player == 0) {
-    enet_peer_disconnect(peer, 0);
+  if (session->handshake_received) {
     return;
   }
 
   session->active = true;
-  session->player_id = session->player->player_id;
-  snprintf(session->player->name, sizeof(session->player->name), "%s", packet->name);
-  if (session->player->name[0] == '\0') {
-    SetDefaultPlayerName(session->player, "Player");
+  session->handshake_received = true;
+  snprintf(session->display_name, sizeof(session->display_name), "%s", packet->name);
+  if (session->display_name[0] == '\0') {
+    snprintf(session->display_name, sizeof(session->display_name), "Player");
   }
-  SendWelcome(peer, session, world);
+  SendWelcome(peer);
 }
 
 static void HandleInputPacket(ServerSession* session, const ENetPacket* enet_packet) {
   const ShroomInputPacket* packet = (const ShroomInputPacket*)enet_packet->data;
 
-  if ((session == 0) || !session->active || (session->player == 0)) {
+  if ((session == NULL) || !session->active || session->spectating || (session->player == NULL)) {
     return;
   }
   if (enet_packet->dataLength < sizeof(*packet)) {
@@ -559,12 +664,16 @@ static void HandleChatPacket(ENetHost* host, ServerSession* session, const ENetP
   LOG_INFO("chat player_id=%u name=%.31s msg=%s", session->player_id, broadcast.sender_name,
            broadcast.message);
 
-  /* Broadcast to every connected peer. */
+  /* Broadcast only to peers in the same lobby. */
   for (index = 0; index < host->peerCount; ++index) {
     ENetPeer* peer = &host->peers[index];
+    const ServerSession* peer_session = (const ServerSession*)peer->data;
     ENetPacket* out;
 
     if (peer->state != ENET_PEER_STATE_CONNECTED) {
+      continue;
+    }
+    if ((peer_session == NULL) || (peer_session->lobby_id != session->lobby_id)) {
       continue;
     }
     out = CreateProtocolPacket(&broadcast, sizeof(broadcast), SHROOM_PACKET_CHAT);
@@ -575,10 +684,125 @@ static void HandleChatPacket(ENetHost* host, ServerSession* session, const ENetP
   enet_host_flush(host);
 }
 
+static void PopulateLobbyBots(ShroomLobby* lobby, uint32_t* next_player_id) {
+  uint32_t bot_index = 0;
+
+  while (lobby->world.player_count < SHROOM_BOT_COUNT) {
+    ShroomPlayerState* bot = ShroomWorldSpawnPlayer(&lobby->world, (*next_player_id)++, true);
+
+    if (bot == NULL) {
+      break;
+    }
+    snprintf(bot->name, sizeof(bot->name), "%s-%u",
+             kBotNamePrefixes[bot_index % BOT_NAME_PREFIX_COUNT], bot_index + 1u);
+    ++bot_index;
+  }
+}
+
+static ShroomLobby* CreateLobby(ShroomLobby* lobbies, uint32_t lobby_id, const char* name,
+                                bool is_dynamic, uint32_t* next_player_id) {
+  size_t i;
+
+  for (i = 0; i < SHROOM_MAX_LOBBIES; ++i) {
+    if (!lobbies[i].active) {
+      ShroomLobby* lobby = &lobbies[i];
+
+      *lobby = (ShroomLobby){0};
+      lobby->active = true;
+      lobby->lobby_id = lobby_id;
+      lobby->is_dynamic = is_dynamic;
+      if (name != NULL && name[0] != '\0') {
+        snprintf(lobby->name, sizeof(lobby->name), "%s", name);
+      } else {
+        snprintf(lobby->name, sizeof(lobby->name), "Arena %u", lobby_id);
+      }
+      ShroomWorldInit(&lobby->world);
+      PopulateLobbyBots(lobby, next_player_id);
+      LOG_INFO("lobby created: id=%u name=%.31s dynamic=%d", lobby_id, lobby->name,
+               (int)is_dynamic);
+      return lobby;
+    }
+  }
+  return NULL;
+}
+
+static void HandleLobbyListQuery(ENetPeer* peer, const ServerSession* session, ShroomLobby* lobbies,
+                                 const ENetHost* host) {
+  if (!session->handshake_received) {
+    return;
+  }
+  SendLobbyList(peer, lobbies, host);
+}
+
+static void HandleLobbyJoin(ENetPeer* peer, ServerSession* session, ShroomLobby* lobbies,
+                            const ENetPacket* enet_packet, uint32_t* next_player_id) {
+  const ShroomLobbyJoinPacket* packet = (const ShroomLobbyJoinPacket*)enet_packet->data;
+  ShroomLobby* lobby;
+
+  if (!session->handshake_received || (enet_packet->dataLength < sizeof(*packet))) {
+    return;
+  }
+  if (session->lobby_id != 0) {
+    return; /* already in a lobby */
+  }
+
+  lobby = FindLobbyById(lobbies, packet->lobby_id);
+  if (lobby == NULL) {
+    return;
+  }
+
+  session->lobby_id = lobby->lobby_id;
+  session->spectating = (packet->spectate != 0);
+
+  if (!session->spectating) {
+    session->player = ShroomWorldSpawnPlayer(&lobby->world, (*next_player_id)++, false);
+    if (session->player == NULL) {
+      session->lobby_id = 0;
+      return;
+    }
+    session->player_id = session->player->player_id;
+    snprintf(session->player->name, sizeof(session->player->name), "%s", session->display_name);
+  }
+
+  SendLobbyJoined(peer, session, lobby);
+  LOG_INFO("lobby join: player_id=%u lobby_id=%u spectating=%d", session->player_id,
+           lobby->lobby_id, (int)session->spectating);
+}
+
+static void HandleLobbyLeave(ServerSession* session) {
+  if (session->player != NULL) {
+    session->player->alive = false;
+    session->player->mass = 0.0f;
+    session->player->radius = 0.0f;
+    session->player = NULL;
+  }
+  LOG_INFO("lobby leave: player_id=%u lobby_id=%u", session->player_id, session->lobby_id);
+  session->lobby_id = 0;
+  session->spectating = false;
+  session->player_id = 0;
+}
+
+static void HandleLobbyCreate(ENetPeer* peer, const ServerSession* session, ShroomLobby* lobbies,
+                              const ENetPacket* enet_packet, uint32_t* next_player_id,
+                              uint32_t* next_lobby_id) {
+  const ShroomLobbyCreatePacket* packet = (const ShroomLobbyCreatePacket*)enet_packet->data;
+  const ShroomLobby* lobby;
+
+  if (!session->handshake_received || (enet_packet->dataLength < sizeof(*packet))) {
+    return;
+  }
+
+  lobby = CreateLobby(lobbies, (*next_lobby_id)++, packet->name, true, next_player_id);
+  if (lobby == NULL) {
+    return;
+  }
+  SendLobbyCreated(peer, lobby);
+}
+
 static void HandlePacket(ENetHost* host, ENetPeer* peer, ServerSession* session,
-                         ShroomWorldState* world, ShroomAuthContext* auth_ctx,
+                         ShroomLobby* lobbies, ShroomAuthContext* auth_ctx,
                          const ENetPacket* enet_packet, uint8_t channel_id,
-                         uint32_t* next_player_id, uint64_t now_ms) {
+                         uint32_t* next_player_id, uint32_t* next_lobby_id, uint64_t now_ms) {
   const ShroomPacketHeader* header;
 
   if ((enet_packet == 0) || (enet_packet->dataLength < sizeof(ShroomPacketHeader))) {
@@ -592,7 +816,7 @@ static void HandlePacket(ENetHost* host, ENetPeer* peer, ServerSession* session,
 
   switch ((ShroomPacketType)header->type) {
   case SHROOM_PACKET_HELLO:
-    HandleHelloPacket(peer, session, world, enet_packet, next_player_id);
+    HandleHelloPacket(peer, session, enet_packet);
     break;
   case SHROOM_PACKET_INPUT:
     HandleInputPacket(session, enet_packet);
@@ -608,6 +832,18 @@ static void HandlePacket(ENetHost* host, ENetPeer* peer, ServerSession* session,
   case SHROOM_PACKET_CHAT:
     HandleChatPacket(host, session, enet_packet, now_ms);
     break;
+  case SHROOM_PACKET_LOBBY_LIST_QUERY:
+    HandleLobbyListQuery(peer, session, lobbies, host);
+    break;
+  case SHROOM_PACKET_LOBBY_JOIN:
+    HandleLobbyJoin(peer, session, lobbies, enet_packet, next_player_id);
+    break;
+  case SHROOM_PACKET_LOBBY_LEAVE:
+    HandleLobbyLeave(session);
+    break;
+  case SHROOM_PACKET_LOBBY_CREATE:
+    HandleLobbyCreate(peer, session, lobbies, enet_packet, next_player_id, next_lobby_id);
+    break;
   default:
     break;
   }
@@ -621,10 +857,12 @@ int main(void) {
       (uint64_t)(SHROOM_SERVER_TICK_RATE / (float)SHROOM_SPORE_STATE_RATE);
   ENetAddress address = {0};
   ENetHost* host;
-  ShroomWorldState world;
+  static ShroomLobby lobbies[SHROOM_MAX_LOBBIES] = {0};
   static ServerSession sessions[SHROOM_SERVER_MAX_CLIENTS] = {0};
   uint32_t next_player_id = 1;
+  uint32_t next_lobby_id = 1;
   uint64_t next_tick_time;
+  uint64_t last_health_log_ms = 0;
   sqlite3* db = NULL;
   ShroomAuthContext auth_ctx = {0};
 
@@ -658,10 +896,13 @@ int main(void) {
     return 1;
   }
 
-  ShroomWorldInit(&world);
-  while (world.player_count < SHROOM_BOT_COUNT) {
-    ShroomPlayerState* bot = ShroomWorldSpawnPlayer(&world, next_player_id++, true);
-    SetDefaultPlayerName(bot, "Bot");
+  /* Create fixed lobbies. */
+  {
+    uint32_t li;
+
+    for (li = 0; li < SHROOM_LOBBY_DEFAULT_COUNT; ++li) {
+      CreateLobby(lobbies, next_lobby_id++, NULL, false, &next_player_id);
+    }
   }
 
   address.host = ENET_HOST_ANY;
@@ -697,8 +938,8 @@ int main(void) {
         }
         break;
       case ENET_EVENT_TYPE_RECEIVE:
-        HandlePacket(host, event.peer, (ServerSession*)event.peer->data, &world, &auth_ctx,
-                     event.packet, event.channelID, &next_player_id, now_ms);
+        HandlePacket(host, event.peer, (ServerSession*)event.peer->data, lobbies, &auth_ctx,
+                     event.packet, event.channelID, &next_player_id, &next_lobby_id, now_ms);
         enet_packet_destroy(event.packet);
         break;
       case ENET_EVENT_TYPE_DISCONNECT:
@@ -712,27 +953,84 @@ int main(void) {
       }
     }
 
-    ShroomWorldStep(&world, 1.0f / SHROOM_SERVER_TICK_RATE);
-    if ((snapshot_interval_ticks > 0) && ((world.tick % snapshot_interval_ticks) == 0)) {
-      size_t index;
+    /* Tick and broadcast per-lobby. */
+    {
+      size_t li;
 
-      for (index = 0; index < host->peerCount; ++index) {
-        if (host->peers[index].state == ENET_PEER_STATE_CONNECTED) {
-          LogPeerLatency(&host->peers[index], (ServerSession*)host->peers[index].data, now_ms);
-          SendSnapshot(&host->peers[index], (ServerSession*)host->peers[index].data, &world);
+      for (li = 0; li < SHROOM_MAX_LOBBIES; ++li) {
+        ShroomLobby* lobby = &lobbies[li];
+        size_t pi;
+
+        if (!lobby->active) {
+          continue;
+        }
+
+        ShroomWorldStep(&lobby->world, 1.0f / SHROOM_SERVER_TICK_RATE);
+
+        if ((snapshot_interval_ticks > 0) && ((lobby->world.tick % snapshot_interval_ticks) == 0)) {
+          for (pi = 0; pi < host->peerCount; ++pi) {
+            ServerSession* s = (ServerSession*)host->peers[pi].data;
+
+            if ((host->peers[pi].state != ENET_PEER_STATE_CONNECTED) || (s == NULL) || !s->active ||
+                (s->lobby_id != lobby->lobby_id)) {
+              continue;
+            }
+            LogPeerLatency(&host->peers[pi], s, now_ms);
+            SendSnapshot(&host->peers[pi], s, &lobby->world);
+          }
+          enet_host_flush(host);
+        }
+
+        if ((spore_interval_ticks > 0) && ((lobby->world.tick % spore_interval_ticks) == 0)) {
+          for (pi = 0; pi < host->peerCount; ++pi) {
+            const ServerSession* s = (const ServerSession*)host->peers[pi].data;
+
+            if ((host->peers[pi].state != ENET_PEER_STATE_CONNECTED) || (s == NULL) || !s->active ||
+                (s->lobby_id != lobby->lobby_id)) {
+              continue;
+            }
+            SendSporeState(&host->peers[pi], &lobby->world);
+          }
+          enet_host_flush(host);
+        }
+
+        /* Clean up empty dynamic lobbies. */
+        if (lobby->is_dynamic) {
+          uint16_t real_count = CountLobbyRealPlayers(host, lobby->lobby_id);
+          uint16_t spec_count = CountLobbySpectators(host, lobby->lobby_id);
+
+          if ((real_count + spec_count) == 0) {
+            if (lobby->empty_since_ms == 0) {
+              lobby->empty_since_ms = now_ms;
+            } else if ((now_ms - lobby->empty_since_ms) >=
+                       (SHROOM_LOBBY_DYNAMIC_EMPTY_TIMEOUT_S * 1000ull)) {
+              LOG_INFO("lobby expired: id=%u name=%.31s", lobby->lobby_id, lobby->name);
+              lobby->active = false;
+            }
+          } else {
+            lobby->empty_since_ms = 0;
+          }
         }
       }
-      enet_host_flush(host);
     }
-    if ((spore_interval_ticks > 0) && ((world.tick % spore_interval_ticks) == 0)) {
-      size_t index;
 
-      for (index = 0; index < host->peerCount; ++index) {
-        if (host->peers[index].state == ENET_PEER_STATE_CONNECTED) {
-          SendSporeState(&host->peers[index], &world);
+    /* Session health log every 60 s. */
+    if ((now_ms - last_health_log_ms) >= 60000ull) {
+      size_t li;
+
+      last_health_log_ms = now_ms;
+      for (li = 0; li < SHROOM_MAX_LOBBIES; ++li) {
+        if (lobbies[li].active) {
+          uint16_t real = CountLobbyRealPlayers(host, lobbies[li].lobby_id);
+          uint16_t spec = CountLobbySpectators(host, lobbies[li].lobby_id);
+          uint16_t bots = (uint16_t)(lobbies[li].world.player_count > real
+                                         ? lobbies[li].world.player_count - real
+                                         : 0u);
+
+          LOG_INFO("health lobby_id=%u real=%u bots=%u spectators=%u", lobbies[li].lobby_id, real,
+                   bots, spec);
         }
       }
-      enet_host_flush(host);
     }
 
     next_tick_time += tick_interval_nanos;
