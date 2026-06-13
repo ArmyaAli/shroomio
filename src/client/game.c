@@ -675,7 +675,7 @@ static void DrawInspectOverlay(Game* game) {
   const float eased_progress = progress * progress * (3.0f - (2.0f * progress));
   const float scale = 0.96f + (0.04f * eased_progress);
   const float width = 328.0f * scale;
-  const float height = 234.0f * scale;
+  const float height = 272.0f * scale;
   float pulse;
 
   if ((game == NULL) || (progress <= 0.01f)) {
@@ -698,10 +698,11 @@ static void DrawInspectOverlay(Game* game) {
                                (game->screen_height - height) * 0.5f, SHROOM_IMGUI_COND_ALWAYS);
   ShroomImGui_SetNextWindowSize(width, height, SHROOM_IMGUI_COND_ALWAYS);
   ShroomImGui_SetNextWindowBgAlpha(0.24f + (0.46f * eased_progress));
-  if (!ShroomImGui_Begin("Player Intel", NULL,
-                         SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
-                             SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
-                             SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
+  if (!ShroomImGui_Begin(
+          "Player Intel", NULL,
+          SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
+              SHROOM_IMGUI_WINDOW_NO_COLLAPSE | SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS |
+              SHROOM_IMGUI_WINDOW_NO_SCROLLBAR | SHROOM_IMGUI_WINDOW_NO_SCROLL_WITH_MOUSE)) {
     ShroomImGui_End();
     return;
   }
