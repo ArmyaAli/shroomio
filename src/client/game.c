@@ -1193,7 +1193,7 @@ static void DrawChatDock(Game* game) {
             (game->local_player != NULL) && (msg->sender_id == game->net.player_id);
         if (msg->timestamp_sec > 0u) {
           time_t ts = (time_t)msg->timestamp_sec;
-          struct tm tm_local;
+          struct tm tm_local = {0};
 #if defined(_WIN32)
           localtime_s(&tm_local, &ts);
 #else
