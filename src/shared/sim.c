@@ -146,43 +146,101 @@ static void ShroomInitializeSpores(ShroomWorldState* world) {
   }
 }
 
+static float ShroomBotSporeZoneWeight(float bot_mass, ShroomZone zone) {
+  if (bot_mass < (SHROOM_DEFAULT_PLAYER_MASS * 1.25f)) {
+    switch (zone) {
+      case SHROOM_ZONE_OUTER:
+        return 1.15f;
+      case SHROOM_ZONE_MID:
+        return 1.0f;
+      case SHROOM_ZONE_CENTER:
+        return 0.65f;
+    }
+  }
+
+  if (bot_mass > (SHROOM_DEFAULT_PLAYER_MASS * 1.8f)) {
+    switch (zone) {
+      case SHROOM_ZONE_OUTER:
+        return 0.8f;
+      case SHROOM_ZONE_MID:
+        return 1.0f;
+      case SHROOM_ZONE_CENTER:
+        return 1.35f;
+    }
+  }
+
+  switch (zone) {
+    case SHROOM_ZONE_OUTER:
+      return 0.95f;
+    case SHROOM_ZONE_MID:
+      return 1.05f;
+    case SHROOM_ZONE_CENTER:
+      return 1.0f;
+  }
+
+  return 1.0f;
+}
+
+static float ShroomBotCenterPressureWeight(float bot_mass, ShroomZone zone) {
+  if (bot_mass <= (SHROOM_DEFAULT_PLAYER_MASS * 1.5f)) {
+    return zone == SHROOM_ZONE_OUTER ? 0.25f : 0.45f;
+  }
+
+  return zone == SHROOM_ZONE_OUTER ? 1.2f : 0.8f;
+}
+
 static void ShroomUpdateBotInput(ShroomWorldState* world, ShroomPlayerState* bot) {
   size_t index;
   const ShroomPlayerState* best_threat = 0;
   const ShroomPlayerState* best_prey = 0;
   const ShroomSporeState* best_spore = 0;
+  float best_threat_score = 0.0f;
+  float best_prey_score = 0.0f;
+  float best_spore_score = 0.0f;
   float best_threat_distance = 0.0f;
-  float best_prey_distance = 0.0f;
-  float best_spore_distance = 0.0f;
+  const ShroomZone current_zone = ShroomGetZoneAtPosition(world, bot->position);
 
   for (index = 0; index < world->player_count; ++index) {
     const ShroomPlayerState* other = &world->players[index];
     const float distance_sqr = ShroomDistanceSqr(bot->position, other->position);
+    const float distance_bias = distance_sqr + 1.0f;
 
     if (other == bot || !other->alive) {
       continue;
     }
 
     if (other->mass > (bot->mass * SHROOM_CONSUME_MASS_ADVANTAGE)) {
-      if ((best_threat == 0) || (distance_sqr < best_threat_distance)) {
+      const float threat_score = (other->mass / bot->mass) * (1600000.0f / distance_bias);
+
+      if ((best_threat == 0) || (threat_score > best_threat_score)) {
         best_threat = other;
+        best_threat_score = threat_score;
         best_threat_distance = distance_sqr;
       }
     } else if (bot->mass > (other->mass * SHROOM_CONSUME_MASS_ADVANTAGE)) {
-      if ((best_prey == 0) || (distance_sqr < best_prey_distance)) {
+      const float prey_score = (bot->mass / other->mass) * (1100000.0f / distance_bias);
+
+      if ((best_prey == 0) || (prey_score > best_prey_score)) {
         best_prey = other;
-        best_prey_distance = distance_sqr;
+        best_prey_score = prey_score;
       }
     }
   }
 
-  if ((best_threat != 0) && (best_threat_distance < (900.0f * 900.0f))) {
-    bot->input_direction =
-        ShroomNormalizeOrZero(ShroomVec2Sub(bot->position, best_threat->position));
+  if ((best_threat != 0) && (best_threat_distance < (1150.0f * 1150.0f))) {
+    ShroomVec2 flee_direction = ShroomVec2Sub(bot->position, best_threat->position);
+
+    if (current_zone != SHROOM_ZONE_OUTER) {
+      flee_direction = ShroomVec2Add(
+          flee_direction,
+          ShroomVec2Scale(ShroomVec2Sub(bot->position, ShroomWorldCenter(world)), 0.45f));
+    }
+
+    bot->input_direction = ShroomNormalizeOrZero(flee_direction);
     return;
   }
 
-  if ((best_prey != 0) && (best_prey_distance < (700.0f * 700.0f))) {
+  if ((best_prey != 0) && (best_prey_score > 1.2f)) {
     bot->input_direction = ShroomNormalizeOrZero(ShroomVec2Sub(best_prey->position, bot->position));
     return;
   }
@@ -190,14 +248,29 @@ static void ShroomUpdateBotInput(ShroomWorldState* world, ShroomPlayerState* bot
   for (index = 0; index < world->spore_count; ++index) {
     const ShroomSporeState* spore = &world->spores[index];
     const float distance_sqr = ShroomDistanceSqr(bot->position, spore->position);
+    const float weighted_distance =
+        (distance_sqr + 1600.0f) /
+        ShroomBotSporeZoneWeight(bot->mass, ShroomGetZoneAtPosition(world, spore->position));
+    const float spore_score = 1.0f / weighted_distance;
 
     if (!spore->active) {
       continue;
     }
 
-    if ((best_spore == 0) || (distance_sqr < best_spore_distance)) {
+    if ((best_spore == 0) || (spore_score > best_spore_score)) {
       best_spore = spore;
-      best_spore_distance = distance_sqr;
+      best_spore_score = spore_score;
+    }
+  }
+
+  if ((bot->mass > (SHROOM_DEFAULT_PLAYER_MASS * 1.5f)) && (current_zone != SHROOM_ZONE_CENTER)) {
+    const ShroomVec2 center_push = ShroomVec2Scale(
+        ShroomVec2Sub(ShroomWorldCenter(world), bot->position),
+        ShroomBotCenterPressureWeight(bot->mass, current_zone));
+
+    if ((best_spore == 0) || (best_spore_score < 0.00002f)) {
+      bot->input_direction = ShroomNormalizeOrZero(center_push);
+      return;
     }
   }
 
