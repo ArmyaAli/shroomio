@@ -73,6 +73,7 @@ static void GameplayHandleInput(ShroomScreenManager* manager) {
     if (game->leaderboard_overlay_open) {
       game->menu_overlay_open = false;
       game->leave_confirmation_open = false;
+      game->inspect_overlay_open = false;
     }
   }
 
@@ -85,6 +86,9 @@ static void GameplayHandleInput(ShroomScreenManager* manager) {
   if (IsKeyPressed(KEY_ESCAPE)) {
     if (game->leaderboard_overlay_open) {
       game->leaderboard_overlay_open = false;
+    } else if (game->inspect_overlay_open) {
+      game->inspect_overlay_open = false;
+      game->selected_inspect_player_id = 0;
     } else if (game->leave_confirmation_open) {
       game->leave_confirmation_open = false;
     } else {

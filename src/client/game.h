@@ -40,12 +40,14 @@ typedef struct Game {
   bool menu_overlay_open;
   bool diagnostics_overlay_open;
   bool leave_confirmation_open;
+  bool inspect_overlay_open;
   bool return_to_menu_requested;
   float previous_local_mass;
   float zone_callout_timer;
   float respawn_banner_timer;
   int screen_width;
   int screen_height;
+  uint32_t selected_inspect_player_id;
   char selected_server_host[64];
   uint16_t selected_server_port;
 } Game;
