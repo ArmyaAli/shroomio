@@ -39,6 +39,8 @@ typedef struct ShroomWorldState {
   uint64_t tick;
   float width;
   float height;
+  uint32_t random_seed;
+  uint32_t random_state;
   ShroomEntityId next_entity_id;
   size_t player_count;
   size_t spore_count;

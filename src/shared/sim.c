@@ -1,6 +1,8 @@
 #include "sim.h"
 
+#include <stdint.h>
 #include <stdlib.h>
+#include <time.h>
 
 static float ShroomClamp(float value, float min_value, float max_value) {
   if (value < min_value) {
@@ -13,8 +15,21 @@ static float ShroomClamp(float value, float min_value, float max_value) {
   return value;
 }
 
-static float ShroomRandomFloat(float min_value, float max_value) {
-  return min_value + ((float)rand() / (float)RAND_MAX) * (max_value - min_value);
+static uint32_t ShroomNormalizeSeed(uint32_t seed) { return seed == 0 ? 0x6d2b79f5u : seed; }
+
+static uint32_t ShroomNextRandom(ShroomWorldState* world) {
+  uint32_t x = world->random_state;
+
+  x ^= x << 13;
+  x ^= x >> 17;
+  x ^= x << 5;
+  world->random_state = x;
+  return x;
+}
+
+static float ShroomRandomFloat(ShroomWorldState* world, float min_value, float max_value) {
+  const float normalized = (float)ShroomNextRandom(world) / (float)UINT32_MAX;
+  return min_value + (normalized * (max_value - min_value));
 }
 
 float ShroomDistanceSqr(ShroomVec2 a, ShroomVec2 b) {
@@ -70,14 +85,14 @@ static bool ShroomIsSafeSpawn(const ShroomWorldState* world, ShroomVec2 position
   return true;
 }
 
-static ShroomVec2 ShroomRandomSpawnPosition(const ShroomWorldState* world, bool prefer_outer) {
+static ShroomVec2 ShroomRandomSpawnPosition(ShroomWorldState* world, bool prefer_outer) {
   const float padding = 120.0f;
   size_t attempt;
 
   for (attempt = 0; attempt < 32; ++attempt) {
     const ShroomVec2 candidate = {
-        ShroomRandomFloat(padding, world->width - padding),
-        ShroomRandomFloat(padding, world->height - padding),
+        ShroomRandomFloat(world, padding, world->width - padding),
+        ShroomRandomFloat(world, padding, world->height - padding),
     };
     const ShroomZone zone = ShroomGetZoneAtPosition(world, candidate);
 
@@ -89,11 +104,11 @@ static ShroomVec2 ShroomRandomSpawnPosition(const ShroomWorldState* world, bool 
     }
   }
 
-  return (ShroomVec2){ShroomRandomFloat(padding, world->width - padding),
-                      ShroomRandomFloat(padding, world->height - padding)};
+  return (ShroomVec2){ShroomRandomFloat(world, padding, world->width - padding),
+                      ShroomRandomFloat(world, padding, world->height - padding)};
 }
 
-static void ShroomRespawnPlayer(const ShroomWorldState* world, ShroomPlayerState* player) {
+static void ShroomRespawnPlayer(ShroomWorldState* world, ShroomPlayerState* player) {
   player->position = ShroomRandomSpawnPosition(world, true);
   player->input_direction = (ShroomVec2){0};
   player->mass = SHROOM_DEFAULT_PLAYER_MASS;
@@ -106,24 +121,24 @@ static void ShroomSpawnOrResetSpore(ShroomWorldState* world, ShroomSporeState* s
   float min_y = 60.0f;
   float max_x = world->width - 60.0f;
   float max_y = world->height - 60.0f;
-  float center_bias = ShroomRandomFloat(0.0f, 1.0f);
+  float center_bias = ShroomRandomFloat(world, 0.0f, 1.0f);
   ShroomVec2 candidate;
 
   if (center_bias < 0.45f) {
     const ShroomVec2 center = ShroomWorldCenter(world);
-    candidate.x = ShroomRandomFloat(center.x - SHROOM_ZONE_CENTER_RADIUS,
+    candidate.x = ShroomRandomFloat(world, center.x - SHROOM_ZONE_CENTER_RADIUS,
                                     center.x + SHROOM_ZONE_CENTER_RADIUS);
-    candidate.y = ShroomRandomFloat(center.y - SHROOM_ZONE_CENTER_RADIUS,
+    candidate.y = ShroomRandomFloat(world, center.y - SHROOM_ZONE_CENTER_RADIUS,
                                     center.y + SHROOM_ZONE_CENTER_RADIUS);
   } else if (center_bias < 0.80f) {
     const ShroomVec2 center = ShroomWorldCenter(world);
-    candidate.x =
-        ShroomRandomFloat(center.x - SHROOM_ZONE_MID_RADIUS, center.x + SHROOM_ZONE_MID_RADIUS);
-    candidate.y =
-        ShroomRandomFloat(center.y - SHROOM_ZONE_MID_RADIUS, center.y + SHROOM_ZONE_MID_RADIUS);
+    candidate.x = ShroomRandomFloat(world, center.x - SHROOM_ZONE_MID_RADIUS,
+                                    center.x + SHROOM_ZONE_MID_RADIUS);
+    candidate.y = ShroomRandomFloat(world, center.y - SHROOM_ZONE_MID_RADIUS,
+                                    center.y + SHROOM_ZONE_MID_RADIUS);
   } else {
-    candidate.x = ShroomRandomFloat(min_x, max_x);
-    candidate.y = ShroomRandomFloat(min_y, max_y);
+    candidate.x = ShroomRandomFloat(world, min_x, max_x);
+    candidate.y = ShroomRandomFloat(world, min_y, max_y);
   }
 
   candidate.x = ShroomClamp(candidate.x, min_x, max_x);
@@ -374,13 +389,23 @@ float ShroomMassToSpeed(float mass) {
   return ShroomClamp(speed, SHROOM_MIN_PLAYER_SPEED, SHROOM_MAX_PLAYER_SPEED);
 }
 
-void ShroomWorldInit(ShroomWorldState* world) {
+void ShroomWorldInitWithSeed(ShroomWorldState* world, uint32_t seed) {
   *world = (ShroomWorldState){0};
   world->width = SHROOM_WORLD_WIDTH;
   world->height = SHROOM_WORLD_HEIGHT;
+  world->random_seed = ShroomNormalizeSeed(seed);
+  world->random_state = world->random_seed;
   world->next_entity_id = 1;
-  srand(7);
   ShroomInitializeSpores(world);
+}
+
+void ShroomWorldInit(ShroomWorldState* world) {
+  struct timespec seed_time = {0};
+  uint32_t seed;
+
+  timespec_get(&seed_time, TIME_UTC);
+  seed = (uint32_t)seed_time.tv_sec ^ (uint32_t)seed_time.tv_nsec ^ (uint32_t)(uintptr_t)world;
+  ShroomWorldInitWithSeed(world, seed);
 }
 
 ShroomPlayerState* ShroomWorldSpawnPlayer(ShroomWorldState* world, ShroomPlayerId player_id,
