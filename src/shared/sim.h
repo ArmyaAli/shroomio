@@ -11,6 +11,7 @@ ShroomPlayerState* ShroomWorldSpawnPlayer(ShroomWorldState* world, ShroomPlayerI
                                           bool is_bot);
 
 void ShroomPlayerSetInput(ShroomPlayerState* player, ShroomVec2 input_direction);
+bool ShroomWorldSplitPlayer(ShroomWorldState* world, ShroomPlayerState* player);
 
 float ShroomMassToRadius(float mass);
 float ShroomMassToSpeed(float mass);

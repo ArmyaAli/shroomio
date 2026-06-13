@@ -18,7 +18,10 @@ void test_welcome_packet_size(void) {
 }
 
 void test_input_packet_size(void) {
-  TEST_ASSERT_EQUAL(sizeof(ShroomPacketHeader) + 4 + 4 + 4, sizeof(ShroomInputPacket));
+  /* header + sequence + direction_x + direction_y + split_requested + reserved[3] +
+   * focused_entity_id */
+  TEST_ASSERT_EQUAL(sizeof(ShroomPacketHeader) + 4 + 4 + 4 + 1 + 3 + 4,
+                    sizeof(ShroomInputPacket));
 }
 
 void test_ping_packet_size(void) {

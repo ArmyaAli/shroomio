@@ -99,13 +99,50 @@ static void GameplayHandleInput(ShroomScreenManager* manager) {
     }
   }
 
+  /* Space: request a split (only allowed at max mass; sim enforces the threshold). */
+  if (IsKeyPressed(KEY_SPACE) && !game->menu_overlay_open && !game->leaderboard_overlay_open &&
+      !game->leave_confirmation_open && (game->local_player != NULL) && game->local_player->alive) {
+    game->split_requested = true;
+  }
+
   if (IsKeyPressed(KEY_TAB)) {
-    game->leaderboard_overlay_open = !game->leaderboard_overlay_open;
-    if (game->leaderboard_overlay_open) {
-      game->menu_overlay_open = false;
-      game->leave_confirmation_open = false;
-      game->inspect_overlay_open = false;
-      game->selected_inspect_player_id = 0;
+    if ((game->local_piece_count > 1) && !game->menu_overlay_open &&
+        !game->leave_confirmation_open) {
+      /* Cycle through the local player's split pieces. */
+      ShroomPlayerId local_pid = game->local_player != NULL ? game->local_player->player_id : 0;
+      if (local_pid != 0) {
+        uint32_t pieces[SHROOM_MAX_SPLIT_PIECES];
+        int piece_count = 0;
+        int current_idx = 0;
+        int i;
+        size_t wi;
+
+        for (wi = 0; wi < game->world.player_count && piece_count < SHROOM_MAX_SPLIT_PIECES; ++wi) {
+          const ShroomPlayerState* p = &game->world.players[wi];
+          if (p->alive && (p->player_id == local_pid)) {
+            const uint32_t focused_eid = game->focused_piece_entity_id != 0
+                                             ? game->focused_piece_entity_id
+                                             : game->net.entity_id;
+            if (p->entity_id == focused_eid) {
+              current_idx = piece_count;
+            }
+            pieces[piece_count++] = p->entity_id;
+          }
+        }
+
+        if (piece_count > 1) {
+          i = (current_idx + 1) % piece_count;
+          game->focused_piece_entity_id = pieces[i];
+        }
+      }
+    } else {
+      game->leaderboard_overlay_open = !game->leaderboard_overlay_open;
+      if (game->leaderboard_overlay_open) {
+        game->menu_overlay_open = false;
+        game->leave_confirmation_open = false;
+        game->inspect_overlay_open = false;
+        game->selected_inspect_player_id = 0;
+      }
     }
   }
 

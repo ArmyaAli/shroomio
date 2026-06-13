@@ -31,14 +31,20 @@ static bool IsOnlineMode(GameSessionMode mode) {
   return mode == SHROOM_SESSION_MODE_QUICK_PLAY || mode == SHROOM_SESSION_MODE_LOBBY_PLAY;
 }
 
+static bool IsLocalPlayerPiece(const Game* game, const ShroomPlayerState* player);
+static bool IsFocusedPiece(const Game* game, const ShroomPlayerState* player);
+
 static const char* GetPlayerDisplayName(const Game* game, const ShroomPlayerState* player) {
   static char fallback_name[32];
 
   if (player == NULL) {
     return "Unknown";
   }
-  if ((game != NULL) && (player == game->local_player)) {
+  if ((game != NULL) && IsFocusedPiece(game, player)) {
     return "You";
+  }
+  if ((game != NULL) && IsLocalPlayerPiece(game, player)) {
+    return "You (auto)";
   }
   if (player->name[0] != '\0') {
     return player->name;
@@ -88,6 +94,23 @@ static int CompareInspectCandidates(const void* left, const void* right) {
 }
 
 static const ShroomPlayerState* FindPlayerById(const Game* game, uint32_t player_id);
+
+static bool IsLocalPlayerPiece(const Game* game, const ShroomPlayerState* player) {
+  if ((game == NULL) || (player == NULL) || (game->local_player == NULL) || !player->alive) {
+    return false;
+  }
+  return player->player_id == game->local_player->player_id;
+}
+
+static bool IsFocusedPiece(const Game* game, const ShroomPlayerState* player) {
+  if (!IsLocalPlayerPiece(game, player)) {
+    return false;
+  }
+  if (game->focused_piece_entity_id == 0) {
+    return player == game->local_player;
+  }
+  return player->entity_id == game->focused_piece_entity_id;
+}
 
 static ShroomImGuiColor ToImGuiColor(Color color) {
   return (ShroomImGuiColor){(float)color.r / 255.0f, (float)color.g / 255.0f,
@@ -234,7 +257,7 @@ static int GatherInspectCandidates(const Game* game, InspectCandidate* candidate
     const ShroomPlayerState* player = &game->world.players[index];
     const float distance_sqr = ShroomDistanceSqr(game->local_player->position, player->position);
 
-    if (!player->alive || (player == game->local_player)) {
+    if (!player->alive || IsLocalPlayerPiece(game, player)) {
       continue;
     }
     if (distance_sqr > (kInspectRadius * kInspectRadius)) {
@@ -523,7 +546,12 @@ static void ApplyNetworkSnapshot(Game* game) {
     snprintf(player->name, sizeof(player->name), "%s", snapshot_player->name);
 
     if (player->player_id == game->net.player_id) {
-      game->local_player = player;
+      /* Prefer the piece that matches our original entity_id (the primary).
+       * This ensures local_player always points to the primary piece so that
+       * player_id-based lookups across all pieces remain consistent. */
+      if ((game->local_player == NULL) || (player->entity_id == game->net.entity_id)) {
+        game->local_player = player;
+      }
     }
   }
 
@@ -677,18 +705,26 @@ static void DrawPlayers(const Game* game) {
       continue;
     }
 
-    DrawCircleV(position, player->radius, fill);
-    DrawCircleLines((int)position.x, (int)position.y, player->radius + 3.0f, Fade(BLACK, 0.55f));
-    if (player != game->local_player) {
-      DrawCircleLines((int)position.x, (int)position.y, player->radius + 6.0f, threat_outline);
-    }
+    {
+      const bool is_local = IsLocalPlayerPiece(game, player);
+      const bool is_focused = is_local && IsFocusedPiece(game, player);
 
-    if (player == game->local_player) {
-      DrawCircleLines((int)position.x, (int)position.y, player->radius + 8.0f, RAYWHITE);
-    }
-    if (IsDecayMassActive(player)) {
-      DrawCircleLines((int)position.x, (int)position.y, player->radius + 11.0f,
-                      Fade(RED, decay_pulse));
+      DrawCircleV(position, player->radius, fill);
+      DrawCircleLines((int)position.x, (int)position.y, player->radius + 3.0f, Fade(BLACK, 0.55f));
+      if (!is_local) {
+        DrawCircleLines((int)position.x, (int)position.y, player->radius + 6.0f, threat_outline);
+      } else if (!is_focused) {
+        /* Unfocused local piece: yellow ring to distinguish from enemy and focused piece. */
+        DrawCircleLines((int)position.x, (int)position.y, player->radius + 6.0f,
+                        Fade(YELLOW, 0.70f));
+      }
+      if (is_focused) {
+        DrawCircleLines((int)position.x, (int)position.y, player->radius + 8.0f, RAYWHITE);
+      }
+      if (IsDecayMassActive(player)) {
+        DrawCircleLines((int)position.x, (int)position.y, player->radius + 11.0f,
+                        Fade(RED, decay_pulse));
+      }
     }
 
     DrawPlayerName(game, player, position);
@@ -1271,6 +1307,12 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
                               TextFormat("Decaying  excess %.0f",
                                          game->local_player->mass - SHROOM_DECAY_MASS_THRESHOLD));
     }
+    if (game->local_piece_count > 1) {
+      ShroomImGui_TextColored(ToImGuiColor(YELLOW),
+                              TextFormat("Pieces %d  Tab to switch", game->local_piece_count));
+    } else if (game->local_player->mass >= SHROOM_SPLIT_MIN_MASS) {
+      ShroomImGui_TextColored(ToImGuiColor(SKYBLUE), "Max mass  Space to split");
+    }
     ShroomImGui_Text(TextFormat("Players %d   Spores %d", (int)game->world.player_count,
                                 (int)game->world.spore_count));
   }
@@ -1522,8 +1564,35 @@ void GameUpdate(Game* game, float delta_time) {
   }
   game->camera.zoom += (game->camera_zoom_target - game->camera.zoom) * delta_time * 9.0f;
 
+  /* Update local piece count and validate focused piece. */
+  {
+    ShroomPlayerId local_pid = game->local_player != NULL ? game->local_player->player_id : 0;
+    bool focused_alive = (game->focused_piece_entity_id == 0);
+    size_t pi;
+
+    game->local_piece_count = 0;
+    for (pi = 0; pi < game->world.player_count; ++pi) {
+      const ShroomPlayerState* p = &game->world.players[pi];
+      if (p->alive && (p->player_id == local_pid)) {
+        game->local_piece_count++;
+        if (p->entity_id == game->focused_piece_entity_id) {
+          focused_alive = true;
+        }
+      }
+    }
+    if (!focused_alive) {
+      game->focused_piece_entity_id = 0;
+    }
+    /* If only one piece remains, clear focus so Tab goes back to leaderboard. */
+    if (game->local_piece_count <= 1) {
+      game->focused_piece_entity_id = 0;
+    }
+  }
+
   if (IsOnlineMode(game->active_mode)) {
-    ClientNetUpdate(&game->net, input_direction, delta_time);
+    ClientNetUpdate(&game->net, input_direction, game->split_requested,
+                    game->focused_piece_entity_id, delta_time);
+    game->split_requested = false;
   }
 
   if (IsOnlineMode(game->active_mode) &&
@@ -1538,12 +1607,57 @@ void GameUpdate(Game* game, float delta_time) {
   if (IsOnlineMode(game->active_mode) && game->net.welcome_received &&
       (game->net.snapshot_player_count > 0)) {
     ApplyNetworkSnapshot(game);
-    if (game->local_player != NULL) {
-      ApplyPredictedInputToPlayer(&game->world, game->local_player, input_direction, delta_time);
+    /* Apply prediction to the focused piece, not necessarily local_player. */
+    {
+      ShroomPlayerState* predicted = game->local_player;
+      if (game->focused_piece_entity_id != 0) {
+        size_t pi;
+        for (pi = 0; pi < game->world.player_count; ++pi) {
+          ShroomPlayerState* p = &game->world.players[pi];
+          if (p->alive && (p->entity_id == game->focused_piece_entity_id)) {
+            predicted = p;
+            break;
+          }
+        }
+      }
+      if (predicted != NULL) {
+        ApplyPredictedInputToPlayer(&game->world, predicted, input_direction, delta_time);
+      }
     }
   } else {
-    ShroomPlayerSetInput(game->local_player, input_direction);
-    ShroomWorldStep(&game->world, delta_time);
+    /* Offline: find the focused piece to apply player input to, mark others as AI. */
+    {
+      ShroomPlayerState* ctrl = game->local_player;
+      ShroomPlayerId local_pid = game->local_player != NULL ? game->local_player->player_id : 0;
+      size_t pi;
+
+      if (game->focused_piece_entity_id != 0 && (local_pid != 0)) {
+        for (pi = 0; pi < game->world.player_count; ++pi) {
+          ShroomPlayerState* p = &game->world.players[pi];
+          if (p->alive && (p->entity_id == game->focused_piece_entity_id)) {
+            ctrl = p;
+            break;
+          }
+        }
+      }
+
+      /* Hand off unfocused pieces to AI. */
+      if (local_pid != 0) {
+        for (pi = 0; pi < game->world.player_count; ++pi) {
+          ShroomPlayerState* p = &game->world.players[pi];
+          if (p->alive && (p->player_id == local_pid)) {
+            p->ai_controlled = (ctrl != NULL) && (p != ctrl);
+          }
+        }
+      }
+
+      ShroomPlayerSetInput(ctrl, input_direction);
+      if (game->split_requested && (ctrl != NULL)) {
+        ShroomWorldSplitPlayer(&game->world, ctrl);
+      }
+      game->split_requested = false;
+      ShroomWorldStep(&game->world, delta_time);
+    }
   }
 
   SyncRenderPositions(game, delta_time);
@@ -1551,7 +1665,18 @@ void GameUpdate(Game* game, float delta_time) {
   UpdateInspectOverlay(game, delta_time);
   UpdateChatState(game, delta_time);
   if (game->local_player != NULL) {
-    game->camera.target = (Vector2){game->local_player->position.x, game->local_player->position.y};
+    const ShroomPlayerState* cam_target = game->local_player;
+    if (game->focused_piece_entity_id != 0) {
+      size_t pi;
+      for (pi = 0; pi < game->world.player_count; ++pi) {
+        const ShroomPlayerState* p = &game->world.players[pi];
+        if (p->alive && (p->entity_id == game->focused_piece_entity_id)) {
+          cam_target = p;
+          break;
+        }
+      }
+    }
+    game->camera.target = (Vector2){cam_target->position.x, cam_target->position.y};
   }
 }
 

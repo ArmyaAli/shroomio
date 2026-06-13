@@ -170,6 +170,9 @@ typedef struct ShroomInputPacket {
   uint32_t sequence;
   float direction_x;
   float direction_y;
+  uint8_t split_requested; /* 1 = player pressed split this tick */
+  uint8_t reserved[3];
+  uint32_t focused_entity_id; /* entity_id of the piece being controlled; 0 = primary */
 } ShroomInputPacket;
 
 typedef struct ShroomSnapshotPlayerState {

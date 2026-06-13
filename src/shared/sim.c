@@ -2,6 +2,7 @@
 
 #include <math.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 
@@ -144,6 +145,10 @@ static void ShroomRespawnPlayer(ShroomWorldState* world, ShroomPlayerState* play
   player->radius = ShroomMassToRadius(player->mass);
   player->decay_spore_accumulator = 0.0f;
   player->alive = true;
+  player->ai_controlled = false;
+  player->split_velocity = (ShroomVec2){0};
+  player->merge_timer = 0.0f;
+  player->piece_index = 0;
 }
 
 static void ShroomSpawnOrResetSpore(ShroomWorldState* world, ShroomSporeState* spore) {
@@ -250,7 +255,7 @@ static void ShroomUpdateBotInput(ShroomWorldState* world, ShroomPlayerState* bot
     const float distance_sqr = ShroomDistanceSqr(bot->position, other->position);
     const float distance_bias = distance_sqr + 1.0f;
 
-    if (other == bot || !other->alive) {
+    if ((other == bot) || !other->alive || (other->player_id == bot->player_id)) {
       continue;
     }
 
@@ -367,6 +372,10 @@ static bool ShroomCanConsume(const ShroomWorldState* world, const ShroomPlayerSt
   if (!attacker->alive || !target->alive) {
     return false;
   }
+  /* Pieces of the same player cannot consume each other. */
+  if (attacker->player_id == target->player_id) {
+    return false;
+  }
   if (attacker->mass < (target->mass * required_advantage)) {
     return false;
   }
@@ -410,7 +419,34 @@ static void ShroomResolveConsumes(ShroomWorldState* world) {
       winner->mass = ShroomClamp(winner->mass + (victim->mass * SHROOM_CONSUME_MASS_GAIN_FACTOR),
                                  0.0f, SHROOM_MAX_PLAYER_MASS);
       victim->alive = false;
-      ShroomRespawnPlayer(world, victim);
+      if (victim->piece_index == 0) {
+        /* Primary piece consumed: respawn the player and remove any orphaned split pieces. */
+        ShroomRespawnPlayer(world, victim);
+        {
+          size_t ki;
+          for (ki = 0; ki < world->player_count; ++ki) {
+            ShroomPlayerState* p = &world->players[ki];
+            if (p->alive && (p->player_id == victim->player_id) && (p->piece_index > 0)) {
+              p->alive = false;
+              p->mass = 0.0f;
+              p->radius = 0.0f;
+              p->split_velocity = (ShroomVec2){0};
+              p->merge_timer = 0.0f;
+              p->ai_controlled = false;
+              p->player_id = 0;
+            }
+          }
+        }
+      } else {
+        /* Split fragment consumed: clear the slot without respawning. */
+        victim->mass = 0.0f;
+        victim->radius = 0.0f;
+        victim->split_velocity = (ShroomVec2){0};
+        victim->merge_timer = 0.0f;
+        victim->ai_controlled = false;
+        victim->piece_index = 0;
+        victim->player_id = 0;
+      }
     }
   }
 }
@@ -543,6 +579,139 @@ initialize_player:
   return player;
 }
 
+/* ---------------------------------------------------------------------------
+ * Split / merge helpers
+ * ---------------------------------------------------------------------- */
+
+static int ShroomCountPlayerPieces(const ShroomWorldState* world, ShroomPlayerId player_id) {
+  int count = 0;
+  size_t i;
+  for (i = 0; i < world->player_count; ++i) {
+    if (world->players[i].alive && (world->players[i].player_id == player_id)) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+static ShroomPlayerState* ShroomFindPrimaryPiece(ShroomWorldState* world,
+                                                 ShroomPlayerId player_id) {
+  size_t i;
+  for (i = 0; i < world->player_count; ++i) {
+    ShroomPlayerState* p = &world->players[i];
+    if (p->alive && (p->player_id == player_id) && (p->piece_index == 0)) {
+      return p;
+    }
+  }
+  return NULL;
+}
+
+bool ShroomWorldSplitPlayer(ShroomWorldState* world, ShroomPlayerState* player) {
+  ShroomPlayerState* new_piece;
+  float half_mass;
+  ShroomVec2 launch_dir;
+  int piece_count;
+  size_t i;
+
+  if ((world == NULL) || (player == NULL) || !player->alive) {
+    return false;
+  }
+  if (player->mass < SHROOM_SPLIT_MIN_MASS) {
+    return false;
+  }
+  piece_count = ShroomCountPlayerPieces(world, player->player_id);
+  if (piece_count >= SHROOM_MAX_SPLIT_PIECES) {
+    return false;
+  }
+
+  /* Find a free slot (zeroed-out merged/fragment slot) or extend the array. */
+  new_piece = NULL;
+  for (i = 0; i < world->player_count; ++i) {
+    if (!world->players[i].alive && (world->players[i].player_id == 0)) {
+      new_piece = &world->players[i];
+      break;
+    }
+  }
+  if (new_piece == NULL) {
+    if (world->player_count >= SHROOM_MAX_PLAYERS) {
+      return false;
+    }
+    new_piece = &world->players[world->player_count++];
+  }
+
+  half_mass = player->mass / 2.0f;
+  launch_dir = ShroomNormalizeOrZero(player->input_direction);
+  if (ShroomVec2LengthSqr(launch_dir) < 0.0001f) {
+    launch_dir = (ShroomVec2){1.0f, 0.0f};
+  }
+
+  *new_piece = (ShroomPlayerState){
+      .player_id = player->player_id,
+      .entity_id = world->next_entity_id++,
+      .position = player->position,
+      .input_direction = player->input_direction,
+      .mass = half_mass,
+      .radius = ShroomMassToRadius(half_mass),
+      .alive = true,
+      .is_bot = player->is_bot,
+      .merge_timer = SHROOM_SPLIT_MERGE_SECONDS,
+      .piece_index = (uint8_t)piece_count,
+      .split_velocity = ShroomVec2Scale(launch_dir, SHROOM_SPLIT_IMPULSE_SPEED),
+  };
+  snprintf(new_piece->name, sizeof(new_piece->name), "%s", player->name);
+
+  player->mass = half_mass;
+  player->radius = ShroomMassToRadius(half_mass);
+  if (player->merge_timer <= 0.0f) {
+    player->merge_timer = SHROOM_SPLIT_MERGE_SECONDS;
+  }
+
+  return true;
+}
+
+static void ShroomResolveMerges(ShroomWorldState* world) {
+  size_t i;
+  for (i = 0; i < world->player_count; ++i) {
+    ShroomPlayerState* piece = &world->players[i];
+    ShroomPlayerState* primary;
+
+    if (!piece->alive || (piece->piece_index == 0)) {
+      continue;
+    }
+    if (piece->merge_timer > 0.0f) {
+      continue;
+    }
+    primary = ShroomFindPrimaryPiece(world, piece->player_id);
+    if ((primary == NULL) || !primary->alive || (primary->merge_timer > 0.0f)) {
+      continue;
+    }
+    primary->mass = ShroomClamp(primary->mass + piece->mass, 0.0f, SHROOM_MAX_PLAYER_MASS);
+    primary->radius = ShroomMassToRadius(primary->mass);
+    /* Zero the slot so it can be reused for future split pieces. */
+    *piece = (ShroomPlayerState){0};
+  }
+}
+
+static void ShroomApplyForcedSplits(ShroomWorldState* world) {
+  const size_t initial_count = world->player_count;
+  size_t i;
+
+  for (i = 0; i < initial_count; ++i) {
+    ShroomPlayerState* player = &world->players[i];
+
+    if (!player->alive || player->is_bot) {
+      continue;
+    }
+    if (player->mass < SHROOM_SPLIT_MASS_THRESHOLD) {
+      continue;
+    }
+    if (ShroomCountPlayerPieces(world, player->player_id) >= SHROOM_MAX_SPLIT_PIECES) {
+      continue;
+    }
+    ShroomWorldSplitPlayer(world, player);
+  }
+}
+
 void ShroomPlayerSetInput(ShroomPlayerState* player, ShroomVec2 input_direction) {
   if (player == 0) {
     return;
@@ -557,7 +726,7 @@ void ShroomWorldStep(ShroomWorldState* world, float delta_time) {
   for (index = 0; index < world->player_count; ++index) {
     ShroomPlayerState* player = &world->players[index];
 
-    if (player->is_bot && player->alive) {
+    if ((player->is_bot || player->ai_controlled) && player->alive) {
       ShroomUpdateBotInput(world, player);
     }
   }
@@ -577,11 +746,40 @@ void ShroomWorldStep(ShroomWorldState* world, float delta_time) {
         ShroomClamp(player->position.x, player->radius, world->width - player->radius);
     player->position.y =
         ShroomClamp(player->position.y, player->radius, world->height - player->radius);
+
+    /* Apply and decay split impulse. */
+    if (ShroomVec2LengthSqr(player->split_velocity) > 1.0f) {
+      float decay;
+      player->position =
+          ShroomVec2Add(player->position, ShroomVec2Scale(player->split_velocity, delta_time));
+      player->position.x =
+          ShroomClamp(player->position.x, player->radius, world->width - player->radius);
+      player->position.y =
+          ShroomClamp(player->position.y, player->radius, world->height - player->radius);
+      decay = 1.0f - (SHROOM_SPLIT_IMPULSE_DECAY * delta_time);
+      if (decay < 0.0f) {
+        decay = 0.0f;
+      }
+      player->split_velocity = ShroomVec2Scale(player->split_velocity, decay);
+      if (ShroomVec2LengthSqr(player->split_velocity) < 1.0f) {
+        player->split_velocity = (ShroomVec2){0};
+      }
+    }
+
+    /* Tick down merge timer. */
+    if (player->merge_timer > 0.0f) {
+      player->merge_timer -= delta_time;
+      if (player->merge_timer < 0.0f) {
+        player->merge_timer = 0.0f;
+      }
+    }
   }
 
   ShroomCollectSpores(world);
   ShroomResolveConsumes(world);
   ShroomApplyMassRules(world, delta_time);
+  ShroomApplyForcedSplits(world);
+  ShroomResolveMerges(world);
 
   world->tick += 1;
 }

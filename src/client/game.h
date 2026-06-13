@@ -44,7 +44,10 @@ typedef struct Game {
   bool inspect_overlay_open;
   bool return_to_menu_requested;
   float camera_zoom_target;
-  bool auto_join_lobby; /* set by Play Online — join best lobby on list receipt */
+  bool split_requested;
+  uint32_t focused_piece_entity_id; /* entity_id of the piece being controlled; 0 = primary */
+  int local_piece_count;            /* how many alive pieces the local player has */
+  bool auto_join_lobby;             /* set by Play Online — join best lobby on list receipt */
   bool chat_open;
   bool chat_minimized;
   bool chat_focus_input;
