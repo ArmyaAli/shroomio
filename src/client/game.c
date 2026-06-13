@@ -971,20 +971,22 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
 static void DrawProximityMap(const Game* game) {
   const Vector2 center = {98.0f, game->screen_height - 98.0f};
   const float inner_radius = kProximityMapRadius - 10.0f;
-  const float pulse = 0.6f + (0.4f * (0.5f + 0.5f * sinf(game->inspect_prompt_timer * 4.6f)));
-  const float sweep_radius = inner_radius * (0.72f + 0.12f * pulse);
+  const float pulse_phase = 0.5f + (0.5f * sinf(game->inspect_prompt_timer * 3.6f));
+  const float pulse = 0.68f + (0.32f * pulse_phase);
+  const float sweep_radius = inner_radius * (0.70f + 0.14f * pulse);
   const ShroomVec2 local_position = game->local_player->position;
 
-  DrawCircleV(center, kProximityMapRadius + 6.0f, Fade(BLACK, 0.26f));
-  DrawCircleV(center, kProximityMapRadius, Fade((Color){18, 24, 30, 255}, 0.82f));
-  DrawCircleLinesV(center, kProximityMapRadius, Fade(SKYBLUE, 0.38f));
-  DrawCircleLinesV(center, kProximityMapRadius * 0.66f, Fade(DARKGREEN, 0.35f));
-  DrawCircleLinesV(center, kProximityMapRadius * 0.33f, Fade(DARKGREEN, 0.25f));
-  DrawCircleLinesV(center, sweep_radius, Fade(SKYBLUE, 0.20f + pulse * 0.18f));
+  DrawCircleV(center, kProximityMapRadius + 6.0f, Fade(BLACK, 0.20f));
+  DrawCircleV(center, kProximityMapRadius, Fade((Color){34, 44, 54, 255}, 0.86f));
+  DrawCircleV(center, kProximityMapRadius - 4.0f, Fade((Color){52, 72, 86, 255}, 0.18f));
+  DrawCircleLinesV(center, kProximityMapRadius, Fade(SKYBLUE, 0.52f));
+  DrawCircleLinesV(center, kProximityMapRadius * 0.66f, Fade((Color){112, 182, 126, 255}, 0.40f));
+  DrawCircleLinesV(center, kProximityMapRadius * 0.33f, Fade((Color){140, 208, 156, 255}, 0.28f));
+  DrawCircleLinesV(center, sweep_radius, Fade((Color){132, 214, 255, 255}, 0.18f + pulse * 0.22f));
   DrawLineV((Vector2){center.x - inner_radius, center.y},
-            (Vector2){center.x + inner_radius, center.y}, Fade(RAYWHITE, 0.08f));
+            (Vector2){center.x + inner_radius, center.y}, Fade(RAYWHITE, 0.14f));
   DrawLineV((Vector2){center.x, center.y - inner_radius},
-            (Vector2){center.x, center.y + inner_radius}, Fade(RAYWHITE, 0.08f));
+            (Vector2){center.x, center.y + inner_radius}, Fade(RAYWHITE, 0.14f));
 
   for (size_t index = 0; index < game->world.spore_count; ++index) {
     const ShroomSporeState* spore = &game->world.spores[index];
@@ -1003,7 +1005,7 @@ static void DrawProximityMap(const Game* game) {
       continue;
     }
 
-    DrawCircleV(map_position, 2.5f, Fade(GOLD, 0.88f));
+    DrawCircleV(map_position, 3.0f, Fade((Color){255, 225, 138, 255}, 0.94f));
   }
 
   for (size_t index = 0; index < game->world.player_count; ++index) {
@@ -1027,20 +1029,31 @@ static void DrawProximityMap(const Game* game) {
       continue;
     }
 
-    dot_radius = player->is_bot ? 3.5f : 4.0f;
-    dot_color = player->is_bot ? Fade(GetPlayerFillColor(game, player), 0.92f)
-                               : Fade(GetThreatOutlineColor(threat_state), 0.92f);
+    dot_radius = player->is_bot ? 3.8f : 4.4f;
+    dot_color = player->is_bot ? Fade(GetPlayerFillColor(game, player), 0.96f)
+                               : Fade(GetThreatOutlineColor(threat_state), 0.97f);
     if (threat_state == PLAYER_THREAT_DANGER) {
-      dot_radius += pulse * 1.4f;
+      dot_radius += pulse * 1.6f;
     }
 
     DrawCircleV(map_position, dot_radius, dot_color);
+    if (threat_state == PLAYER_THREAT_PREY) {
+      DrawCircleLinesV(map_position, dot_radius + 2.0f, Fade(SKYBLUE, 0.45f));
+    }
   }
 
   DrawCircleV(center, 5.5f, RAYWHITE);
-  DrawCircleLinesV(center, 8.0f, Fade(SKYBLUE, 0.75f));
+  DrawCircleLinesV(center, 8.0f, Fade((Color){150, 228, 255, 255}, 0.88f));
   DrawText("SCAN", (int)(center.x - 18.0f), (int)(center.y + kProximityMapRadius + 10.0f), 12,
-           Fade(RAYWHITE, 0.78f));
+           Fade((Color){212, 240, 255, 255}, 0.88f));
+  DrawCircleV((Vector2){center.x - 22.0f, center.y + kProximityMapRadius + 28.0f}, 3.0f,
+              Fade(RED, 0.92f));
+  DrawText("Threat", (int)(center.x - 14.0f), (int)(center.y + kProximityMapRadius + 22.0f), 10,
+           Fade((Color){255, 236, 236, 255}, 0.82f));
+  DrawCircleV((Vector2){center.x + 24.0f, center.y + kProximityMapRadius + 28.0f}, 3.0f,
+              Fade(SKYBLUE, 0.94f));
+  DrawText("Prey", (int)(center.x + 32.0f), (int)(center.y + kProximityMapRadius + 22.0f), 10,
+           Fade((Color){232, 245, 255, 255}, 0.82f));
 }
 
 static ShroomVec2 GetMovementInput(const Game* game) {
