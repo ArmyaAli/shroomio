@@ -42,7 +42,7 @@ static void LobbyBrowserUpdate(ShroomScreenManager* manager, float delta_time) {
   }
 
   /* Pump ENet so WELCOME, LOBBY_LIST, and LOBBY_JOINED are received. */
-  ClientNetUpdate(&game->net, no_input, delta_time);
+  ClientNetUpdate(&game->net, no_input, false, 0, delta_time);
 
   /* Disconnect guard. */
   if (game->net.status == CLIENT_NET_DISCONNECTED || game->net.status == CLIENT_NET_ERROR) {

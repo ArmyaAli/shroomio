@@ -276,7 +276,9 @@ void test_world_step_caps_mass_gain_at_configured_maximum(void) {
 
   ResetWorldForPlayers();
 
-  player = ShroomWorldSpawnPlayer(&world, 1, false);
+  /* Use a bot: bots are exempt from forced splits so this test can verify
+   * the mass cap in isolation without the split mechanic interfering. */
+  player = ShroomWorldSpawnPlayer(&world, 1, true);
   TEST_ASSERT_NOT_NULL(player);
 
   player->mass = SHROOM_MAX_PLAYER_MASS - 1.0f;

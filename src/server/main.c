@@ -162,6 +162,7 @@ typedef struct ServerSession {
   uint32_t last_processed_input_sequence;
   uint32_t last_logged_rtt_ms;
   uint32_t chat_message_count;
+  uint32_t focused_entity_id; /* entity_id of piece being controlled; 0 = primary */
   uint64_t last_latency_log_time_ms;
   uint64_t chat_window_start_ms;
   ShroomPlayerState* player;
@@ -572,8 +573,45 @@ static void HandleHelloPacket(ENetPeer* peer, ServerSession* session,
   SendWelcome(peer);
 }
 
-static void HandleInputPacket(ServerSession* session, const ENetPacket* enet_packet) {
+/* Update ai_controlled flags for all pieces of a player, and reset if the
+ * focused piece no longer exists (merged or consumed). */
+static void AdjustSessionAiControl(ServerSession* session, ShroomWorldState* world) {
+  size_t i;
+  bool focused_alive = false;
+
+  if ((session == NULL) || !session->active || (session->player == NULL) || (world == NULL)) {
+    return;
+  }
+  if (session->focused_entity_id == 0) {
+    return;
+  }
+
+  /* Check whether the focused piece still exists. */
+  for (i = 0; i < world->player_count; ++i) {
+    const ShroomPlayerState* p = &world->players[i];
+    if (p->alive && (p->entity_id == session->focused_entity_id)) {
+      focused_alive = true;
+      break;
+    }
+  }
+
+  if (!focused_alive) {
+    /* Focused piece gone: reset to primary and clear ai_controlled on all pieces. */
+    session->focused_entity_id = 0;
+    for (i = 0; i < world->player_count; ++i) {
+      ShroomPlayerState* p = &world->players[i];
+      if (p->alive && (p->player_id == session->player_id)) {
+        p->ai_controlled = false;
+      }
+    }
+  }
+}
+
+static void HandleInputPacket(ServerSession* session, const ENetPacket* enet_packet,
+                              ShroomWorldState* world) {
   const ShroomInputPacket* packet = (const ShroomInputPacket*)enet_packet->data;
+  ShroomPlayerState* target_piece;
+  size_t i;
 
   if ((session == NULL) || !session->active || session->spectating || (session->player == NULL)) {
     return;
@@ -583,8 +621,37 @@ static void HandleInputPacket(ServerSession* session, const ENetPacket* enet_pac
   }
 
   session->last_processed_input_sequence = packet->sequence;
-  ShroomPlayerSetInput(session->player,
+
+  /* Resolve which piece the client is controlling. */
+  target_piece = session->player;
+  if (packet->focused_entity_id != 0 && world != NULL) {
+    for (i = 0; i < world->player_count; ++i) {
+      ShroomPlayerState* p = &world->players[i];
+      if (p->alive && (p->player_id == session->player_id) &&
+          (p->entity_id == packet->focused_entity_id)) {
+        target_piece = p;
+        break;
+      }
+    }
+  }
+  session->focused_entity_id = target_piece->entity_id;
+
+  ShroomPlayerSetInput(target_piece,
                        NormalizeInput((ShroomVec2){packet->direction_x, packet->direction_y}));
+
+  /* Mark all other pieces of this player as AI-controlled. */
+  if (world != NULL) {
+    for (i = 0; i < world->player_count; ++i) {
+      ShroomPlayerState* p = &world->players[i];
+      if (p->alive && (p->player_id == session->player_id)) {
+        p->ai_controlled = (p->entity_id != session->focused_entity_id);
+      }
+    }
+  }
+
+  if (packet->split_requested && (world != NULL)) {
+    ShroomWorldSplitPlayer(world, target_piece);
+  }
 }
 
 static void HandleAuthRequestPacket(ENetPeer* peer, ServerSession* session,
@@ -934,9 +1001,11 @@ static void HandlePacket(ENetHost* host, ENetPeer* peer, ServerSession* session,
   case SHROOM_PACKET_HELLO:
     HandleHelloPacket(peer, session, enet_packet);
     break;
-  case SHROOM_PACKET_INPUT:
-    HandleInputPacket(session, enet_packet);
+  case SHROOM_PACKET_INPUT: {
+    ShroomLobby* input_lobby = FindLobbyById(lobbies, session->lobby_id);
+    HandleInputPacket(session, enet_packet, input_lobby != NULL ? &input_lobby->world : NULL);
     break;
+  }
   case SHROOM_PACKET_AUTH_REQUEST:
     HandleAuthRequestPacket(peer, session, auth_ctx, enet_packet);
     break;
@@ -1084,6 +1153,18 @@ int main(void) {
         AdjustLobbyBots(lobby, host, &next_player_id, now_ms);
 
         ShroomWorldStep(&lobby->world, 1.0f / SHROOM_SERVER_TICK_RATE);
+
+        /* Reset ai_controlled for sessions whose focused piece merged or was consumed. */
+        {
+          size_t ai;
+          for (ai = 0; ai < host->peerCount; ++ai) {
+            ServerSession* s = (ServerSession*)host->peers[ai].data;
+            if ((host->peers[ai].state == ENET_PEER_STATE_CONNECTED) && (s != NULL) && s->active &&
+                (s->lobby_id == lobby->lobby_id)) {
+              AdjustSessionAiControl(s, &lobby->world);
+            }
+          }
+        }
 
         if ((snapshot_interval_ticks > 0) && ((lobby->world.tick % snapshot_interval_ticks) == 0)) {
           for (pi = 0; pi < host->peerCount; ++pi) {
