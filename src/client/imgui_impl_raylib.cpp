@@ -147,7 +147,7 @@ bool ImGui_ImplRaylib_Init(void) {
 void ImGui_ImplRaylib_Shutdown(void) {
   ImFontAtlas* fonts = ImGui::GetIO().Fonts;
 
-  fonts->TexID = 0;
+  fonts->TexID = (ImTextureID)0;
   if (g_FontTexture.id != 0) {
     UnloadTexture(g_FontTexture);
     g_FontTexture.id = 0;

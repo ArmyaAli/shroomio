@@ -7,6 +7,10 @@ on:
       - 'src/**'
       - 'tests/**'
       - 'Makefile'
+      - 'vcpkg.json'
+      - '.gitmodules'
+      - 'vcpkg'
+      - 'vcpkg/**'
       - '.gitignore'
       - '.clang-format'
       - '.github/workflows/**'
@@ -20,12 +24,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential \
+            cmake \
             clang-format \
             cppcheck \
             curl \
@@ -35,22 +42,35 @@ jobs:
             libx11-dev \
             libxcursor-dev \
             libxi-dev \
-             libxinerama-dev \
-             libxrandr-dev \
-             make \
-             xvfb
+              libxinerama-dev \
+              libxrandr-dev \
+              mingw-w64 \
+              make \
+              ninja-build \
+              pkg-config \
+              unzip \
+              zip \
+              xvfb
+
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            vcpkg_installed
+            vcpkg/downloads
+            ~/.cache/vcpkg/archives
+          key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json', '.gitmodules', 'vcpkg/ports/raylib/vcpkg.json', 'vcpkg/ports/imgui/vcpkg.json', 'vcpkg/ports/enet/vcpkg.json') }}
+
+      - name: Bootstrap vcpkg
+        run: make vcpkg-bootstrap
+
+      - name: Install vcpkg dependencies
+        run: make vcpkg-install
 
       - name: Check code formatting
         run: make format-check
 
-      - name: Download ENet
-        run: |
-          mkdir -p vendor
-          curl -L https://github.com/lsalzman/enet/archive/refs/tags/v1.3.18.tar.gz -o /tmp/enet.tar.gz
-          tar -xzf /tmp/enet.tar.gz -C vendor
-          mv vendor/enet-1.3.18 vendor/enet
-
-      - name: Download raylib
+      - name: Download manual test dependencies
         run: make vendor
 
       - name: Run cppcheck
@@ -61,6 +81,9 @@ jobs:
 
       - name: Build Linux client
         run: make linux
+
+      - name: Build Windows client
+        run: make windows
 
       - name: Build server
         run: make server

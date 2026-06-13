@@ -28,7 +28,6 @@
     == == == == == == =
 PROJECT := shroomio
 
-RAYLIB_VERSION := 5.5
 IMGUI_VERSION  := 1.91.8
 UNITY_VERSION  := 2.6.0
 
@@ -58,26 +57,34 @@ SERVER_BIN := $(DIST_DIR)/$(PROJECT)-server
 
 #== == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==   \
     == == == == == == =
-# 3. Vendor Dependencies
+# 3. Dependency Configuration
 #== == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==   \
     == == == == == == =
-RAYLIB_DIR := vendor/raylib-$(RAYLIB_VERSION)
-RAYLIB_URL := https://github.com/raysan5/raylib/archive/refs/tags/$(RAYLIB_VERSION).tar.gz
-RAYLIB_SRC_DIR := $(RAYLIB_DIR)/src
-RAYLIB_GLFW_INCLUDE_DIR := $(RAYLIB_SRC_DIR)/external/glfw/include
+VCPKG_ROOT := $(CURDIR)/vcpkg
+VCPKG_BIN := $(VCPKG_ROOT)/vcpkg
+VCPKG_INSTALLED_DIR := $(CURDIR)/vcpkg_installed
+VCPKG_LINUX_TRIPLET := x64-linux
+VCPKG_WINDOWS_TRIPLET := x64-mingw-static
+VCPKG_LINUX_INSTALLED_DIR := $(VCPKG_INSTALLED_DIR)/linux
+VCPKG_WINDOWS_INSTALLED_DIR := $(VCPKG_INSTALLED_DIR)/windows
+VCPKG_LINUX_PREFIX := $(VCPKG_LINUX_INSTALLED_DIR)/$(VCPKG_LINUX_TRIPLET)
+VCPKG_WINDOWS_PREFIX := $(VCPKG_WINDOWS_INSTALLED_DIR)/$(VCPKG_WINDOWS_TRIPLET)
+VCPKG_LINUX_INCLUDE_DIR := $(VCPKG_LINUX_PREFIX)/include
+VCPKG_WINDOWS_INCLUDE_DIR := $(VCPKG_WINDOWS_PREFIX)/include
+VCPKG_LINUX_LIB_DIR := $(VCPKG_LINUX_PREFIX)/lib
+VCPKG_WINDOWS_LIB_DIR := $(VCPKG_WINDOWS_PREFIX)/lib
+VCPKG_LINUX_STAMP := $(VCPKG_LINUX_PREFIX)/.vcpkg-ready
+VCPKG_WINDOWS_STAMP := $(VCPKG_WINDOWS_PREFIX)/.vcpkg-ready
 
+# Test-only ImGui source mirror kept for the manual ImGui Test Engine harness.
 IMGUI_DIR := vendor/imgui-$(IMGUI_VERSION)
 IMGUI_URL := https://github.com/ocornut/imgui/archive/refs/tags/v$(IMGUI_VERSION).tar.gz
 IMGUI_SRC_DIR := $(IMGUI_DIR)
-IMGUI_BACKENDS_DIR := $(IMGUI_DIR)/backends
 
 IMGUI_TEST_ENGINE_REF := d3d44963413cfc64c80a67aa0acf953021dd7636
 IMGUI_TEST_ENGINE_DIR := vendor/imgui_test_engine-$(IMGUI_TEST_ENGINE_REF)
 IMGUI_TEST_ENGINE_URL := https://github.com/ocornut/imgui_test_engine/archive/$(IMGUI_TEST_ENGINE_REF).tar.gz
 IMGUI_TEST_ENGINE_SRC_DIR := $(IMGUI_TEST_ENGINE_DIR)/imgui_test_engine
-
-ENET_DIR := vendor/enet
-ENET_INCLUDE_DIR := $(ENET_DIR)/include
 
 UNITY_DIR := vendor/Unity-$(UNITY_VERSION)
 UNITY_URL := https://github.com/ThrowTheSwitch/Unity/archive/refs/tags/v$(UNITY_VERSION).tar.gz
@@ -97,13 +104,14 @@ TEST_CFLAGS := -std=c11 -O0 -g $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
                $(UNITY_INCLUDE) -DTEST_MODE -D_POSIX_C_SOURCE=199309L -D_DEFAULT_SOURCE
 TEST_LIBS   := -lm
 IMGUI_TEST_CFLAGS := -std=c11 -O0 -g $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
-	-I$(RAYLIB_SRC_DIR) -I$(RAYLIB_GLFW_INCLUDE_DIR) -I$(ENET_INCLUDE_DIR) \
+	-I$(VCPKG_LINUX_INCLUDE_DIR) \
 	-DTEST_MODE -D_POSIX_C_SOURCE=199309L -D_DEFAULT_SOURCE
 IMGUI_TEST_CXXFLAGS := -O0 -g $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
 	-I. \
-	-I$(RAYLIB_SRC_DIR) -I$(RAYLIB_GLFW_INCLUDE_DIR) -I$(ENET_INCLUDE_DIR) \
-	-I$(IMGUI_SRC_DIR) -I$(IMGUI_TEST_ENGINE_DIR) -I$(IMGUI_TEST_ENGINE_SRC_DIR) \
+	-I$(IMGUI_SRC_DIR) -I$(VCPKG_LINUX_INCLUDE_DIR) -I$(IMGUI_TEST_ENGINE_DIR) -I$(IMGUI_TEST_ENGINE_SRC_DIR) \
 	-DTEST_MODE -DIMGUI_USER_CONFIG=\"tests/imgui/shroom_imgui_test_imconfig.h\" -pthread
+IMGUI_TEST_ENGINE_CXXFLAGS := $(IMGUI_TEST_CXXFLAGS) \
+	-DImGuiTabBarFlags_FittingPolicyMixed=ImGuiTabBarFlags_FittingPolicyDefault_
 
 #== == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==   \
     == == == == == == =
@@ -123,29 +131,23 @@ MKDIR_P ?= mkdir -p
 RM_RF   ?= rm -rf
 DOCKER  ?= docker
 
-#Client compiler flags(raylib - based)
-COMMON_CFLAGS := -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
-                 -I$(RAYLIB_SRC_DIR) -I$(RAYLIB_GLFW_INCLUDE_DIR) -I$(ENET_INCLUDE_DIR)
-COMMON_CXXFLAGS := -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
-                   -I$(RAYLIB_SRC_DIR) -I$(RAYLIB_GLFW_INCLUDE_DIR) -I$(ENET_INCLUDE_DIR) \
-                   -I$(IMGUI_SRC_DIR)
-LINUX_CFLAGS   := $(COMMON_CFLAGS) -DPLATFORM_DESKTOP -D_DEFAULT_SOURCE
-WINDOWS_CFLAGS := $(COMMON_CFLAGS) -DPLATFORM_DESKTOP
-LINUX_CXXFLAGS := $(COMMON_CXXFLAGS) -DPLATFORM_DESKTOP -D_DEFAULT_SOURCE
-WINDOWS_CXXFLAGS := $(COMMON_CXXFLAGS) -DPLATFORM_DESKTOP
+#Client compiler flags(raylib/imgui/enet provided by vcpkg)
+COMMON_CFLAGS := -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS)
+COMMON_CXXFLAGS := -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) -I.
+LINUX_CFLAGS   := $(COMMON_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) -DPLATFORM_DESKTOP -D_DEFAULT_SOURCE
+WINDOWS_CFLAGS := $(COMMON_CFLAGS) -I$(VCPKG_WINDOWS_INCLUDE_DIR) -DPLATFORM_DESKTOP
+WINDOWS_CFLAGS += -DWIN32_LEAN_AND_MEAN -DNOGDI -DNOUSER
+LINUX_CXXFLAGS := $(COMMON_CXXFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) -DPLATFORM_DESKTOP -D_DEFAULT_SOURCE
+WINDOWS_CXXFLAGS := $(COMMON_CXXFLAGS) -I$(VCPKG_WINDOWS_INCLUDE_DIR) -DPLATFORM_DESKTOP
+WINDOWS_CXXFLAGS += -DWIN32_LEAN_AND_MEAN -DNOGDI -DNOUSER
 
 #Server compiler flags(headless, ENet - based)
 SERVER_CFLAGS := -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
-                 -I$(ENET_INCLUDE_DIR) -D_POSIX_C_SOURCE=199309L -D_DEFAULT_SOURCE
+		  -I$(VCPKG_LINUX_INCLUDE_DIR) -D_POSIX_C_SOURCE=199309L -D_DEFAULT_SOURCE
+WINDOWS_SERVER_CFLAGS := -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
+		  -I$(VCPKG_WINDOWS_INCLUDE_DIR)
+WINDOWS_SERVER_CFLAGS += -DWIN32_LEAN_AND_MEAN -DNOGDI -DNOUSER
 SERVER_LIBS   := -lm -lsqlite3
-
-#Raylib vendor compiler flags
-LINUX_RAYLIB_CFLAGS   := -std=c11 -O2 $(VENDOR_WARNINGS) -I$(SRC_DIR) \
-                         -I$(RAYLIB_SRC_DIR) -I$(RAYLIB_GLFW_INCLUDE_DIR) \
-                         -DPLATFORM_DESKTOP -D_DEFAULT_SOURCE -D_GLFW_X11
-WINDOWS_RAYLIB_CFLAGS := -std=c11 -O2 $(VENDOR_WARNINGS) -I$(SRC_DIR) \
-                         -I$(RAYLIB_SRC_DIR) -I$(RAYLIB_GLFW_INCLUDE_DIR) \
-                         -DPLATFORM_DESKTOP
 
 #Test compiler flags(UNITY_INCLUDE defined in vendor section)
 TEST_LIBS := -lm
@@ -153,6 +155,9 @@ TEST_LIBS := -lm
 #Platform link libraries
 LINUX_LIBS   := -lGL -lm -ldl -lpthread -lrt -lX11 -lXrandr -lXi -lXcursor -lXinerama -lasound
 WINDOWS_LIBS := -lopengl32 -lgdi32 -lwinmm -lws2_32
+LINUX_THIRD_PARTY_LIBS := -L$(VCPKG_LINUX_LIB_DIR) -limgui -lenet -lraylib -lglfw3
+WINDOWS_THIRD_PARTY_LIBS := -L$(VCPKG_WINDOWS_LIB_DIR) -limgui -lenet -lraylib -lglfw3
+IMGUI_TEST_THIRD_PARTY_LIBS := -L$(VCPKG_LINUX_LIB_DIR) -lenet -lraylib -lglfw3
 
 #== == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==   \
     == == == == == == =
@@ -160,20 +165,10 @@ WINDOWS_LIBS := -lopengl32 -lgdi32 -lwinmm -lws2_32
 #== == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==   \
     == == == == == == =
 
-#Raylib source files
-RAYLIB_SOURCE_NAMES := rcore rmodels rshapes rtext rtextures utils raudio rglfw
-LINUX_RAYLIB_OBJECTS   := $(addprefix $(LINUX_BUILD_DIR)/raylib/,$(addsuffix .o,$(RAYLIB_SOURCE_NAMES)))
-WINDOWS_RAYLIB_OBJECTS := $(addprefix $(WINDOWS_BUILD_DIR)/raylib/,$(addsuffix .o,$(RAYLIB_SOURCE_NAMES)))
-LINUX_RAYLIB_LIB   := $(LINUX_BUILD_DIR)/libraylib.a
-WINDOWS_RAYLIB_LIB := $(WINDOWS_BUILD_DIR)/libraylib.a
-
-#Dear ImGui source files
-IMGUI_CORE_SOURCES := imgui imgui_draw imgui_tables imgui_widgets
-LINUX_IMGUI_OBJECTS := $(addprefix $(LINUX_BUILD_DIR)/imgui/,$(addsuffix .o,$(IMGUI_CORE_SOURCES))) \
-	$(LINUX_BUILD_DIR)/client/imgui_impl_raylib.o \
+#Dear ImGui wrapper source files (core library provided by vcpkg)
+LINUX_IMGUI_OBJECTS := $(LINUX_BUILD_DIR)/client/imgui_impl_raylib.o \
 	$(LINUX_BUILD_DIR)/client/imgui_wrapper.o
-WINDOWS_IMGUI_OBJECTS := $(addprefix $(WINDOWS_BUILD_DIR)/imgui/,$(addsuffix .o,$(IMGUI_CORE_SOURCES))) \
-	$(WINDOWS_BUILD_DIR)/client/imgui_impl_raylib.o \
+WINDOWS_IMGUI_OBJECTS := $(WINDOWS_BUILD_DIR)/client/imgui_impl_raylib.o \
 	$(WINDOWS_BUILD_DIR)/client/imgui_wrapper.o
 
 #Client source files
@@ -214,24 +209,15 @@ SHARED_HEADERS := \
 	$(SHARED_SRC_DIR)/connection.h \
 	$(SERVER_SRC_DIR)/auth.h
 
-#ENet source files
-ENET_COMMON_SOURCE_NAMES  := callbacks compress host list packet peer protocol
-ENET_LINUX_SOURCE_NAMES   := unix
-ENET_WINDOWS_SOURCE_NAMES := win32
-LINUX_ENET_SOURCES   := $(addprefix $(ENET_DIR)/,$(addsuffix .c,$(ENET_COMMON_SOURCE_NAMES) $(ENET_LINUX_SOURCE_NAMES)))
-WINDOWS_ENET_SOURCES := $(addprefix $(ENET_DIR)/,$(addsuffix .c,$(ENET_COMMON_SOURCE_NAMES) $(ENET_WINDOWS_SOURCE_NAMES)))
-
 #Object files
 LINUX_APP_OBJECTS   := $(patsubst $(SRC_DIR)/%.c,$(LINUX_BUILD_DIR)/%.o,$(CLIENT_SOURCES))
 WINDOWS_APP_OBJECTS := $(patsubst $(SRC_DIR)/%.c,$(WINDOWS_BUILD_DIR)/%.o,$(CLIENT_SOURCES))
 SERVER_OBJECTS      := $(patsubst $(SRC_DIR)/%.c,$(LINUX_BUILD_DIR)/%.o,$(SERVER_SOURCES))
-LINUX_ENET_OBJECTS  := $(patsubst $(ENET_DIR)/%.c,$(LINUX_BUILD_DIR)/vendor/enet/%.o,$(LINUX_ENET_SOURCES))
-WINDOWS_ENET_OBJECTS := $(patsubst $(ENET_DIR)/%.c,$(WINDOWS_BUILD_DIR)/vendor/enet/%.o,$(WINDOWS_ENET_SOURCES))
-SERVER_ENET_OBJECTS := $(LINUX_ENET_OBJECTS)
 
 #Test files
 TEST_SRCS := $(wildcard $(UNIT_TESTS_DIR)/*.c)
 TEST_BINS := $(patsubst $(UNIT_TESTS_DIR)/%.c,$(TEST_BUILD_DIR)/%,$(TEST_SRCS))
+IMGUI_CORE_SOURCES := imgui imgui_draw imgui_tables imgui_widgets
 IMGUI_TEST_ENGINE_SOURCE_NAMES := imgui_capture_tool imgui_te_context imgui_te_coroutine \
 	imgui_te_engine imgui_te_exporters imgui_te_perftool imgui_te_ui imgui_te_utils
 IMGUI_TEST_CLIENT_SOURCES := \
@@ -304,11 +290,17 @@ help:
 	@echo "  make devcontainer-github-token  Store GitHub token"
 	@echo "  make devcontainer-github-status Check GitHub auth"
 	@echo ""
+	@echo "vcpkg dependencies:"
+	@echo "  make vcpkg-bootstrap      Bootstrap the local vcpkg tool"
+	@echo "  make vcpkg-install-linux  Install Linux vcpkg dependencies"
+	@echo "  make vcpkg-install-windows Install Windows vcpkg dependencies"
+	@echo "  make vcpkg-install        Install both Linux and Windows vcpkg dependencies"
+	@echo ""
 	@echo "Documentation:"
 	@echo "  make spec           Build the LaTeX specification PDF"
 	@echo ""
-	@echo "Vendor dependencies:"
-	@echo "  make vendor         Download all vendor dependencies"
+	@echo "Manual test dependencies:"
+	@echo "  make vendor         Download Unity, test-only ImGui, and ImGui Test Engine"
 	@echo ""
 	@echo "Cleanup:"
 	@echo "  make clean          Remove build and dist artifacts"
@@ -336,130 +328,110 @@ run-windows: $(WINDOWS_BIN)
 # =============================================================================
 
 # Link targets
-$(LINUX_BIN): $(LINUX_APP_OBJECTS) $(LINUX_IMGUI_OBJECTS) $(LINUX_RAYLIB_LIB) $(LINUX_ENET_OBJECTS)
+$(LINUX_BIN): $(LINUX_APP_OBJECTS) $(LINUX_IMGUI_OBJECTS) $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(DIST_DIR)
-	$(LINUX_CXX) $(LINUX_APP_OBJECTS) $(LINUX_IMGUI_OBJECTS) $(LINUX_RAYLIB_LIB) $(LINUX_ENET_OBJECTS) -o $@ $(LINUX_LIBS)
+	$(LINUX_CXX) $(LINUX_APP_OBJECTS) $(LINUX_IMGUI_OBJECTS) -o $@ $(LINUX_THIRD_PARTY_LIBS) $(LINUX_LIBS)
 
-$(WINDOWS_BIN): $(WINDOWS_APP_OBJECTS) $(WINDOWS_IMGUI_OBJECTS) $(WINDOWS_RAYLIB_LIB) $(WINDOWS_ENET_OBJECTS)
+$(WINDOWS_BIN): $(WINDOWS_APP_OBJECTS) $(WINDOWS_IMGUI_OBJECTS) $(VCPKG_WINDOWS_STAMP)
 	@$(MKDIR_P) $(DIST_DIR)
-	$(WINDOWS_CXX) -static $(WINDOWS_APP_OBJECTS) $(WINDOWS_IMGUI_OBJECTS) $(WINDOWS_RAYLIB_LIB) $(WINDOWS_ENET_OBJECTS) -o $@ $(WINDOWS_LIBS)
+	$(WINDOWS_CXX) -static $(WINDOWS_APP_OBJECTS) $(WINDOWS_IMGUI_OBJECTS) -o $@ $(WINDOWS_THIRD_PARTY_LIBS) $(WINDOWS_LIBS)
 
-$(SERVER_BIN): $(SERVER_OBJECTS) $(SERVER_ENET_OBJECTS)
+$(SERVER_BIN): $(SERVER_OBJECTS) $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(DIST_DIR)
-	$(LINUX_CC) $(SERVER_OBJECTS) $(SERVER_ENET_OBJECTS) -o $@ $(SERVER_LIBS)
-
-# Static libraries
-$(LINUX_RAYLIB_LIB): $(LINUX_RAYLIB_OBJECTS)
-	$(AR) rcs $@ $(LINUX_RAYLIB_OBJECTS)
-
-$(WINDOWS_RAYLIB_LIB): $(WINDOWS_RAYLIB_OBJECTS)
-	$(AR) rcs $@ $(WINDOWS_RAYLIB_OBJECTS)
-
-# Raylib object compilation
-$(LINUX_BUILD_DIR)/raylib/%.o: $(RAYLIB_SRC_DIR)/%.c $(RAYLIB_DIR)
-	@$(MKDIR_P) $(dir $@)
-	$(LINUX_CC) $(LINUX_RAYLIB_CFLAGS) -c $< -o $@
-
-$(WINDOWS_BUILD_DIR)/raylib/%.o: $(RAYLIB_SRC_DIR)/%.c $(RAYLIB_DIR)
-	@$(MKDIR_P) $(dir $@)
-	$(WINDOWS_CC) $(WINDOWS_RAYLIB_CFLAGS) -c $< -o $@
+	$(LINUX_CC) $(SERVER_OBJECTS) -o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet $(SERVER_LIBS)
 
 # Client object compilation
-$(LINUX_BUILD_DIR)/client/%.o: $(CLIENT_SRC_DIR)/%.c $(CLIENT_SRC_DIR)/game.h $(CLIENT_SRC_DIR)/net.h $(SHARED_HEADERS) $(RAYLIB_DIR) $(IMGUI_DIR)
+$(LINUX_BUILD_DIR)/client/%.o: $(CLIENT_SRC_DIR)/%.c $(CLIENT_SRC_DIR)/game.h $(CLIENT_SRC_DIR)/net.h $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(LINUX_CFLAGS) -D_POSIX_C_SOURCE=199309L -D_DEFAULT_SOURCE -c $< -o $@
 
-$(WINDOWS_BUILD_DIR)/client/%.o: $(CLIENT_SRC_DIR)/%.c $(CLIENT_SRC_DIR)/game.h $(CLIENT_SRC_DIR)/net.h $(SHARED_HEADERS) $(RAYLIB_DIR) $(IMGUI_DIR)
+$(WINDOWS_BUILD_DIR)/client/%.o: $(CLIENT_SRC_DIR)/%.c $(CLIENT_SRC_DIR)/game.h $(CLIENT_SRC_DIR)/net.h $(SHARED_HEADERS) | $(VCPKG_WINDOWS_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(WINDOWS_CC) $(WINDOWS_CFLAGS) -c $< -o $@
 
-$(LINUX_BUILD_DIR)/imgui/%.o: $(IMGUI_SRC_DIR)/%.cpp $(IMGUI_DIR)
+$(LINUX_BUILD_DIR)/client/imgui_impl_raylib.o: $(CLIENT_SRC_DIR)/imgui_impl_raylib.cpp | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CXX) $(LINUX_CXXFLAGS) -c $< -o $@
 
-$(WINDOWS_BUILD_DIR)/imgui/%.o: $(IMGUI_SRC_DIR)/%.cpp $(IMGUI_DIR)
-	@$(MKDIR_P) $(dir $@)
-	$(WINDOWS_CXX) $(WINDOWS_CXXFLAGS) -c $< -o $@
-
-$(LINUX_BUILD_DIR)/client/imgui_impl_raylib.o: $(CLIENT_SRC_DIR)/imgui_impl_raylib.cpp $(IMGUI_DIR)
+$(LINUX_BUILD_DIR)/client/imgui_wrapper.o: $(CLIENT_SRC_DIR)/imgui_wrapper.cpp | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CXX) $(LINUX_CXXFLAGS) -c $< -o $@
 
-$(LINUX_BUILD_DIR)/client/imgui_wrapper.o: $(CLIENT_SRC_DIR)/imgui_wrapper.cpp $(IMGUI_DIR)
-	@$(MKDIR_P) $(dir $@)
-	$(LINUX_CXX) $(LINUX_CXXFLAGS) -c $< -o $@
-
-$(WINDOWS_BUILD_DIR)/client/imgui_impl_raylib.o: $(CLIENT_SRC_DIR)/imgui_impl_raylib.cpp $(IMGUI_DIR)
+$(WINDOWS_BUILD_DIR)/client/imgui_impl_raylib.o: $(CLIENT_SRC_DIR)/imgui_impl_raylib.cpp | $(VCPKG_WINDOWS_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(WINDOWS_CXX) $(WINDOWS_CXXFLAGS) -c $< -o $@
 
-$(WINDOWS_BUILD_DIR)/client/imgui_wrapper.o: $(CLIENT_SRC_DIR)/imgui_wrapper.cpp $(IMGUI_DIR)
+$(WINDOWS_BUILD_DIR)/client/imgui_wrapper.o: $(CLIENT_SRC_DIR)/imgui_wrapper.cpp | $(VCPKG_WINDOWS_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(WINDOWS_CXX) $(WINDOWS_CXXFLAGS) -c $< -o $@
 
-$(TEST_BUILD_DIR)/imgui/client/%.o: $(CLIENT_SRC_DIR)/%.c $(CLIENT_SRC_DIR)/game.h $(CLIENT_SRC_DIR)/net.h $(SHARED_HEADERS) $(RAYLIB_DIR) $(IMGUI_DIR)
+$(TEST_BUILD_DIR)/imgui/client/%.o: $(CLIENT_SRC_DIR)/%.c $(CLIENT_SRC_DIR)/game.h $(CLIENT_SRC_DIR)/net.h $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(IMGUI_TEST_CFLAGS) -c $< -o $@
 
-$(TEST_BUILD_DIR)/imgui/shared/%.o: $(SHARED_SRC_DIR)/%.c $(SHARED_HEADERS) $(RAYLIB_DIR) $(IMGUI_DIR)
+$(TEST_BUILD_DIR)/imgui/shared/%.o: $(SHARED_SRC_DIR)/%.c $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(IMGUI_TEST_CFLAGS) -c $< -o $@
 
-$(TEST_BUILD_DIR)/imgui/tests/%.o: $(IMGUI_TESTS_DIR)/%.cpp $(IMGUI_TEST_ENGINE_DIR) $(IMGUI_DIR)
+$(TEST_BUILD_DIR)/imgui/tests/%.o: $(IMGUI_TESTS_DIR)/%.cpp $(IMGUI_TEST_ENGINE_DIR) $(IMGUI_DIR) | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CXX) $(IMGUI_TEST_CXXFLAGS) -c $< -o $@
 
-$(TEST_BUILD_DIR)/imgui/imgui/%.o: $(IMGUI_SRC_DIR)/%.cpp $(IMGUI_DIR) $(IMGUI_TEST_ENGINE_DIR)
+$(TEST_BUILD_DIR)/imgui/imgui/%.o: $(IMGUI_SRC_DIR)/%.cpp $(IMGUI_DIR) $(IMGUI_TEST_ENGINE_DIR) | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CXX) $(IMGUI_TEST_CXXFLAGS) -c $< -o $@
 
-$(TEST_BUILD_DIR)/imgui/client/imgui_impl_raylib.o: $(CLIENT_SRC_DIR)/imgui_impl_raylib.cpp $(IMGUI_DIR) $(IMGUI_TEST_ENGINE_DIR)
+$(TEST_BUILD_DIR)/imgui/client/imgui_impl_raylib.o: $(CLIENT_SRC_DIR)/imgui_impl_raylib.cpp $(IMGUI_DIR) $(IMGUI_TEST_ENGINE_DIR) | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CXX) $(IMGUI_TEST_CXXFLAGS) -c $< -o $@
 
-$(TEST_BUILD_DIR)/imgui/client/imgui_wrapper.o: $(CLIENT_SRC_DIR)/imgui_wrapper.cpp $(IMGUI_DIR) $(IMGUI_TEST_ENGINE_DIR)
+$(TEST_BUILD_DIR)/imgui/client/imgui_wrapper.o: $(CLIENT_SRC_DIR)/imgui_wrapper.cpp $(IMGUI_DIR) $(IMGUI_TEST_ENGINE_DIR) | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CXX) $(IMGUI_TEST_CXXFLAGS) -c $< -o $@
 
-$(TEST_BUILD_DIR)/imgui/engine/%.o: $(IMGUI_TEST_ENGINE_SRC_DIR)/%.cpp $(IMGUI_TEST_ENGINE_DIR) $(IMGUI_DIR)
+$(TEST_BUILD_DIR)/imgui/engine/%.o: $(IMGUI_TEST_ENGINE_SRC_DIR)/%.cpp $(IMGUI_TEST_ENGINE_DIR) $(IMGUI_DIR) | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
-	$(LINUX_CXX) $(IMGUI_TEST_CXXFLAGS) -c $< -o $@
+	$(LINUX_CXX) $(IMGUI_TEST_ENGINE_CXXFLAGS) -c $< -o $@
 
 # Shared object compilation
 $(LINUX_BUILD_DIR)/shared/%.o: $(SHARED_SRC_DIR)/%.c $(SHARED_HEADERS)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(SERVER_CFLAGS) -c $< -o $@
 
-$(WINDOWS_BUILD_DIR)/shared/%.o: $(SHARED_SRC_DIR)/%.c $(SHARED_HEADERS)
+$(WINDOWS_BUILD_DIR)/shared/%.o: $(SHARED_SRC_DIR)/%.c $(SHARED_HEADERS) | $(VCPKG_WINDOWS_STAMP)
 	@$(MKDIR_P) $(dir $@)
-	$(WINDOWS_CC) $(SERVER_CFLAGS) -c $< -o $@
+	$(WINDOWS_CC) $(WINDOWS_SERVER_CFLAGS) -c $< -o $@
 
 # Server object compilation
-$(LINUX_BUILD_DIR)/server/%.o: $(SERVER_SRC_DIR)/%.c
+$(LINUX_BUILD_DIR)/server/%.o: $(SERVER_SRC_DIR)/%.c | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(SERVER_CFLAGS) -c $< -o $@
 
-# ENet object compilation
-$(LINUX_BUILD_DIR)/vendor/enet/%.o: $(ENET_DIR)/%.c
-	@$(MKDIR_P) $(dir $@)
-	$(LINUX_CC) $(SERVER_CFLAGS) -c $< -o $@
-
-$(WINDOWS_BUILD_DIR)/vendor/enet/%.o: $(ENET_DIR)/%.c
-	@$(MKDIR_P) $(dir $@)
-	$(WINDOWS_CC) -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) -I$(ENET_INCLUDE_DIR) -c $< -o $@
-
 # =============================================================================
-# 7. Vendor Dependencies
+# 7. Dependency Installation
 # =============================================================================
-.PHONY: vendor
+.PHONY: vendor vcpkg-bootstrap vcpkg-install vcpkg-install-linux vcpkg-install-windows
 
-vendor: $(RAYLIB_DIR) $(IMGUI_DIR) $(IMGUI_TEST_ENGINE_DIR) $(UNITY_DIR)
+vcpkg-bootstrap:
+	@test -x "$(VCPKG_BIN)" || bash "$(VCPKG_ROOT)/bootstrap-vcpkg.sh" -disableMetrics
 
-$(RAYLIB_DIR):
-	@$(MKDIR_P) vendor $(BUILD_DIR)
-	$(CURL) -L $(RAYLIB_URL) -o $(BUILD_DIR)/raylib.tar.gz
-	$(TAR) -xzf $(BUILD_DIR)/raylib.tar.gz -C vendor
+$(VCPKG_LINUX_STAMP): vcpkg.json | vcpkg-bootstrap
+	@$(MKDIR_P) $(VCPKG_LINUX_INSTALLED_DIR)
+	$(VCPKG_BIN) install --triplet $(VCPKG_LINUX_TRIPLET) --x-manifest-root=$(CURDIR) --x-install-root=$(VCPKG_LINUX_INSTALLED_DIR)
+	@touch $@
 
+$(VCPKG_WINDOWS_STAMP): vcpkg.json | vcpkg-bootstrap
+	@$(MKDIR_P) $(VCPKG_WINDOWS_INSTALLED_DIR)
+	$(VCPKG_BIN) install --triplet $(VCPKG_WINDOWS_TRIPLET) --x-manifest-root=$(CURDIR) --x-install-root=$(VCPKG_WINDOWS_INSTALLED_DIR)
+	@touch $@
+
+vcpkg-install-linux: $(VCPKG_LINUX_STAMP)
+
+vcpkg-install-windows: $(VCPKG_WINDOWS_STAMP)
+
+vcpkg-install: $(VCPKG_LINUX_STAMP) $(VCPKG_WINDOWS_STAMP)
+
+vendor: $(IMGUI_DIR) $(IMGUI_TEST_ENGINE_DIR) $(UNITY_DIR)
 
 $(IMGUI_DIR):
 	@$(MKDIR_P) vendor $(BUILD_DIR)
@@ -502,9 +474,9 @@ unit-test: $(TEST_BINS)
 	echo "Total: $$total, Passed: $$((total - failed)), Failed: $$failed"; \
 	if [ $$failed -gt 0 ]; then exit 1; fi
 
-$(IMGUI_TEST_BIN): $(IMGUI_TEST_CLIENT_OBJECTS) $(IMGUI_TEST_CPP_OBJECTS) $(IMGUI_TEST_IMGUI_OBJECTS) $(IMGUI_TEST_ENGINE_OBJECTS) $(LINUX_RAYLIB_LIB) $(LINUX_ENET_OBJECTS)
+$(IMGUI_TEST_BIN): $(IMGUI_TEST_CLIENT_OBJECTS) $(IMGUI_TEST_CPP_OBJECTS) $(IMGUI_TEST_IMGUI_OBJECTS) $(IMGUI_TEST_ENGINE_OBJECTS) $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
-	$(LINUX_CXX) $(IMGUI_TEST_CLIENT_OBJECTS) $(IMGUI_TEST_CPP_OBJECTS) $(IMGUI_TEST_IMGUI_OBJECTS) $(IMGUI_TEST_ENGINE_OBJECTS) $(LINUX_RAYLIB_LIB) $(LINUX_ENET_OBJECTS) -o $@ $(LINUX_LIBS) -pthread
+	$(LINUX_CXX) $(IMGUI_TEST_CLIENT_OBJECTS) $(IMGUI_TEST_CPP_OBJECTS) $(IMGUI_TEST_IMGUI_OBJECTS) $(IMGUI_TEST_ENGINE_OBJECTS) -o $@ $(IMGUI_TEST_THIRD_PARTY_LIBS) $(LINUX_LIBS) -pthread
 
 imgui-test: $(IMGUI_TEST_BIN)
 	@echo "Running ImGui tests..."
@@ -740,4 +712,4 @@ clean:
 	$(RM_RF) $(BUILD_DIR) $(DIST_DIR)
 
 distclean: clean
-	$(RM_RF) vendor
+	$(RM_RF) vendor vcpkg_installed

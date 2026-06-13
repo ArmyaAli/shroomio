@@ -2,6 +2,7 @@ FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    cmake \
     clang-format \
     curl \
     docker.io \
@@ -19,12 +20,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrandr-dev \
     make \
     mingw-w64 \
+    ninja-build \
     npm \
     pkg-config \
     texlive-fonts-recommended \
     texlive-latex-extra \
     texlive-latex-recommended \
+    unzip \
+    xvfb \
     xz-utils \
+    zip \
     && rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g opencode-ai
