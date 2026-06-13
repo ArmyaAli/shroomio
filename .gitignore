@@ -15,4 +15,7 @@ client_settings.cfg
 imgui.ini
 server_browser_recent.txt
 shroomio.db
-.opencode/
+.opencode/*
+!.opencode/agents/
+.opencode/agents/*
+!.opencode/agents/software-developer.md
