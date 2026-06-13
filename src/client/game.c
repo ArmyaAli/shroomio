@@ -1007,6 +1007,144 @@ static void DrawDiagnosticsOverlay(const Game* game) {
   ShroomImGui_End();
 }
 
+static const float kChatInactiveTimeout = 8.0f;
+
+static void UpdateChatState(Game* game, float delta_time) {
+  if (!IsOnlineMode(game->active_mode) || game->chat_minimized) {
+    return;
+  }
+  if (game->chat_open) {
+    game->chat_inactive_timer = 0.0f;
+  } else {
+    game->chat_inactive_timer += delta_time;
+    if (game->chat_inactive_timer >= kChatInactiveTimeout) {
+      game->chat_minimized = true;
+      game->chat_inactive_timer = 0.0f;
+    }
+  }
+}
+
+static void DrawChatDock(Game* game) {
+  const float dock_width = 360.0f;
+  const float history_height = 160.0f;
+  const float input_height = game->chat_open ? 82.0f : 0.0f;
+  const float total_height = history_height + input_height + (game->chat_open ? 0.0f : 28.0f);
+  const float pos_x = (float)game->screen_width - dock_width - 18.0f;
+  const float pos_y = 132.0f;
+  const float btn_size = 44.0f;
+
+  if (!IsOnlineMode(game->active_mode)) {
+    return;
+  }
+
+  /* Minimised state: circular button with zero padding so the button fills
+   * the window exactly and its label is centred inside the circle.
+   * Colours: muted dark-teal at ~55 % opacity, lighter on hover/press — echoes
+   * the proximity-radar palette and is more transparent than other controls. */
+  if (game->chat_minimized) {
+    const bool has_unread = game->net.chat_unread_count > 0u;
+    const char* label =
+        has_unread
+            ? TextFormat("%u", game->net.chat_unread_count > 9u ? 9u : game->net.chat_unread_count)
+            : "C";
+    ShroomImGui_PushStyleColor(SHROOM_IMGUI_COL_BUTTON, 0.10f, 0.22f, 0.28f, 0.55f);
+    ShroomImGui_PushStyleColor(SHROOM_IMGUI_COL_BUTTON_HOVERED, 0.16f, 0.32f, 0.42f, 0.78f);
+    ShroomImGui_PushStyleColor(SHROOM_IMGUI_COL_BUTTON_ACTIVE, 0.20f, 0.42f, 0.56f, 0.92f);
+    ShroomImGui_PushWindowPadding(0.0f, 0.0f);
+    ShroomImGui_PushWindowRounding(btn_size * 0.5f);
+    ShroomImGui_SetNextWindowPos((float)game->screen_width - btn_size - 18.0f, pos_y,
+                                 SHROOM_IMGUI_COND_ALWAYS);
+    ShroomImGui_SetNextWindowSize(btn_size, btn_size, SHROOM_IMGUI_COND_ALWAYS);
+    ShroomImGui_SetNextWindowBgAlpha(0.0f);
+    if (ShroomImGui_Begin("ChatBtn", NULL,
+                          SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
+                              SHROOM_IMGUI_WINDOW_NO_MOVE | SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
+                              SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS |
+                              SHROOM_IMGUI_WINDOW_NO_SCROLLBAR)) {
+      if (ShroomImGui_Button(label, btn_size, btn_size)) {
+        game->chat_minimized = false;
+        game->chat_inactive_timer = 0.0f;
+      }
+    }
+    ShroomImGui_End();
+    ShroomImGui_PopStyleVar();   /* rounding */
+    ShroomImGui_PopStyleVar();   /* padding */
+    ShroomImGui_PopStyleColor(); /* active */
+    ShroomImGui_PopStyleColor(); /* hovered */
+    ShroomImGui_PopStyleColor(); /* button */
+    return;
+  }
+
+  ShroomImGui_SetNextWindowPos(pos_x, pos_y, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowSize(dock_width, total_height, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowBgAlpha(game->chat_open ? 0.82f : 0.46f);
+  if (!ShroomImGui_Begin("Chat", NULL,
+                         SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
+                             SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
+                             SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
+    ShroomImGui_End();
+    return;
+  }
+
+  /* History scroll region. */
+  ShroomImGui_BeginChild("ChatHistory", 0.0f, history_height, false);
+  {
+    const uint32_t count = game->net.chat_history_count;
+    if (count > 0u) {
+      const uint32_t start_index =
+          (count < SHROOM_CLIENT_CHAT_HISTORY_COUNT)
+              ? 0u
+              : game->net.chat_history_head % SHROOM_CLIENT_CHAT_HISTORY_COUNT;
+      uint32_t i;
+      for (i = 0u; i < count; ++i) {
+        const ChatMessage* msg =
+            &game->net.chat_history[(start_index + i) % SHROOM_CLIENT_CHAT_HISTORY_COUNT];
+        const bool is_local =
+            (game->local_player != NULL) && (msg->sender_id == game->net.player_id);
+        ShroomImGui_TextColored(
+            ToImGuiColor(is_local ? (Color){180, 230, 180, 255} : (Color){210, 210, 255, 255}),
+            TextFormat("%.31s", msg->sender_name));
+        ShroomImGui_SameLine();
+        ShroomImGui_TextWrapped(msg->message);
+      }
+    }
+  }
+  if (game->chat_scroll_to_bottom) {
+    ShroomImGui_SetScrollHereY(1.0f);
+    game->chat_scroll_to_bottom = false;
+  }
+  ShroomImGui_EndChild();
+
+  if (game->chat_open) {
+    bool send;
+    if (game->chat_focus_input) {
+      ShroomImGui_SetKeyboardFocusHere();
+      game->chat_focus_input = false;
+    }
+    send = ShroomImGui_InputTextWithSubmit("##chatinput", game->chat_input_buf,
+                                           sizeof(game->chat_input_buf), "Send");
+    if (send && game->chat_input_buf[0] != '\0') {
+      if (ClientNetSendChat(&game->net, game->net.player_id,
+                            game->local_player ? game->local_player->name : "",
+                            game->chat_input_buf)) {
+        game->chat_input_buf[0] = '\0';
+        game->chat_scroll_to_bottom = true;
+        game->chat_focus_input = true;
+      }
+    }
+    ShroomImGui_Text("Enter sends   Esc closes");
+  } else {
+    if (game->net.chat_unread_count > 0u) {
+      ShroomImGui_TextColored(ToImGuiColor(ORANGE),
+                              TextFormat("%u unread  T to type", game->net.chat_unread_count));
+    } else {
+      ShroomImGui_Text("T to type");
+    }
+  }
+
+  ShroomImGui_End();
+}
+
 static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard_count,
                             ShroomZone zone) {
   ShroomImGui_SetNextWindowPos(18.0f, 18.0f, SHROOM_IMGUI_COND_ALWAYS);
@@ -1223,7 +1361,7 @@ void GameUpdate(Game* game, float delta_time) {
   ShroomVec2 input_direction;
   const uint32_t previous_input_sequence = game->net.last_input_sequence;
 
-  if (IsOverlayBlockingGameplay(game)) {
+  if (IsOverlayBlockingGameplay(game) || game->chat_open) {
     input_direction = (ShroomVec2){0};
   } else {
     input_direction = GetMovementInput(game);
@@ -1256,6 +1394,7 @@ void GameUpdate(Game* game, float delta_time) {
   SyncRenderPositions(game, delta_time);
   UpdateStatusBanners(game, delta_time);
   UpdateInspectOverlay(game, delta_time);
+  UpdateChatState(game, delta_time);
   game->camera.target = (Vector2){game->local_player->position.x, game->local_player->position.y};
 }
 
@@ -1290,6 +1429,7 @@ void GameDraw(Game* game) {
   DrawLeaveConfirmationOverlay(game);
   DrawConnectionOverlay(game);
   DrawDiagnosticsOverlay(game);
+  DrawChatDock(game);
   DrawInspectOverlay(game);
 }
 

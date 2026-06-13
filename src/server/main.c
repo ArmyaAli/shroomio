@@ -1,6 +1,7 @@
 #include <signal.h>
 #include <sqlite3.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -141,7 +142,9 @@ typedef struct ServerSession {
   uint32_t user_id;
   uint32_t last_processed_input_sequence;
   uint32_t last_logged_rtt_ms;
+  uint32_t chat_message_count;
   uint64_t last_latency_log_time_ms;
+  uint64_t chat_window_start_ms;
   ShroomPlayerState* player;
   char auth_token[SHROOM_AUTH_TOKEN_LENGTH + 1];
 } ServerSession;
@@ -510,9 +513,72 @@ static void HandleAuthRequestPacket(ENetPeer* peer, ServerSession* session,
   }
 }
 
-static void HandlePacket(ENetPeer* peer, ServerSession* session, ShroomWorldState* world,
-                         ShroomAuthContext* auth_ctx, const ENetPacket* enet_packet,
-                         uint8_t channel_id, uint32_t* next_player_id) {
+static void HandleChatPacket(ENetHost* host, ServerSession* session, const ENetPacket* enet_packet,
+                             uint64_t now_ms) {
+  ShroomChatPacket broadcast = {0};
+  size_t index;
+  size_t msg_len;
+
+  if ((host == NULL) || (session == NULL) || !session->active || (session->player == NULL) ||
+      (enet_packet == NULL) || (enet_packet->dataLength < sizeof(ShroomChatPacket))) {
+    return;
+  }
+
+  /* Rate limit: max SHROOM_CHAT_RATE_LIMIT_COUNT messages per window. */
+  if (now_ms - session->chat_window_start_ms >= SHROOM_CHAT_RATE_LIMIT_WINDOW_MS) {
+    session->chat_window_start_ms = now_ms;
+    session->chat_message_count = 0;
+  }
+  if (session->chat_message_count >= SHROOM_CHAT_RATE_LIMIT_COUNT) {
+    return;
+  }
+  session->chat_message_count += 1;
+
+  /* Build broadcast packet from validated fields. */
+  ShroomPacketHeaderInit(&broadcast.header, SHROOM_PACKET_CHAT, sizeof(broadcast));
+  broadcast.sender_id = session->player_id;
+  snprintf(broadcast.sender_name, sizeof(broadcast.sender_name), "%s",
+           session->player->name[0] != '\0' ? session->player->name : "Unknown");
+
+  /* Copy and null-terminate message from the incoming packet. */
+  msg_len = enet_packet->dataLength - offsetof(ShroomChatPacket, message);
+  if (msg_len >= sizeof(broadcast.message)) {
+    msg_len = sizeof(broadcast.message) - 1u;
+  }
+  memcpy(broadcast.message, ((const ShroomChatPacket*)enet_packet->data)->message, msg_len);
+  broadcast.message[msg_len] = '\0';
+  /* Sanitize: replace control characters up to the null terminator only.
+   * Iterating to msg_len would turn trailing null bytes into spaces and
+   * cause wrapped blank lines in the log output. */
+  for (size_t i = 0; broadcast.message[i] != '\0'; ++i) {
+    if ((unsigned char)broadcast.message[i] < 0x20u) {
+      broadcast.message[i] = ' ';
+    }
+  }
+
+  LOG_INFO("chat player_id=%u name=%.31s msg=%s", session->player_id, broadcast.sender_name,
+           broadcast.message);
+
+  /* Broadcast to every connected peer. */
+  for (index = 0; index < host->peerCount; ++index) {
+    ENetPeer* peer = &host->peers[index];
+    ENetPacket* out;
+
+    if (peer->state != ENET_PEER_STATE_CONNECTED) {
+      continue;
+    }
+    out = CreateProtocolPacket(&broadcast, sizeof(broadcast), SHROOM_PACKET_CHAT);
+    if (out != NULL) {
+      enet_peer_send(peer, SHROOM_ENET_CHANNEL_CHAT, out);
+    }
+  }
+  enet_host_flush(host);
+}
+
+static void HandlePacket(ENetHost* host, ENetPeer* peer, ServerSession* session,
+                         ShroomWorldState* world, ShroomAuthContext* auth_ctx,
+                         const ENetPacket* enet_packet, uint8_t channel_id,
+                         uint32_t* next_player_id, uint64_t now_ms) {
   const ShroomPacketHeader* header;
 
   if ((enet_packet == 0) || (enet_packet->dataLength < sizeof(ShroomPacketHeader))) {
@@ -538,6 +604,9 @@ static void HandlePacket(ENetPeer* peer, ServerSession* session, ShroomWorldStat
     if (enet_packet->dataLength >= sizeof(ShroomPingPacket)) {
       SendPong(peer, ((const ShroomPingPacket*)enet_packet->data)->nonce);
     }
+    break;
+  case SHROOM_PACKET_CHAT:
+    HandleChatPacket(host, session, enet_packet, now_ms);
     break;
   default:
     break;
@@ -628,8 +697,8 @@ int main(void) {
         }
         break;
       case ENET_EVENT_TYPE_RECEIVE:
-        HandlePacket(event.peer, (ServerSession*)event.peer->data, &world, &auth_ctx, event.packet,
-                     event.channelID, &next_player_id);
+        HandlePacket(host, event.peer, (ServerSession*)event.peer->data, &world, &auth_ctx,
+                     event.packet, event.channelID, &next_player_id, now_ms);
         enet_packet_destroy(event.packet);
         break;
       case ENET_EVENT_TYPE_DISCONNECT:

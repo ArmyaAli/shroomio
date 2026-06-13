@@ -1,4 +1,5 @@
 #include "game.h"
+#include "imgui_wrapper.h"
 #include "screen.h"
 
 #include "raylib.h"
@@ -51,6 +52,16 @@ static void GameplayHandleInput(ShroomScreenManager* manager) {
     return;
   }
 
+  /* While chat is open, only Esc closes it (and only when ImGui isn't consuming it).
+     All other keys are captured by the ImGui InputText widget. */
+  if (game->chat_open) {
+    if (!ShroomImGui_WantCaptureKeyboard() && IsKeyPressed(KEY_ESCAPE)) {
+      game->chat_open = false;
+      game->net.chat_unread_count = 0;
+    }
+    return;
+  }
+
   if ((game->active_mode == SHROOM_SESSION_MODE_QUICK_PLAY) && !game->net.welcome_received) {
     if ((game->net.status == CLIENT_NET_ERROR) || (game->net.status == CLIENT_NET_DISCONNECTED)) {
       if (IsKeyPressed(KEY_R)) {
@@ -65,6 +76,23 @@ static void GameplayHandleInput(ShroomScreenManager* manager) {
     if (IsKeyPressed(KEY_ESCAPE)) {
       game->return_to_menu_requested = true;
       return;
+    }
+  }
+  if (IsKeyPressed(KEY_T) && (game->active_mode == SHROOM_SESSION_MODE_QUICK_PLAY) &&
+      game->net.welcome_received && !game->menu_overlay_open && !game->leaderboard_overlay_open &&
+      !game->leave_confirmation_open) {
+    game->chat_inactive_timer = 0.0f;
+    if (game->chat_minimized) {
+      /* First press after idle: restore the collapsed dock. */
+      game->chat_minimized = false;
+      game->net.chat_unread_count = 0;
+      game->chat_scroll_to_bottom = true;
+    } else if (!game->chat_open) {
+      /* Second press: open the input and focus it. */
+      game->chat_open = true;
+      game->chat_focus_input = true;
+      game->net.chat_unread_count = 0;
+      game->chat_scroll_to_bottom = true;
     }
   }
 

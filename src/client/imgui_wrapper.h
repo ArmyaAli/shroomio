@@ -72,6 +72,28 @@ bool ShroomImGui_Combo(const char* label, int* current_item, const char* const i
                        int items_count);
 bool ShroomImGui_InputText(const char* label, char* buffer, size_t buffer_size);
 
+bool ShroomImGui_BeginChild(const char* id, float width, float height, bool border);
+void ShroomImGui_EndChild(void);
+void ShroomImGui_SetScrollHereY(float center_y_ratio);
+bool ShroomImGui_WantCaptureKeyboard(void);
+void ShroomImGui_SetKeyboardFocusHere(void);
+void ShroomImGui_PushWindowRounding(float rounding);
+void ShroomImGui_PushWindowPadding(float x, float y);
+void ShroomImGui_PopStyleVar(void);
+
+/* ImGuiCol_* ordinals for the subset we expose. */
+enum {
+  SHROOM_IMGUI_COL_WINDOW_BG = 0,
+  SHROOM_IMGUI_COL_BUTTON = 19,
+  SHROOM_IMGUI_COL_BUTTON_HOVERED = 20,
+  SHROOM_IMGUI_COL_BUTTON_ACTIVE = 21,
+};
+void ShroomImGui_PushStyleColor(int col, float r, float g, float b, float a);
+void ShroomImGui_PopStyleColor(void);
+/* Returns true when the user presses Enter or clicks the submit button. */
+bool ShroomImGui_InputTextWithSubmit(const char* label, char* buffer, size_t buffer_size,
+                                     const char* submit_label);
+
 bool ShroomImGui_BeginTable(const char* id, int columns, int flags, float width, float height);
 void ShroomImGui_EndTable(void);
 void ShroomImGui_TableSetupColumn(const char* label, float width);

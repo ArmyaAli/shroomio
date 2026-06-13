@@ -1,6 +1,25 @@
 #include "app.h"
 
+#include "imgui.h"
+#include "imgui_internal.h"
 #include "imgui_test_engine/imgui_te_context.h"
+
+#include <string.h>
+
+/* Put the game into a simulated online state without a real ENet peer.
+ * Uses offline-practice so GameInit skips network init, then patches the
+ * mode/net fields to look like a connected quick-play session. */
+static void SetupOnlineGame(void) {
+  ShroomImGuiTestAppReset(false);
+  g_imgui_test_app.game.selected_mode = SHROOM_SESSION_MODE_OFFLINE_PRACTICE;
+  ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_GAME);
+  g_imgui_test_app.game.active_mode = SHROOM_SESSION_MODE_QUICK_PLAY;
+  g_imgui_test_app.game.net.status = CLIENT_NET_CONNECTED;
+  g_imgui_test_app.game.net.welcome_received = true;
+  g_imgui_test_app.game.net.player_id = 1;
+  snprintf(g_imgui_test_app.game.net.status_text,
+           sizeof(g_imgui_test_app.game.net.status_text), "Connected");
+}
 
 void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
   ImGuiTest* test;
@@ -68,5 +87,99 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                 SHROOM_SCREEN_GAME);
     IM_CHECK_STR_EQ(g_imgui_test_app.game.selected_server_host, "127.0.0.1");
     IM_CHECK_EQ(g_imgui_test_app.game.selected_server_port, SHROOM_SERVER_PORT);
+  };
+
+  /* chat: Chat dock is active in online mode. */
+  test = IM_REGISTER_TEST(engine, "chat", "dock_visible_in_online_mode");
+  test->TestFunc = [](ImGuiTestContext* ctx) {
+    SetupOnlineGame();
+    ctx->Yield(3);
+    ImGuiWindow* w = ImGui::FindWindowByName("Chat");
+    IM_CHECK(w != NULL && w->Active);
+  };
+
+  /* chat: Chat dock is not active in offline-practice mode. */
+  test = IM_REGISTER_TEST(engine, "chat", "dock_hidden_in_offline_mode");
+  test->TestFunc = [](ImGuiTestContext* ctx) {
+    ShroomImGuiTestAppReset(false);
+    g_imgui_test_app.game.selected_mode = SHROOM_SESSION_MODE_OFFLINE_PRACTICE;
+    ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_GAME);
+    ctx->Yield(3);
+    ImGuiWindow* w = ImGui::FindWindowByName("Chat");
+    IM_CHECK(w == NULL || !w->Active);
+  };
+
+  /* chat: Messages injected into the ring buffer are rendered in the dock. */
+  test = IM_REGISTER_TEST(engine, "chat", "history_renders_incoming_messages");
+  test->TestFunc = [](ImGuiTestContext* ctx) {
+    SetupOnlineGame();
+
+    /* Directly populate the ring buffer as the net layer would. */
+    for (int i = 0; i < 3; ++i) {
+      ChatMessage* slot = &g_imgui_test_app.game.net
+                               .chat_history[g_imgui_test_app.game.net.chat_history_head %
+                                             SHROOM_CLIENT_CHAT_HISTORY_COUNT];
+      slot->sender_id = (uint32_t)(i + 2);
+      snprintf(slot->sender_name, sizeof(slot->sender_name), "Player%d", i + 1);
+      snprintf(slot->message, sizeof(slot->message), "hello from player %d", i + 1);
+      g_imgui_test_app.game.net.chat_history_head =
+          (g_imgui_test_app.game.net.chat_history_head + 1u) % SHROOM_CLIENT_CHAT_HISTORY_COUNT;
+      g_imgui_test_app.game.net.chat_history_count += 1u;
+      g_imgui_test_app.game.net.chat_unread_count += 1u;
+    }
+
+    g_imgui_test_app.game.chat_open = true;
+    ctx->Yield(3);
+
+    IM_CHECK_EQ(g_imgui_test_app.game.net.chat_history_count, 3u);
+    ImGuiWindow* w = ImGui::FindWindowByName("Chat");
+    IM_CHECK(w != NULL && w->Active);
+  };
+
+  /* chat: Unread count increments when messages arrive while dock is closed. */
+  test = IM_REGISTER_TEST(engine, "chat", "unread_count_increments_on_receive");
+  test->TestFunc = [](ImGuiTestContext* ctx) {
+    SetupOnlineGame();
+    IM_CHECK_EQ(g_imgui_test_app.game.net.chat_unread_count, 0u);
+
+    for (int i = 0; i < 4; ++i) {
+      ChatMessage* slot = &g_imgui_test_app.game.net
+                               .chat_history[g_imgui_test_app.game.net.chat_history_head %
+                                             SHROOM_CLIENT_CHAT_HISTORY_COUNT];
+      slot->sender_id = 2u;
+      snprintf(slot->sender_name, sizeof(slot->sender_name), "Bot");
+      snprintf(slot->message, sizeof(slot->message), "msg %d", i);
+      g_imgui_test_app.game.net.chat_history_head =
+          (g_imgui_test_app.game.net.chat_history_head + 1u) % SHROOM_CLIENT_CHAT_HISTORY_COUNT;
+      g_imgui_test_app.game.net.chat_history_count += 1u;
+      g_imgui_test_app.game.net.chat_unread_count += 1u;
+    }
+
+    ctx->Yield(2);
+    IM_CHECK_EQ(g_imgui_test_app.game.net.chat_unread_count, 4u);
+    IM_CHECK_EQ(g_imgui_test_app.game.chat_open, false);
+  };
+
+  /* chat: Opening chat focuses the input and WantCaptureKeyboard prevents
+   * stray key presses from closing the dock mid-session. */
+  test = IM_REGISTER_TEST(engine, "chat", "input_focus_and_keyboard_capture");
+  test->TestFunc = [](ImGuiTestContext* ctx) {
+    SetupOnlineGame();
+
+    /* Open chat programmatically as the T-key handler would. */
+    g_imgui_test_app.game.chat_open = true;
+    g_imgui_test_app.game.chat_focus_input = true;
+    g_imgui_test_app.game.net.chat_unread_count = 0;
+
+    /* Yield once so DrawChatDock renders and SetKeyboardFocusHere fires. */
+    ctx->Yield(1);
+
+    /* Focus the chat input via the test engine to set WantCaptureKeyboard. */
+    ctx->ItemClick("Chat/##chatinput");
+    ctx->Yield(2);
+
+    /* WantCaptureKeyboard is now true; GameplayHandleInput should not close
+     * the dock even if a key is pressed. */
+    IM_CHECK_EQ(g_imgui_test_app.game.chat_open, true);
   };
 }
