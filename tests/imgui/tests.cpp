@@ -31,10 +31,21 @@ static void SetupLobbyBrowser(void) {
   ShroomImGuiTestAppReset(false);
   g_imgui_test_app.game.selected_mode = SHROOM_SESSION_MODE_OFFLINE_PRACTICE;
   ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_LOBBY);
+  g_imgui_test_app.game.active_mode = SHROOM_SESSION_MODE_OFFLINE_PRACTICE;
   g_imgui_test_app.game.net.handshake_received = true;
   g_imgui_test_app.game.net.status = CLIENT_NET_CONNECTED;
   snprintf(g_imgui_test_app.game.net.status_text,
            sizeof(g_imgui_test_app.game.net.status_text), "Connected");
+}
+
+static void SetupOfflineGame(void) {
+  ShroomImGuiTestAppReset(false);
+  g_imgui_test_app.game.selected_mode = SHROOM_SESSION_MODE_OFFLINE_PRACTICE;
+  ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_GAME);
+  g_imgui_test_app.game.active_mode = SHROOM_SESSION_MODE_OFFLINE_PRACTICE;
+  g_imgui_test_app.game.net.status = CLIENT_NET_CONNECTED;
+  snprintf(g_imgui_test_app.game.net.status_text,
+           sizeof(g_imgui_test_app.game.net.status_text), "Offline");
 }
 
 static void SetupOnlineGame(void) {
@@ -130,10 +141,9 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
   /* chat: Chat dock is not active in offline-practice mode. */
   test = IM_REGISTER_TEST(engine, "chat", "dock_hidden_in_offline_mode");
   test->TestFunc = [](ImGuiTestContext* ctx) {
-    ShroomImGuiTestAppReset(false);
-    g_imgui_test_app.game.selected_mode = SHROOM_SESSION_MODE_OFFLINE_PRACTICE;
-    ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_GAME);
+    SetupOfflineGame();
     ctx->Yield(3);
+    IM_CHECK_EQ(g_imgui_test_app.game.active_mode, SHROOM_SESSION_MODE_OFFLINE_PRACTICE);
     ImGuiWindow* w = ImGui::FindWindowByName("Chat");
     IM_CHECK(w == NULL || !w->Active);
   };
@@ -218,7 +228,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
     InjectFakeLobbies(3);
     /* lobby_list[0].player_count=0, [1]=2, [2]=4 — best is index 0, lobby_id=1 */
     g_imgui_test_app.game.auto_join_lobby = true;
-    ctx->Yield(3);
+    ShroomScreenManagerUpdate(&g_imgui_test_app.screen_manager, 1.0f / 60.0f);
+    ctx->Yield(1);
     /* auto_join_lobby should be cleared after the join attempt */
     IM_CHECK_EQ(g_imgui_test_app.game.auto_join_lobby, false);
   };
@@ -246,14 +257,12 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
     g_imgui_test_app.game.net.chat_unread_count = 0;
 
     /* Yield once so DrawChatDock renders and SetKeyboardFocusHere fires. */
-    ctx->Yield(1);
-
-    /* Focus the chat input via the test engine to set WantCaptureKeyboard. */
-    ctx->ItemClick("Chat/##chatinput");
     ctx->Yield(2);
 
-    /* WantCaptureKeyboard is now true; GameplayHandleInput should not close
-     * the dock even if a key is pressed. */
+    /* Focus should already be directed at the chat window once the dock is open. */
+    ImGuiWindow* w = ImGui::FindWindowByName("Chat");
+    IM_CHECK(w != NULL && w->Active);
+    IM_CHECK(ImGui::GetCurrentContext()->NavWindow == w);
     IM_CHECK_EQ(g_imgui_test_app.game.chat_open, true);
   };
 }
