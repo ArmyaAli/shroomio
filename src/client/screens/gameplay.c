@@ -47,10 +47,14 @@ static void GameplayDraw(ShroomScreenManager* manager) {
 
 static void GameplayHandleInput(ShroomScreenManager* manager) {
   Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
+  bool is_online;
 
   if (game == NULL) {
     return;
   }
+
+  is_online = (game->active_mode == SHROOM_SESSION_MODE_QUICK_PLAY) ||
+              (game->active_mode == SHROOM_SESSION_MODE_LOBBY_PLAY);
 
   /* While chat is open, only Esc closes it (and only when ImGui isn't consuming it).
      All other keys are captured by the ImGui InputText widget. */
@@ -62,9 +66,10 @@ static void GameplayHandleInput(ShroomScreenManager* manager) {
     return;
   }
 
-  if ((game->active_mode == SHROOM_SESSION_MODE_QUICK_PLAY) && !game->net.welcome_received) {
+  if (is_online && !game->net.welcome_received) {
     if ((game->net.status == CLIENT_NET_ERROR) || (game->net.status == CLIENT_NET_DISCONNECTED)) {
-      if (IsKeyPressed(KEY_R)) {
+      /* QUICK_PLAY can retry in-place; LOBBY_PLAY returns to lobby selection. */
+      if ((game->active_mode == SHROOM_SESSION_MODE_QUICK_PLAY) && IsKeyPressed(KEY_R)) {
         RestartQuickPlaySession(game);
       }
       if (IsKeyPressed(KEY_B) || IsKeyPressed(KEY_ESCAPE)) {
@@ -78,17 +83,15 @@ static void GameplayHandleInput(ShroomScreenManager* manager) {
       return;
     }
   }
-  if (IsKeyPressed(KEY_T) && (game->active_mode == SHROOM_SESSION_MODE_QUICK_PLAY) &&
-      game->net.welcome_received && !game->menu_overlay_open && !game->leaderboard_overlay_open &&
-      !game->leave_confirmation_open) {
+
+  if (IsKeyPressed(KEY_T) && is_online && game->net.welcome_received && !game->menu_overlay_open &&
+      !game->leaderboard_overlay_open && !game->leave_confirmation_open) {
     game->chat_inactive_timer = 0.0f;
     if (game->chat_minimized) {
-      /* First press after idle: restore the collapsed dock. */
       game->chat_minimized = false;
       game->net.chat_unread_count = 0;
       game->chat_scroll_to_bottom = true;
     } else if (!game->chat_open) {
-      /* Second press: open the input and focus it. */
       game->chat_open = true;
       game->chat_focus_input = true;
       game->net.chat_unread_count = 0;
@@ -148,8 +151,7 @@ static void GameplayHandleInput(ShroomScreenManager* manager) {
     game->leaderboard_overlay_open = false;
   }
 
-  if ((game->active_mode == SHROOM_SESSION_MODE_QUICK_PLAY) &&
-      (game->net.status != CLIENT_NET_CONNECTED) && IsKeyPressed(KEY_B)) {
+  if (is_online && (game->net.status != CLIENT_NET_CONNECTED) && IsKeyPressed(KEY_B)) {
     game->return_to_menu_requested = true;
   }
 }
