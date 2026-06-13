@@ -114,7 +114,6 @@ static void GameplayHandleInput(ShroomScreenManager* manager) {
         uint32_t pieces[SHROOM_MAX_SPLIT_PIECES];
         int piece_count = 0;
         int current_idx = 0;
-        int i;
         size_t wi;
 
         for (wi = 0; wi < game->world.player_count && piece_count < SHROOM_MAX_SPLIT_PIECES; ++wi) {
@@ -131,8 +130,7 @@ static void GameplayHandleInput(ShroomScreenManager* manager) {
         }
 
         if (piece_count > 1) {
-          i = (current_idx + 1) % piece_count;
-          game->focused_piece_entity_id = pieces[i];
+          game->focused_piece_entity_id = pieces[(current_idx + 1) % piece_count];
         }
       }
     } else {
