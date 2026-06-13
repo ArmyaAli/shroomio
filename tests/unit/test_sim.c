@@ -50,11 +50,22 @@ void test_world_init_with_different_seed_changes_layout(void) {
 }
 
 void test_world_init_populates_active_spores_with_value(void) {
+  size_t outer_count = 0;
+  size_t center_count = 0;
+
   for (size_t index = 0; index < world.spore_count; ++index) {
     TEST_ASSERT_TRUE(world.spores[index].active);
     TEST_ASSERT_EQUAL_UINT16(SHROOM_SPORE_VALUE, world.spores[index].value);
     TEST_ASSERT_NOT_EQUAL(0, world.spores[index].entity_id);
+    if (ShroomGetZoneAtPosition(&world, world.spores[index].position) == SHROOM_ZONE_CENTER) {
+      center_count += 1;
+    }
+    if (ShroomGetZoneAtPosition(&world, world.spores[index].position) == SHROOM_ZONE_OUTER) {
+      outer_count += 1;
+    }
   }
+
+  TEST_ASSERT_TRUE(center_count > outer_count);
 }
 
 void test_zone_classification_matches_center_mid_and_outer(void) {
@@ -199,7 +210,7 @@ void test_world_step_does_not_consume_without_required_mass_advantage(void) {
 
   attacker->mass = 114.0f;
   attacker->radius = ShroomMassToRadius(attacker->mass);
-  attacker->position = (ShroomVec2){3000.0f, 3000.0f};
+  attacker->position = (ShroomVec2){300.0f, 300.0f};
   victim->mass = 100.0f;
   victim->radius = ShroomMassToRadius(victim->mass);
   victim->position = attacker->position;
@@ -208,8 +219,34 @@ void test_world_step_does_not_consume_without_required_mass_advantage(void) {
 
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 114.0f, attacker->mass);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 100.0f, victim->mass);
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, 3000.0f, victim->position.x);
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, 3000.0f, victim->position.y);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 300.0f, victim->position.x);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 300.0f, victim->position.y);
+}
+
+void test_center_zone_uses_lower_consume_advantage(void) {
+  ShroomPlayerState* attacker;
+  ShroomPlayerState* victim;
+
+  ResetWorldForPlayers();
+
+  attacker = ShroomWorldSpawnPlayer(&world, 1, false);
+  victim = ShroomWorldSpawnPlayer(&world, 2, false);
+  TEST_ASSERT_NOT_NULL(attacker);
+  TEST_ASSERT_NOT_NULL(victim);
+
+  attacker->mass = 108.5f;
+  attacker->radius = ShroomMassToRadius(attacker->mass);
+  attacker->position = (ShroomVec2){world.width * 0.5f, world.height * 0.5f};
+  victim->mass = 100.0f;
+  victim->radius = ShroomMassToRadius(victim->mass);
+  victim->position = attacker->position;
+
+  TEST_ASSERT_TRUE(attacker->mass < (victim->mass * SHROOM_CONSUME_MASS_ADVANTAGE));
+  TEST_ASSERT_TRUE(attacker->mass >= (victim->mass * SHROOM_CENTER_CONSUME_ADVANTAGE));
+
+  ShroomWorldStep(&world, 0.0f);
+
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_DEFAULT_PLAYER_MASS, victim->mass);
 }
 
 void test_spawn_player_reuses_inactive_slot(void) {
@@ -270,12 +307,50 @@ void test_world_step_decays_oversized_player_and_ejects_spore_mass(void) {
   player->mass = SHROOM_DECAY_MASS_THRESHOLD + 100.0f;
   player->radius = ShroomMassToRadius(player->mass);
 
-  ShroomWorldStep(&world, 1.0f);
+  ShroomWorldStep(&world, 10.0f);
 
   TEST_ASSERT_TRUE(player->mass < (SHROOM_DECAY_MASS_THRESHOLD + 100.0f));
   TEST_ASSERT_EQUAL_size_t(1, world.spore_count);
   TEST_ASSERT_TRUE(world.spores[0].active);
   TEST_ASSERT_GREATER_THAN_UINT16(0u, world.spores[0].value);
+}
+
+void test_outer_zone_disables_decay_for_oversized_player(void) {
+  ShroomPlayerState* player;
+
+  ResetWorldForPlayers();
+  world.spore_count = 0;
+
+  player = ShroomWorldSpawnPlayer(&world, 1, false);
+  TEST_ASSERT_NOT_NULL(player);
+
+  player->position = (ShroomVec2){300.0f, 300.0f};
+  player->mass = SHROOM_DECAY_MASS_THRESHOLD + 100.0f;
+  player->radius = ShroomMassToRadius(player->mass);
+
+  ShroomWorldStep(&world, 10.0f);
+
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_DECAY_MASS_THRESHOLD + 100.0f, player->mass);
+  TEST_ASSERT_EQUAL_size_t(0, world.spore_count);
+}
+
+void test_center_zone_decay_starts_at_lower_threshold(void) {
+  ShroomPlayerState* player;
+
+  ResetWorldForPlayers();
+  world.spore_count = 0;
+
+  player = ShroomWorldSpawnPlayer(&world, 1, false);
+  TEST_ASSERT_NOT_NULL(player);
+
+  player->position = (ShroomVec2){world.width * 0.5f, world.height * 0.5f};
+  player->mass = (SHROOM_DEFAULT_PLAYER_MASS * 2.0f) + 20.0f;
+  player->radius = ShroomMassToRadius(player->mass);
+
+  ShroomWorldStep(&world, 10.0f);
+
+  TEST_ASSERT_TRUE(player->mass < ((SHROOM_DEFAULT_PLAYER_MASS * 2.0f) + 20.0f));
+  TEST_ASSERT_EQUAL_size_t(1, world.spore_count);
 }
 
 void test_small_bot_prefers_safer_spore_over_slightly_closer_center_spore(void) {
@@ -366,9 +441,12 @@ int main(void) {
   RUN_TEST(test_world_step_collects_spores_and_gains_mass);
   RUN_TEST(test_world_step_consumes_player_when_mass_advantage_and_overlap_match);
   RUN_TEST(test_world_step_does_not_consume_without_required_mass_advantage);
+  RUN_TEST(test_center_zone_uses_lower_consume_advantage);
   RUN_TEST(test_spawn_player_reuses_inactive_slot);
   RUN_TEST(test_world_step_caps_mass_gain_at_configured_maximum);
   RUN_TEST(test_world_step_decays_oversized_player_and_ejects_spore_mass);
+  RUN_TEST(test_outer_zone_disables_decay_for_oversized_player);
+  RUN_TEST(test_center_zone_decay_starts_at_lower_threshold);
   RUN_TEST(test_small_bot_prefers_safer_spore_over_slightly_closer_center_spore);
   RUN_TEST(test_large_bot_prefers_center_pressure_spore_choice);
   RUN_TEST(test_bot_flees_nearby_threat_even_with_available_prey);

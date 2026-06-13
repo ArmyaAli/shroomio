@@ -32,6 +32,7 @@
 
 // Tighten consume rules and reduce snowballing from single catches.
 #define SHROOM_CONSUME_MASS_ADVANTAGE 1.18f
+#define SHROOM_CENTER_CONSUME_ADVANTAGE 1.08f
 #define SHROOM_CONSUME_MASS_GAIN_FACTOR 0.58f
 
 // Give fresh spawns more breathing room before re-entering contested space.
