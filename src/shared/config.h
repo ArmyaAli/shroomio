@@ -38,9 +38,9 @@
 // Give fresh spawns more breathing room before re-entering contested space.
 #define SHROOM_SPAWN_SAFE_DISTANCE 440.0f
 
-/* Splitting — only allowed at max mass */
-#define SHROOM_SPLIT_MIN_MASS SHROOM_MAX_PLAYER_MASS
-#define SHROOM_SPLIT_MASS_THRESHOLD SHROOM_MAX_PLAYER_MASS
+/* Splitting — requires near-max mass (1 unit below cap to absorb float decay) */
+#define SHROOM_SPLIT_MIN_MASS (SHROOM_MAX_PLAYER_MASS - 1.0f)
+#define SHROOM_SPLIT_MASS_THRESHOLD (SHROOM_MAX_PLAYER_MASS - 1.0f)
 #define SHROOM_SPLIT_MERGE_SECONDS 10.0f
 #define SHROOM_MAX_SPLIT_PIECES 4
 #define SHROOM_SPLIT_IMPULSE_SPEED 220.0f

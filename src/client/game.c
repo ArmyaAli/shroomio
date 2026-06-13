@@ -1311,7 +1311,7 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
       ShroomImGui_TextColored(ToImGuiColor(YELLOW),
                               TextFormat("Pieces %d  Tab to switch", game->local_piece_count));
     } else if (game->local_player->mass >= SHROOM_SPLIT_MIN_MASS) {
-      ShroomImGui_TextColored(ToImGuiColor(SKYBLUE), "Max mass  Space to split");
+      ShroomImGui_TextColored(ToImGuiColor(SKYBLUE), "Max size  Space to split");
     }
     ShroomImGui_Text(TextFormat("Players %d   Spores %d", (int)game->world.player_count,
                                 (int)game->world.spore_count));
