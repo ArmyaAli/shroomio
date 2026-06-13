@@ -4,6 +4,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
     clang-format \
+    cppcheck \
     curl \
     docker.io \
     gdb \
