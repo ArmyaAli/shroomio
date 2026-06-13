@@ -686,13 +686,14 @@ static void DrawOffscreenIndicators(const Game* game) {
     indicator_position = Vector2Add(screen_center, Vector2Scale(direction, scale));
     direction = Vector2Normalize(direction);
     perpendicular = (Vector2){-direction.y, direction.x};
-    base_center = Vector2Subtract(indicator_position, Vector2Scale(direction, 16.0f));
+    base_center = Vector2Subtract(indicator_position, Vector2Scale(direction, 10.0f));
 
-    DrawLineEx(Vector2Subtract(indicator_position, Vector2Scale(direction, 24.0f)),
-               indicator_position, 3.0f, Fade(color, 0.7f));
-    DrawTriangle(indicator_position, Vector2Add(base_center, Vector2Scale(perpendicular, 8.0f)),
-                 Vector2Subtract(base_center, Vector2Scale(perpendicular, 8.0f)), color);
-    DrawCircleV(base_center, 4.0f, Fade(color, 0.75f));
+    DrawLineEx(Vector2Subtract(indicator_position, Vector2Scale(direction, 14.0f)),
+               indicator_position, 5.0f, Fade(color, 0.76f));
+    DrawTriangle(indicator_position, Vector2Add(base_center, Vector2Scale(perpendicular, 12.0f)),
+                 Vector2Subtract(base_center, Vector2Scale(perpendicular, 12.0f)), color);
+    DrawCircleV(Vector2Subtract(base_center, Vector2Scale(direction, 6.0f)), 6.0f,
+                Fade(color, 0.82f));
   }
 }
 
