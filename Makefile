@@ -423,7 +423,7 @@ $(LINUX_BUILD_DIR)/server/%.o: $(SERVER_SRC_DIR)/%.c | $(VCPKG_LINUX_STAMP)
 .PHONY: vendor vcpkg-bootstrap vcpkg-install vcpkg-install-linux vcpkg-install-windows
 
 vcpkg-bootstrap:
-	@test -x "$(VCPKG_BIN)" || bash "$(VCPKG_ROOT)/bootstrap-vcpkg.sh" -disableMetrics
+	@test -x "$(VCPKG_BIN)" || test ! -f "$(VCPKG_ROOT)/bootstrap-vcpkg.sh" || bash "$(VCPKG_ROOT)/bootstrap-vcpkg.sh" -disableMetrics
 
 $(VCPKG_LINUX_STAMP): vcpkg.json | vcpkg-bootstrap
 	@$(MKDIR_P) $(VCPKG_LINUX_INSTALLED_DIR)
@@ -589,7 +589,7 @@ GIT_USER_NAME := $(shell git config --global --get user.name)
 GIT_USER_EMAIL := $(shell git config --global --get user.email)
 
 # Server Docker targets
-docker-server:
+docker-server: $(VCPKG_LINUX_STAMP)
 	$(DOCKER) build -f Dockerfile.server -t $(SERVER_IMAGE) .
 
 docker-run-server: docker-server

@@ -2,3 +2,22 @@ build/
 dist/
 .git/
 vendor/raylib-5.5/
+# Exclude large client-only vcpkg artifacts; Dockerfile.server COPYs enet explicitly
+vcpkg_installed/windows/
+vcpkg_installed/linux/x64-linux/lib/libraylib.a
+vcpkg_installed/linux/x64-linux/lib/libimgui.a
+vcpkg_installed/linux/x64-linux/lib/libglfw3.a
+vcpkg_installed/linux/x64-linux/lib/pkgconfig/
+vcpkg_installed/linux/x64-linux/include/raylib.h
+vcpkg_installed/linux/x64-linux/include/rlgl.h
+vcpkg_installed/linux/x64-linux/include/raymath.h
+vcpkg_installed/linux/x64-linux/include/rcamera.h
+vcpkg_installed/linux/x64-linux/include/rgestures.h
+vcpkg_installed/linux/x64-linux/include/imgui.h
+vcpkg_installed/linux/x64-linux/include/imgui_internal.h
+vcpkg_installed/linux/x64-linux/include/imconfig.h
+vcpkg_installed/linux/x64-linux/include/imstb_rectpack.h
+vcpkg_installed/linux/x64-linux/include/imstb_textedit.h
+vcpkg_installed/linux/x64-linux/include/imstb_truetype.h
+vcpkg_installed/linux/x64-linux/include/imgui_te_imconfig.h
+vcpkg_installed/linux/x64-linux/include/GLFW/
