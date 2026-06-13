@@ -1,5 +1,6 @@
 #include "sim.h"
 
+#include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <time.h>
@@ -113,6 +114,7 @@ static void ShroomRespawnPlayer(ShroomWorldState* world, ShroomPlayerState* play
   player->input_direction = (ShroomVec2){0};
   player->mass = SHROOM_DEFAULT_PLAYER_MASS;
   player->radius = ShroomMassToRadius(player->mass);
+  player->decay_spore_accumulator = 0.0f;
   player->alive = true;
 }
 
@@ -150,6 +152,27 @@ static void ShroomSpawnOrResetSpore(ShroomWorldState* world, ShroomSporeState* s
   if (spore->entity_id == 0) {
     spore->entity_id = world->next_entity_id++;
   }
+}
+
+static void ShroomSpawnDecaySpore(ShroomWorldState* world, ShroomVec2 position, uint16_t value) {
+  ShroomSporeState* spore;
+
+  if ((world == NULL) || (value == 0u)) {
+    return;
+  }
+
+  if (world->spore_count < SHROOM_MAX_SPORES) {
+    spore = &world->spores[world->spore_count++];
+  } else {
+    spore = &world->spores[ShroomNextRandom(world) % world->spore_count];
+  }
+
+  *spore = (ShroomSporeState){
+      .entity_id = spore->entity_id != 0 ? spore->entity_id : world->next_entity_id++,
+      .position = position,
+      .value = value,
+      .active = true,
+  };
 }
 
 static void ShroomInitializeSpores(ShroomWorldState* world) {
@@ -320,7 +343,8 @@ static void ShroomCollectSpores(ShroomWorldState* world) {
 
       if (ShroomDistanceSqr(player->position, spore->position) <=
           (collection_radius * collection_radius)) {
-        player->mass += (float)spore->value;
+        player->mass =
+            ShroomClamp(player->mass + (float)spore->value, 0.0f, SHROOM_MAX_PLAYER_MASS);
         ShroomSpawnOrResetSpore(world, spore);
       }
     }
@@ -373,7 +397,8 @@ static void ShroomResolveConsumes(ShroomWorldState* world) {
       ShroomPlayerState* victim = &world->players[attacker_index];
       ShroomPlayerState* winner = &world->players[consumed_by[attacker_index]];
 
-      winner->mass += victim->mass * SHROOM_CONSUME_MASS_GAIN_FACTOR;
+      winner->mass = ShroomClamp(winner->mass + (victim->mass * SHROOM_CONSUME_MASS_GAIN_FACTOR),
+                                 0.0f, SHROOM_MAX_PLAYER_MASS);
       victim->alive = false;
       ShroomRespawnPlayer(world, victim);
     }
@@ -383,10 +408,64 @@ static void ShroomResolveConsumes(ShroomWorldState* world) {
 float ShroomMassToRadius(float mass) { return 10.0f + (mass * 0.14f); }
 
 float ShroomMassToSpeed(float mass) {
+  const float decay_threshold = SHROOM_DEFAULT_PLAYER_MASS * 8.0f;
+  const float floor_speed = SHROOM_MIN_PLAYER_SPEED * SHROOM_SPEED_FLOOR_FACTOR;
   const float scaled_mass = mass * SHROOM_PLAYER_SPEED_MASS_SCALE;
   const float speed = SHROOM_MAX_PLAYER_SPEED / (1.0f + (scaled_mass / 100.0f));
+  const float clamped_base_speed =
+      ShroomClamp(speed, SHROOM_MIN_PLAYER_SPEED, SHROOM_MAX_PLAYER_SPEED);
 
-  return ShroomClamp(speed, SHROOM_MIN_PLAYER_SPEED, SHROOM_MAX_PLAYER_SPEED);
+  if (mass <= decay_threshold) {
+    return clamped_base_speed;
+  }
+
+  if (SHROOM_MAX_PLAYER_MASS <= decay_threshold) {
+    return floor_speed;
+  }
+
+  return ShroomClamp(
+      SHROOM_MIN_PLAYER_SPEED +
+          ((floor_speed - SHROOM_MIN_PLAYER_SPEED) *
+           ShroomClamp((mass - decay_threshold) / (SHROOM_MAX_PLAYER_MASS - decay_threshold), 0.0f,
+                       1.0f)),
+      floor_speed, SHROOM_MIN_PLAYER_SPEED);
+}
+
+static void ShroomApplyMassRules(ShroomWorldState* world, float delta_time) {
+  size_t index;
+
+  for (index = 0; index < world->player_count; ++index) {
+    ShroomPlayerState* player = &world->players[index];
+
+    if (!player->alive) {
+      continue;
+    }
+
+    player->mass = ShroomClamp(player->mass, 0.0f, SHROOM_MAX_PLAYER_MASS);
+    if (player->mass > SHROOM_DECAY_MASS_THRESHOLD) {
+      const float excess_mass = player->mass - SHROOM_DECAY_MASS_THRESHOLD;
+      const float decay_mass = excess_mass * SHROOM_DECAY_RATE_PER_SECOND * delta_time;
+      const float eject_radius = player->radius + 12.0f;
+      const float angle = ShroomRandomFloat(world, 0.0f, 6.2831853f);
+      const ShroomVec2 spore_position = {
+          ShroomClamp(player->position.x + (cosf(angle) * eject_radius), 60.0f,
+                      world->width - 60.0f),
+          ShroomClamp(player->position.y + (sinf(angle) * eject_radius), 60.0f,
+                      world->height - 60.0f),
+      };
+      uint16_t spore_value;
+
+      player->mass = ShroomClamp(player->mass - decay_mass, 0.0f, SHROOM_MAX_PLAYER_MASS);
+      player->decay_spore_accumulator += decay_mass;
+      spore_value = (uint16_t)player->decay_spore_accumulator;
+      if (spore_value > 0u) {
+        ShroomSpawnDecaySpore(world, spore_position, spore_value);
+        player->decay_spore_accumulator -= (float)spore_value;
+      }
+    }
+
+    player->radius = ShroomMassToRadius(player->mass);
+  }
 }
 
 void ShroomWorldInitWithSeed(ShroomWorldState* world, uint32_t seed) {
@@ -478,6 +557,7 @@ void ShroomWorldStep(ShroomWorldState* world, float delta_time) {
 
   ShroomCollectSpores(world);
   ShroomResolveConsumes(world);
+  ShroomApplyMassRules(world, delta_time);
 
   world->tick += 1;
 }

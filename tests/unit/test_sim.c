@@ -63,17 +63,20 @@ void test_zone_classification_matches_center_mid_and_outer(void) {
   TEST_ASSERT_EQUAL(SHROOM_ZONE_CENTER, ShroomGetZoneAtPosition(&world, center));
   TEST_ASSERT_EQUAL(
       SHROOM_ZONE_MID,
-      ShroomGetZoneAtPosition(&world, (ShroomVec2){center.x + SHROOM_ZONE_CENTER_RADIUS + 10.0f, center.y}));
-  TEST_ASSERT_EQUAL(
-      SHROOM_ZONE_OUTER,
-      ShroomGetZoneAtPosition(&world, (ShroomVec2){center.x + SHROOM_ZONE_MID_RADIUS + 10.0f, center.y}));
+      ShroomGetZoneAtPosition(
+          &world, (ShroomVec2){center.x + SHROOM_ZONE_CENTER_RADIUS + 10.0f, center.y}));
+  TEST_ASSERT_EQUAL(SHROOM_ZONE_OUTER,
+                    ShroomGetZoneAtPosition(
+                        &world, (ShroomVec2){center.x + SHROOM_ZONE_MID_RADIUS + 10.0f, center.y}));
 }
 
 void test_mass_helpers_respect_expected_scaling_and_bounds(void) {
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 24.0f, ShroomMassToRadius(100.0f));
   TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_MAX_PLAYER_SPEED, ShroomMassToSpeed(0.0f));
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_MIN_PLAYER_SPEED, ShroomMassToSpeed(100000.0f));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_MIN_PLAYER_SPEED * SHROOM_SPEED_FLOOR_FACTOR,
+                           ShroomMassToSpeed(100000.0f));
   TEST_ASSERT_TRUE(ShroomMassToSpeed(100.0f) > ShroomMassToSpeed(500.0f));
+  TEST_ASSERT_TRUE(ShroomMassToSpeed(SHROOM_DECAY_MASS_THRESHOLD * 1.5f) < SHROOM_MIN_PLAYER_SPEED);
 }
 
 void test_spawn_player_prefers_safe_outer_spawn(void) {
@@ -91,9 +94,8 @@ void test_spawn_player_prefers_safe_outer_spawn(void) {
   TEST_ASSERT_NOT_NULL(second);
   TEST_ASSERT_EQUAL(SHROOM_ZONE_OUTER, ShroomGetZoneAtPosition(&world, first->position));
   TEST_ASSERT_EQUAL(SHROOM_ZONE_OUTER, ShroomGetZoneAtPosition(&world, second->position));
-  TEST_ASSERT_GREATER_OR_EQUAL_FLOAT(
-      min_distance * min_distance,
-      ShroomDistanceSqr(first->position, second->position));
+  TEST_ASSERT_GREATER_OR_EQUAL_FLOAT(min_distance * min_distance,
+                                     ShroomDistanceSqr(first->position, second->position));
 }
 
 void test_world_step_moves_player_and_increments_tick(void) {
@@ -179,9 +181,9 @@ void test_world_step_consumes_player_when_mass_advantage_and_overlap_match(void)
   TEST_ASSERT_TRUE(victim->alive);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_DEFAULT_PLAYER_MASS, victim->mass);
   TEST_ASSERT_EQUAL(SHROOM_ZONE_OUTER, ShroomGetZoneAtPosition(&world, victim->position));
-  TEST_ASSERT_GREATER_THAN_FLOAT(
-      (victim->radius + SHROOM_SPAWN_SAFE_DISTANCE) * (victim->radius + SHROOM_SPAWN_SAFE_DISTANCE),
-      ShroomDistanceSqr(attacker->position, victim->position));
+  TEST_ASSERT_GREATER_THAN_FLOAT((victim->radius + SHROOM_SPAWN_SAFE_DISTANCE) *
+                                     (victim->radius + SHROOM_SPAWN_SAFE_DISTANCE),
+                                 ShroomDistanceSqr(attacker->position, victim->position));
 }
 
 void test_world_step_does_not_consume_without_required_mass_advantage(void) {
@@ -232,6 +234,50 @@ void test_spawn_player_reuses_inactive_slot(void) {
   TEST_ASSERT_EQUAL_UINT32(2u, second->player_id);
 }
 
+void test_world_step_caps_mass_gain_at_configured_maximum(void) {
+  ShroomPlayerState* player;
+
+  ResetWorldForPlayers();
+
+  player = ShroomWorldSpawnPlayer(&world, 1, false);
+  TEST_ASSERT_NOT_NULL(player);
+
+  player->mass = SHROOM_MAX_PLAYER_MASS - 1.0f;
+  player->radius = ShroomMassToRadius(player->mass);
+  world.spore_count = 1;
+  world.spores[0] = (ShroomSporeState){
+      .entity_id = 1,
+      .position = player->position,
+      .value = SHROOM_SPORE_VALUE,
+      .active = true,
+  };
+
+  ShroomWorldStep(&world, 0.0f);
+
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_MAX_PLAYER_MASS, player->mass);
+}
+
+void test_world_step_decays_oversized_player_and_ejects_spore_mass(void) {
+  ShroomPlayerState* player;
+
+  ResetWorldForPlayers();
+  world.spore_count = 0;
+
+  player = ShroomWorldSpawnPlayer(&world, 1, false);
+  TEST_ASSERT_NOT_NULL(player);
+
+  player->position = (ShroomVec2){3000.0f, 3000.0f};
+  player->mass = SHROOM_DECAY_MASS_THRESHOLD + 100.0f;
+  player->radius = ShroomMassToRadius(player->mass);
+
+  ShroomWorldStep(&world, 1.0f);
+
+  TEST_ASSERT_TRUE(player->mass < (SHROOM_DECAY_MASS_THRESHOLD + 100.0f));
+  TEST_ASSERT_EQUAL_size_t(1, world.spore_count);
+  TEST_ASSERT_TRUE(world.spores[0].active);
+  TEST_ASSERT_GREATER_THAN_UINT16(0u, world.spores[0].value);
+}
+
 void test_small_bot_prefers_safer_spore_over_slightly_closer_center_spore(void) {
   ShroomPlayerState* bot;
 
@@ -244,12 +290,10 @@ void test_small_bot_prefers_safer_spore_over_slightly_closer_center_spore(void) 
   bot->radius = ShroomMassToRadius(bot->mass);
   bot->position = (ShroomVec2){3950.0f, 3000.0f};
   world.spore_count = 2;
-  world.spores[0] =
-      (ShroomSporeState){.entity_id = 1, .position = {3880.0f, 3000.0f}, .value = SHROOM_SPORE_VALUE,
-                         .active = true};
-  world.spores[1] =
-      (ShroomSporeState){.entity_id = 2, .position = {4035.0f, 3000.0f}, .value = SHROOM_SPORE_VALUE,
-                         .active = true};
+  world.spores[0] = (ShroomSporeState){
+      .entity_id = 1, .position = {3880.0f, 3000.0f}, .value = SHROOM_SPORE_VALUE, .active = true};
+  world.spores[1] = (ShroomSporeState){
+      .entity_id = 2, .position = {4035.0f, 3000.0f}, .value = SHROOM_SPORE_VALUE, .active = true};
 
   ShroomWorldStep(&world, 0.0f);
 
@@ -268,12 +312,10 @@ void test_large_bot_prefers_center_pressure_spore_choice(void) {
   bot->radius = ShroomMassToRadius(bot->mass);
   bot->position = (ShroomVec2){3950.0f, 3000.0f};
   world.spore_count = 2;
-  world.spores[0] =
-      (ShroomSporeState){.entity_id = 1, .position = {3880.0f, 3000.0f}, .value = SHROOM_SPORE_VALUE,
-                         .active = true};
-  world.spores[1] =
-      (ShroomSporeState){.entity_id = 2, .position = {4035.0f, 3000.0f}, .value = SHROOM_SPORE_VALUE,
-                         .active = true};
+  world.spores[0] = (ShroomSporeState){
+      .entity_id = 1, .position = {3880.0f, 3000.0f}, .value = SHROOM_SPORE_VALUE, .active = true};
+  world.spores[1] = (ShroomSporeState){
+      .entity_id = 2, .position = {4035.0f, 3000.0f}, .value = SHROOM_SPORE_VALUE, .active = true};
 
   ShroomWorldStep(&world, 0.0f);
 
@@ -325,6 +367,8 @@ int main(void) {
   RUN_TEST(test_world_step_consumes_player_when_mass_advantage_and_overlap_match);
   RUN_TEST(test_world_step_does_not_consume_without_required_mass_advantage);
   RUN_TEST(test_spawn_player_reuses_inactive_slot);
+  RUN_TEST(test_world_step_caps_mass_gain_at_configured_maximum);
+  RUN_TEST(test_world_step_decays_oversized_player_and_ejects_spore_mass);
   RUN_TEST(test_small_bot_prefers_safer_spore_over_slightly_closer_center_spore);
   RUN_TEST(test_large_bot_prefers_center_pressure_spore_choice);
   RUN_TEST(test_bot_flees_nearby_threat_even_with_available_prey);
