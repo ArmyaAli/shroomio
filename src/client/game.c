@@ -23,6 +23,8 @@ static const Color kBotColors[] = {
 
 static const float kRemoteInterpolationRate = 10.0f;
 static const float kStatusBannerDuration = 2.0f;
+static const float kProximityMapRadius = 74.0f;
+static const float kProximityMapRange = 1400.0f;
 
 static bool IsOnlineMode(GameSessionMode mode) { return mode == SHROOM_SESSION_MODE_QUICK_PLAY; }
 
@@ -965,6 +967,81 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
   ShroomImGui_End();
 }
 
+static void DrawProximityMap(const Game* game) {
+  const Vector2 center = {98.0f, game->screen_height - 98.0f};
+  const float inner_radius = kProximityMapRadius - 10.0f;
+  const float pulse = 0.6f + (0.4f * (0.5f + 0.5f * sinf(game->inspect_prompt_timer * 4.6f)));
+  const float sweep_radius = inner_radius * (0.72f + 0.12f * pulse);
+  const ShroomVec2 local_position = game->local_player->position;
+
+  DrawCircleV(center, kProximityMapRadius + 6.0f, Fade(BLACK, 0.26f));
+  DrawCircleV(center, kProximityMapRadius, Fade((Color){18, 24, 30, 255}, 0.82f));
+  DrawCircleLinesV(center, kProximityMapRadius, Fade(SKYBLUE, 0.38f));
+  DrawCircleLinesV(center, kProximityMapRadius * 0.66f, Fade(DARKGREEN, 0.35f));
+  DrawCircleLinesV(center, kProximityMapRadius * 0.33f, Fade(DARKGREEN, 0.25f));
+  DrawCircleLinesV(center, sweep_radius, Fade(SKYBLUE, 0.20f + pulse * 0.18f));
+  DrawLineV((Vector2){center.x - inner_radius, center.y},
+            (Vector2){center.x + inner_radius, center.y}, Fade(RAYWHITE, 0.08f));
+  DrawLineV((Vector2){center.x, center.y - inner_radius},
+            (Vector2){center.x, center.y + inner_radius}, Fade(RAYWHITE, 0.08f));
+
+  for (size_t index = 0; index < game->world.spore_count; ++index) {
+    const ShroomSporeState* spore = &game->world.spores[index];
+    const ShroomVec2 delta = ShroomVec2Sub(spore->position, local_position);
+    const float distance_sqr = ShroomVec2LengthSqr(delta);
+    Vector2 map_position;
+    float scale;
+
+    if (!spore->active || (distance_sqr > (kProximityMapRange * kProximityMapRange))) {
+      continue;
+    }
+
+    scale = inner_radius / kProximityMapRange;
+    map_position = (Vector2){center.x + (delta.x * scale), center.y + (delta.y * scale)};
+    if (Vector2DistanceSqr(center, map_position) > (inner_radius * inner_radius)) {
+      continue;
+    }
+
+    DrawCircleV(map_position, 2.5f, Fade(GOLD, 0.88f));
+  }
+
+  for (size_t index = 0; index < game->world.player_count; ++index) {
+    const ShroomPlayerState* player = &game->world.players[index];
+    const PlayerThreatState threat_state = GetThreatState(game->local_player, player);
+    const ShroomVec2 delta = ShroomVec2Sub(player->position, local_position);
+    const float distance_sqr = ShroomVec2LengthSqr(delta);
+    Vector2 map_position;
+    float scale;
+    float dot_radius;
+    Color dot_color;
+
+    if (!player->alive || (player == game->local_player) ||
+        (distance_sqr > (kProximityMapRange * kProximityMapRange))) {
+      continue;
+    }
+
+    scale = inner_radius / kProximityMapRange;
+    map_position = (Vector2){center.x + (delta.x * scale), center.y + (delta.y * scale)};
+    if (Vector2DistanceSqr(center, map_position) > (inner_radius * inner_radius)) {
+      continue;
+    }
+
+    dot_radius = player->is_bot ? 3.5f : 4.0f;
+    dot_color = player->is_bot ? Fade(GetPlayerFillColor(game, player), 0.92f)
+                               : Fade(GetThreatOutlineColor(threat_state), 0.92f);
+    if (threat_state == PLAYER_THREAT_DANGER) {
+      dot_radius += pulse * 1.4f;
+    }
+
+    DrawCircleV(map_position, dot_radius, dot_color);
+  }
+
+  DrawCircleV(center, 5.5f, RAYWHITE);
+  DrawCircleLinesV(center, 8.0f, Fade(SKYBLUE, 0.75f));
+  DrawText("SCAN", (int)(center.x - 18.0f), (int)(center.y + kProximityMapRadius + 10.0f), 12,
+           Fade(RAYWHITE, 0.78f));
+}
+
 static ShroomVec2 GetMovementInput(const Game* game) {
   const Vector2 mouse_screen = GetMousePosition();
   const Vector2 mouse_world = GetScreenToWorld2D(mouse_screen, game->camera);
@@ -1110,6 +1187,7 @@ void GameDraw(Game* game) {
   EndMode2D();
 
   DrawOffscreenIndicators(game);
+  DrawProximityMap(game);
   DrawGameplayHud(game, local_rank, leaderboard_count, zone);
   DrawInspectPrompt(game);
   DrawStatusBanners(game);
