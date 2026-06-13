@@ -59,6 +59,9 @@ static ImGuiTableFlags ToImGuiTableFlags(int flags) {
   if ((flags & SHROOM_IMGUI_TABLE_SIZING_STRETCH) != 0) {
     imgui_flags |= ImGuiTableFlags_SizingStretchSame;
   }
+  if ((flags & SHROOM_IMGUI_TABLE_SIZING_FIXED) != 0) {
+    imgui_flags |= ImGuiTableFlags_SizingFixedFit;
+  }
 
   return imgui_flags;
 }

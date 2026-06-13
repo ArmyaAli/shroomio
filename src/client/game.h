@@ -14,6 +14,7 @@
 typedef enum GameSessionMode {
   SHROOM_SESSION_MODE_QUICK_PLAY = 0,
   SHROOM_SESSION_MODE_OFFLINE_PRACTICE,
+  SHROOM_SESSION_MODE_LOBBY_PLAY, /* connected via lobby browser, net already up */
 } GameSessionMode;
 
 typedef struct ShroomPendingInput {
@@ -42,6 +43,7 @@ typedef struct Game {
   bool leave_confirmation_open;
   bool inspect_overlay_open;
   bool return_to_menu_requested;
+  bool auto_join_lobby; /* set by Play Online — join best lobby on list receipt */
   bool chat_open;
   bool chat_minimized;
   bool chat_focus_input;

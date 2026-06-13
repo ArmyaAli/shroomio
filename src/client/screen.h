@@ -60,6 +60,7 @@ void ShroomScreenRegisterSettings(ShroomScreenManager* manager);
 void ShroomScreenRegisterHelp(ShroomScreenManager* manager);
 void ShroomScreenRegisterCredits(ShroomScreenManager* manager);
 void ShroomScreenRegisterServerBrowser(ShroomScreenManager* manager);
+void ShroomScreenRegisterLobbyBrowser(ShroomScreenManager* manager);
 void ShroomScreenRegisterGame(ShroomScreenManager* manager);
 
 #ifdef TEST_MODE

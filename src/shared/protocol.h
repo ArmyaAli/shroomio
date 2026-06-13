@@ -10,9 +10,10 @@
 #define SHROOM_SERVER_PORT 7777u
 #define SHROOM_MAX_PASSWORD_LENGTH 64u
 #define SHROOM_AUTH_TOKEN_LENGTH 64u
-#define SHROOM_SERVER_MAX_CLIENTS 128u
+/* Total ENet peers across all lobbies (SHROOM_MAX_LOBBIES * SHROOM_MAX_PLAYERS). */
+#define SHROOM_SERVER_MAX_CLIENTS 1024u
 #define SHROOM_SNAPSHOT_RATE 15u
-#define SHROOM_MAX_SNAPSHOT_PLAYERS 128u
+#define SHROOM_MAX_SNAPSHOT_PLAYERS 256u
 #define SHROOM_SPORE_STATE_RATE 5u
 #define SHROOM_LATENCY_WARNING_MS 150u
 #define SHROOM_LATENCY_UNPLAYABLE_MS 200u
@@ -40,6 +41,13 @@ typedef enum ShroomPacketType {
   SHROOM_PACKET_AUTH_REQUEST = 8,
   SHROOM_PACKET_AUTH_RESPONSE = 9,
   SHROOM_PACKET_CHAT = 10,
+  SHROOM_PACKET_LOBBY_LIST_QUERY = 11,
+  SHROOM_PACKET_LOBBY_LIST = 12,
+  SHROOM_PACKET_LOBBY_JOIN = 13,
+  SHROOM_PACKET_LOBBY_JOINED = 14,
+  SHROOM_PACKET_LOBBY_LEAVE = 15,
+  SHROOM_PACKET_LOBBY_CREATE = 16,
+  SHROOM_PACKET_LOBBY_CREATED = 17,
 } ShroomPacketType;
 
 typedef enum ShroomAuthMethod {
@@ -80,6 +88,14 @@ static inline uint8_t ShroomPacketTypeToChannel(ShroomPacketType type) {
     return SHROOM_ENET_CHANNEL_INPUT;
   case SHROOM_PACKET_CHAT:
     return SHROOM_ENET_CHANNEL_CHAT;
+  case SHROOM_PACKET_LOBBY_LIST_QUERY:
+  case SHROOM_PACKET_LOBBY_LIST:
+  case SHROOM_PACKET_LOBBY_JOIN:
+  case SHROOM_PACKET_LOBBY_JOINED:
+  case SHROOM_PACKET_LOBBY_LEAVE:
+  case SHROOM_PACKET_LOBBY_CREATE:
+  case SHROOM_PACKET_LOBBY_CREATED:
+    return SHROOM_ENET_CHANNEL_CONTROL;
   default:
     return SHROOM_ENET_CHANNEL_CONTROL;
   }
@@ -95,6 +111,13 @@ static inline bool ShroomPacketTypeUsesReliableDelivery(ShroomPacketType type) {
   case SHROOM_PACKET_AUTH_RESPONSE:
     return true;
   case SHROOM_PACKET_CHAT:
+  case SHROOM_PACKET_LOBBY_LIST_QUERY:
+  case SHROOM_PACKET_LOBBY_LIST:
+  case SHROOM_PACKET_LOBBY_JOIN:
+  case SHROOM_PACKET_LOBBY_JOINED:
+  case SHROOM_PACKET_LOBBY_LEAVE:
+  case SHROOM_PACKET_LOBBY_CREATE:
+  case SHROOM_PACKET_LOBBY_CREATED:
     return true;
   case SHROOM_PACKET_INPUT:
   case SHROOM_PACKET_SNAPSHOT:
@@ -217,6 +240,64 @@ typedef struct ShroomAuthResponsePacket {
   char token[SHROOM_AUTH_TOKEN_LENGTH];
   char message[64];
 } ShroomAuthResponsePacket;
+
+/* One entry in a lobby list response. */
+typedef struct ShroomLobbyEntry {
+  uint32_t lobby_id;
+  char name[SHROOM_LOBBY_MAX_NAME_LENGTH];
+  uint16_t player_count;
+  uint16_t bot_count;
+  uint16_t max_players;
+  uint16_t spectator_count;
+  uint8_t is_dynamic;
+  uint8_t reserved[3];
+} ShroomLobbyEntry;
+
+typedef struct ShroomLobbyListPacket {
+  ShroomPacketHeader header;
+  uint8_t lobby_count;
+  uint8_t reserved[3];
+  ShroomLobbyEntry lobbies[SHROOM_MAX_LOBBIES];
+} ShroomLobbyListPacket;
+
+typedef struct ShroomLobbyJoinPacket {
+  ShroomPacketHeader header;
+  uint32_t lobby_id;
+  uint8_t spectate; /* 0 = play, 1 = spectate */
+  uint8_t reserved[3];
+} ShroomLobbyJoinPacket;
+
+typedef struct ShroomLobbyJoinedPacket {
+  ShroomPacketHeader header;
+  uint32_t lobby_id;
+  uint32_t player_id;
+  uint32_t entity_id;
+  uint8_t spectating;
+  uint8_t reserved[3];
+  char lobby_name[SHROOM_LOBBY_MAX_NAME_LENGTH];
+  uint16_t server_tick_rate;
+  uint16_t snapshot_rate;
+  float world_width;
+  float world_height;
+} ShroomLobbyJoinedPacket;
+
+typedef struct ShroomLobbyLeavePacket {
+  ShroomPacketHeader header;
+  uint32_t lobby_id;
+} ShroomLobbyLeavePacket;
+
+typedef struct ShroomLobbyCreatePacket {
+  ShroomPacketHeader header;
+  char name[SHROOM_LOBBY_MAX_NAME_LENGTH]; /* empty = auto-name */
+  uint16_t max_players;
+  uint16_t reserved;
+} ShroomLobbyCreatePacket;
+
+typedef struct ShroomLobbyCreatedPacket {
+  ShroomPacketHeader header;
+  uint32_t lobby_id;
+  char name[SHROOM_LOBBY_MAX_NAME_LENGTH];
+} ShroomLobbyCreatedPacket;
 
 /* Sent client->server; server validates, then broadcasts to all peers. */
 typedef struct ShroomChatPacket {

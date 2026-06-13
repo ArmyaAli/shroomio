@@ -37,6 +37,7 @@ enum {
   SHROOM_IMGUI_TABLE_ROW_BG = 1 << 1,
   SHROOM_IMGUI_TABLE_SCROLL_Y = 1 << 2,
   SHROOM_IMGUI_TABLE_SIZING_STRETCH = 1 << 3,
+  SHROOM_IMGUI_TABLE_SIZING_FIXED = 1 << 4, /* allows explicit pixel widths per column */
 };
 
 enum {

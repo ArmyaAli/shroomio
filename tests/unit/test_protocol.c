@@ -41,6 +41,120 @@ void test_packet_type_values(void) {
   TEST_ASSERT_EQUAL(5, SHROOM_PACKET_PING);
   TEST_ASSERT_EQUAL(6, SHROOM_PACKET_PONG);
   TEST_ASSERT_EQUAL(7, SHROOM_PACKET_SPORE_STATE);
+  TEST_ASSERT_EQUAL(11, SHROOM_PACKET_LOBBY_LIST_QUERY);
+  TEST_ASSERT_EQUAL(12, SHROOM_PACKET_LOBBY_LIST);
+  TEST_ASSERT_EQUAL(13, SHROOM_PACKET_LOBBY_JOIN);
+  TEST_ASSERT_EQUAL(14, SHROOM_PACKET_LOBBY_JOINED);
+  TEST_ASSERT_EQUAL(15, SHROOM_PACKET_LOBBY_LEAVE);
+  TEST_ASSERT_EQUAL(16, SHROOM_PACKET_LOBBY_CREATE);
+  TEST_ASSERT_EQUAL(17, SHROOM_PACKET_LOBBY_CREATED);
+}
+
+void test_lobby_packet_channel_mapping(void) {
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CONTROL,
+                    ShroomPacketTypeToChannel(SHROOM_PACKET_LOBBY_LIST_QUERY));
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CONTROL,
+                    ShroomPacketTypeToChannel(SHROOM_PACKET_LOBBY_LIST));
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CONTROL,
+                    ShroomPacketTypeToChannel(SHROOM_PACKET_LOBBY_JOIN));
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CONTROL,
+                    ShroomPacketTypeToChannel(SHROOM_PACKET_LOBBY_JOINED));
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CONTROL,
+                    ShroomPacketTypeToChannel(SHROOM_PACKET_LOBBY_LEAVE));
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CONTROL,
+                    ShroomPacketTypeToChannel(SHROOM_PACKET_LOBBY_CREATE));
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CONTROL,
+                    ShroomPacketTypeToChannel(SHROOM_PACKET_LOBBY_CREATED));
+}
+
+void test_lobby_packet_reliability(void) {
+  TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_LOBBY_LIST_QUERY));
+  TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_LOBBY_LIST));
+  TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_LOBBY_JOIN));
+  TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_LOBBY_JOINED));
+  TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_LOBBY_LEAVE));
+  TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_LOBBY_CREATE));
+  TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_LOBBY_CREATED));
+}
+
+void test_lobby_entry_struct(void) {
+  ShroomLobbyEntry entry;
+  memset(&entry, 0, sizeof(entry));
+
+  entry.lobby_id = 1;
+  strncpy(entry.name, "Arena 1", SHROOM_LOBBY_MAX_NAME_LENGTH);
+  entry.player_count = 3;
+  entry.bot_count = 15;
+  entry.max_players = 28;
+  entry.spectator_count = 1;
+  entry.is_dynamic = 0;
+
+  TEST_ASSERT_EQUAL(1, entry.lobby_id);
+  TEST_ASSERT_EQUAL_STRING("Arena 1", entry.name);
+  TEST_ASSERT_EQUAL(3, entry.player_count);
+  TEST_ASSERT_EQUAL(15, entry.bot_count);
+  TEST_ASSERT_EQUAL(28, entry.max_players);
+  TEST_ASSERT_EQUAL(1, entry.spectator_count);
+  TEST_ASSERT_EQUAL(0, entry.is_dynamic);
+}
+
+void test_lobby_join_packet_initialization(void) {
+  ShroomLobbyJoinPacket packet;
+  memset(&packet, 0, sizeof(packet));
+
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_JOIN, sizeof(packet));
+  packet.lobby_id = 2;
+  packet.spectate = 1;
+
+  TEST_ASSERT_EQUAL(SHROOM_PACKET_LOBBY_JOIN, packet.header.type);
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CONTROL, packet.header.reserved);
+  TEST_ASSERT_EQUAL(2, packet.lobby_id);
+  TEST_ASSERT_EQUAL(1, packet.spectate);
+}
+
+void test_lobby_joined_packet_initialization(void) {
+  ShroomLobbyJoinedPacket packet;
+  memset(&packet, 0, sizeof(packet));
+
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_JOINED, sizeof(packet));
+  packet.lobby_id = 3;
+  packet.player_id = 42;
+  packet.entity_id = 100;
+  packet.spectating = 0;
+  strncpy(packet.lobby_name, "Arena 3", SHROOM_LOBBY_MAX_NAME_LENGTH);
+  packet.server_tick_rate = 30;
+  packet.snapshot_rate = 15;
+  packet.world_width = 6000.0f;
+  packet.world_height = 6000.0f;
+
+  TEST_ASSERT_EQUAL(SHROOM_PACKET_LOBBY_JOINED, packet.header.type);
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CONTROL, packet.header.reserved);
+  TEST_ASSERT_EQUAL(3, packet.lobby_id);
+  TEST_ASSERT_EQUAL(42, packet.player_id);
+  TEST_ASSERT_EQUAL(0, packet.spectating);
+  TEST_ASSERT_EQUAL_STRING("Arena 3", packet.lobby_name);
+  TEST_ASSERT_EQUAL(30, packet.server_tick_rate);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 6000.0f, packet.world_width);
+}
+
+void test_lobby_list_packet_capacity(void) {
+  ShroomLobbyListPacket packet;
+  memset(&packet, 0, sizeof(packet));
+
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_LIST, sizeof(packet));
+  packet.lobby_count = SHROOM_MAX_LOBBIES;
+
+  TEST_ASSERT_EQUAL(SHROOM_PACKET_LOBBY_LIST, packet.header.type);
+  TEST_ASSERT_EQUAL(SHROOM_MAX_LOBBIES, packet.lobby_count);
+  /* Verify the lobbies array is within the packet. */
+  TEST_ASSERT_TRUE(sizeof(packet.lobbies) == SHROOM_MAX_LOBBIES * sizeof(ShroomLobbyEntry));
+}
+
+void test_lobby_config_constants(void) {
+  TEST_ASSERT_EQUAL(8, SHROOM_MAX_LOBBIES);
+  TEST_ASSERT_EQUAL(4, SHROOM_LOBBY_DEFAULT_COUNT);
+  TEST_ASSERT_EQUAL(32, SHROOM_LOBBY_MAX_NAME_LENGTH);
+  TEST_ASSERT_TRUE(SHROOM_LOBBY_DEFAULT_COUNT <= SHROOM_MAX_LOBBIES);
 }
 
 void test_protocol_constants(void) {
@@ -48,7 +162,7 @@ void test_protocol_constants(void) {
   TEST_ASSERT_EQUAL(1, SHROOM_PROTOCOL_VERSION);
   TEST_ASSERT_EQUAL(32, SHROOM_MAX_NAME_LENGTH);
   TEST_ASSERT_EQUAL(15, SHROOM_SNAPSHOT_RATE);
-  TEST_ASSERT_EQUAL(128, SHROOM_MAX_SNAPSHOT_PLAYERS);
+  TEST_ASSERT_EQUAL(256, SHROOM_MAX_SNAPSHOT_PLAYERS);
   TEST_ASSERT_EQUAL(5, SHROOM_SPORE_STATE_RATE);
   TEST_ASSERT_EQUAL(0, SHROOM_ENET_CHANNEL_CONTROL);
   TEST_ASSERT_EQUAL(1, SHROOM_ENET_CHANNEL_SNAPSHOT);
@@ -212,5 +326,12 @@ int main(void) {
   RUN_TEST(test_snapshot_player_state_initialization);
   RUN_TEST(test_snapshot_spore_state_size);
   RUN_TEST(test_spore_state_packet_initialization);
+  RUN_TEST(test_lobby_packet_channel_mapping);
+  RUN_TEST(test_lobby_packet_reliability);
+  RUN_TEST(test_lobby_entry_struct);
+  RUN_TEST(test_lobby_join_packet_initialization);
+  RUN_TEST(test_lobby_joined_packet_initialization);
+  RUN_TEST(test_lobby_list_packet_capacity);
+  RUN_TEST(test_lobby_config_constants);
   return UNITY_END();
 }

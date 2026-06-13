@@ -21,6 +21,7 @@ static void RegisterScreens(ShroomScreenManager* manager) {
   ShroomScreenRegisterHelp(manager);
   ShroomScreenRegisterCredits(manager);
   ShroomScreenRegisterServerBrowser(manager);
+  ShroomScreenRegisterLobbyBrowser(manager);
   ShroomScreenRegisterGame(manager);
 }
 
