@@ -57,6 +57,11 @@ typedef struct LeaderboardEntry {
   float mass;
 } LeaderboardEntry;
 
+typedef struct InspectCandidate {
+  uint32_t player_id;
+  float distance_sqr;
+} InspectCandidate;
+
 static bool IsConnectionOverlayOpen(const Game* game);
 static bool IsOverlayBlockingGameplay(const Game* game);
 static void BuildLeaderboard(const Game* game, LeaderboardEntry* entries, size_t* entry_count);
@@ -64,6 +69,22 @@ static void BuildLeaderboard(const Game* game, LeaderboardEntry* entries, size_t
 static const float kInspectRadius = 520.0f;
 static const float kInspectOpenRate = 8.5f;
 static const float kInspectCloseRate = 6.0f;
+
+static int CompareInspectCandidates(const void* left, const void* right) {
+  const InspectCandidate* lhs = left;
+  const InspectCandidate* rhs = right;
+
+  if (lhs->distance_sqr < rhs->distance_sqr) {
+    return -1;
+  }
+  if (lhs->distance_sqr > rhs->distance_sqr) {
+    return 1;
+  }
+
+  return 0;
+}
+
+static const ShroomPlayerState* FindPlayerById(const Game* game, uint32_t player_id);
 
 static ShroomImGuiColor ToImGuiColor(Color color) {
   return (ShroomImGuiColor){(float)color.r / 255.0f, (float)color.g / 255.0f,
@@ -191,12 +212,12 @@ static const char* GetThreatLabel(PlayerThreatState state) {
   }
 }
 
-static const ShroomPlayerState* FindBestInspectTarget(const Game* game) {
-  const ShroomPlayerState* best_player = NULL;
-  float best_distance_sqr = kInspectRadius * kInspectRadius;
+static int GatherInspectCandidates(const Game* game, InspectCandidate* candidates, int capacity) {
+  int count = 0;
 
-  if ((game == NULL) || (game->local_player == NULL) || !game->local_player->alive) {
-    return NULL;
+  if ((game == NULL) || (game->local_player == NULL) || !game->local_player->alive ||
+      (candidates == NULL) || (capacity <= 0)) {
+    return 0;
   }
 
   for (size_t index = 0; index < game->world.player_count; ++index) {
@@ -206,30 +227,79 @@ static const ShroomPlayerState* FindBestInspectTarget(const Game* game) {
     if (!player->alive || (player == game->local_player)) {
       continue;
     }
-    if (distance_sqr > best_distance_sqr) {
+    if (distance_sqr > (kInspectRadius * kInspectRadius)) {
       continue;
     }
+    if (count >= capacity) {
+      break;
+    }
 
-    best_player = player;
-    best_distance_sqr = distance_sqr;
+    candidates[count++] =
+        (InspectCandidate){.player_id = player->player_id, .distance_sqr = distance_sqr};
   }
 
-  return best_player;
+  if (count > 1) {
+    qsort(candidates, (size_t)count, sizeof(candidates[0]), CompareInspectCandidates);
+  }
+
+  return count;
+}
+
+static const ShroomPlayerState* GetSelectedInspectTarget(const Game* game) {
+  InspectCandidate candidates[SHROOM_MAX_PLAYERS];
+  int selected_index;
+  int candidate_count;
+
+  candidate_count = GatherInspectCandidates(game, candidates, SHROOM_MAX_PLAYERS);
+  if (candidate_count <= 0) {
+    return NULL;
+  }
+
+  selected_index = game->selected_inspect_index;
+  if (selected_index < 0) {
+    selected_index = 0;
+  }
+  if (selected_index >= candidate_count) {
+    selected_index = candidate_count - 1;
+  }
+
+  return FindPlayerById(game, candidates[selected_index].player_id);
 }
 
 static void UpdateInspectOverlay(Game* game, float delta_time) {
+  InspectCandidate candidates[SHROOM_MAX_PLAYERS];
   const ShroomPlayerState* target_player;
   const bool can_show_overlay = (game != NULL) && !game->leaderboard_overlay_open &&
                                 !game->menu_overlay_open && !game->leave_confirmation_open &&
                                 !IsConnectionOverlayOpen(game);
   const bool inspect_held = can_show_overlay && IsKeyDown(KEY_I);
+  const float wheel_move = inspect_held ? GetMouseWheelMove() : 0.0f;
+  int candidate_count;
 
   if (game == NULL) {
     return;
   }
 
   game->inspect_prompt_timer += delta_time;
-  target_player = FindBestInspectTarget(game);
+  candidate_count = GatherInspectCandidates(game, candidates, SHROOM_MAX_PLAYERS);
+  game->inspect_target_count = candidate_count;
+
+  if (!inspect_held) {
+    game->selected_inspect_index = 0;
+  } else if (candidate_count > 0) {
+    if (wheel_move > 0.0f) {
+      game->selected_inspect_index = (game->selected_inspect_index + 1) % candidate_count;
+    } else if (wheel_move < 0.0f) {
+      game->selected_inspect_index =
+          (game->selected_inspect_index + candidate_count - 1) % candidate_count;
+    } else if (game->selected_inspect_index >= candidate_count) {
+      game->selected_inspect_index = candidate_count - 1;
+    }
+  }
+
+  target_player = candidate_count > 0
+                      ? FindPlayerById(game, candidates[game->selected_inspect_index].player_id)
+                      : NULL;
 
   if (inspect_held && (target_player != NULL)) {
     game->selected_inspect_player_id = target_player->player_id;
@@ -261,7 +331,7 @@ static void DrawInspectPrompt(const Game* game) {
 
   pulse = 0.55f + (0.25f * (0.5f + 0.5f * sinf(game->inspect_prompt_timer * 5.5f)));
 
-  target_player = FindBestInspectTarget(game);
+  target_player = GetSelectedInspectTarget(game);
   if (target_player == NULL) {
     return;
   }
@@ -282,6 +352,11 @@ static void DrawInspectPrompt(const Game* game) {
   ShroomImGui_TextColored(
       ToImGuiColor(Fade(SKYBLUE, pulse + 0.2f)),
       TextFormat("Hold I to inspect %s", GetPlayerDisplayName(game, target_player)));
+  if (game->inspect_target_count > 1) {
+    ShroomImGui_SameLine();
+    ShroomImGui_Text(TextFormat("%d/%d  Scroll Wheel", game->selected_inspect_index + 1,
+                                game->inspect_target_count));
+  }
   ShroomImGui_End();
 }
 
@@ -634,6 +709,10 @@ static void DrawInspectOverlay(Game* game) {
   ShroomImGui_Text(GetPlayerDisplayName(game, selected_player));
   ShroomImGui_TextColored(ToImGuiColor(Fade(GetThreatOutlineColor(threat_state), pulse)),
                           GetThreatLabel(threat_state));
+  if (game->inspect_target_count > 1) {
+    ShroomImGui_Text(TextFormat("Target %d/%d  Scroll Wheel to cycle",
+                                game->selected_inspect_index + 1, game->inspect_target_count));
+  }
   ShroomImGui_Separator();
   ShroomImGui_Text(TextFormat("Mass %.0f", selected_player->mass));
   ShroomImGui_Text(TextFormat("Rank %d", rank > 0 ? rank : (int)game->world.player_count));
