@@ -42,6 +42,8 @@ typedef struct Game {
   bool leave_confirmation_open;
   bool inspect_overlay_open;
   bool return_to_menu_requested;
+  float inspect_overlay_progress;
+  float inspect_prompt_timer;
   float previous_local_mass;
   float zone_callout_timer;
   float respawn_banner_timer;
