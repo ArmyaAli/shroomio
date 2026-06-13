@@ -15,6 +15,7 @@ client_settings.cfg
 imgui.ini
 server_browser_recent.txt
 shroomio.db
+vcpkg_installed/
 .opencode/*
 !.opencode/agents/
 .opencode/agents/*

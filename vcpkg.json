@@ -1,0 +1,23 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "shroomio",
+  "version-string": "0.1.0",
+  "builtin-baseline": "44819aa2a6c10e56065e2b0330e7d6c89d1d2574",
+  "dependencies": [
+    "raylib",
+    "imgui",
+    "enet"
+  ],
+  "overrides": [
+    {
+      "name": "raylib",
+      "version": "5.5",
+      "port-version": 1
+    },
+    {
+      "name": "imgui",
+      "version": "1.91.8",
+      "port-version": 4
+    }
+  ]
+}

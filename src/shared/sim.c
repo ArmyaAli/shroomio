@@ -499,11 +499,15 @@ void ShroomWorldInitWithSeed(ShroomWorldState* world, uint32_t seed) {
 }
 
 void ShroomWorldInit(ShroomWorldState* world) {
-  struct timespec seed_time = {0};
   uint32_t seed;
 
+#if defined(_WIN32)
+  seed = (uint32_t)time(NULL) ^ (uint32_t)(uintptr_t)world;
+#else
+  struct timespec seed_time = {0};
   timespec_get(&seed_time, TIME_UTC);
   seed = (uint32_t)seed_time.tv_sec ^ (uint32_t)seed_time.tv_nsec ^ (uint32_t)(uintptr_t)world;
+#endif
   ShroomWorldInitWithSeed(world, seed);
 }
 

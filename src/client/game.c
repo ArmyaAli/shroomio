@@ -1194,7 +1194,11 @@ static void DrawChatDock(Game* game) {
         if (msg->timestamp_sec > 0u) {
           time_t ts = (time_t)msg->timestamp_sec;
           struct tm tm_local;
+#if defined(_WIN32)
+          localtime_s(&tm_local, &ts);
+#else
           localtime_r(&ts, &tm_local);
+#endif
           ShroomImGui_TextColored(ToImGuiColor((Color){130, 130, 130, 200}),
                                   TextFormat("%02d:%02d", tm_local.tm_hour, tm_local.tm_min));
           ShroomImGui_SameLine();
