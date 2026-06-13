@@ -250,12 +250,14 @@ static void UpdateInspectOverlay(Game* game, float delta_time) {
 
 static void DrawInspectPrompt(const Game* game) {
   const ShroomPlayerState* target_player;
-  const float pulse = 0.55f + (0.25f * (0.5f + 0.5f * sinf(game->inspect_prompt_timer * 5.5f)));
+  float pulse;
 
   if ((game == NULL) || game->leaderboard_overlay_open || game->menu_overlay_open ||
       game->leave_confirmation_open || IsConnectionOverlayOpen(game)) {
     return;
   }
+
+  pulse = 0.55f + (0.25f * (0.5f + 0.5f * sinf(game->inspect_prompt_timer * 5.5f)));
 
   target_player = FindBestInspectTarget(game);
   if (target_player == NULL) {
@@ -597,11 +599,13 @@ static void DrawInspectOverlay(Game* game) {
   const float scale = 0.96f + (0.04f * eased_progress);
   const float width = 328.0f * scale;
   const float height = 234.0f * scale;
-  const float pulse = 0.72f + (0.28f * (0.5f + 0.5f * sinf(game->inspect_prompt_timer * 6.5f)));
+  float pulse;
 
   if ((game == NULL) || (progress <= 0.01f)) {
     return;
   }
+
+  pulse = 0.72f + (0.28f * (0.5f + 0.5f * sinf(game->inspect_prompt_timer * 6.5f)));
 
   selected_player = FindPlayerById(game, game->selected_inspect_player_id);
   if ((selected_player == NULL) || !selected_player->alive) {
