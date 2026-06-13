@@ -285,8 +285,9 @@ static uint16_t GetLobbyBotTarget(uint16_t real_player_count) {
   uint32_t target = weighted_real_players >= SHROOM_BOT_TARGET_TOTAL
                         ? SHROOM_BOT_FLOOR
                         : SHROOM_BOT_TARGET_TOTAL - weighted_real_players;
-  const uint32_t max_bots_for_capacity =
-      real_player_count >= SHROOM_MAX_PLAYERS ? 0u : (uint32_t)SHROOM_MAX_PLAYERS - real_player_count;
+  const uint32_t max_bots_for_capacity = real_player_count >= SHROOM_MAX_PLAYERS
+                                             ? 0u
+                                             : (uint32_t)SHROOM_MAX_PLAYERS - real_player_count;
 
   if (target < SHROOM_BOT_FLOOR && max_bots_for_capacity >= SHROOM_BOT_FLOOR) {
     target = SHROOM_BOT_FLOOR;
