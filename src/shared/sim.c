@@ -699,7 +699,7 @@ static void ShroomApplyForcedSplits(ShroomWorldState* world) {
   for (i = 0; i < initial_count; ++i) {
     ShroomPlayerState* player = &world->players[i];
 
-    if (!player->alive || player->is_bot) {
+    if (!player->alive) {
       continue;
     }
     if (player->mass < SHROOM_SPLIT_MASS_THRESHOLD) {

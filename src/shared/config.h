@@ -38,13 +38,14 @@
 // Give fresh spawns more breathing room before re-entering contested space.
 #define SHROOM_SPAWN_SAFE_DISTANCE 440.0f
 
-/* Splitting — requires near-max mass (1 unit below cap to absorb float decay) */
-#define SHROOM_SPLIT_MIN_MASS (SHROOM_MAX_PLAYER_MASS - 1.0f)
-#define SHROOM_SPLIT_MASS_THRESHOLD (SHROOM_MAX_PLAYER_MASS - 1.0f)
+/* Splitting — requires a very large colony (18x default); applies to bots too */
+#define SHROOM_SPLIT_MIN_MASS (SHROOM_DEFAULT_PLAYER_MASS * 18.0f)
+#define SHROOM_SPLIT_MASS_THRESHOLD (SHROOM_DEFAULT_PLAYER_MASS * 18.0f)
 #define SHROOM_SPLIT_MERGE_SECONDS 10.0f
 #define SHROOM_MAX_SPLIT_PIECES 4
 #define SHROOM_SPLIT_IMPULSE_SPEED 220.0f
 #define SHROOM_SPLIT_IMPULSE_DECAY 2.5f
+#define SHROOM_SPLIT_HOLD_SECONDS 0.6f
 
 #define SHROOM_SERVER_TICK_RATE 30.0f
 
