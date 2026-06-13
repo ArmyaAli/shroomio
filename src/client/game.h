@@ -49,6 +49,8 @@ typedef struct Game {
   float respawn_banner_timer;
   int screen_width;
   int screen_height;
+  int selected_inspect_index;
+  int inspect_target_count;
   uint32_t selected_inspect_player_id;
   char selected_server_host[64];
   uint16_t selected_server_port;
