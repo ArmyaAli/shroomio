@@ -55,13 +55,13 @@ typedef struct LeaderboardEntry {
   float mass;
 } LeaderboardEntry;
 
-typedef struct NameplateLayout {
-  Rectangle name_bounds;
-  Rectangle inspect_bounds;
-} NameplateLayout;
-
+static bool IsConnectionOverlayOpen(const Game* game);
 static bool IsOverlayBlockingGameplay(const Game* game);
 static void BuildLeaderboard(const Game* game, LeaderboardEntry* entries, size_t* entry_count);
+
+static const float kInspectRadius = 520.0f;
+static const float kInspectOpenRate = 8.5f;
+static const float kInspectCloseRate = 6.0f;
 
 static ShroomImGuiColor ToImGuiColor(Color color) {
   return (ShroomImGuiColor){(float)color.r / 255.0f, (float)color.g / 255.0f,
@@ -189,48 +189,116 @@ static const char* GetThreatLabel(PlayerThreatState state) {
   }
 }
 
-static NameplateLayout GetNameplateLayout(const Vector2 position, float radius,
-                                          const char* player_name) {
-  const int font_size = 16;
-  const int text_width = MeasureText(player_name, font_size);
-  const float text_x = position.x - ((float)text_width * 0.5f);
-  const float text_y = position.y - radius - 22.0f;
-  const float text_height = (float)font_size;
+static const ShroomPlayerState* FindBestInspectTarget(const Game* game) {
+  const ShroomPlayerState* best_player = NULL;
+  float best_distance_sqr = kInspectRadius * kInspectRadius;
 
-  return (NameplateLayout){
-      .name_bounds = {text_x, text_y, (float)text_width, text_height},
-      .inspect_bounds = {text_x + (float)text_width + 8.0f, text_y - 2.0f, 18.0f, 18.0f},
-  };
-}
-
-static void HandlePlayerInspectClick(Game* game) {
-  const Vector2 mouse_position = GetMousePosition();
-
-  if ((game == NULL) || IsOverlayBlockingGameplay(game) ||
-      !IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-    return;
+  if ((game == NULL) || (game->local_player == NULL) || !game->local_player->alive) {
+    return NULL;
   }
 
   for (size_t index = 0; index < game->world.player_count; ++index) {
     const ShroomPlayerState* player = &game->world.players[index];
-    const char* player_name;
-    NameplateLayout layout;
-    Vector2 position;
+    const float distance_sqr = ShroomDistanceSqr(game->local_player->position, player->position);
 
     if (!player->alive || (player == game->local_player)) {
       continue;
     }
+    if (distance_sqr > best_distance_sqr) {
+      continue;
+    }
 
-    player_name = GetPlayerDisplayName(game, player);
-    position = (Vector2){game->render_positions[index].x, game->render_positions[index].y};
-    layout = GetNameplateLayout(position, player->radius, player_name);
+    best_player = player;
+    best_distance_sqr = distance_sqr;
+  }
 
-    if (CheckCollisionPointRec(mouse_position, layout.inspect_bounds)) {
-      game->selected_inspect_player_id = player->player_id;
-      game->inspect_overlay_open = true;
-      return;
+  return best_player;
+}
+
+static void UpdateInspectOverlay(Game* game, float delta_time) {
+  const ShroomPlayerState* target_player;
+  const bool can_show_overlay = (game != NULL) && !game->leaderboard_overlay_open &&
+                                !game->menu_overlay_open && !game->leave_confirmation_open &&
+                                !IsConnectionOverlayOpen(game);
+  const bool inspect_held = can_show_overlay && IsKeyDown(KEY_I);
+
+  if (game == NULL) {
+    return;
+  }
+
+  game->inspect_prompt_timer += delta_time;
+  target_player = FindBestInspectTarget(game);
+
+  if (inspect_held && (target_player != NULL)) {
+    game->selected_inspect_player_id = target_player->player_id;
+    game->inspect_overlay_open = true;
+  } else if (!inspect_held) {
+    game->inspect_overlay_open = false;
+  }
+
+  if (game->inspect_overlay_open) {
+    game->inspect_overlay_progress =
+        fminf(1.0f, game->inspect_overlay_progress + (delta_time * kInspectOpenRate));
+  } else {
+    game->inspect_overlay_progress =
+        fmaxf(0.0f, game->inspect_overlay_progress - (delta_time * kInspectCloseRate));
+    if (game->inspect_overlay_progress <= 0.0f) {
+      game->selected_inspect_player_id = 0;
     }
   }
+}
+
+static void DrawInspectPrompt(const Game* game) {
+  const ShroomPlayerState* target_player;
+  const float pulse = 0.55f + (0.25f * (0.5f + 0.5f * sinf(game->inspect_prompt_timer * 5.5f)));
+
+  if ((game == NULL) || game->leaderboard_overlay_open || game->menu_overlay_open ||
+      game->leave_confirmation_open || IsConnectionOverlayOpen(game)) {
+    return;
+  }
+
+  target_player = FindBestInspectTarget(game);
+  if (target_player == NULL) {
+    return;
+  }
+
+  ShroomImGui_SetNextWindowPos((game->screen_width - 360.0f) * 0.5f, game->screen_height - 92.0f,
+                               SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowSize(360.0f, 44.0f, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowBgAlpha(0.46f + pulse * 0.12f);
+  if (!ShroomImGui_Begin("Inspect Prompt", NULL,
+                         SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
+                             SHROOM_IMGUI_WINDOW_NO_MOVE | SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
+                             SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS |
+                             SHROOM_IMGUI_WINDOW_NO_SCROLLBAR)) {
+    ShroomImGui_End();
+    return;
+  }
+
+  ShroomImGui_TextColored(
+      ToImGuiColor(Fade(SKYBLUE, pulse + 0.2f)),
+      TextFormat("Hold I to inspect %s", GetPlayerDisplayName(game, target_player)));
+  ShroomImGui_End();
+}
+
+static void DrawPlayerName(const Game* game, const ShroomPlayerState* player, Vector2 position) {
+  const char* player_name = GetPlayerDisplayName(game, player);
+  const int font_size = 16;
+  const int text_width = MeasureText(player_name, font_size);
+  const Color text_color = player == game->local_player ? RAYWHITE : Fade(RAYWHITE, 0.92f);
+  const int text_x = (int)(position.x - ((float)text_width * 0.5f));
+  const int text_y = (int)(position.y - player->radius - 22.0f);
+
+  DrawText(player_name, text_x + 1, text_y + 1, font_size, Fade(BLACK, 0.8f));
+  DrawText(player_name, text_x, text_y, font_size, text_color);
+}
+
+static const char* GetInspectFlavorText(const ShroomPlayerState* selected_player) {
+  if (selected_player->is_bot) {
+    return "Bot profile: utility-driven colony balancing spores, prey, and danger.";
+  }
+
+  return "Player profile: live colony snapshot from the current match.";
 }
 
 static ShroomVec2 ClampPlayerPosition(const ShroomWorldState* world, float radius,
@@ -457,8 +525,7 @@ static bool IsConnectionOverlayOpen(const Game* game) {
 
 static bool IsOverlayBlockingGameplay(const Game* game) {
   return game->leaderboard_overlay_open || game->menu_overlay_open ||
-         game->leave_confirmation_open || game->inspect_overlay_open ||
-         IsConnectionOverlayOpen(game);
+         game->leave_confirmation_open || IsConnectionOverlayOpen(game);
 }
 
 static void RetryConnection(Game* game) {
@@ -516,24 +583,7 @@ static void DrawPlayers(const Game* game) {
       DrawCircleLines((int)position.x, (int)position.y, player->radius + 8.0f, RAYWHITE);
     }
 
-    {
-      const char* player_name = GetPlayerDisplayName(game, player);
-      const int font_size = 16;
-      const Color text_color = player == game->local_player ? RAYWHITE : Fade(RAYWHITE, 0.92f);
-      const NameplateLayout layout = GetNameplateLayout(position, player->radius, player_name);
-      const int text_x = (int)layout.name_bounds.x;
-      const int text_y = (int)layout.name_bounds.y;
-
-      DrawText(player_name, text_x + 1, text_y + 1, font_size, Fade(BLACK, 0.8f));
-      DrawText(player_name, text_x, text_y, font_size, text_color);
-
-      if (player != game->local_player) {
-        DrawRectangleRounded(layout.inspect_bounds, 0.35f, 4, Fade(BLACK, 0.55f));
-        DrawRectangleLinesEx(layout.inspect_bounds, 1.0f, Fade(text_color, 0.75f));
-        DrawText("i", (int)layout.inspect_bounds.x + 6, (int)layout.inspect_bounds.y + 1, 14,
-                 text_color);
-      }
-    }
+    DrawPlayerName(game, player, position);
   }
 }
 
@@ -542,15 +592,20 @@ static void DrawInspectOverlay(Game* game) {
   PlayerThreatState threat_state;
   ShroomZone zone;
   int rank;
+  const float progress = game != NULL ? game->inspect_overlay_progress : 0.0f;
+  const float eased_progress = progress * progress * (3.0f - (2.0f * progress));
+  const float scale = 0.96f + (0.04f * eased_progress);
+  const float width = 328.0f * scale;
+  const float height = 234.0f * scale;
+  const float pulse = 0.72f + (0.28f * (0.5f + 0.5f * sinf(game->inspect_prompt_timer * 6.5f)));
 
-  if ((game == NULL) || !game->inspect_overlay_open) {
+  if ((game == NULL) || (progress <= 0.01f)) {
     return;
   }
 
   selected_player = FindPlayerById(game, game->selected_inspect_player_id);
   if ((selected_player == NULL) || !selected_player->alive) {
     game->inspect_overlay_open = false;
-    game->selected_inspect_player_id = 0;
     return;
   }
 
@@ -558,10 +613,10 @@ static void DrawInspectOverlay(Game* game) {
   zone = ShroomGetZoneAtPosition(&game->world, selected_player->position);
   rank = GetPlayerRank(game, selected_player);
 
-  ShroomImGui_SetNextWindowPos(game->screen_width - 296.0f, game->screen_height - 232.0f,
-                               SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowSize(278.0f, 214.0f, SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowBgAlpha(0.82f);
+  ShroomImGui_SetNextWindowPos((game->screen_width - width) * 0.5f,
+                               (game->screen_height - height) * 0.5f, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowSize(width, height, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowBgAlpha(0.24f + (0.46f * eased_progress));
   if (!ShroomImGui_Begin("Player Intel", NULL,
                          SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
                              SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
@@ -571,7 +626,7 @@ static void DrawInspectOverlay(Game* game) {
   }
 
   ShroomImGui_Text(GetPlayerDisplayName(game, selected_player));
-  ShroomImGui_TextColored(ToImGuiColor(GetThreatOutlineColor(threat_state)),
+  ShroomImGui_TextColored(ToImGuiColor(Fade(GetThreatOutlineColor(threat_state), pulse)),
                           GetThreatLabel(threat_state));
   ShroomImGui_Separator();
   ShroomImGui_Text(TextFormat("Mass %.0f", selected_player->mass));
@@ -579,16 +634,9 @@ static void DrawInspectOverlay(Game* game) {
   ShroomImGui_Text(TextFormat("Zone %s", GetZoneLabel(zone)));
   ShroomImGui_Text(TextFormat("Type %s", selected_player->is_bot ? "Bot Colony" : "Player Colony"));
   ShroomImGui_Text(TextFormat("Player ID %u", selected_player->player_id));
-  ShroomImGui_TextWrapped(
-      selected_player->is_bot
-          ? "Bot profile: utility-driven colony balancing spores, prey, and danger."
-          : "Player profile: live colony snapshot from the current match.");
+  ShroomImGui_TextWrapped(GetInspectFlavorText(selected_player));
   ShroomImGui_Spacing();
-
-  if (ShroomImGui_Button("Close", 120.0f, 0.0f)) {
-    game->inspect_overlay_open = false;
-    game->selected_inspect_player_id = 0;
-  }
+  ShroomImGui_Text("Release I to dismiss.");
 
   ShroomImGui_End();
 }
@@ -1032,7 +1080,7 @@ void GameUpdate(Game* game, float delta_time) {
 
   SyncRenderPositions(game, delta_time);
   UpdateStatusBanners(game, delta_time);
-  HandlePlayerInspectClick(game);
+  UpdateInspectOverlay(game, delta_time);
   game->camera.target = (Vector2){game->local_player->position.x, game->local_player->position.y};
 }
 
@@ -1059,6 +1107,7 @@ void GameDraw(Game* game) {
 
   DrawOffscreenIndicators(game);
   DrawGameplayHud(game, local_rank, leaderboard_count, zone);
+  DrawInspectPrompt(game);
   DrawStatusBanners(game);
   DrawLeaderboardOverlay(game, leaderboard, shown_count);
   DrawMenuOverlay(game);

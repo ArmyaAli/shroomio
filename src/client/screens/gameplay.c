@@ -74,6 +74,7 @@ static void GameplayHandleInput(ShroomScreenManager* manager) {
       game->menu_overlay_open = false;
       game->leave_confirmation_open = false;
       game->inspect_overlay_open = false;
+      game->selected_inspect_player_id = 0;
     }
   }
 
@@ -95,6 +96,8 @@ static void GameplayHandleInput(ShroomScreenManager* manager) {
       game->menu_overlay_open = !game->menu_overlay_open;
       if (game->menu_overlay_open) {
         game->leaderboard_overlay_open = false;
+        game->inspect_overlay_open = false;
+        game->selected_inspect_player_id = 0;
       }
     }
   }
