@@ -7,9 +7,11 @@ on:
       - 'src/**'
       - 'tests/**'
       - 'Makefile'
+      - '.gitignore'
       - '.clang-format'
       - '.github/workflows/**'
       - '.devcontainer/**'
+      - '.opencode/**'
       - 'design/**'
       - 'docs/**'
 

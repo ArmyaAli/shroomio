@@ -6,8 +6,10 @@ on:
     paths:
       - 'src/**'
       - 'Makefile'
+      - '.gitignore'
       - '.github/workflows/**'
       - '.devcontainer/**'
+      - '.opencode/**'
       - 'design/**'
       - 'docs/**'
 
