@@ -9,8 +9,15 @@
 #include "shared/protocol.h"
 #include "shared/vec2.h"
 
+typedef struct ChatMessage {
+  uint32_t sender_id;
+  char sender_name[SHROOM_MAX_NAME_LENGTH];
+  char message[SHROOM_CHAT_MAX_MESSAGE_LENGTH + 1u];
+} ChatMessage;
+
 #define SHROOM_CLIENT_PING_INTERVAL_SECONDS 1.0f
 #define SHROOM_CLIENT_RTT_SAMPLE_COUNT 10u
+#define SHROOM_CLIENT_CHAT_HISTORY_COUNT 50u
 typedef enum ClientNetStatus {
   CLIENT_NET_DISCONNECTED = 0,
   CLIENT_NET_CONNECTING = 1,
@@ -44,11 +51,17 @@ typedef struct ClientNetState {
   float input_send_accumulator;
   float ping_send_accumulator;
   char status_text[64];
+  ChatMessage chat_history[SHROOM_CLIENT_CHAT_HISTORY_COUNT];
+  uint32_t chat_history_count;
+  uint32_t chat_history_head;
+  uint32_t chat_unread_count;
 } ClientNetState;
 
 bool ClientNetInit(ClientNetState* net, const char* host_name, uint16_t port);
 void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, float delta_time);
 void ClientNetShutdown(ClientNetState* net);
 const char* ClientNetStatusLabel(const ClientNetState* net);
+bool ClientNetSendChat(ClientNetState* net, uint32_t player_id, const char* sender_name,
+                       const char* message);
 
 #endif

@@ -16,6 +16,9 @@
 #define SHROOM_SPORE_STATE_RATE 5u
 #define SHROOM_LATENCY_WARNING_MS 150u
 #define SHROOM_LATENCY_UNPLAYABLE_MS 200u
+#define SHROOM_CHAT_MAX_MESSAGE_LENGTH 200u
+#define SHROOM_CHAT_RATE_LIMIT_COUNT 5u
+#define SHROOM_CHAT_RATE_LIMIT_WINDOW_MS 10000u
 
 typedef enum ShroomPacketChannel {
   SHROOM_ENET_CHANNEL_CONTROL = 0u,
@@ -36,6 +39,7 @@ typedef enum ShroomPacketType {
   SHROOM_PACKET_SPORE_STATE = 7,
   SHROOM_PACKET_AUTH_REQUEST = 8,
   SHROOM_PACKET_AUTH_RESPONSE = 9,
+  SHROOM_PACKET_CHAT = 10,
 } ShroomPacketType;
 
 typedef enum ShroomAuthMethod {
@@ -74,6 +78,8 @@ static inline uint8_t ShroomPacketTypeToChannel(ShroomPacketType type) {
     return SHROOM_ENET_CHANNEL_SNAPSHOT;
   case SHROOM_PACKET_INPUT:
     return SHROOM_ENET_CHANNEL_INPUT;
+  case SHROOM_PACKET_CHAT:
+    return SHROOM_ENET_CHANNEL_CHAT;
   default:
     return SHROOM_ENET_CHANNEL_CONTROL;
   }
@@ -87,6 +93,8 @@ static inline bool ShroomPacketTypeUsesReliableDelivery(ShroomPacketType type) {
   case SHROOM_PACKET_PONG:
   case SHROOM_PACKET_AUTH_REQUEST:
   case SHROOM_PACKET_AUTH_RESPONSE:
+    return true;
+  case SHROOM_PACKET_CHAT:
     return true;
   case SHROOM_PACKET_INPUT:
   case SHROOM_PACKET_SNAPSHOT:
@@ -209,5 +217,13 @@ typedef struct ShroomAuthResponsePacket {
   char token[SHROOM_AUTH_TOKEN_LENGTH];
   char message[64];
 } ShroomAuthResponsePacket;
+
+/* Sent client->server; server validates, then broadcasts to all peers. */
+typedef struct ShroomChatPacket {
+  ShroomPacketHeader header;
+  uint32_t sender_id;
+  char sender_name[SHROOM_MAX_NAME_LENGTH];
+  char message[SHROOM_CHAT_MAX_MESSAGE_LENGTH + 1u];
+} ShroomChatPacket;
 
 #endif

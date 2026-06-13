@@ -42,6 +42,12 @@ typedef struct Game {
   bool leave_confirmation_open;
   bool inspect_overlay_open;
   bool return_to_menu_requested;
+  bool chat_open;
+  bool chat_minimized;
+  bool chat_focus_input;
+  float chat_inactive_timer;
+  char chat_input_buf[SHROOM_CHAT_MAX_MESSAGE_LENGTH + 1u];
+  bool chat_scroll_to_bottom;
   float inspect_overlay_progress;
   float inspect_prompt_timer;
   float previous_local_mass;

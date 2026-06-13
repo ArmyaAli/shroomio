@@ -9,3 +9,4 @@ vendor/
 *.out
 *.toc
 *.synctex.gz
+.worktrees/

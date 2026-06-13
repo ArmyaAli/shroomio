@@ -137,6 +137,32 @@ static void HandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet) {
   }
 }
 
+static void HandleChat(ClientNetState* net, const ENetPacket* enet_packet) {
+  const ShroomChatPacket* packet;
+  ChatMessage* slot;
+  size_t msg_len;
+
+  if (enet_packet->dataLength < sizeof(ShroomChatPacket)) {
+    return;
+  }
+
+  packet = (const ShroomChatPacket*)enet_packet->data;
+
+  slot = &net->chat_history[net->chat_history_head % SHROOM_CLIENT_CHAT_HISTORY_COUNT];
+  slot->sender_id = packet->sender_id;
+  snprintf(slot->sender_name, sizeof(slot->sender_name), "%s", packet->sender_name);
+
+  msg_len = sizeof(packet->message);
+  memcpy(slot->message, packet->message, msg_len);
+  slot->message[sizeof(slot->message) - 1u] = '\0';
+
+  net->chat_history_head = (net->chat_history_head + 1u) % SHROOM_CLIENT_CHAT_HISTORY_COUNT;
+  if (net->chat_history_count < SHROOM_CLIENT_CHAT_HISTORY_COUNT) {
+    net->chat_history_count += 1u;
+  }
+  net->chat_unread_count += 1u;
+}
+
 static void HandleSporeState(ClientNetState* net, const ENetPacket* enet_packet) {
   const ShroomSporeStatePacket* packet = (const ShroomSporeStatePacket*)enet_packet->data;
   uint16_t spore_count;
@@ -247,6 +273,11 @@ void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, float delt
             HandlePong(net, event.packet);
           }
           break;
+        case SHROOM_PACKET_CHAT:
+          if (ShroomPacketHeaderUsesExpectedChannel(header, event.channelID)) {
+            HandleChat(net, event.packet);
+          }
+          break;
         case SHROOM_PACKET_PING:
         case SHROOM_PACKET_HELLO:
         case SHROOM_PACKET_INPUT:
@@ -302,4 +333,23 @@ void ClientNetShutdown(ClientNetState* net) {
 
 const char* ClientNetStatusLabel(const ClientNetState* net) {
   return net->status_text[0] != '\0' ? net->status_text : "Offline";
+}
+
+bool ClientNetSendChat(ClientNetState* net, uint32_t player_id, const char* sender_name,
+                       const char* message) {
+  ShroomChatPacket packet = {0};
+
+  if ((net == NULL) || (message == NULL) || (message[0] == '\0') || !net->welcome_received ||
+      (net->peer == NULL) || (net->peer->state != ENET_PEER_STATE_CONNECTED)) {
+    return false;
+  }
+
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_CHAT, sizeof(packet));
+  packet.sender_id = player_id;
+  snprintf(packet.sender_name, sizeof(packet.sender_name), "%s",
+           (sender_name != NULL) ? sender_name : "");
+  snprintf(packet.message, sizeof(packet.message), "%s", message);
+
+  return enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CHAT,
+                        CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_CHAT)) == 0;
 }

@@ -202,6 +202,48 @@ bool ShroomImGui_InputText(const char* label, char* buffer, size_t buffer_size) 
   return ImGui::InputText(label, buffer, buffer_size);
 }
 
+bool ShroomImGui_BeginChild(const char* id, float width, float height, bool border) {
+  return ImGui::BeginChild(id, ImVec2(width, height), border);
+}
+
+void ShroomImGui_EndChild(void) { ImGui::EndChild(); }
+
+void ShroomImGui_SetScrollHereY(float center_y_ratio) { ImGui::SetScrollHereY(center_y_ratio); }
+
+bool ShroomImGui_WantCaptureKeyboard(void) { return ImGui::GetIO().WantCaptureKeyboard; }
+
+void ShroomImGui_SetKeyboardFocusHere(void) { ImGui::SetKeyboardFocusHere(); }
+
+void ShroomImGui_PushWindowRounding(float rounding) {
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, rounding);
+}
+
+void ShroomImGui_PushWindowPadding(float x, float y) {
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(x, y));
+}
+
+void ShroomImGui_PopStyleVar(void) { ImGui::PopStyleVar(); }
+
+void ShroomImGui_PushStyleColor(int col, float r, float g, float b, float a) {
+  ImGui::PushStyleColor((ImGuiCol)col, ImVec4(r, g, b, a));
+}
+
+void ShroomImGui_PopStyleColor(void) { ImGui::PopStyleColor(); }
+
+bool ShroomImGui_InputTextWithSubmit(const char* label, char* buffer, size_t buffer_size,
+                                     const char* submit_label) {
+  bool submitted = false;
+  ImGui::SetNextItemWidth(-80.0f);
+  if (ImGui::InputText(label, buffer, buffer_size, ImGuiInputTextFlags_EnterReturnsTrue)) {
+    submitted = true;
+  }
+  ImGui::SameLine();
+  if (ImGui::Button(submit_label != NULL ? submit_label : "Send", ImVec2(72.0f, 0.0f))) {
+    submitted = true;
+  }
+  return submitted;
+}
+
 bool ShroomImGui_BeginTable(const char* id, int columns, int flags, float width, float height) {
   return ImGui::BeginTable(id, columns, ToImGuiTableFlags(flags), ImVec2(width, height));
 }
