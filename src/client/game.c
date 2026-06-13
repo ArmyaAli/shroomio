@@ -129,17 +129,20 @@ static const char* GetZoneSummary(ShroomZone zone) {
   }
 }
 
-static PlayerThreatState GetThreatState(const ShroomPlayerState* local_player,
+static PlayerThreatState GetThreatState(const ShroomWorldState* world,
+                                        const ShroomPlayerState* local_player,
                                         const ShroomPlayerState* other_player) {
   if ((local_player == NULL) || (other_player == NULL) || (local_player == other_player) ||
-      !local_player->alive || !other_player->alive) {
+      !local_player->alive || !other_player->alive || (world == NULL)) {
     return PLAYER_THREAT_NONE;
   }
 
-  if (local_player->mass >= (other_player->mass * SHROOM_CONSUME_MASS_ADVANTAGE)) {
+  if (local_player->mass >= (other_player->mass * ShroomGetConsumeMassAdvantageAtPosition(
+                                                      world, other_player->position))) {
     return PLAYER_THREAT_PREY;
   }
-  if (other_player->mass >= (local_player->mass * SHROOM_CONSUME_MASS_ADVANTAGE)) {
+  if (other_player->mass >= (local_player->mass * ShroomGetConsumeMassAdvantageAtPosition(
+                                                      world, local_player->position))) {
     return PLAYER_THREAT_DANGER;
   }
 
@@ -626,10 +629,23 @@ static void RetryConnection(Game* game) {
 
 static void DrawArenaZones(const ShroomWorldState* world) {
   const Vector2 center = {world->width * 0.5f, world->height * 0.5f};
+  size_t center_player_count = 0;
+
+  for (size_t index = 0; index < world->player_count; ++index) {
+    if (world->players[index].alive &&
+        ShroomGetZoneAtPosition(world, world->players[index].position) == SHROOM_ZONE_CENTER) {
+      center_player_count += 1;
+    }
+  }
 
   DrawRectangle(0, 0, (int)world->width, (int)world->height, Fade(kZoneOuterColor, 0.85f));
   DrawCircleV(center, SHROOM_ZONE_MID_RADIUS, Fade(kZoneMidColor, 0.68f));
   DrawCircleV(center, SHROOM_ZONE_CENTER_RADIUS, Fade(kZoneCenterColor, 0.75f));
+  if (center_player_count >= 3u) {
+    DrawCircleV(center, SHROOM_ZONE_CENTER_RADIUS * 0.78f, Fade(LIME, 0.12f));
+    DrawCircleLines((int)center.x, (int)center.y, SHROOM_ZONE_CENTER_RADIUS * 0.86f,
+                    Fade(LIME, 0.52f));
+  }
   DrawCircleLines((int)center.x, (int)center.y, SHROOM_ZONE_MID_RADIUS, Fade(DARKGREEN, 0.35f));
   DrawCircleLines((int)center.x, (int)center.y, SHROOM_ZONE_CENTER_RADIUS, Fade(LIME, 0.4f));
 }
@@ -652,7 +668,7 @@ static void DrawPlayers(const Game* game) {
     const ShroomVec2 render_position = game->render_positions[index];
     const Vector2 position = {render_position.x, render_position.y};
     const Color fill = GetPlayerFillColor(game, player);
-    const PlayerThreatState threat_state = GetThreatState(game->local_player, player);
+    const PlayerThreatState threat_state = GetThreatState(&game->world, game->local_player, player);
     const Color threat_outline = GetThreatOutlineColor(threat_state);
     const float decay_pulse =
         0.45f + (0.35f * (0.5f + (0.5f * sinf(game->inspect_prompt_timer * 5.0f))));
@@ -703,7 +719,7 @@ static void DrawInspectOverlay(Game* game) {
     return;
   }
 
-  threat_state = GetThreatState(game->local_player, selected_player);
+  threat_state = GetThreatState(&game->world, game->local_player, selected_player);
   zone = ShroomGetZoneAtPosition(&game->world, selected_player->position);
   rank = GetPlayerRank(game, selected_player);
 
@@ -775,7 +791,7 @@ static void DrawOffscreenIndicators(const Game* game) {
       continue;
     }
 
-    threat_state = GetThreatState(game->local_player, player);
+    threat_state = GetThreatState(&game->world, game->local_player, player);
     /* Neutral players get a dim but visible tint so all off-screen players
      * show an indicator regardless of mass relationship. */
     color = (threat_state == PLAYER_THREAT_NONE)
@@ -930,7 +946,7 @@ static void DrawLeaderboardOverlay(Game* game, const LeaderboardEntry* leaderboa
 
   for (size_t index = 0; index < shown_count; ++index) {
     const ShroomPlayerState* player = &game->world.players[leaderboard[index].index];
-    const PlayerThreatState threat_state = GetThreatState(game->local_player, player);
+    const PlayerThreatState threat_state = GetThreatState(&game->world, game->local_player, player);
     const char* label = GetPlayerDisplayName(game, player);
     const Color color =
         player == game->local_player ? RAYWHITE : GetThreatOutlineColor(threat_state);
@@ -1321,7 +1337,7 @@ static void DrawProximityMap(const Game* game) {
 
   for (size_t index = 0; index < game->world.player_count; ++index) {
     const ShroomPlayerState* player = &game->world.players[index];
-    const PlayerThreatState threat_state = GetThreatState(game->local_player, player);
+    const PlayerThreatState threat_state = GetThreatState(&game->world, game->local_player, player);
     const ShroomVec2 delta = ShroomVec2Sub(player->position, local_position);
     const float distance_sqr = ShroomVec2LengthSqr(delta);
     Vector2 map_position;

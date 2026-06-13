@@ -54,6 +54,26 @@ static ShroomVec2 ShroomWorldCenter(const ShroomWorldState* world) {
   return (ShroomVec2){world->width * 0.5f, world->height * 0.5f};
 }
 
+static ShroomVec2 ShroomRandomPointInZone(ShroomWorldState* world, ShroomZone zone) {
+  const ShroomVec2 center = ShroomWorldCenter(world);
+  const float min_x = 60.0f;
+  const float min_y = 60.0f;
+  const float max_x = world->width - 60.0f;
+  const float max_y = world->height - 60.0f;
+  const float inner_radius = zone == SHROOM_ZONE_CENTER ? 0.0f
+                             : zone == SHROOM_ZONE_MID  ? SHROOM_ZONE_CENTER_RADIUS
+                                                        : SHROOM_ZONE_MID_RADIUS;
+  const float outer_radius = zone == SHROOM_ZONE_CENTER ? SHROOM_ZONE_CENTER_RADIUS
+                             : zone == SHROOM_ZONE_MID  ? SHROOM_ZONE_MID_RADIUS
+                                                        : fminf(world->width, world->height) * 0.5f;
+  const float distance =
+      sqrtf(ShroomRandomFloat(world, inner_radius * inner_radius, outer_radius * outer_radius));
+  const float angle = ShroomRandomFloat(world, 0.0f, 6.2831853f);
+
+  return (ShroomVec2){ShroomClamp(center.x + (cosf(angle) * distance), min_x, max_x),
+                      ShroomClamp(center.y + (sinf(angle) * distance), min_y, max_y)};
+}
+
 ShroomZone ShroomGetZoneAtPosition(const ShroomWorldState* world, ShroomVec2 position) {
   const float distance_sqr = ShroomDistanceSqr(position, ShroomWorldCenter(world));
 
@@ -65,6 +85,14 @@ ShroomZone ShroomGetZoneAtPosition(const ShroomWorldState* world, ShroomVec2 pos
   }
 
   return SHROOM_ZONE_OUTER;
+}
+
+float ShroomGetConsumeMassAdvantageAtPosition(const ShroomWorldState* world, ShroomVec2 position) {
+  if (ShroomGetZoneAtPosition(world, position) == SHROOM_ZONE_CENTER) {
+    return SHROOM_CENTER_CONSUME_ADVANTAGE;
+  }
+
+  return SHROOM_CONSUME_MASS_ADVANTAGE;
 }
 
 static bool ShroomIsSafeSpawn(const ShroomWorldState* world, ShroomVec2 position) {
@@ -119,32 +147,11 @@ static void ShroomRespawnPlayer(ShroomWorldState* world, ShroomPlayerState* play
 }
 
 static void ShroomSpawnOrResetSpore(ShroomWorldState* world, ShroomSporeState* spore) {
-  float min_x = 60.0f;
-  float min_y = 60.0f;
-  float max_x = world->width - 60.0f;
-  float max_y = world->height - 60.0f;
-  float center_bias = ShroomRandomFloat(world, 0.0f, 1.0f);
-  ShroomVec2 candidate;
-
-  if (center_bias < 0.45f) {
-    const ShroomVec2 center = ShroomWorldCenter(world);
-    candidate.x = ShroomRandomFloat(world, center.x - SHROOM_ZONE_CENTER_RADIUS,
-                                    center.x + SHROOM_ZONE_CENTER_RADIUS);
-    candidate.y = ShroomRandomFloat(world, center.y - SHROOM_ZONE_CENTER_RADIUS,
-                                    center.y + SHROOM_ZONE_CENTER_RADIUS);
-  } else if (center_bias < 0.80f) {
-    const ShroomVec2 center = ShroomWorldCenter(world);
-    candidate.x = ShroomRandomFloat(world, center.x - SHROOM_ZONE_MID_RADIUS,
-                                    center.x + SHROOM_ZONE_MID_RADIUS);
-    candidate.y = ShroomRandomFloat(world, center.y - SHROOM_ZONE_MID_RADIUS,
-                                    center.y + SHROOM_ZONE_MID_RADIUS);
-  } else {
-    candidate.x = ShroomRandomFloat(world, min_x, max_x);
-    candidate.y = ShroomRandomFloat(world, min_y, max_y);
-  }
-
-  candidate.x = ShroomClamp(candidate.x, min_x, max_x);
-  candidate.y = ShroomClamp(candidate.y, min_y, max_y);
+  const float zone_roll = ShroomRandomFloat(world, 0.0f, 3.6f);
+  const ShroomZone zone = zone_roll < 0.4f   ? SHROOM_ZONE_OUTER
+                          : zone_roll < 1.4f ? SHROOM_ZONE_MID
+                                             : SHROOM_ZONE_CENTER;
+  const ShroomVec2 candidate = ShroomRandomPointInZone(world, zone);
 
   spore->position = candidate;
   spore->value = SHROOM_SPORE_VALUE;
@@ -247,7 +254,7 @@ static void ShroomUpdateBotInput(ShroomWorldState* world, ShroomPlayerState* bot
       continue;
     }
 
-    if (other->mass > (bot->mass * SHROOM_CONSUME_MASS_ADVANTAGE)) {
+    if (other->mass > (bot->mass * ShroomGetConsumeMassAdvantageAtPosition(world, bot->position))) {
       const float threat_score = (other->mass / bot->mass) * (1600000.0f / distance_bias);
 
       if ((best_threat == 0) || (threat_score > best_threat_score)) {
@@ -255,7 +262,8 @@ static void ShroomUpdateBotInput(ShroomWorldState* world, ShroomPlayerState* bot
         best_threat_score = threat_score;
         best_threat_distance = distance_sqr;
       }
-    } else if (bot->mass > (other->mass * SHROOM_CONSUME_MASS_ADVANTAGE)) {
+    } else if (bot->mass >
+               (other->mass * ShroomGetConsumeMassAdvantageAtPosition(world, other->position))) {
       const float prey_score = (bot->mass / other->mass) * (1100000.0f / distance_bias);
 
       if ((best_prey == 0) || (prey_score > best_prey_score)) {
@@ -351,13 +359,15 @@ static void ShroomCollectSpores(ShroomWorldState* world) {
   }
 }
 
-static bool ShroomCanConsume(const ShroomPlayerState* attacker, const ShroomPlayerState* target) {
+static bool ShroomCanConsume(const ShroomWorldState* world, const ShroomPlayerState* attacker,
+                             const ShroomPlayerState* target) {
   const float overlap_radius = attacker->radius * 0.88f;
+  const float required_advantage = ShroomGetConsumeMassAdvantageAtPosition(world, target->position);
 
   if (!attacker->alive || !target->alive) {
     return false;
   }
-  if (attacker->mass < (target->mass * SHROOM_CONSUME_MASS_ADVANTAGE)) {
+  if (attacker->mass < (target->mass * required_advantage)) {
     return false;
   }
 
@@ -385,7 +395,7 @@ static void ShroomResolveConsumes(ShroomWorldState* world) {
         continue;
       }
 
-      if (ShroomCanConsume(attacker, target)) {
+      if (ShroomCanConsume(world, attacker, target)) {
         consumed[target_index] = true;
         consumed_by[target_index] = attacker_index;
       }
@@ -442,8 +452,18 @@ static void ShroomApplyMassRules(ShroomWorldState* world, float delta_time) {
     }
 
     player->mass = ShroomClamp(player->mass, 0.0f, SHROOM_MAX_PLAYER_MASS);
-    if (player->mass > SHROOM_DECAY_MASS_THRESHOLD) {
-      const float excess_mass = player->mass - SHROOM_DECAY_MASS_THRESHOLD;
+    {
+      const ShroomZone zone = ShroomGetZoneAtPosition(world, player->position);
+      const float decay_threshold = zone == SHROOM_ZONE_CENTER ? (SHROOM_DEFAULT_PLAYER_MASS * 2.0f)
+                                    : zone == SHROOM_ZONE_MID  ? SHROOM_DECAY_MASS_THRESHOLD
+                                                               : SHROOM_MAX_PLAYER_MASS;
+
+      if (player->mass <= decay_threshold) {
+        player->radius = ShroomMassToRadius(player->mass);
+        continue;
+      }
+
+      const float excess_mass = player->mass - decay_threshold;
       const float decay_mass = excess_mass * SHROOM_DECAY_RATE_PER_SECOND * delta_time;
       const float eject_radius = player->radius + 12.0f;
       const float angle = ShroomRandomFloat(world, 0.0f, 6.2831853f);

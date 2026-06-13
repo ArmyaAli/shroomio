@@ -15,6 +15,7 @@ void ShroomPlayerSetInput(ShroomPlayerState* player, ShroomVec2 input_direction)
 float ShroomMassToRadius(float mass);
 float ShroomMassToSpeed(float mass);
 ShroomZone ShroomGetZoneAtPosition(const ShroomWorldState* world, ShroomVec2 position);
+float ShroomGetConsumeMassAdvantageAtPosition(const ShroomWorldState* world, ShroomVec2 position);
 float ShroomDistanceSqr(ShroomVec2 a, ShroomVec2 b);
 
 #endif
