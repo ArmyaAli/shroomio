@@ -98,11 +98,10 @@ static void GameplayHandleInput(ShroomScreenManager* manager) {
       game->chat_scroll_to_bottom = true;
     }
   }
-
-  /* Hold Space to split — only when not already split (must merge back first). */
+  /* Hold Space to split — at max mass, one split per life. */
   if (IsKeyDown(KEY_SPACE) && !game->menu_overlay_open && !game->leaderboard_overlay_open &&
       !game->leave_confirmation_open && (game->local_player != NULL) && game->local_player->alive &&
-      (game->local_player->mass >= SHROOM_SPLIT_MIN_MASS) && (game->local_piece_count == 1)) {
+      !game->local_has_split && (game->local_player->mass >= SHROOM_SPLIT_MIN_MASS)) {
     game->split_hold_timer += GetFrameTime();
     if (game->split_hold_timer >= SHROOM_SPLIT_HOLD_SECONDS) {
       game->split_requested = true;

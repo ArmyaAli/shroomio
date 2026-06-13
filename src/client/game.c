@@ -725,12 +725,27 @@ static void DrawPlayers(const Game* game) {
         DrawCircleLines((int)position.x, (int)position.y, player->radius + 11.0f,
                         Fade(RED, decay_pulse));
       }
-      /* Hold-to-split charge arc on the focused piece. */
+      /* Hold-to-split: charge arc + launch direction arrow. */
       if (is_focused && (game->split_hold_timer > 0.0f)) {
         const float progress = game->split_hold_timer / SHROOM_SPLIT_HOLD_SECONDS;
         const Color arc_color = (progress >= 1.0f) ? RAYWHITE : SKYBLUE;
+
         DrawRing(position, player->radius + 14.0f, player->radius + 18.0f, -90.0f,
                  -90.0f + (progress * 360.0f), 36, Fade(arc_color, 0.85f));
+
+        /* Arrow showing the launch direction (mouse direction). */
+        if (ShroomVec2LengthSqr(player->input_direction) > 0.01f) {
+          const float arrow_len = player->radius + 28.0f + (progress * 24.0f);
+          const Vector2 dir = {player->input_direction.x, player->input_direction.y};
+          const Vector2 tip = {position.x + dir.x * arrow_len, position.y + dir.y * arrow_len};
+          const Vector2 left = {-dir.y * 9.0f, dir.x * 9.0f};
+          const Vector2 right = {dir.y * 9.0f, -dir.x * 9.0f};
+          const Vector2 base = {tip.x - dir.x * 14.0f, tip.y - dir.y * 14.0f};
+
+          DrawLineEx(position, base, 2.5f, Fade(arc_color, 0.75f));
+          DrawTriangle(tip, (Vector2){base.x + left.x, base.y + left.y},
+                       (Vector2){base.x + right.x, base.y + right.y}, Fade(arc_color, 0.80f));
+        }
       }
     }
 
@@ -1317,7 +1332,7 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
     if (game->local_piece_count > 1) {
       ShroomImGui_TextColored(ToImGuiColor(YELLOW),
                               TextFormat("Pieces %d  Tab to switch", game->local_piece_count));
-    } else if (game->local_player->mass >= SHROOM_SPLIT_MIN_MASS) {
+    } else if (!game->local_has_split && (game->local_player->mass >= SHROOM_SPLIT_MIN_MASS)) {
       ShroomImGui_TextColored(ToImGuiColor(SKYBLUE), "Hold Space to split");
     }
     ShroomImGui_Text(TextFormat("Players %d   Spores %d", (int)game->world.player_count,
@@ -1612,6 +1627,15 @@ void GameUpdate(Game* game, float delta_time) {
       game->focused_piece_entity_id = 0;
       game->piece_focus_changed = false;
     }
+    /* Set local_has_split when we first detect two pieces. */
+    if (game->local_piece_count > 1) {
+      game->local_has_split = true;
+    }
+    /* Reset on respawn: single piece at default mass means a fresh life. */
+    if ((game->local_piece_count == 1) && (game->local_player != NULL) &&
+        (game->local_player->mass <= SHROOM_DEFAULT_PLAYER_MASS * 1.5f)) {
+      game->local_has_split = false;
+    }
   }
 
   if (IsOnlineMode(game->active_mode)) {
@@ -1701,24 +1725,8 @@ void GameUpdate(Game* game, float delta_time) {
         }
       }
     }
-    if (game->piece_focus_changed) {
-      /* Smooth pan to newly focused piece; snap once close enough. */
-      const float blend = fminf(1.0f, delta_time * 5.0f);
-      const float tx = cam_target->position.x;
-      const float ty = cam_target->position.y;
-      const float dx = tx - game->camera.target.x;
-      const float dy = ty - game->camera.target.y;
-
-      game->camera.target.x += dx * blend;
-      game->camera.target.y += dy * blend;
-      if ((dx * dx + dy * dy) < 4.0f) {
-        game->camera.target.x = tx;
-        game->camera.target.y = ty;
-        game->piece_focus_changed = false;
-      }
-    } else {
-      game->camera.target = (Vector2){cam_target->position.x, cam_target->position.y};
-    }
+    game->camera.target = (Vector2){cam_target->position.x, cam_target->position.y};
+    game->piece_focus_changed = false;
   }
 }
 

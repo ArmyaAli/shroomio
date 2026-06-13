@@ -146,6 +146,7 @@ static void ShroomRespawnPlayer(ShroomWorldState* world, ShroomPlayerState* play
   player->decay_spore_accumulator = 0.0f;
   player->alive = true;
   player->ai_controlled = false;
+  player->has_split = false;
   player->split_velocity = (ShroomVec2){0};
   player->merge_timer = 0.0f;
   player->piece_index = 0;
@@ -619,6 +620,10 @@ bool ShroomWorldSplitPlayer(ShroomWorldState* world, ShroomPlayerState* player) 
   if (player->mass < SHROOM_SPLIT_MIN_MASS) {
     return false;
   }
+  /* One voluntary split per life for real players. */
+  if (!player->is_bot && player->has_split) {
+    return false;
+  }
   piece_count = ShroomCountPlayerPieces(world, player->player_id);
   if (piece_count >= SHROOM_MAX_SPLIT_PIECES) {
     return false;
@@ -662,6 +667,7 @@ bool ShroomWorldSplitPlayer(ShroomWorldState* world, ShroomPlayerState* player) 
 
   player->mass = half_mass;
   player->radius = ShroomMassToRadius(half_mass);
+  player->has_split = true;
   if (player->merge_timer <= 0.0f) {
     player->merge_timer = SHROOM_SPLIT_MERGE_SECONDS;
   }
@@ -699,7 +705,8 @@ static void ShroomApplyForcedSplits(ShroomWorldState* world) {
   for (i = 0; i < initial_count; ++i) {
     ShroomPlayerState* player = &world->players[i];
 
-    if (!player->alive) {
+    /* Autosplit applies to bots only; players choose when to split. */
+    if (!player->alive || !player->is_bot) {
       continue;
     }
     if (player->mass < SHROOM_SPLIT_MASS_THRESHOLD) {

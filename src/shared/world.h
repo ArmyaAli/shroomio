@@ -29,6 +29,7 @@ typedef struct ShroomPlayerState {
   bool alive;
   bool is_bot;
   bool ai_controlled;        /* server: non-focused split piece runs bot AI */
+  bool has_split;            /* one voluntary split per life; reset on respawn */
   ShroomVec2 split_velocity; /* impulse applied on split, decays to zero */
   float merge_timer;         /* seconds until this piece may merge back; 0 = ready */
   uint8_t piece_index;       /* 0 = primary; 1-3 = split fragment */
