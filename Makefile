@@ -235,10 +235,14 @@ IMGUI_TEST_CLIENT_SOURCES := \
 	$(SHARED_SRC_DIR)/sim.c \
 	$(SHARED_SRC_DIR)/lifecycle.c \
 	$(SHARED_SRC_DIR)/connection.c
-IMGUI_TEST_CPP_SOURCES := $(IMGUI_TESTS_DIR)/main.cpp $(IMGUI_TESTS_DIR)/tests.cpp
+# C test driver sources (plain C11 — no C++ in the test logic)
+IMGUI_TEST_C_SOURCES := $(IMGUI_TESTS_DIR)/main.c $(IMGUI_TESTS_DIR)/tests.c
+# C++ wrapper sources for the test harness (test engine C API bridge)
+IMGUI_TEST_CPP_WRAPPER_SOURCES := $(IMGUI_TESTS_DIR)/imgui_te_wrapper.cpp
 IMGUI_TEST_BIN := $(TEST_BUILD_DIR)/imgui/shroomio-imgui-tests
 IMGUI_TEST_CLIENT_OBJECTS := $(patsubst $(SRC_DIR)/%.c,$(TEST_BUILD_DIR)/imgui/%.o,$(IMGUI_TEST_CLIENT_SOURCES))
-IMGUI_TEST_CPP_OBJECTS := $(patsubst $(TESTS_DIR)/imgui/%.cpp,$(TEST_BUILD_DIR)/imgui/tests/%.o,$(IMGUI_TEST_CPP_SOURCES))
+IMGUI_TEST_C_OBJECTS := $(patsubst $(TESTS_DIR)/imgui/%.c,$(TEST_BUILD_DIR)/imgui/tests/%.o,$(IMGUI_TEST_C_SOURCES))
+IMGUI_TEST_CPP_WRAPPER_OBJECTS := $(patsubst $(TESTS_DIR)/imgui/%.cpp,$(TEST_BUILD_DIR)/imgui/tests/%.o,$(IMGUI_TEST_CPP_WRAPPER_SOURCES))
 IMGUI_TEST_IMGUI_OBJECTS := $(addprefix $(TEST_BUILD_DIR)/imgui/imgui/,$(addsuffix .o,$(IMGUI_CORE_SOURCES))) \
 	$(TEST_BUILD_DIR)/imgui/client/imgui_impl_raylib.o \
 	$(TEST_BUILD_DIR)/imgui/client/imgui_wrapper.o
@@ -373,9 +377,15 @@ $(TEST_BUILD_DIR)/imgui/shared/%.o: $(SHARED_SRC_DIR)/%.c $(SHARED_HEADERS) | $(
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(IMGUI_TEST_CFLAGS) -c $< -o $@
 
+# C++ wrapper compilation (imgui_te_wrapper.cpp and any future .cpp files in tests/imgui/)
 $(TEST_BUILD_DIR)/imgui/tests/%.o: $(IMGUI_TESTS_DIR)/%.cpp $(IMGUI_TEST_ENGINE_DIR) $(IMGUI_DIR) | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
-	$(LINUX_CXX) $(IMGUI_TEST_CXXFLAGS) -c $< -o $@
+	$(LINUX_CXX) $(IMGUI_TEST_CXXFLAGS) -I$(IMGUI_TESTS_DIR) -c $< -o $@
+
+# C test driver compilation (main.c, tests.c)
+$(TEST_BUILD_DIR)/imgui/tests/%.o: $(IMGUI_TESTS_DIR)/%.c | $(VCPKG_LINUX_STAMP)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(IMGUI_TEST_CFLAGS) -I$(IMGUI_TESTS_DIR) -c $< -o $@
 
 $(TEST_BUILD_DIR)/imgui/imgui/%.o: $(IMGUI_SRC_DIR)/%.cpp $(IMGUI_DIR) $(IMGUI_TEST_ENGINE_DIR) | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
@@ -474,9 +484,9 @@ unit-test: $(TEST_BINS)
 	echo "Total: $$total, Passed: $$((total - failed)), Failed: $$failed"; \
 	if [ $$failed -gt 0 ]; then exit 1; fi
 
-$(IMGUI_TEST_BIN): $(IMGUI_TEST_CLIENT_OBJECTS) $(IMGUI_TEST_CPP_OBJECTS) $(IMGUI_TEST_IMGUI_OBJECTS) $(IMGUI_TEST_ENGINE_OBJECTS) $(VCPKG_LINUX_STAMP)
+$(IMGUI_TEST_BIN): $(IMGUI_TEST_CLIENT_OBJECTS) $(IMGUI_TEST_C_OBJECTS) $(IMGUI_TEST_CPP_WRAPPER_OBJECTS) $(IMGUI_TEST_IMGUI_OBJECTS) $(IMGUI_TEST_ENGINE_OBJECTS) $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
-	$(LINUX_CXX) $(IMGUI_TEST_CLIENT_OBJECTS) $(IMGUI_TEST_CPP_OBJECTS) $(IMGUI_TEST_IMGUI_OBJECTS) $(IMGUI_TEST_ENGINE_OBJECTS) -o $@ $(IMGUI_TEST_THIRD_PARTY_LIBS) $(LINUX_LIBS) -pthread
+	$(LINUX_CXX) $(IMGUI_TEST_CLIENT_OBJECTS) $(IMGUI_TEST_C_OBJECTS) $(IMGUI_TEST_CPP_WRAPPER_OBJECTS) $(IMGUI_TEST_IMGUI_OBJECTS) $(IMGUI_TEST_ENGINE_OBJECTS) -o $@ $(IMGUI_TEST_THIRD_PARTY_LIBS) $(LINUX_LIBS) -pthread
 
 imgui-test: $(IMGUI_TEST_BIN)
 	@echo "Running ImGui tests..."
