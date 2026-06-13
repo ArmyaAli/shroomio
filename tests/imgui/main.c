@@ -1,9 +1,8 @@
 #include "app.h"
+#include "imgui_te_wrapper.h"
 
 #include "client/client_settings.h"
 #include "client/imgui_wrapper.h"
-#include "imgui.h"
-#include "imgui_test_engine/imgui_te_engine.h"
 #include "raylib.h"
 
 #include <stdio.h>
@@ -11,11 +10,11 @@
 #include <string.h>
 #include <unistd.h>
 
-ShroomImGuiTestApp g_imgui_test_app = {};
+ShroomImGuiTestApp g_imgui_test_app;
 
-extern void ShroomRegisterImGuiTests(ImGuiTestEngine* engine);
+extern void ShroomRegisterImGuiTests(ImGuiTestEngine *engine);
 
-static void RegisterScreens(ShroomScreenManager* manager) {
+static void RegisterScreens(ShroomScreenManager *manager) {
   ShroomScreenRegisterMainMenu(manager);
   ShroomScreenRegisterSettings(manager);
   ShroomScreenRegisterHelp(manager);
@@ -58,7 +57,7 @@ void ShroomImGuiTestAppReset(bool reset_files) {
 
 static bool SetupWorkingDirectory(void) {
   char template_path[] = "/tmp/shroomio-imgui-tests-XXXXXX";
-  char* temp_dir = mkdtemp(template_path);
+  char *temp_dir = mkdtemp(template_path);
 
   if (temp_dir == NULL) {
     perror("mkdtemp");
@@ -75,9 +74,10 @@ static bool SetupWorkingDirectory(void) {
 }
 
 int main(void) {
-  ImGuiTestEngine* engine;
-  ImGuiTestEngineResultSummary summary;
-  ImGuiTestEngineIO* test_io;
+  ImGuiTestEngine *engine;
+  int tested = 0;
+  int success = 0;
+  int queued = 0;
   int exit_code = 0;
 
   if (!SetupWorkingDirectory()) {
@@ -91,20 +91,9 @@ int main(void) {
   ShroomImGui_Init();
   ShroomImGuiTestAppReset(true);
 
-  engine = ImGuiTestEngine_CreateContext();
-  test_io = &ImGuiTestEngine_GetIO(engine);
-  test_io->ConfigSavedSettings = false;
-  test_io->ConfigCaptureEnabled = false;
-  test_io->ConfigNoThrottle = true;
-  test_io->ConfigLogToTTY = true;
-  test_io->ConfigRunSpeed = ImGuiTestRunSpeed_Fast;
-  test_io->ConfigVerboseLevel = ImGuiTestVerboseLevel_Info;
-  test_io->ConfigVerboseLevelOnError = ImGuiTestVerboseLevel_Debug;
-
-  ImGuiTestEngine_Start(engine, ImGui::GetCurrentContext());
-  ImGuiTestEngine_InstallDefaultCrashHandler();
+  engine = ShroomTeEngine_Create();
   ShroomRegisterImGuiTests(engine);
-  ImGuiTestEngine_QueueTests(engine, ImGuiTestGroup_Tests);
+  ShroomTeEngine_QueueAll(engine);
 
   while (!WindowShouldClose()) {
     ShroomScreenManagerHandleInput(&g_imgui_test_app.screen_manager);
@@ -118,27 +107,25 @@ int main(void) {
     BeginDrawing();
     ShroomScreenManagerDraw(&g_imgui_test_app.screen_manager);
     ShroomImGui_Render();
-    ImGuiTestEngine_PreSwap(engine);
+    ShroomTeEngine_PreSwap(engine);
     EndDrawing();
-    ImGuiTestEngine_PostSwap(engine);
+    ShroomTeEngine_PostSwap(engine);
 
-    if (ImGuiTestEngine_IsTestQueueEmpty(engine) && !test_io->IsRunningTests) {
+    if (ShroomTeEngine_IsDone(engine)) {
       break;
     }
   }
 
-  ImGuiTestEngine_Stop(engine);
-  ImGuiTestEngine_GetResultSummary(engine, &summary);
-  fprintf(stderr, "ImGui tests: tested=%d success=%d queued=%d\n", summary.CountTested,
-          summary.CountSuccess, summary.CountInQueue);
-  if ((summary.CountTested == 0) || (summary.CountTested != summary.CountSuccess) ||
-      (summary.CountInQueue != 0)) {
+  ShroomTeEngine_Stop(engine);
+  ShroomTeEngine_GetResults(engine, &tested, &success, &queued);
+  fprintf(stderr, "ImGui tests: tested=%d success=%d queued=%d\n", tested, success, queued);
+  if ((tested == 0) || (tested != success) || (queued != 0)) {
     exit_code = 1;
   }
 
   ShroomScreenManagerShutdown(&g_imgui_test_app.screen_manager);
   ShroomImGui_Shutdown();
   CloseWindow();
-  ImGuiTestEngine_DestroyContext(engine);
+  ShroomTeEngine_Destroy(engine);
   return exit_code;
 }
