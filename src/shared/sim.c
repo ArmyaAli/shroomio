@@ -416,6 +416,7 @@ static void ShroomResolveConsumes(ShroomWorldState* world) {
     if (consumed[attacker_index]) {
       ShroomPlayerState* victim = &world->players[attacker_index];
       ShroomPlayerState* winner = &world->players[consumed_by[attacker_index]];
+      const ShroomPlayerId victim_player_id = victim->player_id;
 
       winner->mass = ShroomClamp(winner->mass + (victim->mass * SHROOM_CONSUME_MASS_GAIN_FACTOR),
                                  0.0f, SHROOM_MAX_PLAYER_MASS);
@@ -427,14 +428,9 @@ static void ShroomResolveConsumes(ShroomWorldState* world) {
           size_t ki;
           for (ki = 0; ki < world->player_count; ++ki) {
             ShroomPlayerState* p = &world->players[ki];
-            if (p->alive && (p->player_id == victim->player_id) && (p->piece_index > 0)) {
-              p->alive = false;
-              p->mass = 0.0f;
-              p->radius = 0.0f;
-              p->split_velocity = (ShroomVec2){0};
-              p->merge_timer = 0.0f;
-              p->ai_controlled = false;
-              p->player_id = 0;
+            if ((p != victim) && p->alive && (p->player_id == victim_player_id) &&
+                (p->piece_index > 0)) {
+              *p = (ShroomPlayerState){0};
             }
           }
         }
@@ -659,6 +655,7 @@ bool ShroomWorldSplitPlayer(ShroomWorldState* world, ShroomPlayerState* player) 
       .radius = ShroomMassToRadius(half_mass),
       .alive = true,
       .is_bot = player->is_bot,
+      .ai_controlled = true,
       .merge_timer = SHROOM_SPLIT_MERGE_SECONDS,
       .piece_index = (uint8_t)piece_count,
       .split_velocity = ShroomVec2Scale(launch_dir, SHROOM_SPLIT_IMPULSE_SPEED),
@@ -675,6 +672,12 @@ bool ShroomWorldSplitPlayer(ShroomWorldState* world, ShroomPlayerState* player) 
   return true;
 }
 
+static bool ShroomCanMergePieces(const ShroomPlayerState* primary, const ShroomPlayerState* piece) {
+  const float merge_radius = primary->radius + piece->radius;
+
+  return ShroomDistanceSqr(primary->position, piece->position) <= (merge_radius * merge_radius);
+}
+
 static void ShroomResolveMerges(ShroomWorldState* world) {
   size_t i;
   for (i = 0; i < world->player_count; ++i) {
@@ -689,6 +692,9 @@ static void ShroomResolveMerges(ShroomWorldState* world) {
     }
     primary = ShroomFindPrimaryPiece(world, piece->player_id);
     if ((primary == NULL) || !primary->alive || (primary->merge_timer > 0.0f)) {
+      continue;
+    }
+    if (!ShroomCanMergePieces(primary, piece)) {
       continue;
     }
     primary->mass = ShroomClamp(primary->mass + piece->mass, 0.0f, SHROOM_MAX_PLAYER_MASS);
