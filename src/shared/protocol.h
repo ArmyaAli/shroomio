@@ -6,7 +6,7 @@
 
 #include "config.h"
 
-#define SHROOM_PROTOCOL_VERSION 1u
+#define SHROOM_PROTOCOL_VERSION 2u
 #define SHROOM_SERVER_PORT 7777u
 #define SHROOM_MAX_PASSWORD_LENGTH 64u
 #define SHROOM_AUTH_TOKEN_LENGTH 64u
@@ -15,6 +15,8 @@
 #define SHROOM_SNAPSHOT_RATE 15u
 #define SHROOM_MAX_SNAPSHOT_PLAYERS 256u
 #define SHROOM_SPORE_STATE_RATE 5u
+#define SHROOM_POWERUP_EFFECT_SPEED 0x0001u
+#define SHROOM_POWERUP_EFFECT_SHIELD 0x0002u
 #define SHROOM_LATENCY_WARNING_MS 150u
 #define SHROOM_LATENCY_UNPLAYABLE_MS 200u
 #define SHROOM_CHAT_MAX_MESSAGE_LENGTH 200u
@@ -48,6 +50,7 @@ typedef enum ShroomPacketType {
   SHROOM_PACKET_LOBBY_LEAVE = 15,
   SHROOM_PACKET_LOBBY_CREATE = 16,
   SHROOM_PACKET_LOBBY_CREATED = 17,
+  SHROOM_PACKET_POWERUP_STATE = 18,
 } ShroomPacketType;
 
 typedef enum ShroomAuthMethod {
@@ -83,6 +86,7 @@ static inline uint8_t ShroomPacketTypeToChannel(ShroomPacketType type) {
     return SHROOM_ENET_CHANNEL_CONTROL;
   case SHROOM_PACKET_SNAPSHOT:
   case SHROOM_PACKET_SPORE_STATE:
+  case SHROOM_PACKET_POWERUP_STATE:
     return SHROOM_ENET_CHANNEL_SNAPSHOT;
   case SHROOM_PACKET_INPUT:
     return SHROOM_ENET_CHANNEL_INPUT;
@@ -122,6 +126,7 @@ static inline bool ShroomPacketTypeUsesReliableDelivery(ShroomPacketType type) {
   case SHROOM_PACKET_INPUT:
   case SHROOM_PACKET_SNAPSHOT:
   case SHROOM_PACKET_SPORE_STATE:
+  case SHROOM_PACKET_POWERUP_STATE:
   default:
     return false;
   }
@@ -185,7 +190,7 @@ typedef struct ShroomSnapshotPlayerState {
   char name[SHROOM_MAX_NAME_LENGTH];
   uint8_t alive;
   uint8_t is_bot;
-  uint16_t reserved;
+  uint16_t effect_flags;
 } ShroomSnapshotPlayerState;
 
 typedef struct ShroomSnapshotPacket {
@@ -224,6 +229,23 @@ typedef struct ShroomSporeStatePacket {
   uint16_t reserved;
   ShroomSnapshotSporeState spores[SHROOM_MAX_SPORES];
 } ShroomSporeStatePacket;
+
+typedef struct ShroomSnapshotPowerupState {
+  uint32_t entity_id;
+  float position_x;
+  float position_y;
+  uint8_t type;
+  uint8_t active;
+  uint16_t reserved;
+} ShroomSnapshotPowerupState;
+
+typedef struct ShroomPowerupStatePacket {
+  ShroomPacketHeader header;
+  uint64_t tick;
+  uint16_t powerup_count;
+  uint16_t reserved;
+  ShroomSnapshotPowerupState powerups[SHROOM_MAX_POWERUPS];
+} ShroomPowerupStatePacket;
 
 typedef struct ShroomAuthRequestPacket {
   ShroomPacketHeader header;

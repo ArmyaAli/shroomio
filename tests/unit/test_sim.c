@@ -11,6 +11,7 @@ static void ResetWorldForPlayers(void) {
   world.tick = 0;
   world.player_count = 0;
   world.spore_count = 0;
+  world.powerup_count = 0;
   world.next_entity_id = 1;
 }
 
@@ -46,7 +47,8 @@ void test_world_init_sets_expected_defaults(void) {
   TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_WORLD_HEIGHT, world.height);
   TEST_ASSERT_EQUAL_UINT32(7u, world.random_seed);
   TEST_ASSERT_EQUAL_size_t(SHROOM_SPORE_TARGET_COUNT, world.spore_count);
-  TEST_ASSERT_EQUAL_UINT32((uint32_t)(SHROOM_SPORE_TARGET_COUNT + 1), world.next_entity_id);
+  TEST_ASSERT_EQUAL_UINT32((uint32_t)(SHROOM_SPORE_TARGET_COUNT + SHROOM_MAX_POWERUPS + 1),
+                           world.next_entity_id);
 }
 
 void test_world_init_with_seed_repeats_same_layout(void) {
@@ -92,6 +94,27 @@ void test_world_init_populates_active_spores_with_value(void) {
   }
 
   TEST_ASSERT_TRUE(center_count > outer_count);
+}
+
+void test_world_init_populates_powerups_across_supported_types(void) {
+  size_t speed_count = 0;
+  size_t shield_count = 0;
+
+  TEST_ASSERT_EQUAL_size_t(SHROOM_MAX_POWERUPS, world.powerup_count);
+
+  for (size_t index = 0; index < world.powerup_count; ++index) {
+    TEST_ASSERT_TRUE(world.powerups[index].active);
+    TEST_ASSERT_NOT_EQUAL(0, world.powerups[index].entity_id);
+    if (world.powerups[index].type == SHROOM_POWERUP_SPEED) {
+      speed_count += 1;
+    }
+    if (world.powerups[index].type == SHROOM_POWERUP_SHIELD) {
+      shield_count += 1;
+    }
+  }
+
+  TEST_ASSERT_GREATER_THAN_size_t(0, speed_count);
+  TEST_ASSERT_GREATER_THAN_size_t(0, shield_count);
 }
 
 void test_zone_classification_matches_center_mid_and_outer(void) {
@@ -191,6 +214,99 @@ void test_world_step_collects_spores_and_gains_mass(void) {
   TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_DEFAULT_PLAYER_MASS + SHROOM_SPORE_VALUE, player->mass);
   TEST_ASSERT_TRUE(world.spores[0].active);
   TEST_ASSERT_EQUAL_UINT16(SHROOM_SPORE_VALUE, world.spores[0].value);
+}
+
+void test_world_step_collects_speed_powerup_and_expires_effect(void) {
+  ShroomPlayerState* player;
+  const float start_x = 2000.0f;
+
+  ResetWorldForPlayers();
+
+  player = ShroomWorldSpawnPlayer(&world, 1, false);
+  TEST_ASSERT_NOT_NULL(player);
+
+  player->position = (ShroomVec2){start_x, 2000.0f};
+  world.powerup_count = 1;
+  world.powerups[0] = (ShroomPowerupState){
+      .entity_id = 10,
+      .position = player->position,
+      .type = SHROOM_POWERUP_SPEED,
+      .active = true,
+  };
+
+  ShroomWorldStep(&world, 0.0f);
+
+  TEST_ASSERT_FALSE(world.powerups[0].active);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_POWERUP_SPEED_SECONDS, player->speed_powerup_timer);
+
+  ShroomPlayerSetInput(player, (ShroomVec2){1.0f, 0.0f});
+  ShroomWorldStep(&world, 1.0f);
+
+  TEST_ASSERT_FLOAT_WITHIN(
+      0.01f, start_x + (ShroomMassToSpeed(player->mass) * SHROOM_POWERUP_SPEED_MULTIPLIER),
+      player->position.x);
+
+  ShroomWorldStep(&world, SHROOM_POWERUP_SPEED_SECONDS);
+
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, player->speed_powerup_timer);
+}
+
+void test_mass_shield_powerup_blocks_consumption_until_expired(void) {
+  ShroomPlayerState* attacker;
+  ShroomPlayerState* victim;
+
+  ResetWorldForPlayers();
+
+  attacker = ShroomWorldSpawnPlayer(&world, 1, false);
+  victim = ShroomWorldSpawnPlayer(&world, 2, false);
+  TEST_ASSERT_NOT_NULL(attacker);
+  TEST_ASSERT_NOT_NULL(victim);
+
+  attacker->mass = 160.0f;
+  attacker->radius = ShroomMassToRadius(attacker->mass);
+  attacker->position = (ShroomVec2){3000.0f, 3000.0f};
+  victim->mass = 100.0f;
+  victim->radius = ShroomMassToRadius(victim->mass);
+  victim->position = attacker->position;
+  victim->shield_powerup_timer = SHROOM_POWERUP_SHIELD_SECONDS;
+
+  ShroomWorldStep(&world, 0.0f);
+
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 100.0f, victim->mass);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 3000.0f, victim->position.x);
+
+  victim->shield_powerup_timer = 0.0f;
+  ShroomWorldStep(&world, 0.0f);
+
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_DEFAULT_PLAYER_MASS, victim->mass);
+  TEST_ASSERT_EQUAL(SHROOM_ZONE_OUTER, ShroomGetZoneAtPosition(&world, victim->position));
+}
+
+void test_powerup_respawns_after_timer(void) {
+  ShroomPlayerState* player;
+
+  ResetWorldForPlayers();
+
+  player = ShroomWorldSpawnPlayer(&world, 1, false);
+  TEST_ASSERT_NOT_NULL(player);
+
+  world.powerup_count = 1;
+  world.powerups[0] = (ShroomPowerupState){
+      .entity_id = 10,
+      .position = player->position,
+      .type = SHROOM_POWERUP_SHIELD,
+      .active = true,
+  };
+
+  ShroomWorldStep(&world, 0.0f);
+  TEST_ASSERT_FALSE(world.powerups[0].active);
+
+  ShroomWorldStep(&world, SHROOM_POWERUP_RESPAWN_SECONDS - 0.1f);
+  TEST_ASSERT_FALSE(world.powerups[0].active);
+
+  ShroomWorldStep(&world, 0.2f);
+  TEST_ASSERT_TRUE(world.powerups[0].active);
+  TEST_ASSERT_EQUAL_UINT32(10u, world.powerups[0].entity_id);
 }
 
 void test_world_step_consumes_player_when_mass_advantage_and_overlap_match(void) {
@@ -567,12 +683,16 @@ int main(void) {
   RUN_TEST(test_world_init_with_seed_repeats_same_layout);
   RUN_TEST(test_world_init_with_different_seed_changes_layout);
   RUN_TEST(test_world_init_populates_active_spores_with_value);
+  RUN_TEST(test_world_init_populates_powerups_across_supported_types);
   RUN_TEST(test_zone_classification_matches_center_mid_and_outer);
   RUN_TEST(test_mass_helpers_respect_expected_scaling_and_bounds);
   RUN_TEST(test_spawn_player_prefers_safe_outer_spawn);
   RUN_TEST(test_world_step_moves_player_and_increments_tick);
   RUN_TEST(test_world_step_clamps_player_to_world_bounds);
   RUN_TEST(test_world_step_collects_spores_and_gains_mass);
+  RUN_TEST(test_world_step_collects_speed_powerup_and_expires_effect);
+  RUN_TEST(test_mass_shield_powerup_blocks_consumption_until_expired);
+  RUN_TEST(test_powerup_respawns_after_timer);
   RUN_TEST(test_world_step_consumes_player_when_mass_advantage_and_overlap_match);
   RUN_TEST(test_world_step_does_not_consume_without_required_mass_advantage);
   RUN_TEST(test_center_zone_uses_lower_consume_advantage);

@@ -529,6 +529,7 @@ static void ApplyNetworkSnapshot(Game* game) {
   game->world.tick = game->net.last_snapshot_tick;
   game->world.player_count = game->net.snapshot_player_count;
   game->world.spore_count = game->net.spore_count;
+  game->world.powerup_count = game->net.powerup_count;
 
   for (index = 0; index < game->net.snapshot_player_count; ++index) {
     const ShroomSnapshotPlayerState* snapshot_player = &game->net.snapshot_players[index];
@@ -542,6 +543,10 @@ static void ApplyNetworkSnapshot(Game* game) {
         .radius = snapshot_player->radius,
         .alive = snapshot_player->alive != 0,
         .is_bot = snapshot_player->is_bot != 0,
+        .speed_powerup_timer =
+            (snapshot_player->effect_flags & SHROOM_POWERUP_EFFECT_SPEED) != 0u ? 1.0f : 0.0f,
+        .shield_powerup_timer =
+            (snapshot_player->effect_flags & SHROOM_POWERUP_EFFECT_SHIELD) != 0u ? 1.0f : 0.0f,
     };
     snprintf(player->name, sizeof(player->name), "%s", snapshot_player->name);
 
@@ -573,6 +578,22 @@ static void ApplyNetworkSnapshot(Game* game) {
 
   for (; index < SHROOM_MAX_SPORES; ++index) {
     game->world.spores[index].active = false;
+  }
+
+  for (index = 0; index < game->net.powerup_count; ++index) {
+    const ShroomSnapshotPowerupState* snapshot_powerup = &game->net.snapshot_powerups[index];
+    ShroomPowerupState* powerup = &game->world.powerups[index];
+
+    *powerup = (ShroomPowerupState){
+        .entity_id = snapshot_powerup->entity_id,
+        .position = {snapshot_powerup->position_x, snapshot_powerup->position_y},
+        .type = (ShroomPowerupType)snapshot_powerup->type,
+        .active = snapshot_powerup->active != 0,
+    };
+  }
+
+  for (; index < SHROOM_MAX_POWERUPS; ++index) {
+    game->world.powerups[index].active = false;
   }
 
   DiscardAcknowledgedInputs(game);
@@ -687,6 +708,35 @@ static void DrawSpores(const ShroomWorldState* world) {
     }
 
     DrawCircleV((Vector2){spore->position.x, spore->position.y}, 4.0f, GOLD);
+  }
+}
+
+static Color GetPowerupColor(ShroomPowerupType type) {
+  switch (type) {
+  case SHROOM_POWERUP_SPEED:
+    return SKYBLUE;
+  case SHROOM_POWERUP_SHIELD:
+    return VIOLET;
+  default:
+    return RAYWHITE;
+  }
+}
+
+static void DrawPowerups(const ShroomWorldState* world) {
+  for (size_t index = 0; index < world->powerup_count; ++index) {
+    const ShroomPowerupState* powerup = &world->powerups[index];
+    const Color color = GetPowerupColor(powerup->type);
+
+    if (!powerup->active) {
+      continue;
+    }
+
+    DrawCircleV((Vector2){powerup->position.x, powerup->position.y}, SHROOM_POWERUP_RADIUS + 8.0f,
+                Fade(color, 0.18f));
+    DrawCircleV((Vector2){powerup->position.x, powerup->position.y}, SHROOM_POWERUP_RADIUS,
+                Fade(color, 0.78f));
+    DrawCircleLines((int)powerup->position.x, (int)powerup->position.y,
+                    SHROOM_POWERUP_RADIUS + 4.0f, Fade(RAYWHITE, 0.82f));
   }
 }
 
@@ -1335,6 +1385,12 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
     } else if (!game->local_has_split && (game->local_player->mass >= SHROOM_SPLIT_MIN_MASS)) {
       ShroomImGui_TextColored(ToImGuiColor(SKYBLUE), "Hold Space to split");
     }
+    if (game->local_player->speed_powerup_timer > 0.0f) {
+      ShroomImGui_TextColored(ToImGuiColor(SKYBLUE), "Speed Burst active");
+    }
+    if (game->local_player->shield_powerup_timer > 0.0f) {
+      ShroomImGui_TextColored(ToImGuiColor(VIOLET), "Mass Shield active");
+    }
     ShroomImGui_Text(TextFormat("Players %d   Spores %d", (int)game->world.player_count,
                                 (int)game->world.spore_count));
   }
@@ -1750,6 +1806,7 @@ void GameDraw(Game* game) {
   DrawRectangleLines(0, 0, (int)game->world.width, (int)game->world.height, Fade(DARKGREEN, 0.7f));
   DrawGrid(80, 64.0f);
   DrawSpores(&game->world);
+  DrawPowerups(&game->world);
   DrawPlayers(game);
   EndMode2D();
 

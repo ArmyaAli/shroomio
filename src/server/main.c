@@ -451,6 +451,9 @@ static void SendSnapshot(ENetPeer* peer, const ServerSession* session,
         .radius = player->radius,
         .alive = 1u,
         .is_bot = player->is_bot ? 1u : 0u,
+        .effect_flags =
+            (uint16_t)((player->speed_powerup_timer > 0.0f ? SHROOM_POWERUP_EFFECT_SPEED : 0u) |
+                       (player->shield_powerup_timer > 0.0f ? SHROOM_POWERUP_EFFECT_SHIELD : 0u)),
     };
     snprintf(packet.players[player_count - 1].name, sizeof(packet.players[player_count - 1].name),
              "%s", player->name);
@@ -505,6 +508,34 @@ static void SendSporeState(ENetPeer* peer, const ShroomWorldState* world) {
   }
 
   enet_peer_send(peer, SHROOM_ENET_CHANNEL_SNAPSHOT, enet_packet);
+}
+
+static void SendPowerupState(ENetPeer* peer, const ShroomWorldState* world) {
+  ShroomPowerupStatePacket packet = {0};
+  uint16_t powerup_count = (uint16_t)world->powerup_count;
+
+  if (powerup_count > SHROOM_MAX_POWERUPS) {
+    powerup_count = SHROOM_MAX_POWERUPS;
+  }
+
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_POWERUP_STATE, sizeof(packet));
+  packet.tick = world->tick;
+  packet.powerup_count = powerup_count;
+
+  for (uint16_t index = 0; index < powerup_count; ++index) {
+    const ShroomPowerupState* powerup = &world->powerups[index];
+
+    packet.powerups[index] = (ShroomSnapshotPowerupState){
+        .entity_id = powerup->entity_id,
+        .position_x = powerup->position.x,
+        .position_y = powerup->position.y,
+        .type = (uint8_t)powerup->type,
+        .active = powerup->active ? 1u : 0u,
+    };
+  }
+
+  enet_peer_send(peer, SHROOM_ENET_CHANNEL_SNAPSHOT,
+                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_POWERUP_STATE));
 }
 
 static void DisconnectSession(ServerSession* session) {
@@ -1189,6 +1220,7 @@ int main(void) {
               continue;
             }
             SendSporeState(&host->peers[pi], &lobby->world);
+            SendPowerupState(&host->peers[pi], &lobby->world);
           }
           enet_host_flush(host);
         }
