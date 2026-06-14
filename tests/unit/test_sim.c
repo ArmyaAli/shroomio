@@ -14,6 +14,32 @@ static void ResetWorldForPlayers(void) {
   world.next_entity_id = 1;
 }
 
+static size_t CountAlivePieces(ShroomPlayerId player_id) {
+  size_t count = 0;
+
+  for (size_t index = 0; index < world.player_count; ++index) {
+    const ShroomPlayerState* player = &world.players[index];
+
+    if (player->alive && (player->player_id == player_id)) {
+      count += 1;
+    }
+  }
+
+  return count;
+}
+
+static ShroomPlayerState* FindSplitPiece(ShroomPlayerId player_id) {
+  for (size_t index = 0; index < world.player_count; ++index) {
+    ShroomPlayerState* player = &world.players[index];
+
+    if (player->alive && (player->player_id == player_id) && (player->piece_index > 0)) {
+      return player;
+    }
+  }
+
+  return NULL;
+}
+
 void test_world_init_sets_expected_defaults(void) {
   TEST_ASSERT_EQUAL_UINT64(0, world.tick);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_WORLD_WIDTH, world.width);
@@ -299,6 +325,109 @@ void test_world_step_caps_mass_gain_at_configured_maximum(void) {
   TEST_ASSERT_EQUAL(2, world.player_count);
 }
 
+void test_player_can_voluntarily_split_at_large_colony_threshold(void) {
+  ShroomPlayerState* player;
+  ShroomPlayerState* piece;
+  const float starting_mass = SHROOM_SPLIT_MIN_MASS;
+
+  ResetWorldForPlayers();
+
+  player = ShroomWorldSpawnPlayer(&world, 1, false);
+  TEST_ASSERT_NOT_NULL(player);
+
+  player->mass = starting_mass;
+  player->radius = ShroomMassToRadius(player->mass);
+  player->input_direction = (ShroomVec2){1.0f, 0.0f};
+
+  TEST_ASSERT_TRUE(ShroomWorldSplitPlayer(&world, player));
+
+  piece = FindSplitPiece(player->player_id);
+  TEST_ASSERT_NOT_NULL(piece);
+  TEST_ASSERT_EQUAL_size_t(2, CountAlivePieces(player->player_id));
+  TEST_ASSERT_NOT_EQUAL_UINT32(player->entity_id, piece->entity_id);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, starting_mass, player->mass + piece->mass);
+  TEST_ASSERT_TRUE(piece->ai_controlled);
+}
+
+void test_player_cannot_voluntarily_split_below_large_colony_threshold(void) {
+  ShroomPlayerState* player;
+
+  ResetWorldForPlayers();
+
+  player = ShroomWorldSpawnPlayer(&world, 1, false);
+  TEST_ASSERT_NOT_NULL(player);
+
+  player->mass = SHROOM_SPLIT_MIN_MASS - 1.0f;
+  player->radius = ShroomMassToRadius(player->mass);
+
+  TEST_ASSERT_FALSE(ShroomWorldSplitPlayer(&world, player));
+  TEST_ASSERT_EQUAL_size_t(1, CountAlivePieces(player->player_id));
+}
+
+void test_split_pieces_wait_to_merge_until_cooldown_and_proximity(void) {
+  ShroomPlayerState* player;
+  ShroomPlayerState* piece;
+
+  ResetWorldForPlayers();
+
+  player = ShroomWorldSpawnPlayer(&world, 1, false);
+  TEST_ASSERT_NOT_NULL(player);
+
+  player->mass = SHROOM_SPLIT_MIN_MASS;
+  player->radius = ShroomMassToRadius(player->mass);
+  TEST_ASSERT_TRUE(ShroomWorldSplitPlayer(&world, player));
+  piece = FindSplitPiece(player->player_id);
+  TEST_ASSERT_NOT_NULL(piece);
+
+  player->merge_timer = 0.0f;
+  piece->merge_timer = 0.0f;
+  player->position = (ShroomVec2){1000.0f, 1000.0f};
+  piece->position = (ShroomVec2){3000.0f, 3000.0f};
+
+  ShroomWorldStep(&world, 0.0f);
+
+  TEST_ASSERT_EQUAL_size_t(2, CountAlivePieces(player->player_id));
+
+  piece->position = player->position;
+  ShroomWorldStep(&world, 0.0f);
+
+  TEST_ASSERT_EQUAL_size_t(1, CountAlivePieces(player->player_id));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_SPLIT_MIN_MASS, player->mass);
+}
+
+void test_consuming_primary_clears_old_split_fragments_after_respawn(void) {
+  ShroomPlayerState* attacker;
+  ShroomPlayerState* victim;
+  ShroomPlayerState* fragment;
+
+  ResetWorldForPlayers();
+
+  attacker = ShroomWorldSpawnPlayer(&world, 1, false);
+  victim = ShroomWorldSpawnPlayer(&world, 2, false);
+  TEST_ASSERT_NOT_NULL(attacker);
+  TEST_ASSERT_NOT_NULL(victim);
+
+  victim->mass = SHROOM_SPLIT_MIN_MASS;
+  victim->radius = ShroomMassToRadius(victim->mass);
+  victim->position = (ShroomVec2){3000.0f, 3000.0f};
+  TEST_ASSERT_TRUE(ShroomWorldSplitPlayer(&world, victim));
+  fragment = FindSplitPiece(victim->player_id);
+  TEST_ASSERT_NOT_NULL(fragment);
+
+  attacker->mass = victim->mass * SHROOM_CONSUME_MASS_ADVANTAGE;
+  attacker->radius = ShroomMassToRadius(attacker->mass);
+  attacker->position = victim->position;
+
+  ShroomWorldStep(&world, 0.0f);
+
+  TEST_ASSERT_TRUE(victim->alive);
+  TEST_ASSERT_EQUAL_UINT32(2u, victim->player_id);
+  TEST_ASSERT_EQUAL_UINT8(0u, victim->piece_index);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_DEFAULT_PLAYER_MASS, victim->mass);
+  TEST_ASSERT_EQUAL_size_t(1, CountAlivePieces(victim->player_id));
+  TEST_ASSERT_NULL(FindSplitPiece(victim->player_id));
+}
+
 void test_world_step_decays_oversized_player_and_ejects_spore_mass(void) {
   ShroomPlayerState* player;
 
@@ -449,6 +578,10 @@ int main(void) {
   RUN_TEST(test_center_zone_uses_lower_consume_advantage);
   RUN_TEST(test_spawn_player_reuses_inactive_slot);
   RUN_TEST(test_world_step_caps_mass_gain_at_configured_maximum);
+  RUN_TEST(test_player_can_voluntarily_split_at_large_colony_threshold);
+  RUN_TEST(test_player_cannot_voluntarily_split_below_large_colony_threshold);
+  RUN_TEST(test_split_pieces_wait_to_merge_until_cooldown_and_proximity);
+  RUN_TEST(test_consuming_primary_clears_old_split_fragments_after_respawn);
   RUN_TEST(test_world_step_decays_oversized_player_and_ejects_spore_mass);
   RUN_TEST(test_outer_zone_disables_decay_for_oversized_player);
   RUN_TEST(test_center_zone_decay_starts_at_lower_threshold);
