@@ -20,8 +20,7 @@ void test_welcome_packet_size(void) {
 void test_input_packet_size(void) {
   /* header + sequence + direction_x + direction_y + split_requested + reserved[3] +
    * focused_entity_id */
-  TEST_ASSERT_EQUAL(sizeof(ShroomPacketHeader) + 4 + 4 + 4 + 1 + 3 + 4,
-                    sizeof(ShroomInputPacket));
+  TEST_ASSERT_EQUAL(sizeof(ShroomPacketHeader) + 4 + 4 + 4 + 1 + 3 + 4, sizeof(ShroomInputPacket));
 }
 
 void test_ping_packet_size(void) {
@@ -51,6 +50,7 @@ void test_packet_type_values(void) {
   TEST_ASSERT_EQUAL(15, SHROOM_PACKET_LOBBY_LEAVE);
   TEST_ASSERT_EQUAL(16, SHROOM_PACKET_LOBBY_CREATE);
   TEST_ASSERT_EQUAL(17, SHROOM_PACKET_LOBBY_CREATED);
+  TEST_ASSERT_EQUAL(18, SHROOM_PACKET_POWERUP_STATE);
 }
 
 void test_lobby_packet_channel_mapping(void) {
@@ -162,7 +162,7 @@ void test_lobby_config_constants(void) {
 
 void test_protocol_constants(void) {
   TEST_ASSERT_EQUAL(7777, SHROOM_SERVER_PORT);
-  TEST_ASSERT_EQUAL(1, SHROOM_PROTOCOL_VERSION);
+  TEST_ASSERT_EQUAL(2, SHROOM_PROTOCOL_VERSION);
   TEST_ASSERT_EQUAL(32, SHROOM_MAX_NAME_LENGTH);
   TEST_ASSERT_EQUAL(15, SHROOM_SNAPSHOT_RATE);
   TEST_ASSERT_EQUAL(256, SHROOM_MAX_SNAPSHOT_PLAYERS);
@@ -183,6 +183,8 @@ void test_packet_channel_mapping(void) {
                     ShroomPacketTypeToChannel(SHROOM_PACKET_SNAPSHOT));
   TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_SNAPSHOT,
                     ShroomPacketTypeToChannel(SHROOM_PACKET_SPORE_STATE));
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_SNAPSHOT,
+                    ShroomPacketTypeToChannel(SHROOM_PACKET_POWERUP_STATE));
   TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CONTROL,
                     ShroomPacketTypeToChannel(SHROOM_PACKET_AUTH_RESPONSE));
 }
@@ -195,6 +197,7 @@ void test_packet_reliability_mapping(void) {
   TEST_ASSERT_FALSE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_INPUT));
   TEST_ASSERT_FALSE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_SNAPSHOT));
   TEST_ASSERT_FALSE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_SPORE_STATE));
+  TEST_ASSERT_FALSE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_POWERUP_STATE));
 }
 
 void test_packet_header_initializes_channel_metadata(void) {
@@ -250,6 +253,43 @@ void test_spore_state_packet_initialization(void) {
   TEST_ASSERT_EQUAL(8, packet.spores[0].value);
   TEST_ASSERT_EQUAL(3, packet.spores[2].entity_id);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 600.0f, packet.spores[2].position_y);
+}
+
+void test_snapshot_powerup_state_size(void) {
+  TEST_ASSERT_EQUAL(4 + 4 + 4 + 1 + 1 + 2, sizeof(ShroomSnapshotPowerupState));
+}
+
+void test_powerup_state_packet_initialization(void) {
+  ShroomPowerupStatePacket packet;
+  memset(&packet, 0, sizeof(packet));
+
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_POWERUP_STATE, sizeof(packet));
+  packet.tick = 42;
+  packet.powerup_count = 2;
+  packet.powerups[0] = (ShroomSnapshotPowerupState){
+      .entity_id = 5,
+      .position_x = 120.0f,
+      .position_y = 240.0f,
+      .type = SHROOM_POWERUP_TYPE_SPEED,
+      .active = 1,
+  };
+  packet.powerups[1] = (ShroomSnapshotPowerupState){
+      .entity_id = 6,
+      .position_x = 320.0f,
+      .position_y = 640.0f,
+      .type = SHROOM_POWERUP_TYPE_SHIELD,
+      .active = 0,
+  };
+
+  TEST_ASSERT_EQUAL(SHROOM_PACKET_POWERUP_STATE, packet.header.type);
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_SNAPSHOT, packet.header.reserved);
+  TEST_ASSERT_EQUAL(42, packet.tick);
+  TEST_ASSERT_EQUAL(2, packet.powerup_count);
+  TEST_ASSERT_EQUAL(5, packet.powerups[0].entity_id);
+  TEST_ASSERT_EQUAL(SHROOM_POWERUP_TYPE_SPEED, packet.powerups[0].type);
+  TEST_ASSERT_EQUAL(1, packet.powerups[0].active);
+  TEST_ASSERT_EQUAL(SHROOM_POWERUP_TYPE_SHIELD, packet.powerups[1].type);
+  TEST_ASSERT_EQUAL(0, packet.powerups[1].active);
 }
 
 void test_hello_packet_initialization(void) {
@@ -329,6 +369,8 @@ int main(void) {
   RUN_TEST(test_snapshot_player_state_initialization);
   RUN_TEST(test_snapshot_spore_state_size);
   RUN_TEST(test_spore_state_packet_initialization);
+  RUN_TEST(test_snapshot_powerup_state_size);
+  RUN_TEST(test_powerup_state_packet_initialization);
   RUN_TEST(test_lobby_packet_channel_mapping);
   RUN_TEST(test_lobby_packet_reliability);
   RUN_TEST(test_lobby_entry_struct);

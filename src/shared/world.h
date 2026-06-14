@@ -17,6 +17,11 @@ typedef enum ShroomZone {
   SHROOM_ZONE_CENTER = 2,
 } ShroomZone;
 
+typedef enum ShroomPowerupType {
+  SHROOM_POWERUP_SPEED = SHROOM_POWERUP_TYPE_SPEED,
+  SHROOM_POWERUP_SHIELD = SHROOM_POWERUP_TYPE_SHIELD,
+} ShroomPowerupType;
+
 typedef struct ShroomPlayerState {
   ShroomPlayerId player_id;
   ShroomEntityId entity_id;
@@ -32,7 +37,9 @@ typedef struct ShroomPlayerState {
   bool has_split;            /* one voluntary split per life; reset on respawn */
   ShroomVec2 split_velocity; /* impulse applied on split, decays to zero */
   float merge_timer;         /* seconds until this piece may merge back; 0 = ready */
-  uint8_t piece_index;       /* 0 = primary; 1-3 = split fragment */
+  float speed_powerup_timer;
+  float shield_powerup_timer;
+  uint8_t piece_index; /* 0 = primary; 1-3 = split fragment */
 } ShroomPlayerState;
 
 typedef struct ShroomSporeState {
@@ -41,6 +48,14 @@ typedef struct ShroomSporeState {
   uint16_t value;
   bool active;
 } ShroomSporeState;
+
+typedef struct ShroomPowerupState {
+  ShroomEntityId entity_id;
+  ShroomVec2 position;
+  ShroomPowerupType type;
+  float respawn_timer;
+  bool active;
+} ShroomPowerupState;
 
 typedef struct ShroomWorldState {
   uint64_t tick;
@@ -51,8 +66,10 @@ typedef struct ShroomWorldState {
   ShroomEntityId next_entity_id;
   size_t player_count;
   size_t spore_count;
+  size_t powerup_count;
   ShroomPlayerState players[SHROOM_MAX_PLAYERS];
   ShroomSporeState spores[SHROOM_MAX_SPORES];
+  ShroomPowerupState powerups[SHROOM_MAX_POWERUPS];
 } ShroomWorldState;
 
 #endif

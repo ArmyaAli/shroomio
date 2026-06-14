@@ -149,6 +149,8 @@ static void ShroomRespawnPlayer(ShroomWorldState* world, ShroomPlayerState* play
   player->has_split = false;
   player->split_velocity = (ShroomVec2){0};
   player->merge_timer = 0.0f;
+  player->speed_powerup_timer = 0.0f;
+  player->shield_powerup_timer = 0.0f;
   player->piece_index = 0;
 }
 
@@ -194,6 +196,28 @@ static void ShroomInitializeSpores(ShroomWorldState* world) {
   world->spore_count = SHROOM_SPORE_TARGET_COUNT;
   for (index = 0; index < world->spore_count; ++index) {
     ShroomSpawnOrResetSpore(world, &world->spores[index]);
+  }
+}
+
+static void ShroomSpawnOrResetPowerup(ShroomWorldState* world, ShroomPowerupState* powerup,
+                                      size_t slot_index) {
+  const ShroomZone zone = (slot_index % 4u) == 0u   ? SHROOM_ZONE_OUTER
+                          : (slot_index % 4u) == 1u ? SHROOM_ZONE_MID
+                                                    : SHROOM_ZONE_CENTER;
+
+  powerup->position = ShroomRandomPointInZone(world, zone);
+  powerup->type = (slot_index % 2u) == 0u ? SHROOM_POWERUP_SPEED : SHROOM_POWERUP_SHIELD;
+  powerup->respawn_timer = 0.0f;
+  powerup->active = true;
+  if (powerup->entity_id == 0) {
+    powerup->entity_id = world->next_entity_id++;
+  }
+}
+
+static void ShroomInitializePowerups(ShroomWorldState* world) {
+  world->powerup_count = SHROOM_MAX_POWERUPS;
+  for (size_t index = 0; index < world->powerup_count; ++index) {
+    ShroomSpawnOrResetPowerup(world, &world->powerups[index], index);
   }
 }
 
@@ -377,6 +401,9 @@ static bool ShroomCanConsume(const ShroomWorldState* world, const ShroomPlayerSt
   if (attacker->player_id == target->player_id) {
     return false;
   }
+  if (target->shield_powerup_timer > 0.0f) {
+    return false;
+  }
   if (attacker->mass < (target->mass * required_advantage)) {
     return false;
   }
@@ -529,6 +556,7 @@ void ShroomWorldInitWithSeed(ShroomWorldState* world, uint32_t seed) {
   world->random_state = world->random_seed;
   world->next_entity_id = 1;
   ShroomInitializeSpores(world);
+  ShroomInitializePowerups(world);
 }
 
 void ShroomWorldInit(ShroomWorldState* world) {
@@ -574,6 +602,76 @@ initialize_player:
   };
 
   return player;
+}
+
+static void ShroomCollectPowerups(ShroomWorldState* world) {
+  for (size_t player_index = 0; player_index < world->player_count; ++player_index) {
+    ShroomPlayerState* player = &world->players[player_index];
+
+    if (!player->alive) {
+      continue;
+    }
+
+    for (size_t powerup_index = 0; powerup_index < world->powerup_count; ++powerup_index) {
+      ShroomPowerupState* powerup = &world->powerups[powerup_index];
+      const float collection_radius = player->radius + SHROOM_POWERUP_RADIUS;
+
+      if (!powerup->active) {
+        continue;
+      }
+      if (ShroomDistanceSqr(player->position, powerup->position) >
+          (collection_radius * collection_radius)) {
+        continue;
+      }
+
+      switch (powerup->type) {
+      case SHROOM_POWERUP_SPEED:
+        player->speed_powerup_timer = SHROOM_POWERUP_SPEED_SECONDS;
+        break;
+      case SHROOM_POWERUP_SHIELD:
+        player->shield_powerup_timer = SHROOM_POWERUP_SHIELD_SECONDS;
+        break;
+      default:
+        break;
+      }
+
+      powerup->active = false;
+      powerup->respawn_timer = SHROOM_POWERUP_RESPAWN_SECONDS;
+    }
+  }
+}
+
+static void ShroomUpdatePowerups(ShroomWorldState* world, float delta_time) {
+  for (size_t index = 0; index < world->powerup_count; ++index) {
+    ShroomPowerupState* powerup = &world->powerups[index];
+
+    if (powerup->active || (powerup->respawn_timer <= 0.0f)) {
+      continue;
+    }
+
+    powerup->respawn_timer -= delta_time;
+    if (powerup->respawn_timer <= 0.0f) {
+      ShroomSpawnOrResetPowerup(world, powerup, index);
+    }
+  }
+}
+
+static void ShroomUpdatePlayerEffects(ShroomWorldState* world, float delta_time) {
+  for (size_t index = 0; index < world->player_count; ++index) {
+    ShroomPlayerState* player = &world->players[index];
+
+    if (!player->alive) {
+      continue;
+    }
+    if (player->speed_powerup_timer > 0.0f) {
+      player->speed_powerup_timer =
+          ShroomClamp(player->speed_powerup_timer - delta_time, 0.0f, SHROOM_POWERUP_SPEED_SECONDS);
+    }
+    if (player->shield_powerup_timer > 0.0f) {
+      player->shield_powerup_timer = ShroomClamp(player->shield_powerup_timer - delta_time, 0.0f,
+                                                 SHROOM_POWERUP_SHIELD_SECONDS);
+    }
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -746,12 +844,17 @@ void ShroomWorldStep(ShroomWorldState* world, float delta_time) {
 
   for (index = 0; index < world->player_count; ++index) {
     ShroomPlayerState* player = &world->players[index];
-    const float speed = ShroomMassToSpeed(player->mass);
-    const ShroomVec2 velocity = ShroomVec2Scale(player->input_direction, speed * delta_time);
+    float speed = ShroomMassToSpeed(player->mass);
+    ShroomVec2 velocity;
 
     if (!player->alive) {
       continue;
     }
+
+    if (player->speed_powerup_timer > 0.0f) {
+      speed *= SHROOM_POWERUP_SPEED_MULTIPLIER;
+    }
+    velocity = ShroomVec2Scale(player->input_direction, speed * delta_time);
 
     player->position = ShroomVec2Add(player->position, velocity);
     player->radius = ShroomMassToRadius(player->mass);
@@ -788,11 +891,14 @@ void ShroomWorldStep(ShroomWorldState* world, float delta_time) {
     }
   }
 
+  ShroomUpdatePlayerEffects(world, delta_time);
   ShroomCollectSpores(world);
+  ShroomCollectPowerups(world);
   ShroomResolveConsumes(world);
   ShroomApplyMassRules(world, delta_time);
   ShroomApplyForcedSplits(world);
   ShroomResolveMerges(world);
+  ShroomUpdatePowerups(world, delta_time);
 
   world->tick += 1;
 }

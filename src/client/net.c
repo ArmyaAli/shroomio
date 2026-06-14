@@ -233,6 +233,26 @@ static void HandleSporeState(ClientNetState* net, const ENetPacket* enet_packet)
   }
 }
 
+static void HandlePowerupState(ClientNetState* net, const ENetPacket* enet_packet) {
+  const ShroomPowerupStatePacket* packet = (const ShroomPowerupStatePacket*)enet_packet->data;
+  uint16_t powerup_count;
+
+  if (enet_packet->dataLength < sizeof(*packet)) {
+    return;
+  }
+
+  powerup_count = packet->powerup_count;
+  if (powerup_count > SHROOM_MAX_POWERUPS) {
+    powerup_count = SHROOM_MAX_POWERUPS;
+  }
+
+  net->powerup_count = powerup_count;
+  if (powerup_count > 0) {
+    memcpy(net->snapshot_powerups, packet->powerups,
+           (size_t)powerup_count * sizeof(ShroomSnapshotPowerupState));
+  }
+}
+
 bool ClientNetInit(ClientNetState* net, const char* host_name, uint16_t port) {
   ENetAddress address = {0};
 
@@ -309,6 +329,11 @@ void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, bool split
         case SHROOM_PACKET_SPORE_STATE:
           if (ShroomPacketHeaderUsesExpectedChannel(header, event.channelID)) {
             HandleSporeState(net, event.packet);
+          }
+          break;
+        case SHROOM_PACKET_POWERUP_STATE:
+          if (ShroomPacketHeaderUsesExpectedChannel(header, event.channelID)) {
+            HandlePowerupState(net, event.packet);
           }
           break;
         case SHROOM_PACKET_PONG:
