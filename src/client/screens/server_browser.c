@@ -96,6 +96,60 @@ static void SortEntries(ServerBrowserEntry* entries, size_t count) {
   }
 }
 
+static int FindServerIndex(const char* host, int port) {
+  for (size_t index = 0; index < g_server_browser.server_count; ++index) {
+    const ServerBrowserEntry* entry = &g_server_browser.servers[index];
+
+    if ((strcmp(entry->host, host) == 0) && (entry->port == port)) {
+      return (int)index;
+    }
+  }
+
+  return g_server_browser.server_count > 0u ? 0 : -1;
+}
+
+static void SortServersPreservingSelection(void) {
+  char selected_host[sizeof(g_server_browser.servers[0].host)] = {0};
+  int selected_port = 0;
+
+  if ((g_server_browser.selected_index >= 0) &&
+      ((size_t)g_server_browser.selected_index < g_server_browser.server_count)) {
+    const ServerBrowserEntry* selected = &g_server_browser.servers[g_server_browser.selected_index];
+    CopyText(selected_host, sizeof(selected_host), selected->host);
+    selected_port = selected->port;
+  }
+
+  SortEntries(g_server_browser.servers, g_server_browser.server_count);
+
+  if (selected_host[0] != '\0') {
+    g_server_browser.selected_index = FindServerIndex(selected_host, selected_port);
+  } else if (g_server_browser.server_count > 0u) {
+    g_server_browser.selected_index = 0;
+  } else {
+    g_server_browser.selected_index = -1;
+  }
+}
+
+static const ServerBrowserEntry* GetSelectedServer(void) {
+  if ((g_server_browser.selected_index < 0) ||
+      ((size_t)g_server_browser.selected_index >= g_server_browser.server_count)) {
+    return NULL;
+  }
+
+  return &g_server_browser.servers[g_server_browser.selected_index];
+}
+
+static bool ServerBrowserEntryIsJoinable(const ServerBrowserEntry* entry) {
+  if (entry == NULL) {
+    return false;
+  }
+  if ((entry->ping_ms <= 0) || (entry->player_capacity <= 0)) {
+    return false;
+  }
+
+  return entry->player_count < entry->player_capacity;
+}
+
 static void LoadSampleServers(void) {
   g_server_browser.server_count = 5;
 
@@ -109,8 +163,8 @@ static void LoadSampleServers(void) {
       (ServerBrowserEntry){"Outer Ring Learn", "practice.shroomio.dev", 8, 16, 33,
                            SHROOM_SERVER_PORT, "Practice / Casual"};
   g_server_browser.servers[4] = (ServerBrowserEntry){
-      "Center Rush", "rush.shroomio.dev", 29, 32, 61, SHROOM_SERVER_PORT, "Arena / High Risk"};
-  SortEntries(g_server_browser.servers, g_server_browser.server_count);
+      "Center Rush", "rush.shroomio.dev", 32, 32, 61, SHROOM_SERVER_PORT, "Arena / High Risk"};
+  SortServersPreservingSelection();
 }
 
 static void SaveRecentServers(void) {
@@ -307,19 +361,19 @@ static void ServerBrowserDraw(ShroomScreenManager* manager) {
   if (ShroomImGui_Button("Sort Name", 120.0f, 0.0f)) {
     g_server_browser.sort_key = SERVER_BROWSER_SORT_NAME;
     g_server_browser.sort_descending = !g_server_browser.sort_descending;
-    SortEntries(g_server_browser.servers, g_server_browser.server_count);
+    SortServersPreservingSelection();
   }
   ShroomImGui_SameLine();
   if (ShroomImGui_Button("Sort Players", 120.0f, 0.0f)) {
     g_server_browser.sort_key = SERVER_BROWSER_SORT_PLAYERS;
     g_server_browser.sort_descending = !g_server_browser.sort_descending;
-    SortEntries(g_server_browser.servers, g_server_browser.server_count);
+    SortServersPreservingSelection();
   }
   ShroomImGui_SameLine();
   if (ShroomImGui_Button("Sort Ping", 120.0f, 0.0f)) {
     g_server_browser.sort_key = SERVER_BROWSER_SORT_PING;
     g_server_browser.sort_descending = !g_server_browser.sort_descending;
-    SortEntries(g_server_browser.servers, g_server_browser.server_count);
+    SortServersPreservingSelection();
   }
 
   if (ShroomImGui_BeginTable("servers", 4,
@@ -352,16 +406,39 @@ static void ServerBrowserDraw(ShroomScreenManager* manager) {
     ShroomImGui_EndTable();
   }
 
-  if ((g_server_browser.selected_index >= 0) &&
-      ((size_t)g_server_browser.selected_index < g_server_browser.server_count)) {
-    const ServerBrowserEntry* selected = &g_server_browser.servers[g_server_browser.selected_index];
-    ShroomImGui_Text(
-        TextFormat("Selected: %s (%s:%d)", selected->name, selected->host, selected->port));
+  {
+    const ServerBrowserEntry* selected = GetSelectedServer();
+    const bool can_join = ServerBrowserEntryIsJoinable(selected);
+
+    ShroomImGui_Separator();
+    ShroomImGui_Text("Selected Server");
+    if (selected != NULL) {
+      ShroomImGui_Text(TextFormat("Name: %s", selected->name));
+      ShroomImGui_Text(TextFormat("Address: %s:%d", selected->host, selected->port));
+      ShroomImGui_Text(
+          TextFormat("Players: %d/%d", selected->player_count, selected->player_capacity));
+      if (selected->ping_ms > 0) {
+        ShroomImGui_Text(TextFormat("Ping: %d ms", selected->ping_ms));
+      } else {
+        ShroomImGui_Text("Ping: unreachable");
+      }
+      ShroomImGui_Text(TextFormat("Mode: %s", selected->map_label));
+      if (!can_join) {
+        ShroomImGui_Text(selected->player_count >= selected->player_capacity
+                             ? "Join unavailable: server is full."
+                             : "Join unavailable: server is unreachable.");
+      }
+    } else {
+      ShroomImGui_Text("No server selected.");
+    }
+
+    if (can_join && ShroomImGui_Button("Join Selected", 150.0f, 0.0f)) {
+      join_clicked = true;
+    } else if (!can_join) {
+      ShroomImGui_Button("Join Selected", 150.0f, 0.0f);
+    }
   }
 
-  if (ShroomImGui_Button("Join Selected", 150.0f, 0.0f)) {
-    join_clicked = true;
-  }
   ShroomImGui_SameLine();
   if (ShroomImGui_Button("Back", 120.0f, 0.0f)) {
     ShroomScreenManagerGoBack(manager);
@@ -425,9 +502,8 @@ static void ServerBrowserDraw(ShroomScreenManager* manager) {
 
   ShroomImGui_End();
 
-  if (join_clicked && (g_server_browser.selected_index >= 0) &&
-      ((size_t)g_server_browser.selected_index < g_server_browser.server_count)) {
-    JoinServer(manager, game, &g_server_browser.servers[g_server_browser.selected_index]);
+  if (join_clicked && ServerBrowserEntryIsJoinable(GetSelectedServer())) {
+    JoinServer(manager, game, GetSelectedServer());
   }
 }
 
@@ -467,4 +543,10 @@ const char* ShroomTestGetServerBrowserValidationMessage(void) {
 }
 
 int ShroomTestGetServerBrowserSelectedIndex(void) { return g_server_browser.selected_index; }
+
+const char* ShroomTestGetServerBrowserSelectedHost(void) {
+  const ServerBrowserEntry* selected = GetSelectedServer();
+
+  return selected != NULL ? selected->host : "";
+}
 #endif
