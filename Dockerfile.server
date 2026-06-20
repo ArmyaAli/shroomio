@@ -30,6 +30,11 @@ WORKDIR /app
 
 COPY --from=builder /app/dist/shroomio-server /usr/local/bin/shroomio-server
 
+ENV SHROOM_SERVER_BIND=0.0.0.0 \
+    SHROOM_SERVER_PORT=7777 \
+    SHROOM_SERVER_DB_PATH=/data/shroomio.db
+
+VOLUME ["/data"]
 EXPOSE 7777/udp
 
 CMD ["/usr/local/bin/shroomio-server"]

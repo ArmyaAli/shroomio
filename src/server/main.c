@@ -172,6 +172,108 @@ typedef struct ServerSession {
 
 static ShroomLifecycle g_lifecycle;
 
+typedef struct ServerConfig {
+  char bind_host[64];
+  char database_path[256];
+  uint16_t port;
+} ServerConfig;
+
+static bool ParsePort(const char* text, uint16_t* port) {
+  char* end = NULL;
+  unsigned long value;
+
+  if ((text == NULL) || (text[0] == '\0')) {
+    return false;
+  }
+
+  value = strtoul(text, &end, 10);
+  if ((end == text) || (*end != '\0') || (value == 0ul) || (value > 65535ul)) {
+    return false;
+  }
+
+  *port = (uint16_t)value;
+  return true;
+}
+
+static void CopyConfigString(char* destination, size_t destination_size, const char* source) {
+  if ((destination == NULL) || (destination_size == 0u)) {
+    return;
+  }
+  if (source == NULL) {
+    destination[0] = '\0';
+    return;
+  }
+  snprintf(destination, destination_size, "%s", source);
+}
+
+static void PrintUsage(const char* program_name) {
+  printf("Usage: %s [--bind HOST] [--port PORT] [--database PATH]\n", program_name);
+  printf("\n");
+  printf("Self-hosted server options:\n");
+  printf("  --bind HOST       Bind address or hostname, default 0.0.0.0\n");
+  printf("  --port PORT       UDP listen port, default %u\n", SHROOM_SERVER_PORT);
+  printf("  --database PATH   SQLite database path, default shroomio.db\n");
+  printf("  --help            Show this help text\n");
+  printf("\n");
+  printf("Environment overrides:\n");
+  printf("  SHROOM_SERVER_BIND, SHROOM_SERVER_PORT, SHROOM_SERVER_DB_PATH\n");
+}
+
+static bool LoadServerConfig(ServerConfig* config, int argc, char** argv) {
+  const char* env_bind = getenv("SHROOM_SERVER_BIND");
+  const char* env_port = getenv("SHROOM_SERVER_PORT");
+  const char* env_database = getenv("SHROOM_SERVER_DB_PATH");
+
+  *config = (ServerConfig){.port = (uint16_t)SHROOM_SERVER_PORT};
+  CopyConfigString(config->bind_host, sizeof(config->bind_host), "0.0.0.0");
+  CopyConfigString(config->database_path, sizeof(config->database_path), "shroomio.db");
+
+  if ((env_bind != NULL) && (env_bind[0] != '\0')) {
+    CopyConfigString(config->bind_host, sizeof(config->bind_host), env_bind);
+  }
+  if ((env_database != NULL) && (env_database[0] != '\0')) {
+    CopyConfigString(config->database_path, sizeof(config->database_path), env_database);
+  }
+  if ((env_port != NULL) && (env_port[0] != '\0') && !ParsePort(env_port, &config->port)) {
+    fprintf(stderr, "Invalid SHROOM_SERVER_PORT: %s\n", env_port);
+    return false;
+  }
+
+  for (int i = 1; i < argc; ++i) {
+    if (strcmp(argv[i], "--help") == 0) {
+      PrintUsage(argv[0]);
+      exit(0);
+    } else if (strcmp(argv[i], "--bind") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "Missing value for --bind\n");
+        return false;
+      }
+      CopyConfigString(config->bind_host, sizeof(config->bind_host), argv[i]);
+    } else if (strcmp(argv[i], "--port") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "Missing value for --port\n");
+        return false;
+      }
+      if (!ParsePort(argv[i], &config->port)) {
+        fprintf(stderr, "Invalid --port: %s\n", argv[i]);
+        return false;
+      }
+    } else if (strcmp(argv[i], "--database") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "Missing value for --database\n");
+        return false;
+      }
+      CopyConfigString(config->database_path, sizeof(config->database_path), argv[i]);
+    } else {
+      fprintf(stderr, "Unknown option: %s\n", argv[i]);
+      PrintUsage(argv[0]);
+      return false;
+    }
+  }
+
+  return true;
+}
+
 static void HandleSignal(int signal_number) {
   (void)signal_number;
   ShroomLifecycleRequestShutdown(&g_lifecycle);
@@ -1065,7 +1167,7 @@ static void HandlePacket(ENetHost* host, ENetPeer* peer, ServerSession* session,
   }
 }
 
-int main(void) {
+int main(int argc, char** argv) {
   const uint64_t tick_interval_nanos = 1000000000ull / (uint64_t)SHROOM_SERVER_TICK_RATE;
   const uint64_t snapshot_interval_ticks =
       (uint64_t)(SHROOM_SERVER_TICK_RATE / (float)SHROOM_SNAPSHOT_RATE);
@@ -1081,6 +1183,7 @@ int main(void) {
   uint64_t last_health_log_ms = 0;
   sqlite3* db = NULL;
   ShroomAuthContext auth_ctx = {0};
+  ServerConfig config;
 
   ShroomLifecycleInit(&g_lifecycle);
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_INIT);
@@ -1089,12 +1192,17 @@ int main(void) {
   signal(SIGINT, HandleSignal);
   signal(SIGTERM, HandleSignal);
 
-  if (sqlite3_open("shroomio.db", &db) != SQLITE_OK) {
+  if (!LoadServerConfig(&config, argc, argv)) {
+    ShroomLifecycleSetError(&g_lifecycle, 1, "Invalid server configuration");
+    return 1;
+  }
+
+  if (sqlite3_open(config.database_path, &db) != SQLITE_OK) {
     LOG_ERROR("failed to open database: %s", sqlite3_errmsg(db));
     ShroomLifecycleSetError(&g_lifecycle, 1, "Database initialization failed");
     return 1;
   }
-  LOG_INFO("database initialized");
+  LOG_INFO("database initialized: path=%s", config.database_path);
 
   if (!InitializeDatabaseSchema(db)) {
     sqlite3_close(db);
@@ -1121,8 +1229,17 @@ int main(void) {
     }
   }
 
-  address.host = ENET_HOST_ANY;
-  address.port = SHROOM_SERVER_PORT;
+  if (strcmp(config.bind_host, "0.0.0.0") == 0) {
+    address.host = ENET_HOST_ANY;
+  } else if (enet_address_set_host(&address, config.bind_host) != 0) {
+    LOG_ERROR("failed to resolve bind address: %s", config.bind_host);
+    enet_deinitialize();
+    ShroomAuthShutdown(&auth_ctx);
+    sqlite3_close(db);
+    ShroomLifecycleSetError(&g_lifecycle, 2, "Invalid bind address");
+    return 1;
+  }
+  address.port = config.port;
   host = enet_host_create(&address, SHROOM_SERVER_MAX_CLIENTS, SHROOM_ENET_CHANNEL_COUNT, 0, 0);
   if (host == 0) {
     LOG_ERROR("failed to create ENet host");
@@ -1134,7 +1251,7 @@ int main(void) {
   }
 
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_START);
-  LOG_INFO("shroomio server listening on UDP %u", SHROOM_SERVER_PORT);
+  LOG_INFO("shroomio server listening on %s:%u/udp", config.bind_host, config.port);
   next_tick_time = GetTimeNanos();
 
   while (ShroomLifecycleIsRunning(&g_lifecycle) &&
