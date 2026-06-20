@@ -20,7 +20,8 @@ on:
       - 'docs/**'
 
 jobs:
-  build:
+  quality:
+    name: Quality
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -43,15 +44,14 @@ jobs:
             libx11-dev \
             libxcursor-dev \
             libxi-dev \
-              libxinerama-dev \
-              libxrandr-dev \
-              mingw-w64 \
-              make \
-              ninja-build \
-              pkg-config \
-              unzip \
-              zip \
-              xvfb
+            libxinerama-dev \
+            libxrandr-dev \
+            make \
+            ninja-build \
+            pkg-config \
+            unzip \
+            zip \
+            xvfb
 
       - name: Cache vcpkg
         uses: actions/cache@v4
@@ -60,13 +60,13 @@ jobs:
             vcpkg_installed
             vcpkg/downloads
             ~/.cache/vcpkg/archives
-          key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json', '.gitmodules', 'vcpkg/ports/raylib/vcpkg.json', 'vcpkg/ports/imgui/vcpkg.json', 'vcpkg/ports/enet/vcpkg.json') }}
+          key: ${{ runner.os }}-quality-vcpkg-${{ hashFiles('vcpkg.json', '.gitmodules', 'vcpkg/ports/raylib/vcpkg.json', 'vcpkg/ports/imgui/vcpkg.json', 'vcpkg/ports/enet/vcpkg.json') }}
 
       - name: Bootstrap vcpkg
         run: make vcpkg-bootstrap
 
-      - name: Install vcpkg dependencies
-        run: make vcpkg-install
+      - name: Install Linux vcpkg dependencies
+        run: make vcpkg-install-linux
 
       - name: Check code formatting
         run: make format-check
@@ -80,11 +80,118 @@ jobs:
       - name: Run unit tests
         run: make test
 
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            curl \
+            libasound2-dev \
+            libgl1-mesa-dev \
+            libsqlite3-dev \
+            libx11-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libxinerama-dev \
+            libxrandr-dev \
+            make \
+            ninja-build \
+            pkg-config \
+            unzip \
+            zip
+
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            vcpkg_installed
+            vcpkg/downloads
+            ~/.cache/vcpkg/archives
+          key: ${{ runner.os }}-linux-vcpkg-${{ hashFiles('vcpkg.json', '.gitmodules', 'vcpkg/ports/raylib/vcpkg.json', 'vcpkg/ports/imgui/vcpkg.json', 'vcpkg/ports/enet/vcpkg.json') }}
+
       - name: Build Linux client
         run: make linux
+
+      - name: Build server
+        run: make server
+
+  build-windows:
+    name: Build Windows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            curl \
+            make \
+            mingw-w64 \
+            ninja-build \
+            pkg-config \
+            unzip \
+            zip
+
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            vcpkg_installed
+            vcpkg/downloads
+            ~/.cache/vcpkg/archives
+          key: ${{ runner.os }}-windows-vcpkg-${{ hashFiles('vcpkg.json', '.gitmodules', 'vcpkg/ports/raylib/vcpkg.json', 'vcpkg/ports/imgui/vcpkg.json', 'vcpkg/ports/enet/vcpkg.json') }}
 
       - name: Build Windows client
         run: make windows
 
-      - name: Build server
-        run: make server
+  build-macos:
+    name: Build macOS
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Install dependencies
+        run: brew install cmake ninja pkg-config
+
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            vcpkg_installed
+            vcpkg/downloads
+            ~/.cache/vcpkg/archives
+          key: ${{ runner.os }}-macos-vcpkg-${{ hashFiles('vcpkg.json', '.gitmodules', 'vcpkg/ports/raylib/vcpkg.json', 'vcpkg/ports/imgui/vcpkg.json', 'vcpkg/ports/enet/vcpkg.json') }}
+
+      - name: Build macOS client
+        run: make macos
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    needs:
+      - quality
+      - build-linux
+      - build-windows
+      - build-macos
+    steps:
+      - name: Confirm CI gates passed
+        run: printf '%s\n' 'All CI gates passed.'
