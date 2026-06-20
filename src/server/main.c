@@ -224,7 +224,8 @@ static void PrintUsage(const char* program_name) {
 }
 
 static bool ResolveBindAddress(const char* bind_host, enet_uint32* bind_address) {
-  ENetAddress address = {0};
+  unsigned int octets[4];
+  char trailing;
 
   if ((bind_host == NULL) || (bind_host[0] == '\0') || (strcmp(bind_host, "0.0.0.0") == 0) ||
       (strcmp(bind_host, "*") == 0)) {
@@ -232,11 +233,18 @@ static bool ResolveBindAddress(const char* bind_host, enet_uint32* bind_address)
     return true;
   }
 
-  if (enet_address_set_host_ip(&address, bind_host) != 0) {
+  if (sscanf(bind_host, "%u.%u.%u.%u%c", &octets[0], &octets[1], &octets[2], &octets[3],
+             &trailing) != 4) {
     return false;
   }
+  for (size_t i = 0; i < 4; ++i) {
+    if (octets[i] > 255u) {
+      return false;
+    }
+  }
 
-  *bind_address = address.host;
+  *bind_address =
+      ENET_HOST_TO_NET_32((octets[0] << 24u) | (octets[1] << 16u) | (octets[2] << 8u) | octets[3]);
   return true;
 }
 
