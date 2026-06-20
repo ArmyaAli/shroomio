@@ -10,6 +10,10 @@
 
 #include "logger.h"
 
+#ifdef _WIN32
+#define timegm _mkgmtime
+#endif
+
 #define AUTH_SALT_LENGTH 16
 #define AUTH_HASH_LENGTH 64
 #define AUTH_TOKEN_EXPIRY_HOURS 24
@@ -73,6 +77,43 @@ static void GenerateToken(char* token_out) {
   uint8_t bytes[SHROOM_AUTH_TOKEN_LENGTH / 2];
   GenerateRandomBytes(bytes, sizeof(bytes));
   BytesToHex(bytes, sizeof(bytes), token_out);
+}
+
+static void FormatUtcTime(time_t timestamp, char* buffer, size_t buffer_size) {
+  struct tm tm_result;
+
+#ifdef _WIN32
+  gmtime_s(&tm_result, &timestamp);
+#else
+  gmtime_r(&timestamp, &tm_result);
+#endif
+  strftime(buffer, buffer_size, "%Y-%m-%dT%H:%M:%SZ", &tm_result);
+}
+
+static bool ParseUtcTime(const char* text, time_t* timestamp) {
+  int year;
+  int month;
+  int day;
+  int hour;
+  int minute;
+  int second;
+  struct tm tm_result = {0};
+
+  if ((text == NULL) || (timestamp == NULL)) {
+    return false;
+  }
+  if (sscanf(text, "%d-%d-%dT%d:%d:%dZ", &year, &month, &day, &hour, &minute, &second) != 6) {
+    return false;
+  }
+
+  tm_result.tm_year = year - 1900;
+  tm_result.tm_mon = month - 1;
+  tm_result.tm_mday = day;
+  tm_result.tm_hour = hour;
+  tm_result.tm_min = minute;
+  tm_result.tm_sec = second;
+  *timestamp = timegm(&tm_result);
+  return *timestamp != (time_t)-1;
 }
 
 static bool ValidateUsername(const char* username) {
@@ -244,9 +285,7 @@ ShroomAuthResult ShroomAuthLogin(ShroomAuthContext* ctx, const char* username, c
             time_t now = time(NULL);
             time_t expires = now + (AUTH_TOKEN_EXPIRY_HOURS * 3600);
             char expires_str[32];
-            struct tm tm_result;
-            gmtime_r(&expires, &tm_result);
-            strftime(expires_str, sizeof(expires_str), "%Y-%m-%dT%H:%M:%SZ", &tm_result);
+            FormatUtcTime(expires, expires_str, sizeof(expires_str));
 
             sqlite3_finalize(stmt);
 
@@ -358,9 +397,7 @@ ShroomAuthResult ShroomAuthLoginAnonymous(ShroomAuthContext* ctx, const char* us
   time_t now = time(NULL);
   time_t expires = now + (AUTH_TOKEN_EXPIRY_HOURS * 3600);
   char expires_str[32];
-  struct tm tm_result;
-  gmtime_r(&expires, &tm_result);
-  strftime(expires_str, sizeof(expires_str), "%Y-%m-%dT%H:%M:%SZ", &tm_result);
+  FormatUtcTime(expires, expires_str, sizeof(expires_str));
 
   const char* insert_token_sql =
       "INSERT INTO auth_tokens (user_id, token, expires_at) VALUES (?, ?, ?)";
@@ -408,9 +445,11 @@ ShroomAuthResult ShroomAuthValidateToken(ShroomAuthContext* ctx, const char* tok
   if (sqlite3_step(stmt) == SQLITE_ROW) {
     const char* expires_str = (const char*)sqlite3_column_text(stmt, 4);
     if (expires_str != NULL) {
-      struct tm tm = {0};
-      strptime(expires_str, "%Y-%m-%dT%H:%M:%SZ", &tm);
-      time_t expires = timegm(&tm);
+      time_t expires;
+      if (!ParseUtcTime(expires_str, &expires)) {
+        sqlite3_finalize(stmt);
+        return SHROOM_AUTH_INVALID_TOKEN;
+      }
       if (time(NULL) < expires) {
         if (out_user != NULL) {
           out_user->user_id = (uint32_t)sqlite3_column_int64(stmt, 0);

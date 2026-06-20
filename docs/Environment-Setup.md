@@ -64,7 +64,7 @@ The repo includes a `.devcontainer/` configuration for VS Code:
 The devcontainer includes:
 - C11 toolchain (`build-essential`)
 - Linux desktop build dependencies for raylib
-- `mingw-w64` for `make windows`
+- `mingw-w64` for `make client-windows`
 - Docker CLI support
 - GitHub CLI (`gh`)
 - Latest opencode via npm
@@ -104,13 +104,13 @@ git clone git@github.com:ArmyaAli/shroomio.git
 cd shroomio
 
 # Build the client
-make linux
+make client-linux
 
 # Build the server
-make server
+make server-linux
 
 # Build the Windows client
-make windows
+make client-windows
 
 # Build the spec PDF
 latexmk -pdf -output-directory=. design/shroomio-specification.tex

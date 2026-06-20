@@ -65,9 +65,9 @@ sudo apt install mingw-w64
 ## Building
 
 ```bash
-make linux      # Linux client    -> dist/shroomio
-make server     # Linux server    -> dist/shroomio-server
-make windows    # Windows client  -> dist/shroomio.exe  (requires mingw-w64)
+make client-linux    # Linux client    -> dist/shroomio
+make server-linux    # Linux server    -> dist/shroomio-server
+make client-windows  # Windows client  -> dist/shroomio.exe  (requires mingw-w64)
 ```
 
 Run directly:

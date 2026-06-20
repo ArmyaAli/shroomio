@@ -120,10 +120,10 @@ jobs:
           key: ${{ runner.os }}-linux-vcpkg-${{ hashFiles('vcpkg.json', '.gitmodules', 'vcpkg/ports/raylib/vcpkg.json', 'vcpkg/ports/imgui/vcpkg.json', 'vcpkg/ports/enet/vcpkg.json') }}
 
       - name: Build Linux client
-        run: make linux
+        run: make client-linux
 
       - name: Build server
-        run: make server
+        run: make server-linux
 
   build-windows:
     name: Build Windows
@@ -158,7 +158,10 @@ jobs:
           key: ${{ runner.os }}-windows-vcpkg-${{ hashFiles('vcpkg.json', '.gitmodules', 'vcpkg/ports/raylib/vcpkg.json', 'vcpkg/ports/imgui/vcpkg.json', 'vcpkg/ports/enet/vcpkg.json') }}
 
       - name: Build Windows client
-        run: make windows
+        run: make client-windows
+
+      - name: Build Windows server
+        run: make server-windows
 
   build-macos:
     name: Build macOS
@@ -182,7 +185,10 @@ jobs:
           key: ${{ runner.os }}-macos-vcpkg-${{ hashFiles('vcpkg.json', '.gitmodules', 'vcpkg/ports/raylib/vcpkg.json', 'vcpkg/ports/imgui/vcpkg.json', 'vcpkg/ports/enet/vcpkg.json') }}
 
       - name: Build macOS client
-        run: make macos
+        run: make client-macos
+
+      - name: Build macOS server
+        run: make server-macos
 
   build:
     name: build

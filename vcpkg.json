@@ -6,7 +6,8 @@
   "dependencies": [
     "raylib",
     "imgui",
-    "enet"
+    "enet",
+    "sqlite3"
   ],
   "overrides": [
     {

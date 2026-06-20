@@ -7,6 +7,9 @@
 #include <time.h>
 
 #include <enet/enet.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 #include "shared/lifecycle.h"
 #include "shared/protocol.h"
@@ -297,16 +300,19 @@ static ShroomVec2 NormalizeInput(ShroomVec2 input) {
 }
 
 static uint64_t GetTimeNanos(void) {
+#ifdef _WIN32
+  return (uint64_t)GetTickCount64() * 1000000ull;
+#else
   struct timespec now;
 
   clock_gettime(CLOCK_MONOTONIC, &now);
   return ((uint64_t)now.tv_sec * 1000000000ull) + (uint64_t)now.tv_nsec;
+#endif
 }
 
 static uint64_t GetTimeMillis(void) { return GetTimeNanos() / 1000000ull; }
 
 static void SleepUntil(uint64_t target_time_nanos) {
-  struct timespec sleep_time;
   uint64_t now = GetTimeNanos();
   uint64_t delta;
 
@@ -315,9 +321,15 @@ static void SleepUntil(uint64_t target_time_nanos) {
   }
 
   delta = target_time_nanos - now;
+#ifdef _WIN32
+  Sleep((DWORD)(delta / 1000000ull));
+#else
+  struct timespec sleep_time;
+
   sleep_time.tv_sec = (time_t)(delta / 1000000000ull);
   sleep_time.tv_nsec = (long)(delta % 1000000000ull);
   nanosleep(&sleep_time, 0);
+#endif
 }
 
 static ENetPacket* CreatePacket(const void* data, size_t size, enet_uint32 flags) {

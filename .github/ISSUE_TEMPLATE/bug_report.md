@@ -12,7 +12,7 @@ A clear and concise description of the bug.
 
 ## Reproduction Steps
 
-1. Build target: `make linux` / `make server` / `make windows`
+1. Build target: `make client-linux` / `make server-linux` / `make client-windows`
 2. Run mode: offline / connected to server at `...`
 3. Steps to trigger:
    - ...
@@ -31,7 +31,7 @@ What actually happened. Include crash output, segfaults, or log lines if applica
 | Field | Value |
 |-------|-------|
 | OS | e.g. Ubuntu 24.04, Windows 11 |
-| Build target | `make linux`, `make server`, `make windows` |
+| Build target | `make client-linux`, `make server-linux`, `make client-windows` |
 | Network mode | offline / online (server address) |
 | Commit | branch @ `abc1234` |
 | Compiler | gcc/clang version |

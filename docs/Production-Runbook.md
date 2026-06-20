@@ -90,7 +90,7 @@ sudo apt install build-essential
 # Clone and build
 git clone git@github.com:ArmyaAli/shroomio.git
 cd shroomio
-make server
+make server-linux
 
 # Run
 ./dist/shroomio-server
@@ -293,7 +293,7 @@ exit 0
 ## Upgrading
 
 1. Pull latest code: `git pull origin main`
-2. Rebuild: `make server` (or `make docker-server` for Docker)
+2. Rebuild: `make server-linux` (or `make docker-server` for Docker)
 3. Stop old server
 4. Deploy new binary/image
 5. Start new server
