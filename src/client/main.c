@@ -19,6 +19,7 @@ int main(void) {
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_INIT);
 
   InitWindow(screen_width, screen_height, "shroomio");
+  InitAudioDevice();
   SetExitKey(KEY_NULL);
   SetTargetFPS(60);
 
@@ -61,6 +62,9 @@ int main(void) {
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_STOP);
   ShroomScreenManagerShutdown(&g_screen_manager);
   ShroomImGui_Shutdown();
+  if (IsAudioDeviceReady()) {
+    CloseAudioDevice();
+  }
   CloseWindow();
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_SHUTDOWN);
   return 0;
