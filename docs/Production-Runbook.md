@@ -1,17 +1,17 @@
 # Production Runbook
 
-This document covers deploying and operating the shroomio dedicated server in production using Docker.
+This document covers deploying and operating the shroomio dedicated server in production or self-hosted community environments.
 
 ## Overview
 
-The shroomio server is a headless C binary that runs the game simulation authoritatively and communicates with clients over UDP on port 7777 via ENet.
+The shroomio server is a headless C binary that runs the game simulation authoritatively and communicates with clients over UDP via ENet. A stock shroomio client can connect to any public server by domain name or IP address when the server's UDP port is reachable from the internet.
 
 ### Server Characteristics
 
 | Property | Value |
 |----------|-------|
 | Protocol | UDP |
-| Port | 7777 |
+| Default port | 7777 |
 | Tick rate | 30 Hz (simulation) |
 | Snapshot rate | 15 Hz (client updates, every 2nd tick) |
 | Max clients | 128 |
@@ -20,6 +20,23 @@ The shroomio server is a headless C binary that runs the game simulation authori
 | CPU usage | Very low (simple simulation, no graphics) |
 
 ## Deployment
+
+### Runtime Configuration
+
+The server is self-hostable without recompiling. CLI flags override environment variables; environment variables override defaults.
+
+| Setting | CLI | Environment | Default |
+|---|---|---|---|
+| Bind address | `--bind ADDRESS` | `SHROOM_SERVER_BIND` | `0.0.0.0` |
+| UDP port | `--port PORT` | `SHROOM_SERVER_PORT` | `7777` |
+| SQLite database | `--database PATH` | `SHROOM_SERVER_DB_PATH` | `shroomio.db` |
+
+Examples:
+
+```bash
+./dist/shroomio-server --bind 0.0.0.0 --port 7777 --database ./shroomio.db
+SHROOM_SERVER_PORT=9000 ./dist/shroomio-server
+```
 
 ### Docker (Recommended)
 
@@ -43,13 +60,26 @@ Or manually:
 docker run --rm -p 7777:7777/udp shroomio-server:dev
 ```
 
+Persist server data and configure it explicitly:
+
+```bash
+docker run -d --name shroomio-server \
+  -p 7777:7777/udp \
+  -e SHROOM_SERVER_BIND=0.0.0.0 \
+  -e SHROOM_SERVER_PORT=7777 \
+  -e SHROOM_SERVER_DB_PATH=/data/shroomio.db \
+  -v shroomio-server-data:/data \
+  --restart unless-stopped \
+  shroomio-server:dev
+```
+
 ### Docker Compose
 
 ```bash
 docker compose up --build server
 ```
 
-The `compose.yaml` maps host port 7777 to the container.
+The `compose.yaml` maps host UDP port 7777 to the container and stores server data in the `shroomio-server-data` volume.
 
 ### Bare Metal / VM
 
@@ -60,10 +90,13 @@ sudo apt install build-essential
 # Clone and build
 git clone git@github.com:ArmyaAli/shroomio.git
 cd shroomio
-make server
+make server-linux
 
 # Run
 ./dist/shroomio-server
+
+# Run on a custom UDP port
+./dist/shroomio-server --port 9000 --database /var/lib/shroomio/shroomio.db
 ```
 
 ## Hosting Requirements
@@ -72,6 +105,8 @@ make server
 
 - **Port**: UDP 7777 must be open to the internet (or to your player network).
 - **Firewall**: allow inbound UDP on port 7777 from player IP ranges.
+- **NAT/port forwarding**: forward the public UDP port to the host running `shroomio-server`.
+- **DNS**: optional. Point an `A` or `AAAA` record such as `play.example.com` at the server's public address, then clients can connect to that hostname. The server's `--bind` value is still a local IP address such as `0.0.0.0` or `127.0.0.1`, not the public DNS name.
 - **Bandwidth**: approximately 5–10 KB/s per connected client at 15 Hz snapshot rate (depends on player count in snapshots).
 - **Latency**: players will experience jitter proportional to round-trip time. Target <50 ms RTT for LAN play, <100 ms for internet play.
 
@@ -118,7 +153,7 @@ systemctl stop shroomio-server
 The server prints to stdout on startup:
 
 ```
-shroomio server listening on UDP 7777
+shroomio server listening on 0.0.0.0:7777/udp
 ```
 
 Verify the server is accepting connections:
@@ -127,8 +162,9 @@ Verify the server is accepting connections:
 # Check if UDP port is open (server-side)
 ss -uln | grep 7777
 
-# Send a test connection from a client
-./dist/shroomio  # connect to <server-ip>:7777
+# Send a test connection from a client:
+# use Server Browser -> direct connect -> <server-ip-or-domain>:7777
+./dist/shroomio
 ```
 
 No built-in HTTP health endpoint exists. For monitoring, use:
@@ -166,7 +202,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/opt/shroomio/dist/shroomio-server
+ExecStart=/opt/shroomio/dist/shroomio-server --bind 0.0.0.0 --port 7777 --database /opt/shroomio/shroomio.db
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
@@ -257,7 +293,7 @@ exit 0
 ## Upgrading
 
 1. Pull latest code: `git pull origin main`
-2. Rebuild: `make server` (or `make docker-server` for Docker)
+2. Rebuild: `make server-linux` (or `make docker-server` for Docker)
 3. Stop old server
 4. Deploy new binary/image
 5. Start new server

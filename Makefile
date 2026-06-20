@@ -52,10 +52,12 @@ MACOS_BUILD_DIR   := $(BUILD_DIR)/macos
 TEST_BUILD_DIR    := $(BUILD_DIR)/tests
 
 #Output binaries
-LINUX_BIN  := $(DIST_DIR)/$(PROJECT)
-WINDOWS_BIN := $(DIST_DIR)/$(PROJECT).exe
-MACOS_BIN := $(DIST_DIR)/$(PROJECT)-macos
-SERVER_BIN := $(DIST_DIR)/$(PROJECT)-server
+CLIENT_LINUX_BIN := $(DIST_DIR)/$(PROJECT)
+CLIENT_WINDOWS_BIN := $(DIST_DIR)/$(PROJECT).exe
+CLIENT_MACOS_BIN := $(DIST_DIR)/$(PROJECT)-macos
+SERVER_LINUX_BIN := $(DIST_DIR)/$(PROJECT)-server
+SERVER_WINDOWS_BIN := $(DIST_DIR)/$(PROJECT)-server.exe
+SERVER_MACOS_BIN := $(DIST_DIR)/$(PROJECT)-server-macos
 
 #== == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==   \
     == == == == == == =
@@ -154,12 +156,16 @@ WINDOWS_CXXFLAGS += -DWIN32_LEAN_AND_MEAN -DNOGDI -DNOUSER
 MACOS_CXXFLAGS := $(COMMON_CXXFLAGS) -I$(VCPKG_MACOS_INCLUDE_DIR) -DPLATFORM_DESKTOP -D_DEFAULT_SOURCE
 
 #Server compiler flags(headless, ENet - based)
-SERVER_CFLAGS := -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
+LINUX_SERVER_CFLAGS := -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
 		  -I$(VCPKG_LINUX_INCLUDE_DIR) -D_POSIX_C_SOURCE=199309L -D_DEFAULT_SOURCE
 WINDOWS_SERVER_CFLAGS := -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
 		  -I$(VCPKG_WINDOWS_INCLUDE_DIR)
 WINDOWS_SERVER_CFLAGS += -DWIN32_LEAN_AND_MEAN -DNOGDI -DNOUSER
-SERVER_LIBS   := -lm -lsqlite3
+MACOS_SERVER_CFLAGS := -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
+		  -I$(VCPKG_MACOS_INCLUDE_DIR) -D_DEFAULT_SOURCE
+LINUX_SERVER_LIBS := -L$(VCPKG_LINUX_LIB_DIR) -lenet -lm -lsqlite3
+WINDOWS_SERVER_LIBS := -L$(VCPKG_WINDOWS_LIB_DIR) -lenet -lsqlite3 -lws2_32 -lwinmm
+MACOS_SERVER_LIBS := -L$(VCPKG_MACOS_LIB_DIR) -lenet -lsqlite3 -lm
 
 #Test compiler flags(UNITY_INCLUDE defined in vendor section)
 TEST_LIBS := -lm
@@ -226,10 +232,12 @@ SHARED_HEADERS := \
 	$(SERVER_SRC_DIR)/auth.h
 
 #Object files
-LINUX_APP_OBJECTS   := $(patsubst $(SRC_DIR)/%.c,$(LINUX_BUILD_DIR)/%.o,$(CLIENT_SOURCES))
-WINDOWS_APP_OBJECTS := $(patsubst $(SRC_DIR)/%.c,$(WINDOWS_BUILD_DIR)/%.o,$(CLIENT_SOURCES))
-MACOS_APP_OBJECTS   := $(patsubst $(SRC_DIR)/%.c,$(MACOS_BUILD_DIR)/%.o,$(CLIENT_SOURCES))
-SERVER_OBJECTS      := $(patsubst $(SRC_DIR)/%.c,$(LINUX_BUILD_DIR)/%.o,$(SERVER_SOURCES))
+CLIENT_LINUX_OBJECTS := $(patsubst $(SRC_DIR)/%.c,$(LINUX_BUILD_DIR)/%.o,$(CLIENT_SOURCES))
+CLIENT_WINDOWS_OBJECTS := $(patsubst $(SRC_DIR)/%.c,$(WINDOWS_BUILD_DIR)/%.o,$(CLIENT_SOURCES))
+CLIENT_MACOS_OBJECTS := $(patsubst $(SRC_DIR)/%.c,$(MACOS_BUILD_DIR)/%.o,$(CLIENT_SOURCES))
+SERVER_LINUX_OBJECTS := $(patsubst $(SRC_DIR)/%.c,$(LINUX_BUILD_DIR)/%.o,$(SERVER_SOURCES))
+SERVER_WINDOWS_OBJECTS := $(patsubst $(SRC_DIR)/%.c,$(WINDOWS_BUILD_DIR)/%.o,$(SERVER_SOURCES))
+SERVER_MACOS_OBJECTS := $(patsubst $(SRC_DIR)/%.c,$(MACOS_BUILD_DIR)/%.o,$(SERVER_SOURCES))
 
 #Test files
 TEST_SRCS := $(wildcard $(UNIT_TESTS_DIR)/*.c)
@@ -268,9 +276,10 @@ IMGUI_TEST_ENGINE_OBJECTS := $(addprefix $(TEST_BUILD_DIR)/imgui/engine/,$(addsu
 # =============================================================================
 # 5. Build Targets
 # =============================================================================
-.PHONY: all linux windows macos server run run-server run-windows help
+.PHONY: all client-linux client-windows client-macos server-linux server-windows server-macos
+.PHONY: linux windows macos server run run-server run-windows help
 
-all: linux
+all: client-linux
 
 help:
 	@echo ""
@@ -278,10 +287,13 @@ help:
 	@echo "====================="
 	@echo ""
 	@echo "Build targets:"
-	@echo "  make linux          Build the Linux client binary"
-	@echo "  make windows        Build the Windows client binary (requires mingw-w64)"
-	@echo "  make macos          Build the macOS client binary"
-	@echo "  make server         Build the Linux headless server binary"
+	@echo "  make client-linux   Build the Linux client binary"
+	@echo "  make client-windows Build the Windows client binary (requires mingw-w64)"
+	@echo "  make client-macos   Build the macOS client binary"
+	@echo "  make server-linux   Build the Linux headless server binary"
+	@echo "  make server-windows Build the Windows headless server binary (requires mingw-w64)"
+	@echo "  make server-macos   Build the macOS headless server binary"
+	@echo "  make linux/windows/macos/server  Compatibility aliases"
 	@echo "  make run            Build and run the Linux client"
 	@echo "  make run-server     Build and run the Linux server"
 	@echo "  make run-windows    Build and run the Windows client (via WSL)"
@@ -331,43 +343,63 @@ help:
 	@echo "  make test-clean     Remove test build artifacts"
 	@echo ""
 
-linux: $(LINUX_BIN)
+client-linux: $(CLIENT_LINUX_BIN)
 
-windows: $(WINDOWS_BIN)
+client-windows: $(CLIENT_WINDOWS_BIN)
 
-macos: $(MACOS_BIN)
+client-macos: $(CLIENT_MACOS_BIN)
 
-server: $(SERVER_BIN)
+server-linux: $(SERVER_LINUX_BIN)
 
-run: $(LINUX_BIN)
-	./$(LINUX_BIN)
+server-windows: $(SERVER_WINDOWS_BIN)
 
-run-server: $(SERVER_BIN)
-	./$(SERVER_BIN)
+server-macos: $(SERVER_MACOS_BIN)
 
-run-windows: $(WINDOWS_BIN)
-	./$(WINDOWS_BIN)
+linux: client-linux
+
+windows: client-windows
+
+macos: client-macos
+
+server: server-linux
+
+run: $(CLIENT_LINUX_BIN)
+	./$(CLIENT_LINUX_BIN)
+
+run-server: $(SERVER_LINUX_BIN)
+	./$(SERVER_LINUX_BIN)
+
+run-windows: $(CLIENT_WINDOWS_BIN)
+	./$(CLIENT_WINDOWS_BIN)
 
 # =============================================================================
 # 6. Compilation Rules
 # =============================================================================
 
 # Link targets
-$(LINUX_BIN): $(LINUX_APP_OBJECTS) $(LINUX_IMGUI_OBJECTS) $(VCPKG_LINUX_STAMP)
+$(CLIENT_LINUX_BIN): $(CLIENT_LINUX_OBJECTS) $(LINUX_IMGUI_OBJECTS) $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(DIST_DIR)
-	$(LINUX_CXX) $(LINUX_APP_OBJECTS) $(LINUX_IMGUI_OBJECTS) -o $@ $(LINUX_THIRD_PARTY_LIBS) $(LINUX_LIBS)
+	$(LINUX_CXX) $(CLIENT_LINUX_OBJECTS) $(LINUX_IMGUI_OBJECTS) -o $@ $(LINUX_THIRD_PARTY_LIBS) $(LINUX_LIBS)
 
-$(WINDOWS_BIN): $(WINDOWS_APP_OBJECTS) $(WINDOWS_IMGUI_OBJECTS) $(VCPKG_WINDOWS_STAMP)
+$(CLIENT_WINDOWS_BIN): $(CLIENT_WINDOWS_OBJECTS) $(WINDOWS_IMGUI_OBJECTS) $(VCPKG_WINDOWS_STAMP)
 	@$(MKDIR_P) $(DIST_DIR)
-	$(WINDOWS_CXX) -static $(WINDOWS_APP_OBJECTS) $(WINDOWS_IMGUI_OBJECTS) -o $@ $(WINDOWS_THIRD_PARTY_LIBS) $(WINDOWS_LIBS)
+	$(WINDOWS_CXX) -static $(CLIENT_WINDOWS_OBJECTS) $(WINDOWS_IMGUI_OBJECTS) -o $@ $(WINDOWS_THIRD_PARTY_LIBS) $(WINDOWS_LIBS)
 
-$(MACOS_BIN): $(MACOS_APP_OBJECTS) $(MACOS_IMGUI_OBJECTS) $(VCPKG_MACOS_STAMP)
+$(CLIENT_MACOS_BIN): $(CLIENT_MACOS_OBJECTS) $(MACOS_IMGUI_OBJECTS) $(VCPKG_MACOS_STAMP)
 	@$(MKDIR_P) $(DIST_DIR)
-	$(MACOS_CXX) $(MACOS_APP_OBJECTS) $(MACOS_IMGUI_OBJECTS) -o $@ $(MACOS_THIRD_PARTY_LIBS) $(MACOS_LIBS)
+	$(MACOS_CXX) $(CLIENT_MACOS_OBJECTS) $(MACOS_IMGUI_OBJECTS) -o $@ $(MACOS_THIRD_PARTY_LIBS) $(MACOS_LIBS)
 
-$(SERVER_BIN): $(SERVER_OBJECTS) $(VCPKG_LINUX_STAMP)
+$(SERVER_LINUX_BIN): $(SERVER_LINUX_OBJECTS) $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(DIST_DIR)
-	$(LINUX_CC) $(SERVER_OBJECTS) -o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet $(SERVER_LIBS)
+	$(LINUX_CC) $(SERVER_LINUX_OBJECTS) -o $@ $(LINUX_SERVER_LIBS)
+
+$(SERVER_WINDOWS_BIN): $(SERVER_WINDOWS_OBJECTS) $(VCPKG_WINDOWS_STAMP)
+	@$(MKDIR_P) $(DIST_DIR)
+	$(WINDOWS_CC) -static $(SERVER_WINDOWS_OBJECTS) -o $@ $(WINDOWS_SERVER_LIBS)
+
+$(SERVER_MACOS_BIN): $(SERVER_MACOS_OBJECTS) $(VCPKG_MACOS_STAMP)
+	@$(MKDIR_P) $(DIST_DIR)
+	$(MACOS_CC) $(SERVER_MACOS_OBJECTS) -o $@ $(MACOS_SERVER_LIBS)
 
 # Client object compilation
 $(LINUX_BUILD_DIR)/client/%.o: $(CLIENT_SRC_DIR)/%.c $(CLIENT_SRC_DIR)/game.h $(CLIENT_SRC_DIR)/net.h $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
@@ -444,7 +476,7 @@ $(TEST_BUILD_DIR)/imgui/engine/%.o: $(IMGUI_TEST_ENGINE_SRC_DIR)/%.cpp $(IMGUI_T
 # Shared object compilation
 $(LINUX_BUILD_DIR)/shared/%.o: $(SHARED_SRC_DIR)/%.c $(SHARED_HEADERS)
 	@$(MKDIR_P) $(dir $@)
-	$(LINUX_CC) $(SERVER_CFLAGS) -c $< -o $@
+	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) -c $< -o $@
 
 $(WINDOWS_BUILD_DIR)/shared/%.o: $(SHARED_SRC_DIR)/%.c $(SHARED_HEADERS) | $(VCPKG_WINDOWS_STAMP)
 	@$(MKDIR_P) $(dir $@)
@@ -457,7 +489,15 @@ $(MACOS_BUILD_DIR)/shared/%.o: $(SHARED_SRC_DIR)/%.c $(SHARED_HEADERS) | $(VCPKG
 # Server object compilation
 $(LINUX_BUILD_DIR)/server/%.o: $(SERVER_SRC_DIR)/%.c | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
-	$(LINUX_CC) $(SERVER_CFLAGS) -c $< -o $@
+	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) -c $< -o $@
+
+$(WINDOWS_BUILD_DIR)/server/%.o: $(SERVER_SRC_DIR)/%.c | $(VCPKG_WINDOWS_STAMP)
+	@$(MKDIR_P) $(dir $@)
+	$(WINDOWS_CC) $(WINDOWS_SERVER_CFLAGS) -c $< -o $@
+
+$(MACOS_BUILD_DIR)/server/%.o: $(SERVER_SRC_DIR)/%.c | $(VCPKG_MACOS_STAMP)
+	@$(MKDIR_P) $(dir $@)
+	$(MACOS_CC) $(MACOS_SERVER_CFLAGS) -c $< -o $@
 
 # =============================================================================
 # 7. Dependency Installation

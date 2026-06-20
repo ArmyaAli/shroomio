@@ -65,9 +65,9 @@ sudo apt install mingw-w64
 ## Building
 
 ```bash
-make linux      # Linux client    -> dist/shroomio
-make server     # Linux server    -> dist/shroomio-server
-make windows    # Windows client  -> dist/shroomio.exe  (requires mingw-w64)
+make client-linux    # Linux client    -> dist/shroomio
+make server-linux    # Linux server    -> dist/shroomio-server
+make client-windows  # Windows client  -> dist/shroomio.exe  (requires mingw-w64)
 ```
 
 Run directly:
@@ -123,7 +123,14 @@ make docker-logs          # follow container logs
 make run-server
 ```
 
-The server listens on UDP port `7777`.
+The server is designed for self-hosting. By default it binds to `0.0.0.0:7777/udp`, and clients can connect by IP address or domain name when that UDP port is reachable from the internet.
+
+Runtime configuration is available through CLI flags or environment variables:
+
+```bash
+./dist/shroomio-server --bind 0.0.0.0 --port 7777 --database ./shroomio.db
+SHROOM_SERVER_PORT=9000 SHROOM_SERVER_DB_PATH=/data/shroomio.db ./dist/shroomio-server
+```
 
 ## Dev Container
 

@@ -74,8 +74,8 @@ jobs:
 
       - name: Build binaries
         run: |
-          make linux
-          make server
+          make client-linux
+          make server-linux
 
       - name: Package binaries
         run: |
@@ -122,7 +122,7 @@ jobs:
           key: ${{ runner.os }}-windows-release-vcpkg-${{ hashFiles('vcpkg.json', '.gitmodules', 'vcpkg/ports/raylib/vcpkg.json', 'vcpkg/ports/imgui/vcpkg.json', 'vcpkg/ports/enet/vcpkg.json') }}
 
       - name: Build binary
-        run: make windows
+        run: make client-windows
 
       - name: Package binary
         run: |
@@ -158,7 +158,7 @@ jobs:
           key: ${{ runner.os }}-release-vcpkg-${{ hashFiles('vcpkg.json', '.gitmodules', 'vcpkg/ports/raylib/vcpkg.json', 'vcpkg/ports/imgui/vcpkg.json', 'vcpkg/ports/enet/vcpkg.json') }}
 
       - name: Build binary
-        run: make macos
+        run: make client-macos
 
       - name: Package binary
         run: |

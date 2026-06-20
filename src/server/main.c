@@ -7,6 +7,9 @@
 #include <time.h>
 
 #include <enet/enet.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 #include "shared/lifecycle.h"
 #include "shared/protocol.h"
@@ -172,6 +175,148 @@ typedef struct ServerSession {
 
 static ShroomLifecycle g_lifecycle;
 
+typedef struct ServerConfig {
+  char bind_host[64];
+  char database_path[256];
+  enet_uint32 bind_address;
+  uint16_t port;
+} ServerConfig;
+
+static bool ParsePort(const char* text, uint16_t* port) {
+  char* end = NULL;
+  unsigned long value;
+
+  if ((text == NULL) || (text[0] == '\0')) {
+    return false;
+  }
+
+  value = strtoul(text, &end, 10);
+  if ((end == text) || (*end != '\0') || (value == 0ul) || (value > 65535ul)) {
+    return false;
+  }
+
+  *port = (uint16_t)value;
+  return true;
+}
+
+static void CopyConfigString(char* destination, size_t destination_size, const char* source) {
+  if ((destination == NULL) || (destination_size == 0u)) {
+    return;
+  }
+  if (source == NULL) {
+    destination[0] = '\0';
+    return;
+  }
+  snprintf(destination, destination_size, "%s", source);
+}
+
+static void PrintUsage(const char* program_name) {
+  printf("Usage: %s [--bind ADDRESS] [--port PORT] [--database PATH]\n", program_name);
+  printf("\n");
+  printf("Self-hosted server options:\n");
+  printf("  --bind ADDRESS    Local bind IP address, default 0.0.0.0\n");
+  printf("  --port PORT       UDP listen port, default %u\n", SHROOM_SERVER_PORT);
+  printf("  --database PATH   SQLite database path, default shroomio.db\n");
+  printf("  --help            Show this help text\n");
+  printf("\n");
+  printf("Environment overrides:\n");
+  printf("  SHROOM_SERVER_BIND, SHROOM_SERVER_PORT, SHROOM_SERVER_DB_PATH\n");
+}
+
+static bool ResolveBindAddress(const char* bind_value, enet_uint32* bind_address) {
+  unsigned int octets[4];
+  char trailing;
+
+  if ((bind_value == NULL) || (bind_value[0] == '\0') ||
+      ((bind_value[0] == '*') && (bind_value[1] == '\0'))) {
+    *bind_address = ENET_HOST_ANY;
+    return true;
+  }
+
+  if (sscanf(bind_value, "%u.%u.%u.%u%c", &octets[0], &octets[1], &octets[2], &octets[3],
+             &trailing) != 4) {
+    return false;
+  }
+  for (size_t i = 0; i < 4; ++i) {
+    if (octets[i] > 255u) {
+      return false;
+    }
+  }
+  if ((octets[0] == 0u) && (octets[1] == 0u) && (octets[2] == 0u) && (octets[3] == 0u)) {
+    *bind_address = ENET_HOST_ANY;
+    return true;
+  }
+
+  *bind_address =
+      ENET_HOST_TO_NET_32((octets[0] << 24u) | (octets[1] << 16u) | (octets[2] << 8u) | octets[3]);
+  return true;
+}
+
+static bool LoadServerConfig(ServerConfig* config, int argc, char** argv) {
+  const char* env_bind = getenv("SHROOM_SERVER_BIND");
+  const char* env_port = getenv("SHROOM_SERVER_PORT");
+  const char* env_database = getenv("SHROOM_SERVER_DB_PATH");
+
+  *config = (ServerConfig){.port = (uint16_t)SHROOM_SERVER_PORT};
+  CopyConfigString(config->bind_host, sizeof(config->bind_host), "0.0.0.0");
+  CopyConfigString(config->database_path, sizeof(config->database_path), "shroomio.db");
+
+  if ((env_bind != NULL) && (env_bind[0] != '\0')) {
+    CopyConfigString(config->bind_host, sizeof(config->bind_host), env_bind);
+  }
+  if ((env_database != NULL) && (env_database[0] != '\0')) {
+    CopyConfigString(config->database_path, sizeof(config->database_path), env_database);
+  }
+  if ((env_port != NULL) && (env_port[0] != '\0') && !ParsePort(env_port, &config->port)) {
+    fprintf(stderr, "Invalid SHROOM_SERVER_PORT: %s\n", env_port);
+    return false;
+  }
+
+  int i = 1;
+  while (i < argc) {
+    if (strcmp(argv[i], "--help") == 0) {
+      PrintUsage(argv[0]);
+      exit(0);
+    } else if (strcmp(argv[i], "--bind") == 0) {
+      if ((i + 1) >= argc) {
+        fprintf(stderr, "Missing value for --bind\n");
+        return false;
+      }
+      ++i;
+      CopyConfigString(config->bind_host, sizeof(config->bind_host), argv[i]);
+    } else if (strcmp(argv[i], "--port") == 0) {
+      if ((i + 1) >= argc) {
+        fprintf(stderr, "Missing value for --port\n");
+        return false;
+      }
+      ++i;
+      if (!ParsePort(argv[i], &config->port)) {
+        fprintf(stderr, "Invalid --port: %s\n", argv[i]);
+        return false;
+      }
+    } else if (strcmp(argv[i], "--database") == 0) {
+      if ((i + 1) >= argc) {
+        fprintf(stderr, "Missing value for --database\n");
+        return false;
+      }
+      ++i;
+      CopyConfigString(config->database_path, sizeof(config->database_path), argv[i]);
+    } else {
+      fprintf(stderr, "Unknown option: %s\n", argv[i]);
+      PrintUsage(argv[0]);
+      return false;
+    }
+    ++i;
+  }
+
+  if (!ResolveBindAddress(config->bind_host, &config->bind_address)) {
+    fprintf(stderr, "Invalid bind address: %s\n", config->bind_host);
+    return false;
+  }
+
+  return true;
+}
+
 static void HandleSignal(int signal_number) {
   (void)signal_number;
   ShroomLifecycleRequestShutdown(&g_lifecycle);
@@ -190,16 +335,19 @@ static ShroomVec2 NormalizeInput(ShroomVec2 input) {
 }
 
 static uint64_t GetTimeNanos(void) {
+#ifdef _WIN32
+  return (uint64_t)GetTickCount64() * 1000000ull;
+#else
   struct timespec now;
 
   clock_gettime(CLOCK_MONOTONIC, &now);
   return ((uint64_t)now.tv_sec * 1000000000ull) + (uint64_t)now.tv_nsec;
+#endif
 }
 
 static uint64_t GetTimeMillis(void) { return GetTimeNanos() / 1000000ull; }
 
 static void SleepUntil(uint64_t target_time_nanos) {
-  struct timespec sleep_time;
   uint64_t now = GetTimeNanos();
   uint64_t delta;
 
@@ -208,9 +356,15 @@ static void SleepUntil(uint64_t target_time_nanos) {
   }
 
   delta = target_time_nanos - now;
+#ifdef _WIN32
+  Sleep((DWORD)(delta / 1000000ull));
+#else
+  struct timespec sleep_time;
+
   sleep_time.tv_sec = (time_t)(delta / 1000000000ull);
   sleep_time.tv_nsec = (long)(delta % 1000000000ull);
   nanosleep(&sleep_time, 0);
+#endif
 }
 
 static ENetPacket* CreatePacket(const void* data, size_t size, enet_uint32 flags) {
@@ -1065,7 +1219,7 @@ static void HandlePacket(ENetHost* host, ENetPeer* peer, ServerSession* session,
   }
 }
 
-int main(void) {
+int main(int argc, char** argv) {
   const uint64_t tick_interval_nanos = 1000000000ull / (uint64_t)SHROOM_SERVER_TICK_RATE;
   const uint64_t snapshot_interval_ticks =
       (uint64_t)(SHROOM_SERVER_TICK_RATE / (float)SHROOM_SNAPSHOT_RATE);
@@ -1081,6 +1235,7 @@ int main(void) {
   uint64_t last_health_log_ms = 0;
   sqlite3* db = NULL;
   ShroomAuthContext auth_ctx = {0};
+  ServerConfig config;
 
   ShroomLifecycleInit(&g_lifecycle);
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_INIT);
@@ -1089,12 +1244,17 @@ int main(void) {
   signal(SIGINT, HandleSignal);
   signal(SIGTERM, HandleSignal);
 
-  if (sqlite3_open("shroomio.db", &db) != SQLITE_OK) {
+  if (!LoadServerConfig(&config, argc, argv)) {
+    ShroomLifecycleSetError(&g_lifecycle, 1, "Invalid server configuration");
+    return 1;
+  }
+
+  if (sqlite3_open(config.database_path, &db) != SQLITE_OK) {
     LOG_ERROR("failed to open database: %s", sqlite3_errmsg(db));
     ShroomLifecycleSetError(&g_lifecycle, 1, "Database initialization failed");
     return 1;
   }
-  LOG_INFO("database initialized");
+  LOG_INFO("database initialized: path=%s", config.database_path);
 
   if (!InitializeDatabaseSchema(db)) {
     sqlite3_close(db);
@@ -1121,8 +1281,8 @@ int main(void) {
     }
   }
 
-  address.host = ENET_HOST_ANY;
-  address.port = SHROOM_SERVER_PORT;
+  address.host = config.bind_address;
+  address.port = config.port;
   host = enet_host_create(&address, SHROOM_SERVER_MAX_CLIENTS, SHROOM_ENET_CHANNEL_COUNT, 0, 0);
   if (host == 0) {
     LOG_ERROR("failed to create ENet host");
@@ -1134,7 +1294,7 @@ int main(void) {
   }
 
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_START);
-  LOG_INFO("shroomio server listening on UDP %u", SHROOM_SERVER_PORT);
+  LOG_INFO("shroomio server listening on %s:%u/udp", config.bind_host, config.port);
   next_tick_time = GetTimeNanos();
 
   while (ShroomLifecycleIsRunning(&g_lifecycle) &&

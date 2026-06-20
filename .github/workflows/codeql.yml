@@ -76,10 +76,10 @@ jobs:
           queries: security-and-quality
 
       - name: Build Linux client
-        run: make linux
+        run: make client-linux
 
       - name: Build server
-        run: make server
+        run: make server-linux
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3

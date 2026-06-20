@@ -5,6 +5,10 @@
 #include <string.h>
 #include <time.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 static LogLevel g_min_level = LOG_LEVEL_INFO;
 static int g_use_color = 0;
 
@@ -50,6 +54,15 @@ static const char* GetLevelColor(LogLevel level) {
 }
 
 static void GetTimestamp(char* buffer, size_t size) {
+#ifdef _WIN32
+  SYSTEMTIME time_info;
+
+  GetLocalTime(&time_info);
+  snprintf(buffer, size, "%04u-%02u-%02u %02u:%02u:%02u.%03u", (unsigned)time_info.wYear,
+           (unsigned)time_info.wMonth, (unsigned)time_info.wDay, (unsigned)time_info.wHour,
+           (unsigned)time_info.wMinute, (unsigned)time_info.wSecond,
+           (unsigned)time_info.wMilliseconds);
+#else
   struct timespec ts;
   struct tm tm_info;
 
@@ -59,6 +72,7 @@ static void GetTimestamp(char* buffer, size_t size) {
   snprintf(buffer, size, "%04d-%02d-%02d %02d:%02d:%02d.%03ld", tm_info.tm_year + 1900,
            tm_info.tm_mon + 1, tm_info.tm_mday, tm_info.tm_hour, tm_info.tm_min, tm_info.tm_sec,
            ts.tv_nsec / 1000000L);
+#endif
 }
 
 static const char* ExtractFilename(const char* path) {
