@@ -22,9 +22,40 @@ static const float kRemoteInterpolationRate = 10.0f;
 static const float kStatusBannerDuration = 2.0f;
 static const float kProximityMapRadius = 74.0f;
 static const float kProximityMapRange = 1400.0f;
+static const float kRenderCullMargin = 96.0f;
 
 static bool IsOnlineMode(GameSessionMode mode) {
   return mode == SHROOM_SESSION_MODE_QUICK_PLAY || mode == SHROOM_SESSION_MODE_LOBBY_PLAY;
+}
+
+static Rectangle GetCameraWorldBounds(Camera2D camera) {
+  const Vector2 top_left = GetScreenToWorld2D((Vector2){0.0f, 0.0f}, camera);
+  const Vector2 bottom_right =
+      GetScreenToWorld2D((Vector2){(float)GetScreenWidth(), (float)GetScreenHeight()}, camera);
+  const float min_x = fminf(top_left.x, bottom_right.x) - kRenderCullMargin;
+  const float min_y = fminf(top_left.y, bottom_right.y) - kRenderCullMargin;
+  const float max_x = fmaxf(top_left.x, bottom_right.x) + kRenderCullMargin;
+  const float max_y = fmaxf(top_left.y, bottom_right.y) + kRenderCullMargin;
+
+  return (Rectangle){min_x, min_y, max_x - min_x, max_y - min_y};
+}
+
+static Rectangle ClampRectToWorld(Rectangle rect, const ShroomWorldState* world) {
+  const float min_x = fmaxf(rect.x, 0.0f);
+  const float min_y = fmaxf(rect.y, 0.0f);
+  const float max_x = fminf(rect.x + rect.width, world->width);
+  const float max_y = fminf(rect.y + rect.height, world->height);
+
+  if ((max_x <= min_x) || (max_y <= min_y)) {
+    return (Rectangle){0.0f, 0.0f, 0.0f, 0.0f};
+  }
+
+  return (Rectangle){min_x, min_y, max_x - min_x, max_y - min_y};
+}
+
+static bool CircleIntersectsRect(Vector2 center, float radius, Rectangle rect) {
+  return (center.x + radius >= rect.x) && (center.x - radius <= rect.x + rect.width) &&
+         (center.y + radius >= rect.y) && (center.y - radius <= rect.y + rect.height);
 }
 
 static bool IsLocalPlayerPiece(const Game* game, const ShroomPlayerState* player);
@@ -666,8 +697,9 @@ static void RetryConnection(Game* game) {
                 game->selected_server_port != 0 ? game->selected_server_port : SHROOM_SERVER_PORT);
 }
 
-static void DrawArenaZones(const ShroomWorldState* world) {
+static void DrawArenaZones(const ShroomWorldState* world, Rectangle view_bounds) {
   const Vector2 center = {world->width * 0.5f, world->height * 0.5f};
+  const Rectangle visible_world = ClampRectToWorld(view_bounds, world);
   size_t center_player_count = 0;
   float time = GetTime();
 
@@ -678,21 +710,24 @@ static void DrawArenaZones(const ShroomWorldState* world) {
     }
   }
 
-  // Outer zone - dramatic dark fungal forest floor with strong texture
-  DrawRectangle(0, 0, (int)world->width, (int)world->height, Fade((Color){25, 35, 30, 255}, 0.95f));
+  // Outer zone - draw only the visible world slice to avoid full-world overdraw.
+  DrawRectangleRec(visible_world, Fade((Color){25, 35, 30, 255}, 0.95f));
 
   // Large, visible fungal texture pattern to outer zone
   for (int i = 0; i < 16; i++) {
     float x = (i * 235.5f) + sinf(i * 0.7f + time * 0.08f) * 110.0f;
     float y = (i * 173.3f) + cosf(i * 0.5f + time * 0.1f) * 90.0f;
-    if (x < world->width && y < world->height && x > 0 && y > 0) {
+    if (x < world->width && y < world->height && x > 0 && y > 0 &&
+        CircleIntersectsRect((Vector2){x, y}, 44.0f, view_bounds)) {
       float size = 30.0f + sinf(i + time * 0.16f) * 10.0f;
       DrawCircle(x, y, size, Fade((Color){50, 80, 50, 255}, 0.28f));
     }
   }
 
   // Mid zone - vibrant mycelium network with strong visibility
-  DrawCircleV(center, SHROOM_ZONE_MID_RADIUS, Fade((Color){45, 75, 50, 255}, 0.85f));
+  if (CircleIntersectsRect(center, SHROOM_ZONE_MID_RADIUS, view_bounds)) {
+    DrawCircleV(center, SHROOM_ZONE_MID_RADIUS, Fade((Color){45, 75, 50, 255}, 0.85f));
+  }
 
   // Prominent mycelium-like patterns with animation
   for (int i = 0; i < 8; i++) {
@@ -701,17 +736,23 @@ static void DrawArenaZones(const ShroomWorldState* world) {
     float x = center.x + cosf(angle + time * 0.04f) * radius;
     float y = center.y + sinf(angle + time * 0.04f) * radius;
     float size = 42.0f + sinf(i * 2.0f + time * 0.22f) * 12.0f;
-    DrawCircle(x, y, size, Fade((Color){80, 130, 80, 255}, 0.32f));
+    if (CircleIntersectsRect((Vector2){x, y}, size, view_bounds)) {
+      DrawCircle(x, y, size, Fade((Color){80, 130, 80, 255}, 0.32f));
+    }
   }
 
   // Center zone - bright, glowing prime fungal growth area
-  DrawCircleV(center, SHROOM_ZONE_CENTER_RADIUS, Fade((Color){70, 110, 55, 255}, 0.9f));
+  if (CircleIntersectsRect(center, SHROOM_ZONE_CENTER_RADIUS, view_bounds)) {
+    DrawCircleV(center, SHROOM_ZONE_CENTER_RADIUS, Fade((Color){70, 110, 55, 255}, 0.9f));
+  }
 
   // Strong glowing center effect with pulsing
   float pulse = 0.5f + 0.5f * sinf(time * 2.0f);
-  DrawCircleGradient((int)center.x, (int)center.y, SHROOM_ZONE_CENTER_RADIUS * 0.6f,
-                     Fade((Color){150, 220, 100, 255}, 0.5f + pulse * 0.2f),
-                     Fade((Color){70, 110, 55, 255}, 0.0f));
+  if (CircleIntersectsRect(center, SHROOM_ZONE_CENTER_RADIUS * 0.6f, view_bounds)) {
+    DrawCircleGradient((int)center.x, (int)center.y, SHROOM_ZONE_CENTER_RADIUS * 0.6f,
+                       Fade((Color){150, 220, 100, 255}, 0.5f + pulse * 0.2f),
+                       Fade((Color){70, 110, 55, 255}, 0.0f));
+  }
 
   // Add radial glow lines
   for (int i = 0; i < 6; i++) {
@@ -720,10 +761,13 @@ static void DrawArenaZones(const ShroomWorldState* world) {
     float outer_radius = SHROOM_ZONE_CENTER_RADIUS * 0.9f;
     Vector2 start = {center.x + cosf(angle) * inner_radius, center.y + sinf(angle) * inner_radius};
     Vector2 end = {center.x + cosf(angle) * outer_radius, center.y + sinf(angle) * outer_radius};
-    DrawLineEx(start, end, 5.0f, Fade((Color){180, 240, 120, 255}, 0.24f + pulse * 0.12f));
+    if (CircleIntersectsRect(center, outer_radius, view_bounds)) {
+      DrawLineEx(start, end, 5.0f, Fade((Color){180, 240, 120, 255}, 0.24f + pulse * 0.12f));
+    }
   }
 
-  if (center_player_count >= 3u) {
+  if (center_player_count >= 3u &&
+      CircleIntersectsRect(center, SHROOM_ZONE_CENTER_RADIUS, view_bounds)) {
     DrawCircleV(center, SHROOM_ZONE_CENTER_RADIUS * 0.78f, Fade(LIME, 0.25f));
     DrawCircleLines((int)center.x, (int)center.y, SHROOM_ZONE_CENTER_RADIUS * 0.86f,
                     Fade(LIME, 0.7f));
@@ -732,32 +776,35 @@ static void DrawArenaZones(const ShroomWorldState* world) {
   }
 
   // Zone boundaries with strong, visible fungal edge effects
-  DrawCircleLines((int)center.x, (int)center.y, SHROOM_ZONE_MID_RADIUS,
-                  Fade((Color){100, 160, 100, 255}, 0.6f));
-  DrawCircleLines((int)center.x, (int)center.y, SHROOM_ZONE_MID_RADIUS - 3.0f,
-                  Fade((Color){120, 180, 120, 255}, 0.5f));
-  DrawCircleLines((int)center.x, (int)center.y, SHROOM_ZONE_MID_RADIUS - 6.0f,
-                  Fade((Color){140, 200, 140, 255}, 0.4f));
+  if (CircleIntersectsRect(center, SHROOM_ZONE_MID_RADIUS, view_bounds)) {
+    DrawCircleLines((int)center.x, (int)center.y, SHROOM_ZONE_MID_RADIUS,
+                    Fade((Color){100, 160, 100, 255}, 0.6f));
+    DrawCircleLines((int)center.x, (int)center.y, SHROOM_ZONE_MID_RADIUS - 3.0f,
+                    Fade((Color){120, 180, 120, 255}, 0.5f));
+    DrawCircleLines((int)center.x, (int)center.y, SHROOM_ZONE_MID_RADIUS - 6.0f,
+                    Fade((Color){140, 200, 140, 255}, 0.4f));
+  }
 
-  DrawCircleLines((int)center.x, (int)center.y, SHROOM_ZONE_CENTER_RADIUS,
-                  Fade((Color){180, 240, 120, 255}, 0.7f));
-  DrawCircleLines((int)center.x, (int)center.y, SHROOM_ZONE_CENTER_RADIUS - 3.0f,
-                  Fade((Color){200, 255, 150, 255}, 0.6f));
-  DrawCircleLines((int)center.x, (int)center.y, SHROOM_ZONE_CENTER_RADIUS - 6.0f,
-                  Fade((Color){220, 255, 180, 255}, 0.5f));
+  if (CircleIntersectsRect(center, SHROOM_ZONE_CENTER_RADIUS, view_bounds)) {
+    DrawCircleLines((int)center.x, (int)center.y, SHROOM_ZONE_CENTER_RADIUS,
+                    Fade((Color){180, 240, 120, 255}, 0.7f));
+    DrawCircleLines((int)center.x, (int)center.y, SHROOM_ZONE_CENTER_RADIUS - 3.0f,
+                    Fade((Color){200, 255, 150, 255}, 0.6f));
+    DrawCircleLines((int)center.x, (int)center.y, SHROOM_ZONE_CENTER_RADIUS - 6.0f,
+                    Fade((Color){220, 255, 180, 255}, 0.5f));
+  }
 }
 
-static void DrawSpores(const ShroomWorldState* world) {
+static void DrawSpores(const ShroomWorldState* world, Rectangle view_bounds) {
   float time = GetTime();
 
   for (size_t index = 0; index < world->spore_count; ++index) {
     const ShroomSporeState* spore = &world->spores[index];
 
-    if (!spore->active) {
+    const Vector2 position = {spore->position.x, spore->position.y};
+    if (!spore->active || !CircleIntersectsRect(position, 18.0f, view_bounds)) {
       continue;
     }
-
-    const Vector2 position = {spore->position.x, spore->position.y};
     float pulse = 0.7f + 0.3f * sinf(time * 3.0f + (float)index * 0.5f);
 
     // Visible glow without excessive per-spore overdraw.
@@ -788,18 +835,18 @@ static Color GetPowerupColor(ShroomPowerupType type) {
   }
 }
 
-static void DrawPowerups(const ShroomWorldState* world) {
+static void DrawPowerups(const ShroomWorldState* world, Rectangle view_bounds) {
   float time = GetTime();
 
   for (size_t index = 0; index < world->powerup_count; ++index) {
     const ShroomPowerupState* powerup = &world->powerups[index];
     const Color color = GetPowerupColor(powerup->type);
 
-    if (!powerup->active) {
+    const Vector2 position = {powerup->position.x, powerup->position.y};
+    if (!powerup->active ||
+        !CircleIntersectsRect(position, SHROOM_POWERUP_RADIUS + 34.0f, view_bounds)) {
       continue;
     }
-
-    const Vector2 position = {powerup->position.x, powerup->position.y};
     float pulse = sinf((float)index * 0.5f + time * 4.0f) * 0.4f + 0.8f;
     float rotation = time * 2.0f + (float)index;
 
@@ -832,7 +879,7 @@ static void DrawPowerups(const ShroomWorldState* world) {
   }
 }
 
-static void DrawPlayers(const Game* game) {
+static void DrawPlayers(const Game* game, Rectangle view_bounds) {
   for (size_t index = 0; index < game->world.player_count; ++index) {
     const ShroomPlayerState* player = &game->world.players[index];
     const ShroomVec2 render_position = game->render_positions[index];
@@ -843,7 +890,7 @@ static void DrawPlayers(const Game* game) {
     const float decay_pulse =
         0.45f + (0.35f * (0.5f + (0.5f * sinf(game->inspect_prompt_timer * 5.0f))));
 
-    if (!player->alive) {
+    if (!player->alive || !CircleIntersectsRect(position, player->radius + 80.0f, view_bounds)) {
       continue;
     }
 
@@ -2027,6 +2074,7 @@ void GameDraw(Game* game) {
   LeaderboardEntry leaderboard[SHROOM_MAX_PLAYERS];
   size_t leaderboard_count = 0;
   size_t shown_count;
+  const Rectangle view_bounds = GetCameraWorldBounds(game->camera);
   const ShroomZone zone = (game->local_player != NULL)
                               ? ShroomGetZoneAtPosition(&game->world, game->local_player->position)
                               : SHROOM_ZONE_OUTER;
@@ -2039,12 +2087,12 @@ void GameDraw(Game* game) {
   ClearBackground((Color){18, 18, 26, 255});
 
   BeginMode2D(game->camera);
-  DrawArenaZones(&game->world);
+  DrawArenaZones(&game->world, view_bounds);
   DrawRectangleLines(0, 0, (int)game->world.width, (int)game->world.height, Fade(DARKGREEN, 0.7f));
   DrawGrid(80, 64.0f);
-  DrawSpores(&game->world);
-  DrawPowerups(&game->world);
-  DrawPlayers(game);
+  DrawSpores(&game->world, view_bounds);
+  DrawPowerups(&game->world, view_bounds);
+  DrawPlayers(game, view_bounds);
   EndMode2D();
 
   DrawOffscreenIndicators(game);
