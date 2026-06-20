@@ -313,7 +313,7 @@ static void DrawCombatNotifications(const Game* game) {
       alpha = fmaxf(0.0f, (notification->duration - notification->age) / 0.55f);
     }
 
-    y = 92.0f + (float)visible_index * 74.0f;
+    y = 108.0f + (float)visible_index * 74.0f;
     panel = (Rectangle){(game->screen_width - 440.0f) * 0.5f, y, 440.0f, 58.0f};
     DrawRectangleRounded(panel, 0.22f, 8, Fade((Color){18, 21, 18, 255}, 0.78f * alpha));
     DrawRectangleRoundedLines(panel, 0.22f, 8, Fade(notification->color, 0.82f * alpha));
@@ -1892,7 +1892,7 @@ static void DrawStatusBanners(const Game* game) {
   }
 
   if (game->respawn_banner_timer > 0.0f) {
-    ShroomImGui_SetNextWindowPos((game->screen_width - 360) * 0.5f, 98.0f,
+    ShroomImGui_SetNextWindowPos((game->screen_width - 360) * 0.5f, 112.0f,
                                  SHROOM_IMGUI_COND_ALWAYS);
     ShroomImGui_SetNextWindowSize(360.0f, 56.0f, SHROOM_IMGUI_COND_ALWAYS);
     ShroomImGui_SetNextWindowBgAlpha(0.78f);
@@ -1911,7 +1911,7 @@ static void DrawStatusBanners(const Game* game) {
       (game->net.rtt_average_ms >= SHROOM_LATENCY_WARNING_MS)) {
     const bool unplayable = game->net.rtt_average_ms >= SHROOM_LATENCY_UNPLAYABLE_MS;
     const Color warn_color = unplayable ? RED : ORANGE;
-    ShroomImGui_SetNextWindowPos((game->screen_width - 300.0f) * 0.5f, 162.0f,
+    ShroomImGui_SetNextWindowPos((game->screen_width - 300.0f) * 0.5f, 176.0f,
                                  SHROOM_IMGUI_COND_ALWAYS);
     ShroomImGui_SetNextWindowSize(300.0f, 44.0f, SHROOM_IMGUI_COND_ALWAYS);
     ShroomImGui_SetNextWindowBgAlpha(0.78f);
@@ -1992,9 +1992,9 @@ static void DrawLeaderboardOverlay(Game* game, const LeaderboardEntry* leaderboa
     return;
   }
 
-  DrawFungalHudPanel((Rectangle){(game->screen_width - 440.0f) * 0.5f, 100.0f, 440.0f, 280.0f},
+  DrawFungalHudPanel((Rectangle){(game->screen_width - 440.0f) * 0.5f, 120.0f, 440.0f, 280.0f},
                      (Color){170, 215, 118, 255});
-  ShroomImGui_SetNextWindowPos((game->screen_width - 440) * 0.5f, 100.0f, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowPos((game->screen_width - 440) * 0.5f, 120.0f, SHROOM_IMGUI_COND_ALWAYS);
   ShroomImGui_SetNextWindowSize(440.0f, 280.0f, SHROOM_IMGUI_COND_ALWAYS);
   ShroomImGui_SetNextWindowBgAlpha(0.34f);
   if (!ShroomImGui_Begin("Leaderboard", NULL,
