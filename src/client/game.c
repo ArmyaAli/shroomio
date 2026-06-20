@@ -95,6 +95,89 @@ static float RandomRange(float min_value, float max_value) {
   return min_value + ((max_value - min_value) * t);
 }
 
+typedef enum ClientSfx {
+  CLIENT_SFX_SPORE = 0,
+  CLIENT_SFX_CONSUME,
+  CLIENT_SFX_DEATH,
+  CLIENT_SFX_ZONE,
+  CLIENT_SFX_WARNING,
+  CLIENT_SFX_COUNT,
+} ClientSfx;
+
+static Sound g_client_sfx[CLIENT_SFX_COUNT];
+static bool g_client_sfx_loaded = false;
+
+static Sound GenerateToneSound(float start_hz, float end_hz, float seconds, float decay) {
+  const unsigned int sample_rate = 22050u;
+  const unsigned int frame_count = (unsigned int)(seconds * (float)sample_rate);
+  int16_t* samples = malloc(frame_count * sizeof(int16_t));
+  Wave wave = {0};
+  Sound sound = {0};
+
+  if (samples == NULL) {
+    return sound;
+  }
+
+  for (unsigned int index = 0u; index < frame_count; ++index) {
+    const float t = (float)index / (float)sample_rate;
+    const float progress = (float)index / (float)frame_count;
+    const float hz = start_hz + ((end_hz - start_hz) * progress);
+    const float envelope = powf(1.0f - progress, decay);
+    const float wobble = 0.72f + (0.28f * sinf(2.0f * PI * 18.0f * t));
+    samples[index] = (int16_t)(sinf(2.0f * PI * hz * t) * envelope * wobble * 12000.0f);
+  }
+
+  wave.frameCount = frame_count;
+  wave.sampleRate = sample_rate;
+  wave.sampleSize = 16u;
+  wave.channels = 1u;
+  wave.data = samples;
+  sound = LoadSoundFromWave(wave);
+  free(samples);
+  return sound;
+}
+
+static void EnsureClientSfxLoaded(void) {
+  if (g_client_sfx_loaded || !IsAudioDeviceReady()) {
+    return;
+  }
+
+  g_client_sfx[CLIENT_SFX_SPORE] = GenerateToneSound(520.0f, 940.0f, 0.10f, 2.2f);
+  g_client_sfx[CLIENT_SFX_CONSUME] = GenerateToneSound(180.0f, 84.0f, 0.24f, 1.7f);
+  g_client_sfx[CLIENT_SFX_DEATH] = GenerateToneSound(220.0f, 48.0f, 0.42f, 1.2f);
+  g_client_sfx[CLIENT_SFX_ZONE] = GenerateToneSound(360.0f, 620.0f, 0.26f, 1.4f);
+  g_client_sfx[CLIENT_SFX_WARNING] = GenerateToneSound(260.0f, 180.0f, 0.18f, 0.9f);
+  g_client_sfx_loaded = true;
+}
+
+static void UnloadClientSfx(void) {
+  if (!g_client_sfx_loaded || !IsAudioDeviceReady()) {
+    return;
+  }
+  for (int index = 0; index < CLIENT_SFX_COUNT; ++index) {
+    UnloadSound(g_client_sfx[index]);
+  }
+  memset(g_client_sfx, 0, sizeof(g_client_sfx));
+  g_client_sfx_loaded = false;
+}
+
+static void PlayClientSfx(const Game* game, ClientSfx sfx, float importance) {
+  float volume;
+
+  EnsureClientSfxLoaded();
+  if (!g_client_sfx_loaded || (sfx < 0) || (sfx >= CLIENT_SFX_COUNT)) {
+    return;
+  }
+  if (IsSoundPlaying(g_client_sfx[sfx]) && (sfx == CLIENT_SFX_SPORE || sfx == CLIENT_SFX_WARNING)) {
+    return;
+  }
+
+  volume = ((float)game->settings.effects_volume_percent / 100.0f) * Clamp(importance, 0.0f, 1.0f);
+  SetSoundVolume(g_client_sfx[sfx], volume);
+  SetSoundPan(g_client_sfx[sfx], 0.5f);
+  PlaySound(g_client_sfx[sfx]);
+}
+
 static void SpawnGameplayParticle(Game* game, Vector2 position, Vector2 velocity, Color color,
                                   float radius, float lifetime) {
   const int budget = GetParticleBudget(game->settings.particle_quality);
@@ -262,7 +345,7 @@ static void EmitGameplayEventParticles(Game* game) {
   const ShroomPlayerState* largest_gainer = FindLargestMassGainer(game, &largest_gain);
   bool local_kill_reported = false;
 
-  if (!game->particle_baseline_ready || (game->settings.particle_quality == CLIENT_PARTICLES_OFF)) {
+  if (!game->particle_baseline_ready) {
     CaptureParticleBaselines(game);
     return;
   }
@@ -282,6 +365,11 @@ static void EmitGameplayEventParticles(Game* game) {
         (game->previous_powerup_entity_ids[index] == powerup->entity_id)) {
       SpawnParticleBurst(game, game->previous_powerup_positions[index],
                          GetPowerupColor(powerup->type), 18, 118.0f, 6.0f, 0.62f);
+      if ((game->local_player != NULL) &&
+          (ShroomDistanceSqr(game->local_player->position,
+                             game->previous_powerup_positions[index]) < 6400.0f)) {
+        PlayClientSfx(game, CLIENT_SFX_ZONE, 0.66f);
+      }
     }
   }
 
@@ -312,6 +400,7 @@ static void EmitGameplayEventParticles(Game* game) {
             (Color){245, 84, 84, 255}, 3.6f);
         game->screen_flash_color = (Color){180, 32, 42, 255};
         game->screen_flash_timer = 0.34f;
+        PlayClientSfx(game, CLIENT_SFX_DEATH, 0.92f);
       }
     } else if (game->previous_player_alive[index] && !player->alive) {
       SpawnParticleBurst(game, game->previous_player_positions[index], (Color){190, 62, 64, 255},
@@ -327,6 +416,7 @@ static void EmitGameplayEventParticles(Game* game) {
       AddCombatNotification(game, title, detail, (Color){112, 224, 128, 255}, 3.0f);
       game->screen_flash_color = (Color){104, 220, 122, 255};
       game->screen_flash_timer = 0.24f;
+      PlayClientSfx(game, CLIENT_SFX_CONSUME, 0.86f);
       local_kill_reported = true;
     }
 
@@ -341,17 +431,24 @@ static void EmitGameplayEventParticles(Game* game) {
           !local_kill_reported) {
         AddCombatNotification(game, TextFormat("+%.0f mass", player->mass - previous_mass),
                               "Spores absorbed into the colony", (Color){255, 228, 112, 255}, 1.8f);
+        PlayClientSfx(game, CLIENT_SFX_SPORE, 0.42f);
       }
     }
     if ((player->piece_index > 0u) &&
         (!game->previous_player_alive[index] || !had_same_entity || (previous_mass <= 0.0f))) {
       SpawnParticleBurst(game, player->position, (Color){255, 215, 116, 255}, 18, 146.0f, 5.0f,
                          0.58f);
+      if ((local_player_id != 0u) && (player->player_id == local_player_id)) {
+        PlayClientSfx(game, CLIENT_SFX_ZONE, 0.64f);
+      }
     }
     if (had_same_entity && game->previous_player_alive[index] &&
         (player->mass < previous_mass * 0.72f) && (previous_mass >= SHROOM_SPLIT_MIN_MASS)) {
       SpawnParticleBurst(game, player->position, (Color){255, 215, 116, 255}, 16, 124.0f, 4.8f,
                          0.52f);
+      if ((local_player_id != 0u) && (player->player_id == local_player_id)) {
+        PlayClientSfx(game, CLIENT_SFX_ZONE, 0.64f);
+      }
     }
   }
 
@@ -1540,6 +1637,7 @@ static void UpdateStatusBanners(Game* game, float delta_time) {
                        0.64f);
     AddCombatNotification(game, TextFormat("Entered %s zone", GetZoneLabel(zone)),
                           GetZoneSummary(zone), GetZoneColor(zone), 2.4f);
+    PlayClientSfx(game, CLIENT_SFX_ZONE, 0.62f);
     game->current_zone = zone;
     game->zone_callout_timer = kStatusBannerDuration;
   } else if (game->zone_callout_timer > 0.0f) {
@@ -1655,6 +1753,7 @@ static void UpdateCombatFeedback(Game* game) {
           game, "Close call",
           TextFormat("%s is big enough to consume you", GetPlayerDisplayName(game, player)),
           (Color){245, 84, 84, 255}, 2.0f);
+      PlayClientSfx(game, CLIENT_SFX_WARNING, 0.74f);
       game->combat_feedback_cooldown = 4.0f;
       break;
     }
@@ -1663,6 +1762,7 @@ static void UpdateCombatFeedback(Game* game) {
           game, "Danger nearby",
           TextFormat("Avoid %s until you grow", GetPlayerDisplayName(game, player)),
           (Color){245, 184, 84, 255}, 2.0f);
+      PlayClientSfx(game, CLIENT_SFX_WARNING, 0.54f);
       game->combat_feedback_cooldown = 4.0f;
       break;
     }
@@ -2576,4 +2676,5 @@ void GameShutdown(Game* game) {
   if (IsOnlineMode(game->active_mode)) {
     ClientNetShutdown(&game->net);
   }
+  UnloadClientSfx();
 }
