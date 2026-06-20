@@ -73,6 +73,7 @@ typedef struct Game {
   ShroomPlayerId previous_player_ids[SHROOM_MAX_PLAYERS];
   float previous_player_masses[SHROOM_MAX_PLAYERS];
   bool previous_player_alive[SHROOM_MAX_PLAYERS];
+  uint8_t previous_player_piece_indices[SHROOM_MAX_PLAYERS];
   ShroomVec2 previous_powerup_positions[SHROOM_MAX_POWERUPS];
   ShroomEntityId previous_powerup_entity_ids[SHROOM_MAX_POWERUPS];
   bool previous_powerup_active[SHROOM_MAX_POWERUPS];
