@@ -228,6 +228,21 @@ static void AddCombatNotification(Game* game, const char* title, const char* det
       (game->notification_cursor + 1u) % SHROOM_CLIENT_NOTIFICATION_CAPACITY;
 }
 
+static void StartDeathCutscene(Game* game, const char* killer_name, float final_mass,
+                               int final_rank) {
+  if (!game->settings.death_cutscene_enabled) {
+    return;
+  }
+
+  snprintf(game->death_cutscene_killer_name, sizeof(game->death_cutscene_killer_name), "%s",
+           (killer_name != NULL && killer_name[0] != '\0') ? killer_name : "a larger colony");
+  game->death_cutscene_timer = 0.0f;
+  game->death_cutscene_duration = 2.8f;
+  game->death_cutscene_final_mass = final_mass;
+  game->death_cutscene_final_rank = final_rank;
+  game->death_cutscene_survival_time = fmaxf(0.0f, (float)GetTime() - game->session_start_time);
+}
+
 static const ShroomPlayerState* FindLargestMassGainer(const Game* game, float* mass_gain) {
   const ShroomPlayerState* best_player = NULL;
   float best_gain = 0.0f;
@@ -312,6 +327,92 @@ static void DrawCombatNotifications(const Game* game) {
   }
 }
 
+static bool IsDeathCutsceneOpen(const Game* game) {
+  return (game != NULL) && (game->death_cutscene_duration > 0.0f) &&
+         (game->death_cutscene_timer < game->death_cutscene_duration + 20.0f);
+}
+
+static void UpdateDeathCutscene(Game* game, float delta_time) {
+  if (!IsDeathCutsceneOpen(game)) {
+    return;
+  }
+  if (game->death_cutscene_timer < game->death_cutscene_duration) {
+    game->death_cutscene_timer += delta_time;
+  }
+}
+
+static void DrawDeathCutscene(Game* game) {
+  const float duration = game->death_cutscene_duration;
+  float progress;
+  float squash;
+  Vector2 center;
+  Color vignette = (Color){42, 10, 24, 255};
+  char killer_text[96];
+  char stats_text[128];
+
+  if (!IsDeathCutsceneOpen(game) || (duration <= 0.0f)) {
+    return;
+  }
+
+  progress = fminf(game->death_cutscene_timer / duration, 1.0f);
+  squash = sinf(progress * PI);
+  center = (Vector2){game->screen_width * 0.5f, game->screen_height * 0.42f};
+  snprintf(killer_text, sizeof(killer_text), "by %s", game->death_cutscene_killer_name);
+  snprintf(stats_text, sizeof(stats_text), "Mass %.0f   Rank %d   Survived %.0fs",
+           game->death_cutscene_final_mass, game->death_cutscene_final_rank,
+           game->death_cutscene_survival_time);
+
+  DrawRectangle(0, 0, game->screen_width, game->screen_height,
+                Fade(vignette, 0.58f + progress * 0.18f));
+  DrawCircleGradient((int)center.x, (int)center.y, 280.0f + squash * 70.0f,
+                     Fade((Color){110, 28, 52, 255}, 0.72f), Fade(BLACK, 0.0f));
+
+  for (int index = 0; index < 18; ++index) {
+    const float angle = ((float)index / 18.0f) * 2.0f * PI + progress * 1.2f;
+    const float radius = 56.0f + progress * 210.0f + sinf(progress * 12.0f + index) * 10.0f;
+    const Vector2 spore = {center.x + cosf(angle) * radius, center.y + sinf(angle) * radius};
+    DrawCircleV(spore, 5.0f + squash * 3.0f,
+                Fade((Color){255, 218, 120, 255}, 1.0f - progress * 0.45f));
+  }
+
+  DrawEllipse((int)center.x, (int)(center.y + 42.0f), 90.0f + squash * 18.0f,
+              28.0f - squash * 12.0f, Fade((Color){72, 36, 26, 255}, 0.96f));
+  DrawEllipse((int)center.x, (int)center.y, 86.0f + squash * 36.0f, 70.0f - squash * 42.0f,
+              Fade((Color){212, 58, 72, 255}, 0.96f));
+  DrawCircleV((Vector2){center.x - 28.0f, center.y - 16.0f}, 13.0f, Fade(RAYWHITE, 0.8f));
+  DrawCircleV((Vector2){center.x + 24.0f, center.y - 20.0f}, 10.0f, Fade(RAYWHITE, 0.7f));
+  DrawLineEx((Vector2){center.x - 34.0f, center.y + 28.0f},
+             (Vector2){center.x + 36.0f, center.y + 22.0f}, 4.0f, Fade(BLACK, 0.58f));
+
+  DrawText("YOU WERE CONSUMED", (game->screen_width - MeasureText("YOU WERE CONSUMED", 34)) / 2,
+           (int)(center.y + 118.0f), 34, Fade((Color){255, 225, 196, 255}, 0.98f));
+  DrawText(killer_text, (game->screen_width - MeasureText(killer_text, 20)) / 2,
+           (int)(center.y + 158.0f), 20, Fade((Color){235, 190, 150, 255}, 0.92f));
+  DrawText(stats_text, (game->screen_width - MeasureText(stats_text, 18)) / 2,
+           (int)(center.y + 188.0f), 18, Fade(RAYWHITE, 0.86f));
+
+  if (progress >= 1.0f) {
+    ShroomImGui_SetNextWindowPos((game->screen_width - 360.0f) * 0.5f, center.y + 226.0f,
+                                 SHROOM_IMGUI_COND_ALWAYS);
+    ShroomImGui_SetNextWindowSize(360.0f, 84.0f, SHROOM_IMGUI_COND_ALWAYS);
+    ShroomImGui_SetNextWindowBgAlpha(0.0f);
+    if (ShroomImGui_Begin("Death Cutscene Actions", NULL,
+                          SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
+                              SHROOM_IMGUI_WINDOW_NO_MOVE | SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
+                              SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
+      if (ShroomImGui_Button("Play Again", 160.0f, 36.0f)) {
+        game->play_again_requested = true;
+      }
+      ShroomImGui_SameLine();
+      if (ShroomImGui_Button("Return To Menu", 170.0f, 36.0f)) {
+        game->return_to_menu_requested = true;
+      }
+      ShroomImGui_Text("Esc skips the animation");
+    }
+    ShroomImGui_End();
+  }
+}
+
 static void CaptureParticleBaselines(Game* game) {
   size_t index;
 
@@ -392,12 +493,16 @@ static void EmitGameplayEventParticles(Game* game) {
       SpawnParticleBurst(game, player->position, (Color){122, 220, 118, 255}, 14, 82.0f, 5.0f,
                          0.58f);
       if (was_local_player) {
+        const char* killer_name =
+            largest_gainer != NULL ? GetPlayerDisplayName(game, largest_gainer) : "a larger colony";
         AddCombatNotification(
             game, "You were consumed",
             TextFormat("Final mass %.0f  Rank %d  Survived %.0fs", previous_mass,
                        game->previous_local_rank > 0 ? game->previous_local_rank : 0,
                        fmaxf(0.0f, (float)GetTime() - game->session_start_time)),
             (Color){245, 84, 84, 255}, 3.6f);
+        StartDeathCutscene(game, killer_name, previous_mass,
+                           game->previous_local_rank > 0 ? game->previous_local_rank : 0);
         game->screen_flash_color = (Color){180, 32, 42, 255};
         game->screen_flash_timer = 0.34f;
         PlayClientSfx(game, CLIENT_SFX_DEATH, 0.92f);
@@ -1150,7 +1255,8 @@ static bool IsConnectionOverlayOpen(const Game* game) {
 
 static bool IsOverlayBlockingGameplay(const Game* game) {
   return game->leaderboard_overlay_open || game->menu_overlay_open ||
-         game->leave_confirmation_open || IsConnectionOverlayOpen(game);
+         game->leave_confirmation_open || IsDeathCutsceneOpen(game) ||
+         IsConnectionOverlayOpen(game);
 }
 
 static void RetryConnection(Game* game) {
@@ -2607,6 +2713,7 @@ void GameUpdate(Game* game, float delta_time) {
   UpdateStatusBanners(game, delta_time);
   UpdateCombatFeedback(game);
   UpdateCombatNotifications(game, delta_time);
+  UpdateDeathCutscene(game, delta_time);
   UpdateInspectOverlay(game, delta_time);
   UpdateChatState(game, delta_time);
   if (game->local_player != NULL) {
@@ -2663,6 +2770,7 @@ void GameDraw(Game* game) {
   DrawInspectPrompt(game);
   DrawStatusBanners(game);
   DrawCombatNotifications(game);
+  DrawDeathCutscene(game);
   DrawLeaderboardOverlay(game, leaderboard, shown_count);
   DrawMenuOverlay(game);
   DrawLeaveConfirmationOverlay(game);

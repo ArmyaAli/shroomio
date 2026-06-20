@@ -5,8 +5,9 @@
 #include "raylib.h"
 
 static void RestartQuickPlaySession(Game* game) {
+  const GameSessionMode mode = game->selected_mode;
   GameShutdown(game);
-  GameInit(game, GetScreenWidth(), GetScreenHeight(), SHROOM_SESSION_MODE_QUICK_PLAY);
+  GameInit(game, GetScreenWidth(), GetScreenHeight(), mode);
 }
 
 static bool GameplayInit(ShroomScreenManager* manager) {
@@ -39,6 +40,12 @@ static void GameplayDraw(ShroomScreenManager* manager) {
 
   GameDraw(game);
 
+  if (game->play_again_requested) {
+    game->play_again_requested = false;
+    RestartQuickPlaySession(game);
+    return;
+  }
+
   if (game->return_to_menu_requested) {
     game->return_to_menu_requested = false;
     /* Capture final stats for results screen */
@@ -58,6 +65,12 @@ static void GameplayHandleInput(ShroomScreenManager* manager) {
   bool is_online;
 
   if (game == NULL) {
+    return;
+  }
+
+  if ((game->death_cutscene_duration > 0.0f) &&
+      (game->death_cutscene_timer < game->death_cutscene_duration) && IsKeyPressed(KEY_ESCAPE)) {
+    game->death_cutscene_timer = game->death_cutscene_duration;
     return;
   }
 
