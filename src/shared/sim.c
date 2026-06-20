@@ -155,10 +155,10 @@ static void ShroomRespawnPlayer(ShroomWorldState* world, ShroomPlayerState* play
 }
 
 static void ShroomSpawnOrResetSpore(ShroomWorldState* world, ShroomSporeState* spore) {
-  const float zone_roll = ShroomRandomFloat(world, 0.0f, 3.6f);
-  const ShroomZone zone = zone_roll < 0.4f   ? SHROOM_ZONE_OUTER
-                          : zone_roll < 1.4f ? SHROOM_ZONE_MID
-                                             : SHROOM_ZONE_CENTER;
+  const float zone_roll = ShroomRandomFloat(world, 0.0f, 1.0f);
+  const ShroomZone zone = zone_roll < 0.30f   ? SHROOM_ZONE_OUTER
+                          : zone_roll < 0.65f ? SHROOM_ZONE_MID
+                                              : SHROOM_ZONE_CENTER;
   const ShroomVec2 candidate = ShroomRandomPointInZone(world, zone);
 
   spore->position = candidate;
