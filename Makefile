@@ -207,6 +207,7 @@ CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/screens/server_browser.c \
 	$(CLIENT_SRC_DIR)/screens/lobby_browser.c \
 	$(CLIENT_SRC_DIR)/screens/gameplay.c \
+	$(CLIENT_SRC_DIR)/screens/results.c \
 	$(SHARED_SRC_DIR)/sim.c \
 	$(SHARED_SRC_DIR)/lifecycle.c \
 	$(SHARED_SRC_DIR)/connection.c
@@ -257,6 +258,7 @@ IMGUI_TEST_CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/screens/server_browser.c \
 	$(CLIENT_SRC_DIR)/screens/lobby_browser.c \
 	$(CLIENT_SRC_DIR)/screens/gameplay.c \
+	$(CLIENT_SRC_DIR)/screens/results.c \
 	$(SHARED_SRC_DIR)/sim.c \
 	$(SHARED_SRC_DIR)/lifecycle.c \
 	$(SHARED_SRC_DIR)/connection.c

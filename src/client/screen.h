@@ -62,6 +62,7 @@ void ShroomScreenRegisterCredits(ShroomScreenManager* manager);
 void ShroomScreenRegisterServerBrowser(ShroomScreenManager* manager);
 void ShroomScreenRegisterLobbyBrowser(ShroomScreenManager* manager);
 void ShroomScreenRegisterGame(ShroomScreenManager* manager);
+void ShroomScreenRegisterResults(ShroomScreenManager* manager);
 
 #ifdef TEST_MODE
 const char* ShroomTestGetServerBrowserValidationMessage(void);

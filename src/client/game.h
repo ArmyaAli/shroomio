@@ -17,6 +17,11 @@ typedef enum GameSessionMode {
   SHROOM_SESSION_MODE_LOBBY_PLAY, /* connected via lobby browser, net already up */
 } GameSessionMode;
 
+typedef struct LeaderboardEntry {
+  size_t index;
+  float mass;
+} LeaderboardEntry;
+
 typedef struct ShroomPendingInput {
   uint32_t sequence;
   ShroomVec2 direction;
@@ -69,11 +74,22 @@ typedef struct Game {
   uint32_t selected_inspect_player_id;
   char selected_server_host[64];
   uint16_t selected_server_port;
+  /* Session statistics for results screen */
+  float session_start_time;
+  float peak_mass;
+  float final_mass;
+  int final_rank;
+  bool show_results;
 } Game;
 
 void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode mode);
 void GameUpdate(Game* game, float delta_time);
 void GameDraw(Game* game);
 void GameShutdown(Game* game);
+
+/* Leaderboard and ranking functions */
+void BuildLeaderboard(const Game* game, LeaderboardEntry* entries, size_t* entry_count);
+int GetLocalPlayerRank(const Game* game, const LeaderboardEntry* leaderboard,
+                       size_t leaderboard_count);
 
 #endif
