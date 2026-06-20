@@ -23,6 +23,7 @@ void ClientSettingsSetDefaults(ClientSettings* settings) {
       .camera_zoom = 1.0f,
       .preferred_region_index = 0,
       .palette_preset = CLIENT_PALETTE_CLASSIC,
+      .hud_density = CLIENT_HUD_FULL,
   };
 }
 
@@ -52,6 +53,9 @@ void ClientSettingsValidate(ClientSettings* settings) {
   if ((settings->palette_preset < CLIENT_PALETTE_CLASSIC) ||
       (settings->palette_preset > CLIENT_PALETTE_HIGH_CONTRAST)) {
     settings->palette_preset = CLIENT_PALETTE_CLASSIC;
+  }
+  if ((settings->hud_density < CLIENT_HUD_FULL) || (settings->hud_density > CLIENT_HUD_MINIMAL)) {
+    settings->hud_density = CLIENT_HUD_FULL;
   }
 }
 
@@ -96,6 +100,8 @@ bool ClientSettingsLoad(ClientSettings* settings) {
       settings->preferred_region_index = value;
     } else if (strcmp(key, "palette_preset") == 0) {
       settings->palette_preset = (ClientPalettePreset)value;
+    } else if (strcmp(key, "hud_density") == 0) {
+      settings->hud_density = (ClientHudDensity)value;
     } else if (strcmp(key, "camera_zoom_x100") == 0) {
       settings->camera_zoom = (float)value / 100.0f;
     }
@@ -134,6 +140,7 @@ bool ClientSettingsSave(const ClientSettings* settings) {
   fprintf(file, "show_ping_ms=%d\n", settings->show_ping_ms ? 1 : 0);
   fprintf(file, "preferred_region_index=%d\n", settings->preferred_region_index);
   fprintf(file, "palette_preset=%d\n", (int)settings->palette_preset);
+  fprintf(file, "hud_density=%d\n", (int)settings->hud_density);
   fprintf(file, "camera_zoom_x100=%d\n", (int)(settings->camera_zoom * 100.0f));
 
   fclose(file);
@@ -159,5 +166,17 @@ const char* ClientSettingsPaletteLabel(ClientPalettePreset preset) {
   case CLIENT_PALETTE_CLASSIC:
   default:
     return "Classic";
+  }
+}
+
+const char* ClientSettingsHudDensityLabel(ClientHudDensity density) {
+  switch (density) {
+  case CLIENT_HUD_COMPACT:
+    return "Compact";
+  case CLIENT_HUD_MINIMAL:
+    return "Minimal";
+  case CLIENT_HUD_FULL:
+  default:
+    return "Full";
   }
 }

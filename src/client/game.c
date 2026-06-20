@@ -1360,6 +1360,47 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
   if (game->local_player == NULL) {
     return;
   }
+
+  const ClientHudDensity density = game->settings.hud_density;
+
+  if (density == CLIENT_HUD_MINIMAL) {
+    ShroomImGui_SetNextWindowPos(18.0f, 18.0f, SHROOM_IMGUI_COND_ALWAYS);
+    ShroomImGui_SetNextWindowSize(180.0f, 60.0f, SHROOM_IMGUI_COND_ALWAYS);
+    ShroomImGui_SetNextWindowBgAlpha(0.50f);
+    if (ShroomImGui_Begin("HUD Minimal", NULL,
+                          SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
+                              SHROOM_IMGUI_WINDOW_NO_MOVE | SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
+                              SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS |
+                              SHROOM_IMGUI_WINDOW_NO_SCROLLBAR)) {
+      ShroomImGui_Text(TextFormat("Mass %.0f", game->local_player->mass));
+      ShroomImGui_TextColored(ToImGuiColor(GetZoneColor(zone)), GetZoneLabel(zone));
+    }
+    ShroomImGui_End();
+    return;
+  }
+
+  if (density == CLIENT_HUD_COMPACT) {
+    ShroomImGui_SetNextWindowPos(18.0f, 18.0f, SHROOM_IMGUI_COND_ALWAYS);
+    ShroomImGui_SetNextWindowSize(220.0f, 90.0f, SHROOM_IMGUI_COND_ALWAYS);
+    ShroomImGui_SetNextWindowBgAlpha(0.60f);
+    if (ShroomImGui_Begin("HUD Compact", NULL,
+                          SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
+                              SHROOM_IMGUI_WINDOW_NO_MOVE | SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
+                              SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS |
+                              SHROOM_IMGUI_WINDOW_NO_SCROLLBAR)) {
+      ShroomImGui_Text(TextFormat("Mass %.0f  Rank %d/%d", game->local_player->mass,
+                                  local_rank > 0 ? local_rank : (int)leaderboard_count,
+                                  (int)leaderboard_count));
+      ShroomImGui_TextColored(ToImGuiColor(GetZoneColor(zone)), GetZoneLabel(zone));
+      if (game->local_piece_count > 1) {
+        ShroomImGui_TextColored(ToImGuiColor(YELLOW),
+                                TextFormat("Pieces %d", game->local_piece_count));
+      }
+    }
+    ShroomImGui_End();
+    return;
+  }
+
   ShroomImGui_SetNextWindowPos(18.0f, 18.0f, SHROOM_IMGUI_COND_ALWAYS);
   ShroomImGui_SetNextWindowSize(280.0f, 120.0f, SHROOM_IMGUI_COND_ALWAYS);
   ShroomImGui_SetNextWindowBgAlpha(0.66f);

@@ -158,6 +158,11 @@ static void GameplayHandleInput(ShroomScreenManager* manager) {
     ClientSettingsSave(&game->settings);
   }
 
+  if (IsKeyPressed(KEY_F2)) {
+    game->settings.hud_density = (game->settings.hud_density + 1) % 3;
+    ClientSettingsSave(&game->settings);
+  }
+
   if (IsKeyPressed(KEY_ESCAPE)) {
     if (game->leaderboard_overlay_open) {
       game->leaderboard_overlay_open = false;
