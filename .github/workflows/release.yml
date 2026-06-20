@@ -81,6 +81,7 @@ jobs:
         run: |
           mkdir -p release-assets
           tar -czf release-assets/shroomio-${{ inputs.version }}-linux-x64.tar.gz -C dist shroomio shroomio-server
+          tar -czf release-assets/shroomio-server-${{ inputs.version }}-linux-x64.tar.gz -C dist shroomio-server
 
       - name: Upload Linux asset
         uses: actions/upload-artifact@v4
@@ -121,13 +122,16 @@ jobs:
             ~/.cache/vcpkg/archives
           key: ${{ runner.os }}-windows-release-vcpkg-${{ hashFiles('vcpkg.json', '.gitmodules', 'vcpkg/ports/raylib/vcpkg.json', 'vcpkg/ports/imgui/vcpkg.json', 'vcpkg/ports/enet/vcpkg.json') }}
 
-      - name: Build binary
-        run: make client-windows
+      - name: Build binaries
+        run: |
+          make client-windows
+          make server-windows
 
-      - name: Package binary
+      - name: Package binaries
         run: |
           mkdir -p release-assets
           zip -j release-assets/shroomio-${{ inputs.version }}-windows-x64.zip dist/shroomio.exe
+          zip -j release-assets/shroomio-server-${{ inputs.version }}-windows-x64.zip dist/shroomio-server.exe
 
       - name: Upload Windows asset
         uses: actions/upload-artifact@v4
@@ -157,13 +161,16 @@ jobs:
             ~/.cache/vcpkg/archives
           key: ${{ runner.os }}-release-vcpkg-${{ hashFiles('vcpkg.json', '.gitmodules', 'vcpkg/ports/raylib/vcpkg.json', 'vcpkg/ports/imgui/vcpkg.json', 'vcpkg/ports/enet/vcpkg.json') }}
 
-      - name: Build binary
-        run: make client-macos
+      - name: Build binaries
+        run: |
+          make client-macos
+          make server-macos
 
-      - name: Package binary
+      - name: Package binaries
         run: |
           mkdir -p release-assets
           tar -czf release-assets/shroomio-${{ inputs.version }}-macos-x64.tar.gz -C dist shroomio-macos
+          tar -czf release-assets/shroomio-server-${{ inputs.version }}-macos-x64.tar.gz -C dist shroomio-server-macos
 
       - name: Upload macOS asset
         uses: actions/upload-artifact@v4
@@ -220,6 +227,13 @@ jobs:
             printf 'Generated from git history on %s\n\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
             git log --date=short --pretty=format:'%ad %h %s'
           } > release-assets/CHANGELOG-v${VERSION}.txt
+
+      - name: Generate checksums
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          cd release-assets
+          sha256sum * > SHA256SUMS-v${VERSION}.txt
 
       - name: Create tag and GitHub Release
         env:
