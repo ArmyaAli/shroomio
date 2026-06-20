@@ -360,30 +360,103 @@ static void ShroomUpdateBotInput(ShroomWorldState* world, ShroomPlayerState* bot
       ShroomNormalizeOrZero(ShroomVec2Sub(ShroomWorldCenter(world), bot->position));
 }
 
+#define SHROOM_SPORE_GRID_CELL_SIZE 200.0f
+#define SHROOM_SPORE_GRID_COLS (((int)(SHROOM_WORLD_WIDTH / SHROOM_SPORE_GRID_CELL_SIZE)) + 1)
+#define SHROOM_SPORE_GRID_ROWS (((int)(SHROOM_WORLD_HEIGHT / SHROOM_SPORE_GRID_CELL_SIZE)) + 1)
+#define SHROOM_SPORE_GRID_CELLS (SHROOM_SPORE_GRID_COLS * SHROOM_SPORE_GRID_ROWS)
+#define SHROOM_SPORE_GRID_MAX_PER_CELL 64
+
+typedef struct ShroomSporeGridCell {
+  uint16_t indices[SHROOM_SPORE_GRID_MAX_PER_CELL];
+  uint16_t count;
+} ShroomSporeGridCell;
+
+static void ShroomBuildSporeGrid(const ShroomWorldState* world, ShroomSporeGridCell* grid) {
+  size_t spore_index;
+
+  for (size_t i = 0; i < SHROOM_SPORE_GRID_CELLS; ++i) {
+    grid[i].count = 0;
+  }
+
+  for (spore_index = 0; spore_index < world->spore_count; ++spore_index) {
+    const ShroomSporeState* spore = &world->spores[spore_index];
+    int col, row, cell;
+
+    if (!spore->active) {
+      continue;
+    }
+
+    col = (int)(spore->position.x / SHROOM_SPORE_GRID_CELL_SIZE);
+    row = (int)(spore->position.y / SHROOM_SPORE_GRID_CELL_SIZE);
+
+    if (col < 0)
+      col = 0;
+    if (col >= SHROOM_SPORE_GRID_COLS)
+      col = SHROOM_SPORE_GRID_COLS - 1;
+    if (row < 0)
+      row = 0;
+    if (row >= SHROOM_SPORE_GRID_ROWS)
+      row = SHROOM_SPORE_GRID_ROWS - 1;
+
+    cell = row * SHROOM_SPORE_GRID_COLS + col;
+    if (grid[cell].count < SHROOM_SPORE_GRID_MAX_PER_CELL) {
+      grid[cell].indices[grid[cell].count++] = (uint16_t)spore_index;
+    }
+  }
+}
+
 static void ShroomCollectSpores(ShroomWorldState* world) {
   size_t player_index;
-  size_t spore_index;
+  ShroomSporeGridCell grid[SHROOM_SPORE_GRID_CELLS];
+
+  ShroomBuildSporeGrid(world, grid);
 
   for (player_index = 0; player_index < world->player_count; ++player_index) {
     ShroomPlayerState* player = &world->players[player_index];
+    const float collection_radius = player->radius + 6.0f;
+    int min_col, max_col, min_row, max_row, col, row;
 
     if (!player->alive) {
       continue;
     }
 
-    for (spore_index = 0; spore_index < world->spore_count; ++spore_index) {
-      ShroomSporeState* spore = &world->spores[spore_index];
-      const float collection_radius = player->radius + 6.0f;
+    if (player->mass >= SHROOM_MAX_PLAYER_MASS) {
+      continue;
+    }
 
-      if (!spore->active) {
-        continue;
-      }
+    min_col = (int)((player->position.x - collection_radius) / SHROOM_SPORE_GRID_CELL_SIZE);
+    max_col = (int)((player->position.x + collection_radius) / SHROOM_SPORE_GRID_CELL_SIZE);
+    min_row = (int)((player->position.y - collection_radius) / SHROOM_SPORE_GRID_CELL_SIZE);
+    max_row = (int)((player->position.y + collection_radius) / SHROOM_SPORE_GRID_CELL_SIZE);
 
-      if (ShroomDistanceSqr(player->position, spore->position) <=
-          (collection_radius * collection_radius)) {
-        player->mass =
-            ShroomClamp(player->mass + (float)spore->value, 0.0f, SHROOM_MAX_PLAYER_MASS);
-        ShroomSpawnOrResetSpore(world, spore);
+    if (min_col < 0)
+      min_col = 0;
+    if (max_col >= SHROOM_SPORE_GRID_COLS)
+      max_col = SHROOM_SPORE_GRID_COLS - 1;
+    if (min_row < 0)
+      min_row = 0;
+    if (max_row >= SHROOM_SPORE_GRID_ROWS)
+      max_row = SHROOM_SPORE_GRID_ROWS - 1;
+
+    for (row = min_row; row <= max_row; ++row) {
+      for (col = min_col; col <= max_col; ++col) {
+        const ShroomSporeGridCell* cell = &grid[row * SHROOM_SPORE_GRID_COLS + col];
+        uint16_t i;
+
+        for (i = 0; i < cell->count; ++i) {
+          ShroomSporeState* spore = &world->spores[cell->indices[i]];
+
+          if (!spore->active) {
+            continue;
+          }
+
+          if (ShroomDistanceSqr(player->position, spore->position) <=
+              (collection_radius * collection_radius)) {
+            player->mass =
+                ShroomClamp(player->mass + (float)spore->value, 0.0f, SHROOM_MAX_PLAYER_MASS);
+            ShroomSpawnOrResetSpore(world, spore);
+          }
+        }
       }
     }
   }
