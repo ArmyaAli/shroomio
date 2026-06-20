@@ -549,4 +549,6 @@ const char* ShroomTestGetServerBrowserSelectedHost(void) {
 
   return selected != NULL ? selected->host : "";
 }
+
+int ShroomTestGetServerBrowserRecentCount(void) { return (int)g_server_browser.recent_count; }
 #endif
