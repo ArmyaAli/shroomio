@@ -178,6 +178,7 @@ static ShroomLifecycle g_lifecycle;
 typedef struct ServerConfig {
   char bind_host[64];
   char database_path[256];
+  enet_uint32 bind_address;
   uint16_t port;
 } ServerConfig;
 
@@ -220,6 +221,23 @@ static void PrintUsage(const char* program_name) {
   printf("\n");
   printf("Environment overrides:\n");
   printf("  SHROOM_SERVER_BIND, SHROOM_SERVER_PORT, SHROOM_SERVER_DB_PATH\n");
+}
+
+static bool ResolveBindAddress(const char* bind_host, enet_uint32* bind_address) {
+  ENetAddress address = {0};
+
+  if ((bind_host == NULL) || (bind_host[0] == '\0') || (strcmp(bind_host, "0.0.0.0") == 0) ||
+      (strcmp(bind_host, "*") == 0)) {
+    *bind_address = ENET_HOST_ANY;
+    return true;
+  }
+
+  if (enet_address_set_host_ip(&address, bind_host) != 0) {
+    return false;
+  }
+
+  *bind_address = address.host;
+  return true;
 }
 
 static bool LoadServerConfig(ServerConfig* config, int argc, char** argv) {
@@ -277,6 +295,11 @@ static bool LoadServerConfig(ServerConfig* config, int argc, char** argv) {
       return false;
     }
     ++i;
+  }
+
+  if (!ResolveBindAddress(config->bind_host, &config->bind_address)) {
+    fprintf(stderr, "Invalid bind address: %s\n", config->bind_host);
+    return false;
   }
 
   return true;
@@ -1246,16 +1269,7 @@ int main(int argc, char** argv) {
     }
   }
 
-  if ((strcmp(config.bind_host, "0.0.0.0") == 0) || (strcmp(config.bind_host, "*") == 0)) {
-    address.host = ENET_HOST_ANY;
-  } else if (enet_address_set_host_ip(&address, config.bind_host) != 0) {
-    LOG_ERROR("invalid bind address: %s", config.bind_host);
-    enet_deinitialize();
-    ShroomAuthShutdown(&auth_ctx);
-    sqlite3_close(db);
-    ShroomLifecycleSetError(&g_lifecycle, 2, "Invalid bind address");
-    return 1;
-  }
+  address.host = config.bind_address;
   address.port = config.port;
   host = enet_host_create(&address, SHROOM_SERVER_MAX_CLIENTS, SHROOM_ENET_CHANNEL_COUNT, 0, 0);
   if (host == 0) {

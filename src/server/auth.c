@@ -10,10 +10,6 @@
 
 #include "logger.h"
 
-#ifdef _WIN32
-#define timegm _mkgmtime
-#endif
-
 #define AUTH_SALT_LENGTH 16
 #define AUTH_HASH_LENGTH 64
 #define AUTH_TOKEN_EXPIRY_HOURS 24
@@ -90,6 +86,19 @@ static void FormatUtcTime(time_t timestamp, char* buffer, size_t buffer_size) {
   strftime(buffer, buffer_size, "%Y-%m-%dT%H:%M:%SZ", &tm_result);
 }
 
+static int64_t DaysSinceUnixEpoch(int year, unsigned month, unsigned day) {
+  const unsigned shifted_month = month + (month > 2u ? (unsigned)-3 : 9u);
+
+  year -= month <= 2u ? 1 : 0;
+  const int era = (year >= 0 ? year : year - 399) / 400;
+  const unsigned year_of_era = (unsigned)(year - era * 400);
+  const unsigned day_of_year = (153u * shifted_month + 2u) / 5u + day - 1u;
+  const unsigned day_of_era =
+      year_of_era * 365u + year_of_era / 4u - year_of_era / 100u + day_of_year;
+
+  return (int64_t)era * 146097 + (int64_t)day_of_era - 719468;
+}
+
 static bool ParseUtcTime(const char* text, time_t* timestamp) {
   int year;
   int month;
@@ -97,7 +106,8 @@ static bool ParseUtcTime(const char* text, time_t* timestamp) {
   int hour;
   int minute;
   int second;
-  struct tm tm_result = {0};
+  int64_t days;
+  int64_t seconds_since_epoch;
 
   if ((text == NULL) || (timestamp == NULL)) {
     return false;
@@ -105,15 +115,19 @@ static bool ParseUtcTime(const char* text, time_t* timestamp) {
   if (sscanf(text, "%d-%d-%dT%d:%d:%dZ", &year, &month, &day, &hour, &minute, &second) != 6) {
     return false;
   }
+  if ((month < 1) || (month > 12) || (day < 1) || (day > 31) || (hour < 0) || (hour > 23) ||
+      (minute < 0) || (minute > 59) || (second < 0) || (second > 60)) {
+    return false;
+  }
 
-  tm_result.tm_year = year - 1900;
-  tm_result.tm_mon = month - 1;
-  tm_result.tm_mday = day;
-  tm_result.tm_hour = hour;
-  tm_result.tm_min = minute;
-  tm_result.tm_sec = second;
-  *timestamp = timegm(&tm_result);
-  return *timestamp != (time_t)-1;
+  days = DaysSinceUnixEpoch(year, (unsigned)month, (unsigned)day);
+  seconds_since_epoch = days * 86400 + (int64_t)hour * 3600 + (int64_t)minute * 60 + second;
+  if (seconds_since_epoch < 0) {
+    return false;
+  }
+
+  *timestamp = (time_t)seconds_since_epoch;
+  return true;
 }
 
 static bool ValidateUsername(const char* username) {
