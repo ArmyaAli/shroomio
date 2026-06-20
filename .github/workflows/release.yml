@@ -31,8 +31,8 @@ jobs:
             exit 1
           fi
 
-  build-linux-windows:
-    name: Build Linux and Windows
+  build-linux:
+    name: Build Linux
     runs-on: ubuntu-latest
     needs: validate
     steps:
@@ -57,7 +57,6 @@ jobs:
             libxinerama-dev \
             libxrandr-dev \
             make \
-            mingw-w64 \
             ninja-build \
             pkg-config \
             tar \
@@ -76,19 +75,64 @@ jobs:
       - name: Build binaries
         run: |
           make linux
-          make windows
           make server
 
       - name: Package binaries
         run: |
           mkdir -p release-assets
           tar -czf release-assets/shroomio-${{ inputs.version }}-linux-x64.tar.gz -C dist shroomio shroomio-server
-          zip -j release-assets/shroomio-${{ inputs.version }}-windows-x64.zip dist/shroomio.exe
 
-      - name: Upload Linux and Windows assets
+      - name: Upload Linux asset
         uses: actions/upload-artifact@v4
         with:
-          name: linux-windows-release-assets
+          name: linux-release-assets
+          path: release-assets/*
+
+  build-windows:
+    name: Build Windows
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            curl \
+            make \
+            mingw-w64 \
+            ninja-build \
+            pkg-config \
+            unzip \
+            zip
+
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            vcpkg_installed
+            vcpkg/downloads
+            ~/.cache/vcpkg/archives
+          key: ${{ runner.os }}-windows-release-vcpkg-${{ hashFiles('vcpkg.json', '.gitmodules', 'vcpkg/ports/raylib/vcpkg.json', 'vcpkg/ports/imgui/vcpkg.json', 'vcpkg/ports/enet/vcpkg.json') }}
+
+      - name: Build binary
+        run: make windows
+
+      - name: Package binary
+        run: |
+          mkdir -p release-assets
+          zip -j release-assets/shroomio-${{ inputs.version }}-windows-x64.zip dist/shroomio.exe
+
+      - name: Upload Windows asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release-assets
           path: release-assets/*
 
   build-macos:
@@ -131,7 +175,8 @@ jobs:
     name: Publish GitHub Release
     runs-on: ubuntu-latest
     needs:
-      - build-linux-windows
+      - build-linux
+      - build-windows
       - build-macos
     steps:
       - uses: actions/checkout@v4
