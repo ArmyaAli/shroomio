@@ -88,8 +88,6 @@ static void SettingsDraw(ShroomScreenManager* manager) {
       species_items[index] = species_fallback_items[index];
     }
   }
-  selected_species = FindSpeciesEntry(&game->net, g_settings_screen.pending.mushroom_species);
-
   ShroomScreenDrawFungalBackground(game->settings.menu_animations_enabled);
 
   ShroomImGui_SetNextWindowPos((float)screen_width * 0.18f, (float)screen_height * 0.1f,
