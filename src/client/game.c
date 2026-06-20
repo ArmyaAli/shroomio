@@ -1150,21 +1150,46 @@ static void DrawConnectionOverlay(Game* game) {
     return;
   }
 
-  ShroomImGui_SetNextWindowPos(22.0f, game->screen_height - 160.0f, SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowSize(320.0f, 138.0f, SHROOM_IMGUI_COND_ALWAYS);
-  if (!ShroomImGui_Begin("Connection", NULL,
-                         SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
-                             SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
-                             SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
+  ShroomImGui_SetNextWindowPos((game->screen_width - 400.0f) * 0.5f,
+                               (game->screen_height - 200.0f) * 0.5f, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowSize(400.0f, 200.0f, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowBgAlpha(0.92f);
+  if (!ShroomImGui_Begin("Connection Status", NULL,
+                         SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
+                             SHROOM_IMGUI_WINDOW_NO_MOVE | SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
+                             SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS |
+                             SHROOM_IMGUI_WINDOW_NO_SCROLLBAR)) {
     ShroomImGui_End();
     return;
   }
 
-  ShroomImGui_TextColored(ToImGuiColor(GetLatencyColor(game->net.rtt_average_ms)),
-                          TextFormat("Status: %s", ClientNetStatusLabel(&game->net)));
+  const char* status_text = "Connecting...";
+  Color status_color = (Color){200, 200, 200, 255};
+
+  if (game->net.status == CLIENT_NET_ERROR) {
+    status_text = "Connection Error";
+    status_color = (Color){255, 100, 100, 255};
+  } else if (game->net.status == CLIENT_NET_DISCONNECTED) {
+    status_text = "Disconnected";
+    status_color = (Color){255, 150, 100, 255};
+  } else if (game->net.status == CLIENT_NET_CONNECTED && !game->net.handshake_received) {
+    status_text = "Handshaking...";
+    status_color = (Color){100, 200, 255, 255};
+  } else if (game->net.status == CLIENT_NET_CONNECTING) {
+    status_text = "Connecting...";
+    status_color = (Color){200, 200, 200, 255};
+  }
+
+  ShroomImGui_TextColored(ToImGuiColor(status_color), status_text);
+
+  if (game->net.status_text[0] != '\0') {
+    ShroomImGui_TextWrapped(game->net.status_text);
+  }
+
   ShroomImGui_Text(TextFormat("Target: %s:%u", game->selected_server_host,
                               (unsigned int)game->selected_server_port));
-  ShroomImGui_Text("R retries connection. B returns to the main menu.");
+
+  ShroomImGui_Spacing();
 
   if (ShroomImGui_Button("Retry", 120.0f, 0.0f)) {
     RetryConnection(game);

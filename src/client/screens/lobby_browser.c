@@ -44,11 +44,7 @@ static void LobbyBrowserUpdate(ShroomScreenManager* manager, float delta_time) {
   /* Pump ENet so WELCOME, LOBBY_LIST, and LOBBY_JOINED are received. */
   ClientNetUpdate(&game->net, no_input, false, 0, delta_time);
 
-  /* Disconnect guard. */
-  if (game->net.status == CLIENT_NET_DISCONNECTED || game->net.status == CLIENT_NET_ERROR) {
-    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
-    return;
-  }
+  /* Don't transition away on error/disconnect - let the modal handle it. */
 
   /* Fire the initial lobby list query the first frame after the handshake. */
   if (!g_handshake_seen && game->net.handshake_received) {
@@ -90,21 +86,60 @@ static void LobbyBrowserUpdate(ShroomScreenManager* manager, float delta_time) {
   }
 }
 
-/* Draw a centred "Connecting..." overlay used while auto-joining. */
-static void DrawConnectingOverlay(void) {
-  const float w = 320.0f;
-  const float h = 80.0f;
+/* Draw a centred connection state modal showing current network status. */
+static void DrawConnectionStateModal(ShroomScreenManager* manager, Game* game) {
+  const float w = 400.0f;
+  const float h = 200.0f;
   ShroomImGui_SetNextWindowPos((GetScreenWidth() - w) * 0.5f, (GetScreenHeight() - h) * 0.5f,
                                SHROOM_IMGUI_COND_ALWAYS);
   ShroomImGui_SetNextWindowSize(w, h, SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowBgAlpha(0.88f);
-  if (ShroomImGui_Begin("Connecting", NULL,
+  ShroomImGui_SetNextWindowBgAlpha(0.92f);
+  if (ShroomImGui_Begin("Connection Status", NULL,
                         SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
                             SHROOM_IMGUI_WINDOW_NO_MOVE | SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
                             SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS |
                             SHROOM_IMGUI_WINDOW_NO_SCROLLBAR)) {
-    ShroomImGui_Text("Finding best arena...");
-    ShroomImGui_Text("Press Esc to cancel");
+    const char* status_text = "Connecting...";
+    Color status_color = (Color){200, 200, 200, 255};
+
+    if (game->net.status == CLIENT_NET_ERROR) {
+      status_text = "Connection Error";
+      status_color = (Color){255, 100, 100, 255};
+    } else if (game->net.status == CLIENT_NET_DISCONNECTED) {
+      status_text = "Disconnected";
+      status_color = (Color){255, 150, 100, 255};
+    } else if (game->net.status == CLIENT_NET_CONNECTED && !game->net.handshake_received) {
+      status_text = "Handshaking...";
+      status_color = (Color){100, 200, 255, 255};
+    } else if (game->net.status == CLIENT_NET_CONNECTING) {
+      status_text = "Connecting...";
+      status_color = (Color){200, 200, 200, 255};
+    }
+
+    ShroomImGui_TextColored((ShroomImGuiColor){status_color.r / 255.0f, status_color.g / 255.0f,
+                                               status_color.b / 255.0f, status_color.a / 255.0f},
+                            status_text);
+
+    if (game->net.status_text[0] != '\0') {
+      ShroomImGui_TextWrapped(game->net.status_text);
+    }
+
+    ShroomImGui_Spacing();
+
+    if (game->net.status == CLIENT_NET_ERROR || game->net.status == CLIENT_NET_DISCONNECTED) {
+      if (ShroomImGui_Button("Retry", 120.0f, 0.0f)) {
+        ClientNetShutdown(&game->net);
+        ClientNetInit(&game->net, game->selected_server_host, game->selected_server_port);
+      }
+      ShroomImGui_SameLine();
+      if (ShroomImGui_Button("Back", 120.0f, 0.0f)) {
+        ClientNetShutdown(&game->net);
+        game->auto_join_lobby = false;
+        ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
+      }
+    } else {
+      ShroomImGui_Text("Press Esc to cancel");
+    }
   }
   ShroomImGui_End();
 }
@@ -119,9 +154,10 @@ static void LobbyBrowserDraw(ShroomScreenManager* manager) {
 
   ClearBackground((Color){12, 12, 20, 255});
 
-  /* Play Online path: show a plain connecting overlay, not the lobby table. */
-  if (game->auto_join_lobby || (!game->net.handshake_received)) {
-    DrawConnectingOverlay();
+  /* Show connection state modal during connection phases or errors. */
+  if (game->auto_join_lobby || (!game->net.handshake_received) ||
+      game->net.status == CLIENT_NET_ERROR || game->net.status == CLIENT_NET_DISCONNECTED) {
+    DrawConnectionStateModal(manager, game);
     return;
   }
 

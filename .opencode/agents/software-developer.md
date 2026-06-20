@@ -24,6 +24,10 @@ Workflow:
 10. Merge with rebase when checks are green and the PR is mergeable.
 11. Sync local `main` after merge.
 
+**Important: One PR per issue.** Each issue gets its own branch and PR. Do not combine multiple issues into a single PR unless they are tightly coupled and explicitly scoped together.
+
+**Follow the github-backlog-delivery skill workflow.** This agent should load and follow the github-backlog-delivery skill for structured issue delivery through devcontainer, feature branches, tests, CI gates, PRs, and merge.
+
 Repository-specific expectations:
 
 - Backlog handoff notes may be stale; always confirm issue state on GitHub before choosing work.
