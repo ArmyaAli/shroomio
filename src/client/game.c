@@ -682,13 +682,12 @@ static void DrawArenaZones(const ShroomWorldState* world) {
   DrawRectangle(0, 0, (int)world->width, (int)world->height, Fade((Color){25, 35, 30, 255}, 0.95f));
 
   // Large, visible fungal texture pattern to outer zone
-  for (int i = 0; i < 40; i++) {
-    float x = (i * 97.5f) + sinf(i * 0.7f + time * 0.1f) * 150.0f;
-    float y = (i * 69.3f) + cosf(i * 0.5f + time * 0.15f) * 120.0f;
+  for (int i = 0; i < 16; i++) {
+    float x = (i * 235.5f) + sinf(i * 0.7f + time * 0.08f) * 110.0f;
+    float y = (i * 173.3f) + cosf(i * 0.5f + time * 0.1f) * 90.0f;
     if (x < world->width && y < world->height && x > 0 && y > 0) {
-      float size = 35.0f + sinf(i + time * 0.2f) * 15.0f;
-      DrawCircle(x, y, size, Fade((Color){50, 80, 50, 255}, 0.35f));
-      DrawCircle(x, y, size * 0.6f, Fade((Color){70, 110, 70, 255}, 0.25f));
+      float size = 30.0f + sinf(i + time * 0.16f) * 10.0f;
+      DrawCircle(x, y, size, Fade((Color){50, 80, 50, 255}, 0.28f));
     }
   }
 
@@ -696,14 +695,13 @@ static void DrawArenaZones(const ShroomWorldState* world) {
   DrawCircleV(center, SHROOM_ZONE_MID_RADIUS, Fade((Color){45, 75, 50, 255}, 0.85f));
 
   // Prominent mycelium-like patterns with animation
-  for (int i = 0; i < 20; i++) {
-    float angle = (i / 20.0f) * 2.0f * PI;
+  for (int i = 0; i < 8; i++) {
+    float angle = (i / 8.0f) * 2.0f * PI;
     float radius = SHROOM_ZONE_MID_RADIUS * 0.7f;
-    float x = center.x + cosf(angle + time * 0.05f) * radius;
-    float y = center.y + sinf(angle + time * 0.05f) * radius;
-    float size = 50.0f + sinf(i * 2.0f + time * 0.3f) * 20.0f;
-    DrawCircle(x, y, size, Fade((Color){80, 130, 80, 255}, 0.4f));
-    DrawCircle(x, y, size * 0.5f, Fade((Color){100, 160, 100, 255}, 0.3f));
+    float x = center.x + cosf(angle + time * 0.04f) * radius;
+    float y = center.y + sinf(angle + time * 0.04f) * radius;
+    float size = 42.0f + sinf(i * 2.0f + time * 0.22f) * 12.0f;
+    DrawCircle(x, y, size, Fade((Color){80, 130, 80, 255}, 0.32f));
   }
 
   // Center zone - bright, glowing prime fungal growth area
@@ -711,18 +709,18 @@ static void DrawArenaZones(const ShroomWorldState* world) {
 
   // Strong glowing center effect with pulsing
   float pulse = 0.5f + 0.5f * sinf(time * 2.0f);
-  DrawCircleGradient((int)center.x, (int)center.y, SHROOM_ZONE_CENTER_RADIUS * 0.8f,
+  DrawCircleGradient((int)center.x, (int)center.y, SHROOM_ZONE_CENTER_RADIUS * 0.6f,
                      Fade((Color){150, 220, 100, 255}, 0.5f + pulse * 0.2f),
                      Fade((Color){70, 110, 55, 255}, 0.0f));
 
   // Add radial glow lines
-  for (int i = 0; i < 12; i++) {
-    float angle = (i / 12.0f) * 2.0f * PI + time * 0.1f;
+  for (int i = 0; i < 6; i++) {
+    float angle = (i / 6.0f) * 2.0f * PI + time * 0.08f;
     float inner_radius = SHROOM_ZONE_CENTER_RADIUS * 0.3f;
     float outer_radius = SHROOM_ZONE_CENTER_RADIUS * 0.9f;
     Vector2 start = {center.x + cosf(angle) * inner_radius, center.y + sinf(angle) * inner_radius};
     Vector2 end = {center.x + cosf(angle) * outer_radius, center.y + sinf(angle) * outer_radius};
-    DrawLineEx(start, end, 8.0f, Fade((Color){180, 240, 120, 255}, 0.3f + pulse * 0.15f));
+    DrawLineEx(start, end, 5.0f, Fade((Color){180, 240, 120, 255}, 0.24f + pulse * 0.12f));
   }
 
   if (center_player_count >= 3u) {
@@ -762,10 +760,8 @@ static void DrawSpores(const ShroomWorldState* world) {
     const Vector2 position = {spore->position.x, spore->position.y};
     float pulse = 0.7f + 0.3f * sinf(time * 3.0f + (float)index * 0.5f);
 
-    // Large outer glow effect - very visible
-    DrawCircleV(position, 18.0f * pulse, Fade((Color){255, 240, 120, 255}, 0.25f));
-    DrawCircleV(position, 14.0f * pulse, Fade((Color){255, 220, 100, 255}, 0.35f));
-    DrawCircleV(position, 10.0f * pulse, Fade((Color){255, 200, 80, 255}, 0.45f));
+    // Visible glow without excessive per-spore overdraw.
+    DrawCircleV(position, 13.0f * pulse, Fade((Color){255, 230, 100, 255}, 0.28f));
 
     // Main spore body with strong gradient
     DrawCircleGradient((int)position.x, (int)position.y, 7.0f, (Color){255, 240, 140, 255},
@@ -775,10 +771,8 @@ static void DrawSpores(const ShroomWorldState* world) {
     DrawCircleV((Vector2){position.x - 2.0f, position.y - 2.0f}, 3.0f,
                 Fade((Color){255, 255, 220, 255}, 0.95f));
 
-    // Small sparkle effect
-    float sparkle = sinf(time * 5.0f + (float)index) * 0.5f + 0.5f;
-    if (sparkle > 0.7f) {
-      DrawCircleV(position, 2.0f, Fade((Color){255, 255, 255, 255}, sparkle));
+    if ((index % 9u) == 0u) {
+      DrawCircleV(position, 2.0f, Fade((Color){255, 255, 255, 255}, 0.55f * pulse));
     }
   }
 }
@@ -809,15 +803,14 @@ static void DrawPowerups(const ShroomWorldState* world) {
     float pulse = sinf((float)index * 0.5f + time * 4.0f) * 0.4f + 0.8f;
     float rotation = time * 2.0f + (float)index;
 
-    // Very large outer glow with pulsing effect
-    DrawCircleV(position, SHROOM_POWERUP_RADIUS + 30.0f, Fade(color, 0.15f * pulse));
-    DrawCircleV(position, SHROOM_POWERUP_RADIUS + 22.0f, Fade(color, 0.25f * pulse));
-    DrawCircleV(position, SHROOM_POWERUP_RADIUS + 15.0f, Fade(color, 0.35f * pulse));
+    // Large outer glow with restrained overdraw.
+    DrawCircleV(position, SHROOM_POWERUP_RADIUS + 24.0f, Fade(color, 0.20f * pulse));
+    DrawCircleV(position, SHROOM_POWERUP_RADIUS + 14.0f, Fade(color, 0.34f * pulse));
 
     // Rotating ring effects
-    for (int i = 0; i < 6; i++) {
-      float angle = rotation + (i / 6.0f) * 2.0f * PI;
-      float radius = SHROOM_POWERUP_RADIUS + 18.0f;
+    for (int i = 0; i < 4; i++) {
+      float angle = rotation + (i / 4.0f) * 2.0f * PI;
+      float radius = SHROOM_POWERUP_RADIUS + 16.0f;
       float x = position.x + cosf(angle) * radius;
       float y = position.y + sinf(angle) * radius;
       DrawCircle(x, y, 4.0f, Fade(color, 0.6f * pulse));
@@ -867,6 +860,10 @@ static void DrawPlayers(const Game* game) {
       // Main mushroom cap with strong color
       DrawCircleV(position, player->radius, fill);
 
+      if (is_local) {
+        DrawCircleV(position, player->radius * 0.78f, Fade((Color){255, 230, 120, 255}, 0.18f));
+      }
+
       // Large, bright mushroom cap highlight (top lighting)
       DrawCircleV(
           (Vector2){position.x - player->radius * 0.25f, position.y - player->radius * 0.25f},
@@ -903,21 +900,21 @@ static void DrawPlayers(const Game* game) {
       const int text_width = MeasureText(mass_text, font_size);
       const int text_x = (int)(position.x - text_width * 0.5f);
       const int text_y = (int)(position.y - font_size * 0.5f);
-      const float badge_radius = fminf(player->radius * 0.72f, text_width * 0.55f + 7.0f);
+      const Rectangle text_badge = {(float)text_x - 5.0f, (float)text_y - 2.0f,
+                                    (float)text_width + 10.0f, (float)font_size + 5.0f};
       const Color label_color =
-          is_local ? (Color){255, 245, 178, 255} : (Color){235, 231, 212, 255};
-      const float label_alpha = is_local ? 0.98f : 0.74f;
-      const float badge_alpha = is_local ? 0.34f : 0.20f;
+          is_local ? (Color){255, 250, 205, 255} : (Color){241, 236, 218, 255};
+      const float label_alpha = is_local ? 1.0f : 0.86f;
+      const float badge_alpha = is_local ? 0.72f : 0.46f;
 
-      DrawCircleV(position, badge_radius + 2.0f, Fade((Color){25, 18, 12, 255}, badge_alpha));
-      DrawCircleV(position, badge_radius, Fade((Color){82, 54, 32, 255}, badge_alpha));
-      DrawCircleV((Vector2){position.x - badge_radius * 0.25f, position.y - badge_radius * 0.25f},
-                  badge_radius * 0.35f, Fade((Color){180, 132, 72, 255}, badge_alpha));
+      DrawRectangleRounded(text_badge, 0.45f, 8, Fade((Color){22, 14, 9, 255}, badge_alpha));
+      DrawRectangleRoundedLines(text_badge, 0.45f, 8,
+                                Fade((Color){255, 216, 118, 255}, is_local ? 0.72f : 0.32f));
 
-      DrawText(mass_text, text_x + 1, text_y, font_size, Fade((Color){25, 15, 10, 255}, 0.82f));
-      DrawText(mass_text, text_x - 1, text_y, font_size, Fade((Color){25, 15, 10, 255}, 0.82f));
-      DrawText(mass_text, text_x, text_y + 1, font_size, Fade((Color){25, 15, 10, 255}, 0.82f));
-      DrawText(mass_text, text_x, text_y - 1, font_size, Fade((Color){25, 15, 10, 255}, 0.82f));
+      DrawText(mass_text, text_x + 2, text_y, font_size, Fade((Color){12, 8, 5, 255}, 0.9f));
+      DrawText(mass_text, text_x - 2, text_y, font_size, Fade((Color){12, 8, 5, 255}, 0.9f));
+      DrawText(mass_text, text_x, text_y + 2, font_size, Fade((Color){12, 8, 5, 255}, 0.9f));
+      DrawText(mass_text, text_x, text_y - 2, font_size, Fade((Color){12, 8, 5, 255}, 0.9f));
       DrawText(mass_text, text_x, text_y, font_size, Fade(label_color, label_alpha));
 
       // Outline rings
@@ -930,7 +927,10 @@ static void DrawPlayers(const Game* game) {
                         Fade(YELLOW, 0.70f));
       }
       if (is_focused) {
-        DrawCircleLines((int)position.x, (int)position.y, player->radius + 8.0f, RAYWHITE);
+        DrawCircleLines((int)position.x, (int)position.y, player->radius + 8.0f,
+                        Fade((Color){255, 236, 140, 255}, 0.95f));
+        DrawCircleLines((int)position.x, (int)position.y, player->radius + 12.0f,
+                        Fade((Color){255, 255, 220, 255}, 0.48f));
       }
       if (IsDecayMassActive(player)) {
         DrawCircleLines((int)position.x, (int)position.y, player->radius + 11.0f,
