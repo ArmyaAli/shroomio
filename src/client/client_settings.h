@@ -14,6 +14,13 @@ typedef enum ClientHudDensity {
   CLIENT_HUD_MINIMAL,
 } ClientHudDensity;
 
+typedef enum ClientParticleQuality {
+  CLIENT_PARTICLES_OFF = 0,
+  CLIENT_PARTICLES_LOW,
+  CLIENT_PARTICLES_MEDIUM,
+  CLIENT_PARTICLES_HIGH,
+} ClientParticleQuality;
+
 typedef struct ClientSettings {
   int ui_scale_percent;
   int master_volume_percent;
@@ -27,6 +34,7 @@ typedef struct ClientSettings {
   int preferred_region_index;
   ClientPalettePreset palette_preset;
   ClientHudDensity hud_density;
+  ClientParticleQuality particle_quality;
 } ClientSettings;
 
 void ClientSettingsSetDefaults(ClientSettings* settings);

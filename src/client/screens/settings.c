@@ -24,6 +24,13 @@ static const char* const kPaletteItems[] = {
     "High Contrast",
 };
 
+static const char* const kParticleItems[] = {
+    "Off",
+    "Low",
+    "Medium",
+    "High",
+};
+
 static void ApplySettings(Game* game) {
   game->settings = g_settings_screen.pending;
   SetMasterVolume((float)game->settings.master_volume_percent / 100.0f);
@@ -89,6 +96,8 @@ static void SettingsDraw(ShroomScreenManager* manager) {
   changed |= ShroomImGui_Checkbox("Show Diagnostics On Launch",
                                   &g_settings_screen.pending.diagnostics_enabled);
   changed |= ShroomImGui_Checkbox("Show Ping In HUD", &g_settings_screen.pending.show_ping_ms);
+  changed |= ShroomImGui_Combo(
+      "Particle Quality", (int*)&g_settings_screen.pending.particle_quality, kParticleItems, 4);
   changed |= ShroomImGui_Checkbox("Animated Menu Backgrounds",
                                   &g_settings_screen.pending.menu_animations_enabled);
 

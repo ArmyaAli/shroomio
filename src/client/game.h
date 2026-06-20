@@ -10,6 +10,7 @@
 #include "shared/world.h"
 
 #define SHROOM_CLIENT_PENDING_INPUT_CAPACITY 128u
+#define SHROOM_CLIENT_PARTICLE_CAPACITY 384u
 
 typedef enum GameSessionMode {
   SHROOM_SESSION_MODE_QUICK_PLAY = 0,
@@ -27,6 +28,16 @@ typedef struct ShroomPendingInput {
   ShroomVec2 direction;
 } ShroomPendingInput;
 
+typedef struct GameplayParticle {
+  Vector2 position;
+  Vector2 velocity;
+  Color color;
+  float age;
+  float lifetime;
+  float radius;
+  bool active;
+} GameplayParticle;
+
 typedef struct Game {
   Camera2D camera;
   ClientSettings settings;
@@ -39,9 +50,22 @@ typedef struct Game {
   ShroomPendingInput pending_inputs[SHROOM_CLIENT_PENDING_INPUT_CAPACITY];
   uint32_t pending_input_count;
   uint32_t tracked_input_sequence;
+  uint32_t particle_cursor;
   ShroomVec2 render_positions[SHROOM_MAX_PLAYERS];
   ShroomVec2 previous_local_position;
+  GameplayParticle particles[SHROOM_CLIENT_PARTICLE_CAPACITY];
+  ShroomVec2 previous_spore_positions[SHROOM_MAX_SPORES];
+  ShroomEntityId previous_spore_entity_ids[SHROOM_MAX_SPORES];
+  ShroomVec2 previous_player_positions[SHROOM_MAX_PLAYERS];
+  ShroomEntityId previous_player_entity_ids[SHROOM_MAX_PLAYERS];
+  ShroomPlayerId previous_player_ids[SHROOM_MAX_PLAYERS];
+  float previous_player_masses[SHROOM_MAX_PLAYERS];
+  bool previous_player_alive[SHROOM_MAX_PLAYERS];
+  ShroomVec2 previous_powerup_positions[SHROOM_MAX_POWERUPS];
+  ShroomEntityId previous_powerup_entity_ids[SHROOM_MAX_POWERUPS];
+  bool previous_powerup_active[SHROOM_MAX_POWERUPS];
   bool render_position_initialized[SHROOM_MAX_PLAYERS];
+  bool particle_baseline_ready;
   bool leaderboard_overlay_open;
   bool menu_overlay_open;
   bool diagnostics_overlay_open;
@@ -62,6 +86,7 @@ typedef struct Game {
   float chat_inactive_timer;
   char chat_input_buf[SHROOM_CHAT_MAX_MESSAGE_LENGTH + 1u];
   bool chat_scroll_to_bottom;
+  float ambient_particle_timer;
   float inspect_overlay_progress;
   float inspect_prompt_timer;
   float previous_local_mass;
