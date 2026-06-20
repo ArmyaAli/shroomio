@@ -1913,7 +1913,9 @@ static void DrawStatusBanners(const Game* game) {
   if (IsOnlineMode(game->active_mode) && (game->net.status == CLIENT_NET_CONNECTED) &&
       (game->net.rtt_sample_count > 0u) &&
       (game->net.rtt_average_ms >= SHROOM_LATENCY_WARNING_MS)) {
-    const bool unplayable = game->net.rtt_average_ms >= SHROOM_LATENCY_UNPLAYABLE_MS;
+    const uint32_t display_rtt =
+        game->net.rtt_average_ms > 9999u ? 9999u : game->net.rtt_average_ms;
+    const bool unplayable = display_rtt >= SHROOM_LATENCY_UNPLAYABLE_MS;
     const Color warn_color = unplayable ? RED : ORANGE;
     ShroomImGui_SetNextWindowPos((game->screen_width - 300.0f) * 0.5f, 176.0f,
                                  SHROOM_IMGUI_COND_ALWAYS);
@@ -1927,7 +1929,7 @@ static void DrawStatusBanners(const Game* game) {
       ShroomImGui_TextColored(ToImGuiColor(warn_color),
                               unplayable ? "Unplayable latency" : "High latency");
       ShroomImGui_SameLine();
-      ShroomImGui_Text(TextFormat("avg RTT %ums", game->net.rtt_average_ms));
+      ShroomImGui_Text(TextFormat("avg RTT %ums", display_rtt));
     }
     ShroomImGui_End();
   }
@@ -2048,9 +2050,13 @@ static void DrawMenuOverlay(Game* game) {
   }
 
   ShroomImGui_Text(TextFormat("Server: %s", ClientNetStatusLabel(&game->net)));
-  ShroomImGui_TextColored(
-      ToImGuiColor(GetLatencyColor(game->net.rtt_average_ms)),
-      TextFormat("Ping: %ums  Avg: %ums", game->net.rtt_ms, game->net.rtt_average_ms));
+  {
+    const uint32_t display_rtt = game->net.rtt_ms > 9999u ? 9999u : game->net.rtt_ms;
+    const uint32_t display_avg =
+        game->net.rtt_average_ms > 9999u ? 9999u : game->net.rtt_average_ms;
+    ShroomImGui_TextColored(ToImGuiColor(GetLatencyColor(display_avg)),
+                            TextFormat("Ping: %ums  Avg: %ums", display_rtt, display_avg));
+  }
   ShroomImGui_Text("Esc / Enter resumes, Tab toggles leaderboard.");
   ShroomImGui_Separator();
 
@@ -2186,7 +2192,12 @@ static void DrawDiagnosticsOverlay(const Game* game) {
   ShroomImGui_Text(TextFormat("Players: %u  Spores: %u", (unsigned int)game->world.player_count,
                               (unsigned int)game->world.spore_count));
   ShroomImGui_Text(TextFormat("Local Mass: %.1f", game->local_player->mass));
-  ShroomImGui_Text(TextFormat("RTT: %ums  Avg: %ums", game->net.rtt_ms, game->net.rtt_average_ms));
+  {
+    const uint32_t display_rtt = game->net.rtt_ms > 9999u ? 9999u : game->net.rtt_ms;
+    const uint32_t display_avg =
+        game->net.rtt_average_ms > 9999u ? 9999u : game->net.rtt_average_ms;
+    ShroomImGui_Text(TextFormat("RTT: %ums  Avg: %ums", display_rtt, display_avg));
+  }
 
   ShroomImGui_End();
 }
@@ -2456,9 +2467,11 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
       fps_color = YELLOW;
     }
     ShroomImGui_TextColored(ToImGuiColor(fps_color), TextFormat("FPS %d", fps));
-    if (game->settings.show_ping_ms) {
-      ShroomImGui_TextColored(ToImGuiColor(GetLatencyColor(game->net.rtt_average_ms)),
-                              TextFormat("Ping %ums", game->net.rtt_average_ms));
+    if (game->settings.show_ping_ms && IsOnlineMode(game->active_mode)) {
+      const uint32_t display_rtt =
+          game->net.rtt_average_ms > 9999u ? 9999u : game->net.rtt_average_ms;
+      ShroomImGui_TextColored(ToImGuiColor(GetLatencyColor(display_rtt)),
+                              TextFormat("Ping %ums", display_rtt));
     }
     ShroomImGui_Text(TextFormat("Players %d", (int)game->world.player_count));
   }
