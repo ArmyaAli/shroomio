@@ -1,0 +1,191 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version without the leading v, for example 1.2.3
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    name: Validate Release Input
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate version input
+        run: |
+          if ! printf '%s' '${{ inputs.version }}' | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'; then
+            printf '%s\n' 'Version must look like 1.2.3 or 1.2.3-rc.1'
+            exit 1
+          fi
+          if git rev-parse 'v${{ inputs.version }}' >/dev/null 2>&1; then
+            printf '%s\n' 'Tag v${{ inputs.version }} already exists'
+            exit 1
+          fi
+
+  build-linux-windows:
+    name: Build Linux and Windows
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            curl \
+            libasound2-dev \
+            libgl1-mesa-dev \
+            libsqlite3-dev \
+            libx11-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libxinerama-dev \
+            libxrandr-dev \
+            make \
+            mingw-w64 \
+            ninja-build \
+            pkg-config \
+            tar \
+            unzip \
+            zip
+
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            vcpkg_installed
+            vcpkg/downloads
+            ~/.cache/vcpkg/archives
+          key: ${{ runner.os }}-release-vcpkg-${{ hashFiles('vcpkg.json', '.gitmodules', 'vcpkg/ports/raylib/vcpkg.json', 'vcpkg/ports/imgui/vcpkg.json', 'vcpkg/ports/enet/vcpkg.json') }}
+
+      - name: Build binaries
+        run: |
+          make linux
+          make windows
+          make server
+
+      - name: Package binaries
+        run: |
+          mkdir -p release-assets
+          tar -czf release-assets/shroomio-${{ inputs.version }}-linux-x64.tar.gz -C dist shroomio shroomio-server
+          zip -j release-assets/shroomio-${{ inputs.version }}-windows-x64.zip dist/shroomio.exe
+
+      - name: Upload Linux and Windows assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-windows-release-assets
+          path: release-assets/*
+
+  build-macos:
+    name: Build macOS
+    runs-on: macos-13
+    needs: validate
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Install dependencies
+        run: brew install cmake ninja pkg-config
+
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            vcpkg_installed
+            vcpkg/downloads
+            ~/.cache/vcpkg/archives
+          key: ${{ runner.os }}-release-vcpkg-${{ hashFiles('vcpkg.json', '.gitmodules', 'vcpkg/ports/raylib/vcpkg.json', 'vcpkg/ports/imgui/vcpkg.json', 'vcpkg/ports/enet/vcpkg.json') }}
+
+      - name: Build binary
+        run: make macos
+
+      - name: Package binary
+        run: |
+          mkdir -p release-assets
+          tar -czf release-assets/shroomio-${{ inputs.version }}-macos-x64.tar.gz -C dist shroomio-macos
+
+      - name: Upload macOS asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-release-assets
+          path: release-assets/*
+
+  publish-release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs:
+      - build-linux-windows
+      - build-macos
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Download release assets
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate changelogs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          REPOSITORY: ${{ github.repository }}
+          TARGET_COMMIT: ${{ github.sha }}
+        run: |
+          previous_tag="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
+          if [ -n "$previous_tag" ]; then
+            gh api \
+              --method POST \
+              "repos/$REPOSITORY/releases/generate-notes" \
+              -f tag_name="v$VERSION" \
+              -f previous_tag_name="$previous_tag" \
+              -f target_commitish="$TARGET_COMMIT" \
+              --jq .body > release-notes.md
+          else
+            gh api \
+              --method POST \
+              "repos/$REPOSITORY/releases/generate-notes" \
+              -f tag_name="v$VERSION" \
+              -f target_commitish="$TARGET_COMMIT" \
+              --jq .body > release-notes.md
+          fi
+
+          {
+            printf 'shroomio full changelog through v%s\n' "$VERSION"
+            printf 'Generated from git history on %s\n\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+            git log --date=short --pretty=format:'%ad %h %s'
+          } > release-assets/CHANGELOG-v${VERSION}.txt
+
+      - name: Create tag and GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a "v$VERSION" -m "Release v$VERSION"
+          git push origin "v$VERSION"
+          gh release create "v$VERSION" \
+            release-assets/* \
+            --title "shroomio v$VERSION" \
+            --notes-file release-notes.md

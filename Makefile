@@ -48,11 +48,13 @@ IMGUI_TESTS_DIR := $(TESTS_DIR)/imgui
 
 LINUX_BUILD_DIR   := $(BUILD_DIR)/linux
 WINDOWS_BUILD_DIR := $(BUILD_DIR)/windows
+MACOS_BUILD_DIR   := $(BUILD_DIR)/macos
 TEST_BUILD_DIR    := $(BUILD_DIR)/tests
 
 #Output binaries
 LINUX_BIN  := $(DIST_DIR)/$(PROJECT)
 WINDOWS_BIN := $(DIST_DIR)/$(PROJECT).exe
+MACOS_BIN := $(DIST_DIR)/$(PROJECT)-macos
 SERVER_BIN := $(DIST_DIR)/$(PROJECT)-server
 
 #== == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==   \
@@ -65,16 +67,22 @@ VCPKG_BIN := $(VCPKG_ROOT)/vcpkg
 VCPKG_INSTALLED_DIR := $(CURDIR)/vcpkg_installed
 VCPKG_LINUX_TRIPLET := x64-linux
 VCPKG_WINDOWS_TRIPLET := x64-mingw-static
+VCPKG_MACOS_TRIPLET := x64-osx
 VCPKG_LINUX_INSTALLED_DIR := $(VCPKG_INSTALLED_DIR)/linux
 VCPKG_WINDOWS_INSTALLED_DIR := $(VCPKG_INSTALLED_DIR)/windows
+VCPKG_MACOS_INSTALLED_DIR := $(VCPKG_INSTALLED_DIR)/macos
 VCPKG_LINUX_PREFIX := $(VCPKG_LINUX_INSTALLED_DIR)/$(VCPKG_LINUX_TRIPLET)
 VCPKG_WINDOWS_PREFIX := $(VCPKG_WINDOWS_INSTALLED_DIR)/$(VCPKG_WINDOWS_TRIPLET)
+VCPKG_MACOS_PREFIX := $(VCPKG_MACOS_INSTALLED_DIR)/$(VCPKG_MACOS_TRIPLET)
 VCPKG_LINUX_INCLUDE_DIR := $(VCPKG_LINUX_PREFIX)/include
 VCPKG_WINDOWS_INCLUDE_DIR := $(VCPKG_WINDOWS_PREFIX)/include
+VCPKG_MACOS_INCLUDE_DIR := $(VCPKG_MACOS_PREFIX)/include
 VCPKG_LINUX_LIB_DIR := $(VCPKG_LINUX_PREFIX)/lib
 VCPKG_WINDOWS_LIB_DIR := $(VCPKG_WINDOWS_PREFIX)/lib
+VCPKG_MACOS_LIB_DIR := $(VCPKG_MACOS_PREFIX)/lib
 VCPKG_LINUX_STAMP := $(VCPKG_LINUX_PREFIX)/.vcpkg-ready
 VCPKG_WINDOWS_STAMP := $(VCPKG_WINDOWS_PREFIX)/.vcpkg-ready
+VCPKG_MACOS_STAMP := $(VCPKG_MACOS_PREFIX)/.vcpkg-ready
 
 # Test-only ImGui source mirror kept for the manual ImGui Test Engine harness.
 IMGUI_DIR := vendor/imgui-$(IMGUI_VERSION)
@@ -120,8 +128,10 @@ IMGUI_TEST_ENGINE_CXXFLAGS := $(IMGUI_TEST_CXXFLAGS) \
     == == == == == == =
 LINUX_CC    ?= cc
 WINDOWS_CC  ?= x86_64-w64-mingw32-gcc
+MACOS_CC    ?= cc
 LINUX_CXX   ?= c++
 WINDOWS_CXX ?= x86_64-w64-mingw32-g++
+MACOS_CXX   ?= c++
 AR          ?= ar
 
 #Tools
@@ -137,9 +147,11 @@ COMMON_CXXFLAGS := -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) -I.
 LINUX_CFLAGS   := $(COMMON_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) -DPLATFORM_DESKTOP -D_DEFAULT_SOURCE
 WINDOWS_CFLAGS := $(COMMON_CFLAGS) -I$(VCPKG_WINDOWS_INCLUDE_DIR) -DPLATFORM_DESKTOP
 WINDOWS_CFLAGS += -DWIN32_LEAN_AND_MEAN -DNOGDI -DNOUSER
+MACOS_CFLAGS   := $(COMMON_CFLAGS) -I$(VCPKG_MACOS_INCLUDE_DIR) -DPLATFORM_DESKTOP -D_DEFAULT_SOURCE
 LINUX_CXXFLAGS := $(COMMON_CXXFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) -DPLATFORM_DESKTOP -D_DEFAULT_SOURCE
 WINDOWS_CXXFLAGS := $(COMMON_CXXFLAGS) -I$(VCPKG_WINDOWS_INCLUDE_DIR) -DPLATFORM_DESKTOP
 WINDOWS_CXXFLAGS += -DWIN32_LEAN_AND_MEAN -DNOGDI -DNOUSER
+MACOS_CXXFLAGS := $(COMMON_CXXFLAGS) -I$(VCPKG_MACOS_INCLUDE_DIR) -DPLATFORM_DESKTOP -D_DEFAULT_SOURCE
 
 #Server compiler flags(headless, ENet - based)
 SERVER_CFLAGS := -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
@@ -155,8 +167,10 @@ TEST_LIBS := -lm
 #Platform link libraries
 LINUX_LIBS   := -lGL -lm -ldl -lpthread -lrt -lX11 -lXrandr -lXi -lXcursor -lXinerama -lasound
 WINDOWS_LIBS := -lopengl32 -lgdi32 -lwinmm -lws2_32
+MACOS_LIBS   := -lm -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo
 LINUX_THIRD_PARTY_LIBS := -L$(VCPKG_LINUX_LIB_DIR) -limgui -lenet -lraylib -lglfw3
 WINDOWS_THIRD_PARTY_LIBS := -L$(VCPKG_WINDOWS_LIB_DIR) -limgui -lenet -lraylib -lglfw3
+MACOS_THIRD_PARTY_LIBS := -L$(VCPKG_MACOS_LIB_DIR) -limgui -lenet -lraylib -lglfw3
 IMGUI_TEST_THIRD_PARTY_LIBS := -L$(VCPKG_LINUX_LIB_DIR) -lenet -lraylib -lglfw3
 
 #== == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==   \
@@ -170,6 +184,8 @@ LINUX_IMGUI_OBJECTS := $(LINUX_BUILD_DIR)/client/imgui_impl_raylib.o \
 	$(LINUX_BUILD_DIR)/client/imgui_wrapper.o
 WINDOWS_IMGUI_OBJECTS := $(WINDOWS_BUILD_DIR)/client/imgui_impl_raylib.o \
 	$(WINDOWS_BUILD_DIR)/client/imgui_wrapper.o
+MACOS_IMGUI_OBJECTS := $(MACOS_BUILD_DIR)/client/imgui_impl_raylib.o \
+	$(MACOS_BUILD_DIR)/client/imgui_wrapper.o
 
 #Client source files
 CLIENT_SOURCES := \
@@ -212,6 +228,7 @@ SHARED_HEADERS := \
 #Object files
 LINUX_APP_OBJECTS   := $(patsubst $(SRC_DIR)/%.c,$(LINUX_BUILD_DIR)/%.o,$(CLIENT_SOURCES))
 WINDOWS_APP_OBJECTS := $(patsubst $(SRC_DIR)/%.c,$(WINDOWS_BUILD_DIR)/%.o,$(CLIENT_SOURCES))
+MACOS_APP_OBJECTS   := $(patsubst $(SRC_DIR)/%.c,$(MACOS_BUILD_DIR)/%.o,$(CLIENT_SOURCES))
 SERVER_OBJECTS      := $(patsubst $(SRC_DIR)/%.c,$(LINUX_BUILD_DIR)/%.o,$(SERVER_SOURCES))
 
 #Test files
@@ -251,7 +268,7 @@ IMGUI_TEST_ENGINE_OBJECTS := $(addprefix $(TEST_BUILD_DIR)/imgui/engine/,$(addsu
 # =============================================================================
 # 5. Build Targets
 # =============================================================================
-.PHONY: all linux windows server run run-server run-windows help
+.PHONY: all linux windows macos server run run-server run-windows help
 
 all: linux
 
@@ -263,6 +280,7 @@ help:
 	@echo "Build targets:"
 	@echo "  make linux          Build the Linux client binary"
 	@echo "  make windows        Build the Windows client binary (requires mingw-w64)"
+	@echo "  make macos          Build the macOS client binary"
 	@echo "  make server         Build the Linux headless server binary"
 	@echo "  make run            Build and run the Linux client"
 	@echo "  make run-server     Build and run the Linux server"
@@ -298,7 +316,8 @@ help:
 	@echo "  make vcpkg-bootstrap      Bootstrap the local vcpkg tool"
 	@echo "  make vcpkg-install-linux  Install Linux vcpkg dependencies"
 	@echo "  make vcpkg-install-windows Install Windows vcpkg dependencies"
-	@echo "  make vcpkg-install        Install both Linux and Windows vcpkg dependencies"
+	@echo "  make vcpkg-install-macos  Install macOS vcpkg dependencies"
+	@echo "  make vcpkg-install        Install Linux and Windows vcpkg dependencies"
 	@echo ""
 	@echo "Documentation:"
 	@echo "  make spec           Build the LaTeX specification PDF"
@@ -315,6 +334,8 @@ help:
 linux: $(LINUX_BIN)
 
 windows: $(WINDOWS_BIN)
+
+macos: $(MACOS_BIN)
 
 server: $(SERVER_BIN)
 
@@ -340,6 +361,10 @@ $(WINDOWS_BIN): $(WINDOWS_APP_OBJECTS) $(WINDOWS_IMGUI_OBJECTS) $(VCPKG_WINDOWS_
 	@$(MKDIR_P) $(DIST_DIR)
 	$(WINDOWS_CXX) -static $(WINDOWS_APP_OBJECTS) $(WINDOWS_IMGUI_OBJECTS) -o $@ $(WINDOWS_THIRD_PARTY_LIBS) $(WINDOWS_LIBS)
 
+$(MACOS_BIN): $(MACOS_APP_OBJECTS) $(MACOS_IMGUI_OBJECTS) $(VCPKG_MACOS_STAMP)
+	@$(MKDIR_P) $(DIST_DIR)
+	$(MACOS_CXX) $(MACOS_APP_OBJECTS) $(MACOS_IMGUI_OBJECTS) -o $@ $(MACOS_THIRD_PARTY_LIBS) $(MACOS_LIBS)
+
 $(SERVER_BIN): $(SERVER_OBJECTS) $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(DIST_DIR)
 	$(LINUX_CC) $(SERVER_OBJECTS) -o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet $(SERVER_LIBS)
@@ -352,6 +377,10 @@ $(LINUX_BUILD_DIR)/client/%.o: $(CLIENT_SRC_DIR)/%.c $(CLIENT_SRC_DIR)/game.h $(
 $(WINDOWS_BUILD_DIR)/client/%.o: $(CLIENT_SRC_DIR)/%.c $(CLIENT_SRC_DIR)/game.h $(CLIENT_SRC_DIR)/net.h $(SHARED_HEADERS) | $(VCPKG_WINDOWS_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(WINDOWS_CC) $(WINDOWS_CFLAGS) -c $< -o $@
+
+$(MACOS_BUILD_DIR)/client/%.o: $(CLIENT_SRC_DIR)/%.c $(CLIENT_SRC_DIR)/game.h $(CLIENT_SRC_DIR)/net.h $(SHARED_HEADERS) | $(VCPKG_MACOS_STAMP)
+	@$(MKDIR_P) $(dir $@)
+	$(MACOS_CC) $(MACOS_CFLAGS) -D_POSIX_C_SOURCE=199309L -D_DEFAULT_SOURCE -c $< -o $@
 
 $(LINUX_BUILD_DIR)/client/imgui_impl_raylib.o: $(CLIENT_SRC_DIR)/imgui_impl_raylib.cpp | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
@@ -368,6 +397,14 @@ $(WINDOWS_BUILD_DIR)/client/imgui_impl_raylib.o: $(CLIENT_SRC_DIR)/imgui_impl_ra
 $(WINDOWS_BUILD_DIR)/client/imgui_wrapper.o: $(CLIENT_SRC_DIR)/imgui_wrapper.cpp | $(VCPKG_WINDOWS_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(WINDOWS_CXX) $(WINDOWS_CXXFLAGS) -c $< -o $@
+
+$(MACOS_BUILD_DIR)/client/imgui_impl_raylib.o: $(CLIENT_SRC_DIR)/imgui_impl_raylib.cpp | $(VCPKG_MACOS_STAMP)
+	@$(MKDIR_P) $(dir $@)
+	$(MACOS_CXX) $(MACOS_CXXFLAGS) -c $< -o $@
+
+$(MACOS_BUILD_DIR)/client/imgui_wrapper.o: $(CLIENT_SRC_DIR)/imgui_wrapper.cpp | $(VCPKG_MACOS_STAMP)
+	@$(MKDIR_P) $(dir $@)
+	$(MACOS_CXX) $(MACOS_CXXFLAGS) -c $< -o $@
 
 $(TEST_BUILD_DIR)/imgui/client/%.o: $(CLIENT_SRC_DIR)/%.c $(CLIENT_SRC_DIR)/game.h $(CLIENT_SRC_DIR)/net.h $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
@@ -413,6 +450,10 @@ $(WINDOWS_BUILD_DIR)/shared/%.o: $(SHARED_SRC_DIR)/%.c $(SHARED_HEADERS) | $(VCP
 	@$(MKDIR_P) $(dir $@)
 	$(WINDOWS_CC) $(WINDOWS_SERVER_CFLAGS) -c $< -o $@
 
+$(MACOS_BUILD_DIR)/shared/%.o: $(SHARED_SRC_DIR)/%.c $(SHARED_HEADERS) | $(VCPKG_MACOS_STAMP)
+	@$(MKDIR_P) $(dir $@)
+	$(MACOS_CC) $(MACOS_CFLAGS) -c $< -o $@
+
 # Server object compilation
 $(LINUX_BUILD_DIR)/server/%.o: $(SERVER_SRC_DIR)/%.c | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
@@ -421,7 +462,7 @@ $(LINUX_BUILD_DIR)/server/%.o: $(SERVER_SRC_DIR)/%.c | $(VCPKG_LINUX_STAMP)
 # =============================================================================
 # 7. Dependency Installation
 # =============================================================================
-.PHONY: vendor vcpkg-bootstrap vcpkg-install vcpkg-install-linux vcpkg-install-windows
+.PHONY: vendor vcpkg-bootstrap vcpkg-install vcpkg-install-linux vcpkg-install-windows vcpkg-install-macos
 
 vcpkg-bootstrap:
 	@test -x "$(VCPKG_BIN)" || test ! -f "$(VCPKG_ROOT)/bootstrap-vcpkg.sh" || bash "$(VCPKG_ROOT)/bootstrap-vcpkg.sh" -disableMetrics
@@ -436,9 +477,16 @@ $(VCPKG_WINDOWS_STAMP): vcpkg.json | vcpkg-bootstrap
 	$(VCPKG_BIN) install --triplet $(VCPKG_WINDOWS_TRIPLET) --x-manifest-root=$(CURDIR) --x-install-root=$(VCPKG_WINDOWS_INSTALLED_DIR)
 	@touch $@
 
+$(VCPKG_MACOS_STAMP): vcpkg.json | vcpkg-bootstrap
+	@$(MKDIR_P) $(VCPKG_MACOS_INSTALLED_DIR)
+	$(VCPKG_BIN) install --triplet $(VCPKG_MACOS_TRIPLET) --x-manifest-root=$(CURDIR) --x-install-root=$(VCPKG_MACOS_INSTALLED_DIR)
+	@touch $@
+
 vcpkg-install-linux: $(VCPKG_LINUX_STAMP)
 
 vcpkg-install-windows: $(VCPKG_WINDOWS_STAMP)
+
+vcpkg-install-macos: $(VCPKG_MACOS_STAMP)
 
 vcpkg-install: $(VCPKG_LINUX_STAMP) $(VCPKG_WINDOWS_STAMP)
 
