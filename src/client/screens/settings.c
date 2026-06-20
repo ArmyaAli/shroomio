@@ -100,6 +100,8 @@ static void SettingsDraw(ShroomScreenManager* manager) {
       "Particle Quality", (int*)&g_settings_screen.pending.particle_quality, kParticleItems, 4);
   changed |= ShroomImGui_Checkbox("Animated Menu Backgrounds",
                                   &g_settings_screen.pending.menu_animations_enabled);
+  changed |=
+      ShroomImGui_Checkbox("Death Cutscene", &g_settings_screen.pending.death_cutscene_enabled);
 
   if (changed) {
     ClientSettingsValidate(&g_settings_screen.pending);

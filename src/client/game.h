@@ -84,6 +84,7 @@ typedef struct Game {
   bool leave_confirmation_open;
   bool inspect_overlay_open;
   bool return_to_menu_requested;
+  bool play_again_requested;
   float camera_zoom_target;
   bool split_requested;
   float split_hold_timer;           /* seconds Space held; fires at SHROOM_SPLIT_HOLD_SECONDS */
@@ -105,7 +106,13 @@ typedef struct Game {
   int previous_local_rank;
   float combat_feedback_cooldown;
   float screen_flash_timer;
+  float death_cutscene_timer;
+  float death_cutscene_duration;
+  float death_cutscene_final_mass;
+  float death_cutscene_survival_time;
   Color screen_flash_color;
+  int death_cutscene_final_rank;
+  char death_cutscene_killer_name[SHROOM_MAX_NAME_LENGTH];
   float zone_callout_timer;
   float respawn_banner_timer;
   int screen_width;
