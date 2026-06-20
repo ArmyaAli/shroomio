@@ -200,6 +200,7 @@ CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/game.c \
 	$(CLIENT_SRC_DIR)/net.c \
 	$(CLIENT_SRC_DIR)/screen.c \
+	$(CLIENT_SRC_DIR)/screens/screen_background.c \
 	$(CLIENT_SRC_DIR)/screens/main_menu.c \
 	$(CLIENT_SRC_DIR)/screens/settings.c \
 	$(CLIENT_SRC_DIR)/screens/help.c \
@@ -251,6 +252,7 @@ IMGUI_TEST_CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/game.c \
 	$(CLIENT_SRC_DIR)/net.c \
 	$(CLIENT_SRC_DIR)/screen.c \
+	$(CLIENT_SRC_DIR)/screens/screen_background.c \
 	$(CLIENT_SRC_DIR)/screens/main_menu.c \
 	$(CLIENT_SRC_DIR)/screens/settings.c \
 	$(CLIENT_SRC_DIR)/screens/help.c \

@@ -1,5 +1,6 @@
 #include "game.h"
 #include "screen.h"
+#include "screen_background.h"
 #include "shared/config.h"
 
 #include "imgui_wrapper.h"
@@ -428,12 +429,13 @@ static void ServerBrowserDraw(ShroomScreenManager* manager) {
   const int screen_height = GetScreenHeight();
   bool join_clicked = false;
 
-  ClearBackground((Color){18, 20, 32, 255});
+  ShroomScreenDrawFungalBackground((game == NULL) || game->settings.menu_animations_enabled);
 
   ShroomImGui_SetNextWindowPos((float)screen_width * 0.06f, (float)screen_height * 0.08f,
                                SHROOM_IMGUI_COND_ALWAYS);
   ShroomImGui_SetNextWindowSize((float)screen_width * 0.88f, (float)screen_height * 0.84f,
                                 SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowBgAlpha(0.88f);
   if (!ShroomImGui_Begin("Server Browser", NULL,
                          SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
                              SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
