@@ -11,7 +11,7 @@ static bool HelpInit(ShroomScreenManager* manager) {
 }
 
 static void HelpDraw(ShroomScreenManager* manager) {
-  Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
+  const Game* game = manager != NULL ? (const Game*)manager->user_data : NULL;
   const int screen_width = GetScreenWidth();
   const int screen_height = GetScreenHeight();
 
