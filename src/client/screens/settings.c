@@ -5,6 +5,8 @@
 #include "imgui_wrapper.h"
 #include "raylib.h"
 
+#include <stdio.h>
+
 typedef struct SettingsScreenState {
   ClientSettings pending;
   bool dirty;
@@ -31,35 +33,17 @@ static const char* const kParticleItems[] = {
     "High",
 };
 
-static const char* const kSpeciesItems[] = {
-    "Amanita muscaria", "Chanterelle", "Morel",  "Shiitake",    "Oyster", "Enoki",
-    "Portobello",       "Lion's Mane", "Reishi", "Wood Blewit",
-};
-
-static const char* GetSpeciesInfo(ClientMushroomSpecies species) {
-  switch (species) {
-  case CLIENT_MUSHROOM_CHANTERELLE:
-    return "Golden funnel cap; prized edible forest mushroom.";
-  case CLIENT_MUSHROOM_MOREL:
-    return "Honeycomb cap; spring mushroom with a rugged silhouette.";
-  case CLIENT_MUSHROOM_SHIITAKE:
-    return "Brown cap; classic cultivated mushroom with bold gills.";
-  case CLIENT_MUSHROOM_OYSTER:
-    return "Layered fan caps; soft clustered shelf mushroom.";
-  case CLIENT_MUSHROOM_ENOKI:
-    return "Tiny pale caps and long stems; delicate clustered look.";
-  case CLIENT_MUSHROOM_PORTOBELLO:
-    return "Broad brown cap; sturdy heavyweight arena profile.";
-  case CLIENT_MUSHROOM_LIONS_MANE:
-    return "Shaggy white spines; fluffy pom-pom silhouette.";
-  case CLIENT_MUSHROOM_REISHI:
-    return "Glossy red bracket; dramatic medicinal shelf form.";
-  case CLIENT_MUSHROOM_BLEWIT:
-    return "Violet woodland cap; rare purple accent species.";
-  case CLIENT_MUSHROOM_AMANITA:
-  default:
-    return "Red cap with white spots; iconic fairy-tale mushroom.";
+static const ShroomMushroomSpeciesEntry* FindSpeciesEntry(const ClientNetState* net,
+                                                          ClientMushroomSpecies species) {
+  if ((net == NULL) || !net->mushroom_species_catalog_received) {
+    return NULL;
   }
+  for (uint8_t index = 0; index < net->mushroom_species_count; ++index) {
+    if (net->mushroom_species[index].species_id == (uint8_t)species) {
+      return &net->mushroom_species[index];
+    }
+  }
+  return NULL;
 }
 
 static void ApplySettings(Game* game) {
@@ -83,12 +67,28 @@ static bool SettingsInit(ShroomScreenManager* manager) {
 static void SettingsDraw(ShroomScreenManager* manager) {
   Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
   bool changed = false;
+  const char* species_items[CLIENT_MUSHROOM_COUNT];
+  char species_fallback_items[CLIENT_MUSHROOM_COUNT][24];
+  const ShroomMushroomSpeciesEntry* selected_species;
   const int screen_width = GetScreenWidth();
   const int screen_height = GetScreenHeight();
 
   if (game == NULL) {
     return;
   }
+
+  for (int index = 0; index < CLIENT_MUSHROOM_COUNT; ++index) {
+    const ShroomMushroomSpeciesEntry* entry =
+        FindSpeciesEntry(&game->net, (ClientMushroomSpecies)index);
+    if ((entry != NULL) && (entry->name[0] != '\0')) {
+      species_items[index] = entry->name;
+    } else {
+      snprintf(species_fallback_items[index], sizeof(species_fallback_items[index]), "Species %d",
+               index + 1);
+      species_items[index] = species_fallback_items[index];
+    }
+  }
+  selected_species = FindSpeciesEntry(&game->net, g_settings_screen.pending.mushroom_species);
 
   ShroomScreenDrawFungalBackground(game->settings.menu_animations_enabled);
 
@@ -135,9 +135,15 @@ static void SettingsDraw(ShroomScreenManager* manager) {
       ShroomImGui_Checkbox("Death Cutscene", &g_settings_screen.pending.death_cutscene_enabled);
   changed |=
       ShroomImGui_Combo("Mushroom Species", (int*)&g_settings_screen.pending.mushroom_species,
-                        kSpeciesItems, CLIENT_MUSHROOM_COUNT);
-  ShroomImGui_TextWrapped(GetSpeciesInfo(g_settings_screen.pending.mushroom_species));
-  ShroomImGui_Text("Collection: all 10 species unlocked for pre-release testing.");
+                        species_items, CLIENT_MUSHROOM_COUNT);
+  selected_species = FindSpeciesEntry(&game->net, g_settings_screen.pending.mushroom_species);
+  if ((selected_species != NULL) && (selected_species->description[0] != '\0')) {
+    ShroomImGui_TextWrapped(selected_species->description);
+    ShroomImGui_Text("Collection: server catalog loaded.");
+  } else {
+    ShroomImGui_TextWrapped("Connect to a server to load mushroom species catalog metadata.");
+    ShroomImGui_Text("Collection: using offline fallback slots.");
+  }
 
   if (changed) {
     ClientSettingsValidate(&g_settings_screen.pending);

@@ -253,6 +253,33 @@ static void HandlePowerupState(ClientNetState* net, const ENetPacket* enet_packe
   }
 }
 
+static void HandleMushroomSpeciesCatalog(ClientNetState* net, const ENetPacket* enet_packet) {
+  const ShroomMushroomSpeciesCatalogPacket* packet =
+      (const ShroomMushroomSpeciesCatalogPacket*)enet_packet->data;
+  uint8_t species_count;
+
+  if (enet_packet->dataLength < sizeof(*packet)) {
+    return;
+  }
+
+  species_count = packet->species_count;
+  if (species_count > SHROOM_MAX_MUSHROOM_SPECIES) {
+    species_count = SHROOM_MAX_MUSHROOM_SPECIES;
+  }
+
+  net->mushroom_species_count = species_count;
+  net->mushroom_species_catalog_received = true;
+  if (species_count > 0) {
+    memcpy(net->mushroom_species, packet->species,
+           (size_t)species_count * sizeof(net->mushroom_species[0]));
+    for (uint8_t index = 0; index < species_count; ++index) {
+      net->mushroom_species[index].name[sizeof(net->mushroom_species[index].name) - 1u] = '\0';
+      net->mushroom_species[index]
+          .description[sizeof(net->mushroom_species[index].description) - 1u] = '\0';
+    }
+  }
+}
+
 bool ClientNetInit(ClientNetState* net, const char* host_name, uint16_t port) {
   ENetAddress address = {0};
 
@@ -354,6 +381,11 @@ void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, bool split
         case SHROOM_PACKET_LOBBY_JOINED:
           if (ShroomPacketHeaderUsesExpectedChannel(header, event.channelID)) {
             HandleLobbyJoined(net, event.packet);
+          }
+          break;
+        case SHROOM_PACKET_MUSHROOM_SPECIES_CATALOG:
+          if (ShroomPacketHeaderUsesExpectedChannel(header, event.channelID)) {
+            HandleMushroomSpeciesCatalog(net, event.packet);
           }
           break;
         case SHROOM_PACKET_LOBBY_CREATED:
