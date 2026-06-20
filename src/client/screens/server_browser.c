@@ -20,6 +20,11 @@ typedef enum ServerBrowserSortKey {
   SERVER_BROWSER_SORT_PING,
 } ServerBrowserSortKey;
 
+typedef enum ServerBrowserType {
+  SERVER_BROWSER_TYPE_OFFICIAL = 0,
+  SERVER_BROWSER_TYPE_SELF_HOSTED,
+} ServerBrowserType;
+
 typedef struct ServerBrowserEntry {
   char name[64];
   char host[64];
@@ -28,6 +33,7 @@ typedef struct ServerBrowserEntry {
   int ping_ms;
   int port;
   char map_label[64];
+  ServerBrowserType type;
 } ServerBrowserEntry;
 
 typedef struct ServerBrowserState {
@@ -40,6 +46,7 @@ typedef struct ServerBrowserState {
   char direct_host_input[64];
   char direct_port_input[8];
   char validation_message[128];
+  char connection_error[128];
   ServerBrowserEntry servers[SERVER_BROWSER_MAX_SERVERS];
   ServerBrowserEntry recent_servers[SERVER_BROWSER_MAX_RECENTS];
 } ServerBrowserState;
@@ -153,17 +160,26 @@ static bool ServerBrowserEntryIsJoinable(const ServerBrowserEntry* entry) {
 static void LoadSampleServers(void) {
   g_server_browser.server_count = 5;
 
-  g_server_browser.servers[0] = (ServerBrowserEntry){"Local Development", "127.0.0.1",    3, 32, 12,
-                                                     SHROOM_SERVER_PORT,  "Arena / Local"};
+  g_server_browser.servers[0] = (ServerBrowserEntry){"Local Development",
+                                                     "127.0.0.1",
+                                                     3,
+                                                     32,
+                                                     12,
+                                                     SHROOM_SERVER_PORT,
+                                                     "Arena / Local",
+                                                     SERVER_BROWSER_TYPE_SELF_HOSTED};
   g_server_browser.servers[1] = (ServerBrowserEntry){
-      "Canopy Clash EU", "eu.shroomio.dev", 24, 32, 46, SHROOM_SERVER_PORT, "Arena / Public"};
+      "Canopy Clash EU", "eu.shroomio.dev",           24, 32, 46, SHROOM_SERVER_PORT,
+      "Arena / Public",  SERVER_BROWSER_TYPE_OFFICIAL};
   g_server_browser.servers[2] = (ServerBrowserEntry){
-      "Spore Sprint NA", "na.shroomio.dev", 17, 32, 78, SHROOM_SERVER_PORT, "Arena / Ranked"};
-  g_server_browser.servers[3] =
-      (ServerBrowserEntry){"Outer Ring Learn", "practice.shroomio.dev", 8, 16, 33,
-                           SHROOM_SERVER_PORT, "Practice / Casual"};
+      "Spore Sprint NA", "na.shroomio.dev",           17, 32, 78, SHROOM_SERVER_PORT,
+      "Arena / Ranked",  SERVER_BROWSER_TYPE_OFFICIAL};
+  g_server_browser.servers[3] = (ServerBrowserEntry){
+      "Outer Ring Learn",  "practice.shroomio.dev",     8, 16, 33, SHROOM_SERVER_PORT,
+      "Practice / Casual", SERVER_BROWSER_TYPE_OFFICIAL};
   g_server_browser.servers[4] = (ServerBrowserEntry){
-      "Center Rush", "rush.shroomio.dev", 32, 32, 61, SHROOM_SERVER_PORT, "Arena / High Risk"};
+      "Center Rush",       "rush.shroomio.dev",         32, 32, 61, SHROOM_SERVER_PORT,
+      "Arena / High Risk", SERVER_BROWSER_TYPE_OFFICIAL};
   SortServersPreservingSelection();
 }
 
@@ -184,7 +200,8 @@ static void SaveRecentServers(void) {
 
   for (size_t index = 0; index < g_server_browser.recent_count; ++index) {
     const ServerBrowserEntry* entry = &g_server_browser.recent_servers[index];
-    fprintf(file, "%s|%s|%d|%s\n", entry->name, entry->host, entry->port, entry->map_label);
+    fprintf(file, "%s|%s|%d|%s|%d\n", entry->name, entry->host, entry->port, entry->map_label,
+            (int)entry->type);
   }
 
   fclose(file);
@@ -230,13 +247,23 @@ static void LoadRecentServers(void) {
     {
       const char* port_value = next_separator + 1;
       char* const map_text = strchr(port_value, '|');
+      char* type_text;
 
       if (map_text == NULL) {
         continue;
       }
       *map_text = '\0';
       entry->port = atoi(port_value);
-      CopyText(entry->map_label, sizeof(entry->map_label), map_text + 1);
+
+      type_text = strchr(map_text + 1, '|');
+      if (type_text != NULL) {
+        *type_text = '\0';
+        CopyText(entry->map_label, sizeof(entry->map_label), map_text + 1);
+        entry->type = (ServerBrowserType)atoi(type_text + 1);
+      } else {
+        CopyText(entry->map_label, sizeof(entry->map_label), map_text + 1);
+        entry->type = SERVER_BROWSER_TYPE_SELF_HOSTED;
+      }
     }
 
     entry->player_count = 0;
@@ -279,13 +306,68 @@ static void AddRecentServer(const ServerBrowserEntry* entry) {
   SaveRecentServers();
 }
 
+static bool IsValidHostname(const char* host) {
+  size_t length;
+  size_t label_start = 0;
+  bool has_dot = false;
+
+  if ((host == NULL) || (host[0] == '\0')) {
+    return false;
+  }
+
+  length = strnlen(host, 256);
+  if ((length == 0u) || (length > 253u)) {
+    return false;
+  }
+
+  for (size_t i = 0; i < length; ++i) {
+    const char c = host[i];
+
+    if (c == '.') {
+      if ((i == label_start) || (i == length - 1u)) {
+        return false;
+      }
+      has_dot = true;
+      label_start = i + 1;
+    } else if (c == ':') {
+      break;
+    } else if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+                 (c == '-') || (c == '_'))) {
+      return false;
+    }
+  }
+
+  (void)has_dot;
+  return true;
+}
+
 static bool ParseDirectConnect(ServerBrowserEntry* entry) {
   char* end = NULL;
   long port;
+  char host_buffer[64];
+  char* colon_position;
 
   if (g_server_browser.direct_host_input[0] == '\0') {
     snprintf(g_server_browser.validation_message, sizeof(g_server_browser.validation_message), "%s",
              "Host or IP is required.");
+    return false;
+  }
+
+  CopyText(host_buffer, sizeof(host_buffer), g_server_browser.direct_host_input);
+  colon_position = strrchr(host_buffer, ':');
+
+  if (colon_position != NULL) {
+    const char* port_text = colon_position + 1;
+    *colon_position = '\0';
+    CopyText(g_server_browser.direct_host_input, sizeof(g_server_browser.direct_host_input),
+             host_buffer);
+    CopyText(g_server_browser.direct_port_input, sizeof(g_server_browser.direct_port_input),
+             port_text);
+  }
+
+  if (!IsValidHostname(g_server_browser.direct_host_input)) {
+    snprintf(g_server_browser.validation_message, sizeof(g_server_browser.validation_message), "%s",
+             "Invalid hostname or IP address.");
     return false;
   }
 
@@ -302,6 +384,7 @@ static bool ParseDirectConnect(ServerBrowserEntry* entry) {
   CopyText(entry->host, sizeof(entry->host), g_server_browser.direct_host_input);
   CopyText(entry->map_label, sizeof(entry->map_label), "Direct Connect");
   entry->port = (int)port;
+  entry->type = SERVER_BROWSER_TYPE_SELF_HOSTED;
   g_server_browser.validation_message[0] = '\0';
   return true;
 }
@@ -319,7 +402,7 @@ static void JoinServer(ShroomScreenManager* manager, Game* game, const ServerBro
 }
 
 static bool ServerBrowserInit(ShroomScreenManager* manager) {
-  (void)manager;
+  const Game* game = manager != NULL ? (const Game*)manager->user_data : NULL;
 
   g_server_browser = (ServerBrowserState){0};
   g_server_browser.sort_key = SERVER_BROWSER_SORT_PING;
@@ -328,6 +411,11 @@ static bool ServerBrowserInit(ShroomScreenManager* manager) {
            "127.0.0.1");
   snprintf(g_server_browser.direct_port_input, sizeof(g_server_browser.direct_port_input), "%u",
            SHROOM_SERVER_PORT);
+
+  if (game != NULL && game->net.status == CLIENT_NET_ERROR && game->net.status_text[0] != '\0') {
+    snprintf(g_server_browser.connection_error, sizeof(g_server_browser.connection_error), "%s",
+             game->net.status_text);
+  }
 
   LoadRecentServers();
   LoadSampleServers();
@@ -357,6 +445,13 @@ static void ServerBrowserDraw(ShroomScreenManager* manager) {
   if (ShroomImGui_Button("Refresh", 120.0f, 0.0f)) {
     LoadSampleServers();
   }
+
+  if (g_server_browser.connection_error[0] != '\0') {
+    ShroomImGui_SameLine();
+    ShroomImGui_TextColored((ShroomImGuiColor){1.0f, 0.4f, 0.4f, 1.0f},
+                            TextFormat("Connection failed: %s", g_server_browser.connection_error));
+  }
+
   ShroomImGui_SameLine();
   if (ShroomImGui_Button("Sort Name", 120.0f, 0.0f)) {
     g_server_browser.sort_key = SERVER_BROWSER_SORT_NAME;
@@ -376,7 +471,7 @@ static void ServerBrowserDraw(ShroomScreenManager* manager) {
     SortServersPreservingSelection();
   }
 
-  if (ShroomImGui_BeginTable("servers", 4,
+  if (ShroomImGui_BeginTable("servers", 5,
                              SHROOM_IMGUI_TABLE_BORDERS | SHROOM_IMGUI_TABLE_ROW_BG |
                                  SHROOM_IMGUI_TABLE_SCROLL_Y | SHROOM_IMGUI_TABLE_SIZING_STRETCH,
                              0.0f, 260.0f)) {
@@ -384,6 +479,7 @@ static void ServerBrowserDraw(ShroomScreenManager* manager) {
     ShroomImGui_TableSetupColumn("Players", 0.0f);
     ShroomImGui_TableSetupColumn("Ping", 0.0f);
     ShroomImGui_TableSetupColumn("Map", 0.0f);
+    ShroomImGui_TableSetupColumn("Type", 0.0f);
     ShroomImGui_TableHeadersRow();
 
     for (size_t index = 0; index < g_server_browser.server_count; ++index) {
@@ -401,6 +497,8 @@ static void ServerBrowserDraw(ShroomScreenManager* manager) {
       ShroomImGui_Text(TextFormat("%d ms", entry->ping_ms));
       ShroomImGui_TableSetColumnIndex(3);
       ShroomImGui_Text(entry->map_label);
+      ShroomImGui_TableSetColumnIndex(4);
+      ShroomImGui_Text(entry->type == SERVER_BROWSER_TYPE_OFFICIAL ? "Official" : "Community");
     }
 
     ShroomImGui_EndTable();
@@ -466,12 +564,13 @@ static void ServerBrowserDraw(ShroomScreenManager* manager) {
 
   ShroomImGui_Separator();
   ShroomImGui_Text("Recent Servers");
-  if (ShroomImGui_BeginTable("recent", 3,
+  if (ShroomImGui_BeginTable("recent", 4,
                              SHROOM_IMGUI_TABLE_BORDERS | SHROOM_IMGUI_TABLE_ROW_BG |
                                  SHROOM_IMGUI_TABLE_SIZING_STRETCH,
                              0.0f, 0.0f)) {
     ShroomImGui_TableSetupColumn("Server", 0.0f);
     ShroomImGui_TableSetupColumn("Address", 0.0f);
+    ShroomImGui_TableSetupColumn("Mode", 0.0f);
     ShroomImGui_TableSetupColumn("Type", 0.0f);
     ShroomImGui_TableHeadersRow();
 
@@ -488,6 +587,8 @@ static void ServerBrowserDraw(ShroomScreenManager* manager) {
       ShroomImGui_Text(TextFormat("%s:%d", entry->host, entry->port));
       ShroomImGui_TableSetColumnIndex(2);
       ShroomImGui_Text(entry->map_label);
+      ShroomImGui_TableSetColumnIndex(3);
+      ShroomImGui_Text(entry->type == SERVER_BROWSER_TYPE_OFFICIAL ? "Official" : "Community");
     }
 
     ShroomImGui_EndTable();

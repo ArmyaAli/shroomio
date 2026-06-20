@@ -1361,14 +1361,13 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
     return;
   }
   ShroomImGui_SetNextWindowPos(18.0f, 18.0f, SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowSize(316.0f, 142.0f, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowSize(280.0f, 120.0f, SHROOM_IMGUI_COND_ALWAYS);
   ShroomImGui_SetNextWindowBgAlpha(0.66f);
   if (ShroomImGui_Begin("HUD Left", NULL,
                         SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
                             SHROOM_IMGUI_WINDOW_NO_MOVE | SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
                             SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS |
                             SHROOM_IMGUI_WINDOW_NO_SCROLLBAR)) {
-    ShroomImGui_Text("shroomio");
     ShroomImGui_Text(TextFormat("Mass %.0f", game->local_player->mass));
     ShroomImGui_Text(TextFormat("Rank %d/%d", local_rank > 0 ? local_rank : (int)leaderboard_count,
                                 (int)leaderboard_count));
@@ -1381,37 +1380,38 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
     }
     if (game->local_piece_count > 1) {
       ShroomImGui_TextColored(ToImGuiColor(YELLOW),
-                              TextFormat("Pieces %d  Tab to switch", game->local_piece_count));
-    } else if (!game->local_has_split && (game->local_player->mass >= SHROOM_SPLIT_MIN_MASS)) {
-      ShroomImGui_TextColored(ToImGuiColor(SKYBLUE), "Hold Space to split");
+                              TextFormat("Pieces %d", game->local_piece_count));
     }
     if (game->local_player->speed_powerup_timer > 0.0f) {
-      ShroomImGui_TextColored(ToImGuiColor(SKYBLUE), "Speed Burst active");
+      ShroomImGui_TextColored(ToImGuiColor(SKYBLUE), "Speed Burst");
     }
     if (game->local_player->shield_powerup_timer > 0.0f) {
-      ShroomImGui_TextColored(ToImGuiColor(VIOLET), "Mass Shield active");
+      ShroomImGui_TextColored(ToImGuiColor(VIOLET), "Mass Shield");
     }
-    ShroomImGui_Text(TextFormat("Players %d   Spores %d", (int)game->world.player_count,
-                                (int)game->world.spore_count));
   }
   ShroomImGui_End();
 
-  ShroomImGui_SetNextWindowPos(game->screen_width - 232.0f, 18.0f, SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowSize(214.0f, 106.0f, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowPos(game->screen_width - 180.0f, 18.0f, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowSize(162.0f, 80.0f, SHROOM_IMGUI_COND_ALWAYS);
   ShroomImGui_SetNextWindowBgAlpha(0.66f);
   if (ShroomImGui_Begin("HUD Right", NULL,
                         SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
                             SHROOM_IMGUI_WINDOW_NO_MOVE | SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
                             SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS |
                             SHROOM_IMGUI_WINDOW_NO_SCROLLBAR)) {
+    const int fps = GetFPS();
+    Color fps_color = GREEN;
+    if (fps < 30) {
+      fps_color = RED;
+    } else if (fps < 60) {
+      fps_color = YELLOW;
+    }
+    ShroomImGui_TextColored(ToImGuiColor(fps_color), TextFormat("FPS %d", fps));
     if (game->settings.show_ping_ms) {
       ShroomImGui_TextColored(ToImGuiColor(GetLatencyColor(game->net.rtt_average_ms)),
                               TextFormat("Ping %ums", game->net.rtt_average_ms));
     }
-    ShroomImGui_Text(TextFormat("Server %s", ClientNetStatusLabel(&game->net)));
-    ShroomImGui_Text("Tab Leaderboard");
-    ShroomImGui_Text("Esc Match Menu");
-    ShroomImGui_Text("F3 Diagnostics");
+    ShroomImGui_Text(TextFormat("Players %d", (int)game->world.player_count));
   }
   ShroomImGui_End();
 }

@@ -2,6 +2,30 @@
 
 This document covers deploying and operating the shroomio dedicated server in production or self-hosted community environments.
 
+## Quickstart
+
+The fastest way to expose a shroomio server on the internet:
+
+```bash
+# 1. Clone and build
+git clone git@github.com:ArmyaAli/shroomio.git
+cd shroomio
+make server-linux
+
+# 2. Run (UDP 7777)
+./dist/shroomio-server
+
+# 3. Open UDP port 7777 in your firewall/router
+# 4. Players connect via: <your-public-ip>:7777
+```
+
+For Docker:
+```bash
+docker run -d --name shroomio-server -p 7777:7777/udp --restart unless-stopped shroomio-server:dev
+```
+
+See below for full configuration, systemd setup, and troubleshooting.
+
 ## Overview
 
 The shroomio server is a headless C binary that runs the game simulation authoritatively and communicates with clients over UDP via ENet. A stock shroomio client can connect to any public server by domain name or IP address when the server's UDP port is reachable from the internet.
@@ -27,9 +51,9 @@ GitHub Releases include downloadable client bundles and dedicated server bundles
 
 | Host | Dedicated server asset |
 |---|---|
-| Linux x64 | `shroomio-server-<version>-linux-x64.tar.gz` |
-| Windows x64 | `shroomio-server-<version>-windows-x64.zip` |
-| macOS x64 | `shroomio-server-<version>-macos-x64.tar.gz` |
+| Linux x64 | `shroomio_server-<version>-linux-x64.tar.gz` |
+| Windows x64 | `shroomio_server-<version>-windows-x64.zip` |
+| macOS x64 | `shroomio_server-<version>-macos-x64.tar.gz` |
 
 Each release also includes `SHA256SUMS-v<version>.txt` for verifying downloaded assets.
 

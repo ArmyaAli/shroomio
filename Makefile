@@ -276,7 +276,7 @@ IMGUI_TEST_ENGINE_OBJECTS := $(addprefix $(TEST_BUILD_DIR)/imgui/engine/,$(addsu
 # =============================================================================
 # 5. Build Targets
 # =============================================================================
-.PHONY: all client-linux client-windows client-macos server-linux server-windows server-macos
+.PHONY: all client-linux client-windows client-macos server-linux server-windows server-macos servers-all
 .PHONY: linux windows macos server run run-server run-windows help
 
 all: client-linux
@@ -293,6 +293,7 @@ help:
 	@echo "  make server-linux   Build the Linux headless server binary"
 	@echo "  make server-windows Build the Windows headless server binary (requires mingw-w64)"
 	@echo "  make server-macos   Build the macOS headless server binary"
+	@echo "  make servers-all    Build all headless server binaries (Linux, Windows, macOS)"
 	@echo "  make linux/windows/macos/server  Compatibility aliases"
 	@echo "  make run            Build and run the Linux client"
 	@echo "  make run-server     Build and run the Linux server"
@@ -354,6 +355,8 @@ server-linux: $(SERVER_LINUX_BIN)
 server-windows: $(SERVER_WINDOWS_BIN)
 
 server-macos: $(SERVER_MACOS_BIN)
+
+servers-all: server-linux server-windows server-macos
 
 linux: client-linux
 

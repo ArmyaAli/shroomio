@@ -29,6 +29,7 @@ Repository-specific expectations:
 - Backlog handoff notes may be stale; always confirm issue state on GitHub before choosing work.
 - Prefer the repo's Make targets such as `make test`, `make linux`, `make server`, `make format-check`, and the devcontainer targets.
 - The devcontainer helpers live in `Makefile` and include `make devcontainer-build`, `make devcontainer-up`, `make devcontainer-exec CMD=...`, and `make devcontainer-gh ARGS=...`.
+- `gh` (GitHub CLI) is NOT installed on the host. Always use `make devcontainer-gh ARGS="..."` to run GitHub CLI commands (issues, PRs, releases, etc.).
 - Use rebase merges.
 - Do not stop after opening the PR if CI is still running or failing; keep going until green or until blocked by something external.
 
