@@ -60,6 +60,7 @@ static bool CircleIntersectsRect(Vector2 center, float radius, Rectangle rect) {
 
 static bool IsLocalPlayerPiece(const Game* game, const ShroomPlayerState* player);
 static bool IsFocusedPiece(const Game* game, const ShroomPlayerState* player);
+static void DrawFungalHudPanel(Rectangle rect, Color accent);
 
 static const char* GetPlayerDisplayName(const Game* game, const ShroomPlayerState* player) {
   static char fallback_name[32];
@@ -1247,8 +1248,11 @@ static void DrawLeaderboardOverlay(Game* game, const LeaderboardEntry* leaderboa
     return;
   }
 
+  DrawFungalHudPanel((Rectangle){(game->screen_width - 440.0f) * 0.5f, 100.0f, 440.0f, 280.0f},
+                     (Color){170, 215, 118, 255});
   ShroomImGui_SetNextWindowPos((game->screen_width - 440) * 0.5f, 100.0f, SHROOM_IMGUI_COND_ALWAYS);
   ShroomImGui_SetNextWindowSize(440.0f, 280.0f, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowBgAlpha(0.34f);
   if (!ShroomImGui_Begin("Leaderboard", NULL,
                          SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
                              SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
@@ -1257,6 +1261,7 @@ static void DrawLeaderboardOverlay(Game* game, const LeaderboardEntry* leaderboa
     return;
   }
 
+  ShroomImGui_Text("Mushroom Cap Leaderboard");
   ShroomImGui_Text("Tab or Enter closes the leaderboard.");
   ShroomImGui_Separator();
 
@@ -1588,6 +1593,19 @@ static void DrawChatDock(Game* game) {
   ShroomImGui_End();
 }
 
+static void DrawFungalHudPanel(Rectangle rect, Color accent) {
+  DrawRectangleRounded((Rectangle){rect.x + 3.0f, rect.y + 4.0f, rect.width, rect.height}, 0.18f, 8,
+                       Fade(BLACK, 0.32f));
+  DrawRectangleRounded(rect, 0.18f, 8, Fade((Color){24, 31, 22, 255}, 0.72f));
+  DrawRectangleRoundedLines(rect, 0.18f, 8, Fade(accent, 0.70f));
+  DrawCircleV((Vector2){rect.x + 18.0f, rect.y + 9.0f}, 7.0f, Fade(accent, 0.34f));
+  DrawCircleV((Vector2){rect.x + rect.width - 20.0f, rect.y + rect.height - 10.0f}, 5.0f,
+              Fade((Color){214, 178, 92, 255}, 0.28f));
+  DrawLineEx((Vector2){rect.x + 12.0f, rect.y + rect.height - 9.0f},
+             (Vector2){rect.x + rect.width - 14.0f, rect.y + rect.height - 9.0f}, 1.5f,
+             Fade((Color){94, 154, 94, 255}, 0.28f));
+}
+
 static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard_count,
                             ShroomZone zone) {
   if (game->local_player == NULL) {
@@ -1597,15 +1615,16 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
   const ClientHudDensity density = game->settings.hud_density;
 
   if (density == CLIENT_HUD_MINIMAL) {
+    DrawFungalHudPanel((Rectangle){18.0f, 18.0f, 180.0f, 60.0f}, GetZoneColor(zone));
     ShroomImGui_SetNextWindowPos(18.0f, 18.0f, SHROOM_IMGUI_COND_ALWAYS);
     ShroomImGui_SetNextWindowSize(180.0f, 60.0f, SHROOM_IMGUI_COND_ALWAYS);
-    ShroomImGui_SetNextWindowBgAlpha(0.50f);
+    ShroomImGui_SetNextWindowBgAlpha(0.30f);
     if (ShroomImGui_Begin("HUD Minimal", NULL,
                           SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
                               SHROOM_IMGUI_WINDOW_NO_MOVE | SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
                               SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS |
                               SHROOM_IMGUI_WINDOW_NO_SCROLLBAR)) {
-      ShroomImGui_Text(TextFormat("Mass %.0f", game->local_player->mass));
+      ShroomImGui_Text(TextFormat("Spore Mass %.0f", game->local_player->mass));
       ShroomImGui_TextColored(ToImGuiColor(GetZoneColor(zone)), GetZoneLabel(zone));
     }
     ShroomImGui_End();
@@ -1613,15 +1632,16 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
   }
 
   if (density == CLIENT_HUD_COMPACT) {
+    DrawFungalHudPanel((Rectangle){18.0f, 18.0f, 220.0f, 90.0f}, GetZoneColor(zone));
     ShroomImGui_SetNextWindowPos(18.0f, 18.0f, SHROOM_IMGUI_COND_ALWAYS);
     ShroomImGui_SetNextWindowSize(220.0f, 90.0f, SHROOM_IMGUI_COND_ALWAYS);
-    ShroomImGui_SetNextWindowBgAlpha(0.60f);
+    ShroomImGui_SetNextWindowBgAlpha(0.30f);
     if (ShroomImGui_Begin("HUD Compact", NULL,
                           SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
                               SHROOM_IMGUI_WINDOW_NO_MOVE | SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
                               SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS |
                               SHROOM_IMGUI_WINDOW_NO_SCROLLBAR)) {
-      ShroomImGui_Text(TextFormat("Mass %.0f  Rank %d/%d", game->local_player->mass,
+      ShroomImGui_Text(TextFormat("Cap Mass %.0f  Rank %d/%d", game->local_player->mass,
                                   local_rank > 0 ? local_rank : (int)leaderboard_count,
                                   (int)leaderboard_count));
       ShroomImGui_TextColored(ToImGuiColor(GetZoneColor(zone)), GetZoneLabel(zone));
@@ -1634,16 +1654,18 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
     return;
   }
 
+  DrawFungalHudPanel((Rectangle){18.0f, 18.0f, 280.0f, 120.0f}, GetZoneColor(zone));
   ShroomImGui_SetNextWindowPos(18.0f, 18.0f, SHROOM_IMGUI_COND_ALWAYS);
   ShroomImGui_SetNextWindowSize(280.0f, 120.0f, SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowBgAlpha(0.66f);
+  ShroomImGui_SetNextWindowBgAlpha(0.30f);
   if (ShroomImGui_Begin("HUD Left", NULL,
                         SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
                             SHROOM_IMGUI_WINDOW_NO_MOVE | SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
                             SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS |
                             SHROOM_IMGUI_WINDOW_NO_SCROLLBAR)) {
-    ShroomImGui_Text(TextFormat("Mass %.0f", game->local_player->mass));
-    ShroomImGui_Text(TextFormat("Rank %d/%d", local_rank > 0 ? local_rank : (int)leaderboard_count,
+    ShroomImGui_Text(TextFormat("Mycelium Mass %.0f", game->local_player->mass));
+    ShroomImGui_Text(TextFormat("Canopy Rank %d/%d",
+                                local_rank > 0 ? local_rank : (int)leaderboard_count,
                                 (int)leaderboard_count));
     ShroomImGui_TextColored(ToImGuiColor(GetZoneColor(zone)),
                             TextFormat("Zone %s", GetZoneLabel(zone)));
@@ -1665,9 +1687,11 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
   }
   ShroomImGui_End();
 
+  DrawFungalHudPanel((Rectangle){game->screen_width - 180.0f, 18.0f, 162.0f, 80.0f},
+                     (Color){130, 210, 150, 255});
   ShroomImGui_SetNextWindowPos(game->screen_width - 180.0f, 18.0f, SHROOM_IMGUI_COND_ALWAYS);
   ShroomImGui_SetNextWindowSize(162.0f, 80.0f, SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowBgAlpha(0.66f);
+  ShroomImGui_SetNextWindowBgAlpha(0.30f);
   if (ShroomImGui_Begin("HUD Right", NULL,
                         SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
                             SHROOM_IMGUI_WINDOW_NO_MOVE | SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
@@ -1701,13 +1725,16 @@ static void DrawProximityMap(const Game* game) {
   const float sweep_radius = inner_radius * (0.70f + 0.14f * pulse);
   const ShroomVec2 local_position = game->local_player->position;
 
-  DrawCircleV(center, kProximityMapRadius + 6.0f, Fade(BLACK, 0.20f));
-  DrawCircleV(center, kProximityMapRadius, Fade((Color){34, 44, 54, 255}, 0.86f));
-  DrawCircleV(center, kProximityMapRadius - 4.0f, Fade((Color){52, 72, 86, 255}, 0.18f));
-  DrawCircleLinesV(center, kProximityMapRadius, Fade(SKYBLUE, 0.52f));
-  DrawCircleLinesV(center, kProximityMapRadius * 0.66f, Fade((Color){112, 182, 126, 255}, 0.40f));
-  DrawCircleLinesV(center, kProximityMapRadius * 0.33f, Fade((Color){140, 208, 156, 255}, 0.28f));
-  DrawCircleLinesV(center, sweep_radius, Fade((Color){132, 214, 255, 255}, 0.18f + pulse * 0.22f));
+  DrawFungalHudPanel(
+      (Rectangle){center.x - kProximityMapRadius - 12.0f, center.y - kProximityMapRadius - 14.0f,
+                  (kProximityMapRadius + 12.0f) * 2.0f, (kProximityMapRadius + 34.0f) * 2.0f},
+      (Color){112, 196, 120, 255});
+  DrawCircleV(center, kProximityMapRadius, Fade((Color){28, 42, 34, 255}, 0.88f));
+  DrawCircleV(center, kProximityMapRadius - 4.0f, Fade((Color){52, 86, 62, 255}, 0.18f));
+  DrawCircleLinesV(center, kProximityMapRadius, Fade((Color){168, 222, 126, 255}, 0.62f));
+  DrawCircleLinesV(center, kProximityMapRadius * 0.66f, Fade((Color){112, 182, 126, 255}, 0.45f));
+  DrawCircleLinesV(center, kProximityMapRadius * 0.33f, Fade((Color){140, 208, 156, 255}, 0.32f));
+  DrawCircleLinesV(center, sweep_radius, Fade((Color){180, 230, 140, 255}, 0.18f + pulse * 0.22f));
   DrawLineV((Vector2){center.x - inner_radius, center.y},
             (Vector2){center.x + inner_radius, center.y}, Fade(RAYWHITE, 0.14f));
   DrawLineV((Vector2){center.x, center.y - inner_radius},
@@ -1769,8 +1796,8 @@ static void DrawProximityMap(const Game* game) {
 
   DrawCircleV(center, 5.5f, RAYWHITE);
   DrawCircleLinesV(center, 8.0f, Fade((Color){150, 228, 255, 255}, 0.88f));
-  DrawText("SCAN", (int)(center.x - 18.0f), (int)(center.y + kProximityMapRadius + 10.0f), 12,
-           Fade((Color){212, 240, 255, 255}, 0.88f));
+  DrawText("MYCELIUM", (int)(center.x - 30.0f), (int)(center.y + kProximityMapRadius + 10.0f), 12,
+           Fade((Color){226, 245, 188, 255}, 0.90f));
   DrawCircleV((Vector2){center.x - 22.0f, center.y + kProximityMapRadius + 28.0f}, 3.0f,
               Fade(RED, 0.92f));
   DrawText("Threat", (int)(center.x - 14.0f), (int)(center.y + kProximityMapRadius + 22.0f), 10,
