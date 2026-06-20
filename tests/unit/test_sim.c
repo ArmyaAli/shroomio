@@ -677,6 +677,99 @@ void test_bot_flees_nearby_threat_even_with_available_prey(void) {
   TEST_ASSERT_TRUE(bot->input_direction.x < 0.0f);
 }
 
+void test_corner_consume_works_near_boundaries(void) {
+  ShroomPlayerState* attacker;
+  ShroomPlayerState* victim;
+  const float expected_gain = 100.0f * SHROOM_CONSUME_MASS_GAIN_FACTOR;
+
+  ResetWorldForPlayers();
+
+  attacker = ShroomWorldSpawnPlayer(&world, 1, false);
+  victim = ShroomWorldSpawnPlayer(&world, 2, false);
+  TEST_ASSERT_NOT_NULL(attacker);
+  TEST_ASSERT_NOT_NULL(victim);
+
+  /* Position both players in the bottom-right corner */
+  attacker->mass = 140.0f;
+  attacker->radius = ShroomMassToRadius(attacker->mass);
+  attacker->position = (ShroomVec2){world.width - attacker->radius, world.height - attacker->radius};
+  
+  victim->mass = 100.0f;
+  victim->radius = ShroomMassToRadius(victim->mass);
+  victim->position = (ShroomVec2){world.width - victim->radius, world.height - victim->radius};
+
+  ShroomWorldStep(&world, 0.0f);
+
+  /* Consume should work even in corners */
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 140.0f + expected_gain, attacker->mass);
+  TEST_ASSERT_TRUE(victim->alive);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_DEFAULT_PLAYER_MASS, victim->mass);
+}
+
+void test_edge_consume_works_when_target_pinned_against_wall(void) {
+  ShroomPlayerState* attacker;
+  ShroomPlayerState* victim;
+  const float expected_gain = 100.0f * SHROOM_CONSUME_MASS_GAIN_FACTOR;
+
+  ResetWorldForPlayers();
+
+  attacker = ShroomWorldSpawnPlayer(&world, 1, false);
+  victim = ShroomWorldSpawnPlayer(&world, 2, false);
+  TEST_ASSERT_NOT_NULL(attacker);
+  TEST_ASSERT_NOT_NULL(victim);
+
+  /* Victim pinned against right wall */
+  victim->mass = 100.0f;
+  victim->radius = ShroomMassToRadius(victim->mass);
+  victim->position = (ShroomVec2){world.width - victim->radius, 3000.0f};
+  
+  /* Attacker approaches from the left, overlapping into the wall */
+  attacker->mass = 140.0f;
+  attacker->radius = ShroomMassToRadius(attacker->mass);
+  attacker->position = (ShroomVec2){world.width - victim->radius - 5.0f, 3000.0f};
+
+  ShroomWorldStep(&world, 0.0f);
+
+  /* Consume should work even when target is pinned against wall */
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 140.0f + expected_gain, attacker->mass);
+  TEST_ASSERT_TRUE(victim->alive);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_DEFAULT_PLAYER_MASS, victim->mass);
+}
+
+void test_corner_consume_works_with_movement_clamping(void) {
+  ShroomPlayerState* attacker;
+  ShroomPlayerState* victim;
+  const float expected_gain = 100.0f * SHROOM_CONSUME_MASS_GAIN_FACTOR;
+
+  ResetWorldForPlayers();
+
+  attacker = ShroomWorldSpawnPlayer(&world, 1, false);
+  victim = ShroomWorldSpawnPlayer(&world, 2, false);
+  TEST_ASSERT_NOT_NULL(attacker);
+  TEST_ASSERT_NOT_NULL(victim);
+
+  /* Victim in bottom-right corner */
+  victim->mass = 100.0f;
+  victim->radius = ShroomMassToRadius(victim->mass);
+  victim->position = (ShroomVec2){world.width - 100.0f, world.height - 100.0f};
+  
+  /* Attacker starts further away and moves toward victim */
+  attacker->mass = 140.0f;
+  attacker->radius = ShroomMassToRadius(attacker->mass);
+  attacker->position = (ShroomVec2){world.width - 300.0f, world.height - 300.0f};
+  attacker->input_direction = (ShroomVec2){0.707f, 0.707f}; /* diagonal toward corner */
+
+  /* Step multiple times to let movement and clamping happen */
+  for (int i = 0; i < 30; i++) {
+    ShroomWorldStep(&world, 0.1f);
+  }
+
+  /* Consume should work even after movement clamping in corners */
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 140.0f + expected_gain, attacker->mass);
+  TEST_ASSERT_TRUE(victim->alive);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_DEFAULT_PLAYER_MASS, victim->mass);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_world_init_sets_expected_defaults);
@@ -708,5 +801,8 @@ int main(void) {
   RUN_TEST(test_small_bot_prefers_safer_spore_over_slightly_closer_center_spore);
   RUN_TEST(test_large_bot_prefers_center_pressure_spore_choice);
   RUN_TEST(test_bot_flees_nearby_threat_even_with_available_prey);
+  RUN_TEST(test_corner_consume_works_near_boundaries);
+  RUN_TEST(test_edge_consume_works_when_target_pinned_against_wall);
+  RUN_TEST(test_corner_consume_works_with_movement_clamping);
   return UNITY_END();
 }
