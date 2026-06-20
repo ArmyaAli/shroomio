@@ -24,6 +24,8 @@ static const float kProximityMapRadius = 74.0f;
 static const float kProximityMapRange = 1400.0f;
 static const float kRenderCullMargin = 96.0f;
 
+static Color GetPowerupColor(ShroomPowerupType type);
+
 static bool IsOnlineMode(GameSessionMode mode) {
   return mode == SHROOM_SESSION_MODE_QUICK_PLAY || mode == SHROOM_SESSION_MODE_LOBBY_PLAY;
 }
@@ -56,6 +58,232 @@ static Rectangle ClampRectToWorld(Rectangle rect, const ShroomWorldState* world)
 static bool CircleIntersectsRect(Vector2 center, float radius, Rectangle rect) {
   return (center.x + radius >= rect.x) && (center.x - radius <= rect.x + rect.width) &&
          (center.y + radius >= rect.y) && (center.y - radius <= rect.y + rect.height);
+}
+
+static int GetParticleBudget(ClientParticleQuality quality) {
+  switch (quality) {
+  case CLIENT_PARTICLES_OFF:
+    return 0;
+  case CLIENT_PARTICLES_LOW:
+    return 96;
+  case CLIENT_PARTICLES_HIGH:
+    return (int)SHROOM_CLIENT_PARTICLE_CAPACITY;
+  case CLIENT_PARTICLES_MEDIUM:
+  default:
+    return 192;
+  }
+}
+
+static int ScaleParticleCount(const Game* game, int high_count) {
+  switch (game->settings.particle_quality) {
+  case CLIENT_PARTICLES_OFF:
+    return 0;
+  case CLIENT_PARTICLES_LOW:
+    return (high_count + 3) / 4;
+  case CLIENT_PARTICLES_MEDIUM:
+    return (high_count + 1) / 2;
+  case CLIENT_PARTICLES_HIGH:
+  default:
+    return high_count;
+  }
+}
+
+static float RandomRange(float min_value, float max_value) {
+  const float t = (float)GetRandomValue(0, 10000) / 10000.0f;
+  return min_value + ((max_value - min_value) * t);
+}
+
+static void SpawnGameplayParticle(Game* game, Vector2 position, Vector2 velocity, Color color,
+                                  float radius, float lifetime) {
+  const int budget = GetParticleBudget(game->settings.particle_quality);
+  GameplayParticle* particle;
+
+  if (budget <= 0) {
+    return;
+  }
+
+  particle = &game->particles[game->particle_cursor % (uint32_t)budget];
+  *particle = (GameplayParticle){
+      .position = position,
+      .velocity = velocity,
+      .color = color,
+      .lifetime = lifetime,
+      .radius = radius,
+      .active = true,
+  };
+  game->particle_cursor = (game->particle_cursor + 1u) % (uint32_t)budget;
+}
+
+static void SpawnParticleBurst(Game* game, ShroomVec2 origin, Color color, int high_count,
+                               float speed, float radius, float lifetime) {
+  const int count = ScaleParticleCount(game, high_count);
+
+  for (int index = 0; index < count; ++index) {
+    const float angle = RandomRange(0.0f, 2.0f * PI);
+    const float particle_speed = RandomRange(speed * 0.25f, speed);
+    const Vector2 velocity = {cosf(angle) * particle_speed, sinf(angle) * particle_speed};
+    SpawnGameplayParticle(game, (Vector2){origin.x, origin.y}, velocity, color,
+                          RandomRange(radius * 0.55f, radius * 1.2f),
+                          RandomRange(lifetime * 0.65f, lifetime * 1.15f));
+  }
+}
+
+static void CaptureParticleBaselines(Game* game) {
+  size_t index;
+
+  for (index = 0; index < SHROOM_MAX_SPORES; ++index) {
+    const ShroomSporeState* spore = &game->world.spores[index];
+    game->previous_spore_entity_ids[index] = spore->entity_id;
+    game->previous_spore_positions[index] = spore->position;
+  }
+  for (index = 0; index < SHROOM_MAX_PLAYERS; ++index) {
+    const ShroomPlayerState* player = &game->world.players[index];
+    game->previous_player_entity_ids[index] = player->entity_id;
+    game->previous_player_ids[index] = player->player_id;
+    game->previous_player_positions[index] = player->position;
+    game->previous_player_masses[index] = player->mass;
+    game->previous_player_alive[index] = player->alive;
+  }
+  for (index = 0; index < SHROOM_MAX_POWERUPS; ++index) {
+    const ShroomPowerupState* powerup = &game->world.powerups[index];
+    game->previous_powerup_entity_ids[index] = powerup->entity_id;
+    game->previous_powerup_positions[index] = powerup->position;
+    game->previous_powerup_active[index] = powerup->active;
+  }
+  game->particle_baseline_ready = true;
+}
+
+static void EmitGameplayEventParticles(Game* game) {
+  size_t index;
+
+  if (!game->particle_baseline_ready || (game->settings.particle_quality == CLIENT_PARTICLES_OFF)) {
+    CaptureParticleBaselines(game);
+    return;
+  }
+
+  for (index = 0; index < game->world.spore_count; ++index) {
+    const ShroomSporeState* spore = &game->world.spores[index];
+    if ((game->previous_spore_entity_ids[index] == spore->entity_id) && spore->active &&
+        (ShroomDistanceSqr(game->previous_spore_positions[index], spore->position) > 4096.0f)) {
+      SpawnParticleBurst(game, game->previous_spore_positions[index], (Color){255, 228, 112, 255},
+                         10, 78.0f, 4.5f, 0.48f);
+    }
+  }
+
+  for (index = 0; index < game->world.powerup_count; ++index) {
+    const ShroomPowerupState* powerup = &game->world.powerups[index];
+    if (game->previous_powerup_active[index] && !powerup->active &&
+        (game->previous_powerup_entity_ids[index] == powerup->entity_id)) {
+      SpawnParticleBurst(game, game->previous_powerup_positions[index],
+                         GetPowerupColor(powerup->type), 18, 118.0f, 6.0f, 0.62f);
+    }
+  }
+
+  for (index = 0; index < game->world.player_count; ++index) {
+    const ShroomPlayerState* player = &game->world.players[index];
+    const bool had_same_entity = game->previous_player_entity_ids[index] == player->entity_id;
+    const bool had_same_player = game->previous_player_ids[index] == player->player_id;
+    const float previous_mass = game->previous_player_masses[index];
+
+    if (game->previous_player_alive[index] && had_same_player && !had_same_entity) {
+      SpawnParticleBurst(game, game->previous_player_positions[index], (Color){150, 45, 42, 255},
+                         28, 150.0f, 7.0f, 0.76f);
+      SpawnParticleBurst(game, player->position, (Color){122, 220, 118, 255}, 14, 82.0f, 5.0f,
+                         0.58f);
+    } else if (game->previous_player_alive[index] && !player->alive) {
+      SpawnParticleBurst(game, game->previous_player_positions[index], (Color){190, 62, 64, 255},
+                         24, 132.0f, 7.0f, 0.72f);
+    }
+
+    if (!player->alive) {
+      continue;
+    }
+    if (had_same_entity && game->previous_player_alive[index] &&
+        (player->mass >= previous_mass + 18.0f)) {
+      SpawnParticleBurst(game, player->position, (Color){118, 210, 255, 255}, 16, 96.0f, 5.5f,
+                         0.54f);
+    }
+    if ((player->piece_index > 0u) &&
+        (!game->previous_player_alive[index] || !had_same_entity || (previous_mass <= 0.0f))) {
+      SpawnParticleBurst(game, player->position, (Color){255, 215, 116, 255}, 18, 146.0f, 5.0f,
+                         0.58f);
+    }
+    if (had_same_entity && game->previous_player_alive[index] &&
+        (player->mass < previous_mass * 0.72f) && (previous_mass >= SHROOM_SPLIT_MIN_MASS)) {
+      SpawnParticleBurst(game, player->position, (Color){255, 215, 116, 255}, 16, 124.0f, 4.8f,
+                         0.52f);
+    }
+  }
+
+  CaptureParticleBaselines(game);
+}
+
+static void UpdateGameplayParticles(Game* game, float delta_time) {
+  const int budget = GetParticleBudget(game->settings.particle_quality);
+
+  if (budget <= 0) {
+    for (size_t index = 0; index < SHROOM_CLIENT_PARTICLE_CAPACITY; ++index) {
+      game->particles[index].active = false;
+    }
+    return;
+  }
+
+  for (int index = 0; index < budget; ++index) {
+    GameplayParticle* particle = &game->particles[index];
+    if (!particle->active) {
+      continue;
+    }
+    particle->age += delta_time;
+    if (particle->age >= particle->lifetime) {
+      particle->active = false;
+      continue;
+    }
+    particle->position.x += particle->velocity.x * delta_time;
+    particle->position.y += particle->velocity.y * delta_time;
+    particle->velocity = Vector2Scale(particle->velocity, 1.0f - fminf(delta_time * 2.4f, 0.82f));
+  }
+}
+
+static void UpdateAmbientParticles(Game* game, float delta_time) {
+  const int count = ScaleParticleCount(game, 3);
+  const float interval = game->settings.particle_quality == CLIENT_PARTICLES_HIGH     ? 0.035f
+                         : game->settings.particle_quality == CLIENT_PARTICLES_MEDIUM ? 0.065f
+                         : game->settings.particle_quality == CLIENT_PARTICLES_LOW    ? 0.12f
+                                                                                      : 1.0f;
+
+  if ((count <= 0) || (game->local_player == NULL)) {
+    return;
+  }
+  game->ambient_particle_timer += delta_time;
+  if (game->ambient_particle_timer < interval) {
+    return;
+  }
+  game->ambient_particle_timer = 0.0f;
+
+  for (int index = 0; index < count; ++index) {
+    const Vector2 offset = {RandomRange(-480.0f, 480.0f), RandomRange(-300.0f, 300.0f)};
+    const Vector2 position = Vector2Add(game->camera.target, offset);
+    const Vector2 velocity = {RandomRange(-8.0f, 8.0f), RandomRange(-18.0f, -4.0f)};
+    SpawnGameplayParticle(game, position, velocity, (Color){156, 222, 152, 255}, 2.8f, 1.4f);
+  }
+}
+
+static void DrawGameplayParticles(const Game* game, Rectangle view_bounds) {
+  const int budget = GetParticleBudget(game->settings.particle_quality);
+
+  for (int index = 0; index < budget; ++index) {
+    const GameplayParticle* particle = &game->particles[index];
+    const float progress = particle->lifetime > 0.0f ? particle->age / particle->lifetime : 1.0f;
+    const float alpha = 1.0f - progress;
+    const float radius = particle->radius * (0.7f + progress * 0.9f);
+
+    if (!particle->active ||
+        !CircleIntersectsRect(particle->position, radius + 2.0f, view_bounds)) {
+      continue;
+    }
+    DrawCircleV(particle->position, radius + 2.0f, Fade(particle->color, alpha * 0.22f));
+    DrawCircleV(particle->position, radius, Fade(particle->color, alpha * 0.86f));
+  }
 }
 
 static bool IsLocalPlayerPiece(const Game* game, const ShroomPlayerState* player);
@@ -1168,6 +1396,8 @@ static void UpdateStatusBanners(Game* game, float delta_time) {
       sqrtf(ShroomDistanceSqr(game->local_player->position, game->previous_local_position));
 
   if (zone != game->current_zone) {
+    SpawnParticleBurst(game, game->local_player->position, GetZoneColor(zone), 22, 96.0f, 5.5f,
+                       0.64f);
     game->current_zone = zone;
     game->zone_callout_timer = kStatusBannerDuration;
   } else if (game->zone_callout_timer > 0.0f) {
@@ -1893,6 +2123,7 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
     game->final_rank = 0;
     game->show_results = false;
     ShroomWorldInit(&game->world);
+    CaptureParticleBaselines(game);
     /* local_player is NULL until first snapshot from server. */
     return;
   }
@@ -1941,6 +2172,7 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
   }
   game->zone_callout_timer = kStatusBannerDuration;
   game->diagnostics_overlay_open = game->settings.diagnostics_enabled;
+  CaptureParticleBaselines(game);
 }
 
 void GameUpdate(Game* game, float delta_time) {
@@ -2071,6 +2303,9 @@ void GameUpdate(Game* game, float delta_time) {
     }
   }
 
+  EmitGameplayEventParticles(game);
+  UpdateAmbientParticles(game, delta_time);
+  UpdateGameplayParticles(game, delta_time);
   SyncRenderPositions(game, delta_time);
   UpdateStatusBanners(game, delta_time);
   UpdateInspectOverlay(game, delta_time);
@@ -2119,6 +2354,7 @@ void GameDraw(Game* game) {
   DrawGrid(80, 64.0f);
   DrawSpores(&game->world, view_bounds);
   DrawPowerups(&game->world, view_bounds);
+  DrawGameplayParticles(game, view_bounds);
   DrawPlayers(game, view_bounds);
   EndMode2D();
 

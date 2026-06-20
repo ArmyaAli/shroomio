@@ -25,6 +25,7 @@ void ClientSettingsSetDefaults(ClientSettings* settings) {
       .preferred_region_index = 0,
       .palette_preset = CLIENT_PALETTE_CLASSIC,
       .hud_density = CLIENT_HUD_FULL,
+      .particle_quality = CLIENT_PARTICLES_MEDIUM,
   };
 }
 
@@ -57,6 +58,10 @@ void ClientSettingsValidate(ClientSettings* settings) {
   }
   if ((settings->hud_density < CLIENT_HUD_FULL) || (settings->hud_density > CLIENT_HUD_MINIMAL)) {
     settings->hud_density = CLIENT_HUD_FULL;
+  }
+  if ((settings->particle_quality < CLIENT_PARTICLES_OFF) ||
+      (settings->particle_quality > CLIENT_PARTICLES_HIGH)) {
+    settings->particle_quality = CLIENT_PARTICLES_MEDIUM;
   }
 }
 
@@ -105,6 +110,8 @@ bool ClientSettingsLoad(ClientSettings* settings) {
       settings->palette_preset = (ClientPalettePreset)value;
     } else if (strcmp(key, "hud_density") == 0) {
       settings->hud_density = (ClientHudDensity)value;
+    } else if (strcmp(key, "particle_quality") == 0) {
+      settings->particle_quality = (ClientParticleQuality)value;
     } else if (strcmp(key, "camera_zoom_x100") == 0) {
       settings->camera_zoom = (float)value / 100.0f;
     }
@@ -145,6 +152,7 @@ bool ClientSettingsSave(const ClientSettings* settings) {
   fprintf(file, "preferred_region_index=%d\n", settings->preferred_region_index);
   fprintf(file, "palette_preset=%d\n", (int)settings->palette_preset);
   fprintf(file, "hud_density=%d\n", (int)settings->hud_density);
+  fprintf(file, "particle_quality=%d\n", (int)settings->particle_quality);
   fprintf(file, "camera_zoom_x100=%d\n", (int)(settings->camera_zoom * 100.0f));
 
   fclose(file);
