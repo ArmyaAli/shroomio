@@ -1,5 +1,7 @@
 FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
 
+ARG ACTIONLINT_VERSION=1.7.7
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
@@ -24,14 +26,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ninja-build \
     npm \
     pkg-config \
+    ruby \
+    tar \
     texlive-fonts-recommended \
     texlive-latex-extra \
     texlive-latex-recommended \
     unzip \
     xvfb \
     xz-utils \
+    yamllint \
     zip \
     && rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+      amd64) actionlint_arch="amd64" ;; \
+      arm64) actionlint_arch="arm64" ;; \
+      *) echo "Unsupported actionlint architecture: $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_${actionlint_arch}.tar.gz" \
+      | tar -xz -C /usr/local/bin actionlint; \
+    chmod +x /usr/local/bin/actionlint
 
 RUN npm install -g opencode-ai
 
