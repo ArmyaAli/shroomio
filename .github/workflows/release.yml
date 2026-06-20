@@ -3,9 +3,19 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
+      bump:
+        description: Version bump type (auto-calculates from latest tag)
+        required: false
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - none
+        default: patch
       version:
-        description: Release version without the leading v, for example 1.2.3
-        required: true
+        description: Manual version (only if bump is 'none'). Format 1.2.3
+        required: false
         type: string
 
 permissions:
@@ -15,21 +25,53 @@ jobs:
   validate:
     name: Validate Release Input
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.compute.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Validate version input
+      - name: Compute version from bump type
+        id: compute
         run: |
-          if ! printf '%s' '${{ inputs.version }}' | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'; then
-            printf '%s\n' 'Version must look like 1.2.3 or 1.2.3-rc.1'
+          bump="${{ inputs.bump }}"
+          manual="${{ inputs.version }}"
+
+          if [ "$bump" = "none" ]; then
+            if [ -z "$manual" ]; then
+              echo "When bump is 'none', a manual version is required"
+              exit 1
+            fi
+            version="$manual"
+          else
+            latest="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo 'v0.0.0')"
+            latest="${latest#v}"
+            IFS='.' read -r major minor patch <<< "$latest"
+            major="${major:-0}"
+            minor="${minor:-0}"
+            patch="${patch:-0}"
+
+            case "$bump" in
+              major) major=$((major + 1)); minor=0; patch=0 ;;
+              minor) minor=$((minor + 1)); patch=0 ;;
+              patch) patch=$((patch + 1)) ;;
+            esac
+            version="$major.$minor.$patch"
+          fi
+
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'; then
+            printf '%s\n' "Version '$version' must look like 1.2.3 or 1.2.3-rc.1"
             exit 1
           fi
-          if git rev-parse 'v${{ inputs.version }}' >/dev/null 2>&1; then
-            printf '%s\n' 'Tag v${{ inputs.version }} already exists'
+
+          if git rev-parse "v$version" >/dev/null 2>&1; then
+            printf '%s\n' "Tag v$version already exists"
             exit 1
           fi
+
+          echo "Computed version: v$version (bump=$bump)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
   build-linux:
     name: Build Linux
@@ -78,10 +120,12 @@ jobs:
           make server-linux
 
       - name: Package binaries
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
         run: |
           mkdir -p release-assets
-          tar -czf release-assets/shroomio-${{ inputs.version }}-linux-x64.tar.gz -C dist shroomio shroomio-server
-          tar -czf release-assets/shroomio-server-${{ inputs.version }}-linux-x64.tar.gz -C dist shroomio-server
+          tar -czf release-assets/shroomio_client-${VERSION}-linux-x64.tar.gz -C dist shroomio shroomio-server
+          tar -czf release-assets/shroomio_server-${VERSION}-linux-x64.tar.gz -C dist shroomio-server
 
       - name: Upload Linux asset
         uses: actions/upload-artifact@v4
@@ -128,10 +172,12 @@ jobs:
           make server-windows
 
       - name: Package binaries
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
         run: |
           mkdir -p release-assets
-          zip -j release-assets/shroomio-${{ inputs.version }}-windows-x64.zip dist/shroomio.exe
-          zip -j release-assets/shroomio-server-${{ inputs.version }}-windows-x64.zip dist/shroomio-server.exe
+          zip -j release-assets/shroomio_client-${VERSION}-windows-x64.zip dist/shroomio.exe dist/shroomio-server.exe
+          zip -j release-assets/shroomio_server-${VERSION}-windows-x64.zip dist/shroomio-server.exe
 
       - name: Upload Windows asset
         uses: actions/upload-artifact@v4
@@ -167,10 +213,12 @@ jobs:
           make server-macos
 
       - name: Package binaries
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
         run: |
           mkdir -p release-assets
-          tar -czf release-assets/shroomio-${{ inputs.version }}-macos-x64.tar.gz -C dist shroomio-macos
-          tar -czf release-assets/shroomio-server-${{ inputs.version }}-macos-x64.tar.gz -C dist shroomio-server-macos
+          tar -czf release-assets/shroomio_client-${VERSION}-macos-x64.tar.gz -C dist shroomio-macos shroomio-server-macos
+          tar -czf release-assets/shroomio_server-${VERSION}-macos-x64.tar.gz -C dist shroomio-server-macos
 
       - name: Upload macOS asset
         uses: actions/upload-artifact@v4
@@ -182,6 +230,7 @@ jobs:
     name: Publish GitHub Release
     runs-on: ubuntu-latest
     needs:
+      - validate
       - build-linux
       - build-windows
       - build-macos
@@ -200,7 +249,7 @@ jobs:
       - name: Generate changelogs
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ needs.validate.outputs.version }}
           REPOSITORY: ${{ github.repository }}
           TARGET_COMMIT: ${{ github.sha }}
         run: |
@@ -230,7 +279,7 @@ jobs:
 
       - name: Generate checksums
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ needs.validate.outputs.version }}
         run: |
           cd release-assets
           sha256sum * > SHA256SUMS-v${VERSION}.txt
@@ -238,7 +287,7 @@ jobs:
       - name: Create tag and GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ needs.validate.outputs.version }}
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
