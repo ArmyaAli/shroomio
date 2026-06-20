@@ -428,6 +428,7 @@ static void CaptureParticleBaselines(Game* game) {
     game->previous_player_positions[index] = player->position;
     game->previous_player_masses[index] = player->mass;
     game->previous_player_alive[index] = player->alive;
+    game->previous_player_piece_indices[index] = player->piece_index;
   }
   for (index = 0; index < SHROOM_MAX_POWERUPS; ++index) {
     const ShroomPowerupState* powerup = &game->world.powerups[index];
@@ -487,7 +488,10 @@ static void EmitGameplayEventParticles(Game* game) {
                                        game->previous_player_alive[index] && !was_local_player &&
                                        (!player->alive || (had_same_player && !had_same_entity));
 
-    if (game->previous_player_alive[index] && had_same_player && !had_same_entity) {
+    const bool was_primary_piece = game->previous_player_piece_indices[index] == 0;
+
+    if (game->previous_player_alive[index] && had_same_player && !had_same_entity &&
+        was_primary_piece) {
       SpawnParticleBurst(game, game->previous_player_positions[index], (Color){150, 45, 42, 255},
                          28, 150.0f, 7.0f, 0.76f);
       SpawnParticleBurst(game, player->position, (Color){122, 220, 118, 255}, 14, 82.0f, 5.0f,
