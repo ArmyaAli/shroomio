@@ -108,32 +108,6 @@ static const char* const DATABASE_SCHEMA[] = {
     "cap_color_rgba INTEGER NOT NULL DEFAULT 0,"
     "unlocked_by_default INTEGER NOT NULL DEFAULT 1 CHECK (unlocked_by_default IN (0, 1)),"
     "sort_order INTEGER NOT NULL UNIQUE)",
-    "INSERT INTO mushroom_species (species_id, name, description, pattern_id, rarity_tier, "
-    "cap_color_rgba, unlocked_by_default, sort_order) VALUES "
-    "(0, 'Amanita muscaria', 'Red cap with white spots; iconic fairy-tale mushroom.', 0, 0, "
-    "0xE8443CFF, 1, 0),"
-    "(1, 'Chanterelle', 'Golden funnel cap; prized edible forest mushroom.', 1, 0, "
-    "0xF2B84BFF, 1, 1),"
-    "(2, 'Morel', 'Honeycomb cap; spring mushroom with a rugged silhouette.', 2, 1, "
-    "0xB47B48FF, 1, 2),"
-    "(3, 'Shiitake', 'Brown cap; classic cultivated mushroom with bold gills.', 3, 0, "
-    "0x8A5A3BFF, 1, 3),"
-    "(4, 'Oyster', 'Layered fan caps; soft clustered shelf mushroom.', 4, 0, "
-    "0xD8D2C4FF, 1, 4),"
-    "(5, 'Enoki', 'Tiny pale caps and long stems; delicate clustered look.', 5, 1, "
-    "0xF4E8C1FF, 1, 5),"
-    "(6, 'Portobello', 'Broad brown cap; sturdy heavyweight arena profile.', 6, 0, "
-    "0x6F4A35FF, 1, 6),"
-    "(7, 'Lion''s Mane', 'Shaggy white spines; fluffy pom-pom silhouette.', 7, 1, "
-    "0xEFE7D6FF, 1, 7),"
-    "(8, 'Reishi', 'Glossy red bracket; dramatic medicinal shelf form.', 8, 2, "
-    "0xB8322EFF, 1, 8),"
-    "(9, 'Wood Blewit', 'Violet woodland cap; rare purple accent species.', 9, 2, "
-    "0x8A68B8FF, 1, 9) "
-    "ON CONFLICT(species_id) DO UPDATE SET "
-    "name = excluded.name, description = excluded.description, pattern_id = excluded.pattern_id, "
-    "rarity_tier = excluded.rarity_tier, cap_color_rgba = excluded.cap_color_rgba, "
-    "unlocked_by_default = excluded.unlocked_by_default, sort_order = excluded.sort_order",
     "CREATE VIEW IF NOT EXISTS leaderboard_by_mass AS "
     "SELECT p.display_name, ps.highest_mass_achieved, ps.total_games_played, ps.total_kills, "
     "p.last_seen_at FROM players p JOIN player_stats ps ON p.id = ps.player_id "
@@ -171,6 +145,57 @@ static bool InitializeDatabaseSchema(sqlite3* db) {
       return false;
     }
   }
+  return true;
+}
+
+static bool ExecuteSqlFile(sqlite3* db, const char* path) {
+  FILE* file;
+  long file_size;
+  char* sql;
+  char* err_msg = NULL;
+  size_t read_size;
+
+  file = fopen(path, "rb");
+  if (file == NULL) {
+    LOG_ERROR("failed to open sql file: %s", path);
+    return false;
+  }
+  if (fseek(file, 0, SEEK_END) != 0) {
+    fclose(file);
+    LOG_ERROR("failed to seek sql file: %s", path);
+    return false;
+  }
+  file_size = ftell(file);
+  if (file_size < 0) {
+    fclose(file);
+    LOG_ERROR("failed to read sql file size: %s", path);
+    return false;
+  }
+  rewind(file);
+
+  sql = malloc((size_t)file_size + 1u);
+  if (sql == NULL) {
+    fclose(file);
+    LOG_ERROR("failed to allocate sql file buffer: %s", path);
+    return false;
+  }
+
+  read_size = fread(sql, 1u, (size_t)file_size, file);
+  fclose(file);
+  if (read_size != (size_t)file_size) {
+    free(sql);
+    LOG_ERROR("failed to read sql file: %s", path);
+    return false;
+  }
+  sql[file_size] = '\0';
+
+  if (sqlite3_exec(db, sql, NULL, NULL, &err_msg) != SQLITE_OK) {
+    LOG_ERROR("failed to execute sql file %s: %s", path, err_msg);
+    sqlite3_free(err_msg);
+    free(sql);
+    return false;
+  }
+  free(sql);
   return true;
 }
 
@@ -1344,6 +1369,11 @@ int main(int argc, char** argv) {
   if (!InitializeDatabaseSchema(db)) {
     sqlite3_close(db);
     ShroomLifecycleSetError(&g_lifecycle, 1, "Database schema creation failed");
+    return 1;
+  }
+  if (!ExecuteSqlFile(db, "database/seed.sql")) {
+    sqlite3_close(db);
+    ShroomLifecycleSetError(&g_lifecycle, 1, "Database seed failed");
     return 1;
   }
 
