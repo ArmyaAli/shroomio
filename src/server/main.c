@@ -223,17 +223,17 @@ static void PrintUsage(const char* program_name) {
   printf("  SHROOM_SERVER_BIND, SHROOM_SERVER_PORT, SHROOM_SERVER_DB_PATH\n");
 }
 
-static bool ResolveBindAddress(const char* bind_host, enet_uint32* bind_address) {
+static bool ResolveBindAddress(const char* bind_value, enet_uint32* bind_address) {
   unsigned int octets[4];
   char trailing;
 
-  if ((bind_host == NULL) || (bind_host[0] == '\0') || (strcmp(bind_host, "0.0.0.0") == 0) ||
-      (strcmp(bind_host, "*") == 0)) {
+  if ((bind_value == NULL) || (bind_value[0] == '\0') ||
+      ((bind_value[0] == '*') && (bind_value[1] == '\0'))) {
     *bind_address = ENET_HOST_ANY;
     return true;
   }
 
-  if (sscanf(bind_host, "%u.%u.%u.%u%c", &octets[0], &octets[1], &octets[2], &octets[3],
+  if (sscanf(bind_value, "%u.%u.%u.%u%c", &octets[0], &octets[1], &octets[2], &octets[3],
              &trailing) != 4) {
     return false;
   }
@@ -241,6 +241,10 @@ static bool ResolveBindAddress(const char* bind_host, enet_uint32* bind_address)
     if (octets[i] > 255u) {
       return false;
     }
+  }
+  if ((octets[0] == 0u) && (octets[1] == 0u) && (octets[2] == 0u) && (octets[3] == 0u)) {
+    *bind_address = ENET_HOST_ANY;
+    return true;
   }
 
   *bind_address =
