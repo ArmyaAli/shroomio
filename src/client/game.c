@@ -24,6 +24,8 @@ static const float kProximityMapRadius = 74.0f;
 static const float kProximityMapRange = 1400.0f;
 static const float kRenderCullMargin = 96.0f;
 
+static const char* GetPlayerDisplayName(const Game* game, const ShroomPlayerState* player);
+static int GetPlayerRank(const Game* game, const ShroomPlayerState* target_player);
 static Color GetPowerupColor(ShroomPowerupType type);
 
 static bool IsOnlineMode(GameSessionMode mode) {
@@ -128,6 +130,105 @@ static void SpawnParticleBurst(Game* game, ShroomVec2 origin, Color color, int h
   }
 }
 
+static void AddCombatNotification(Game* game, const char* title, const char* detail, Color color,
+                                  float duration) {
+  CombatNotification* notification =
+      &game->notifications[game->notification_cursor % SHROOM_CLIENT_NOTIFICATION_CAPACITY];
+
+  snprintf(notification->title, sizeof(notification->title), "%s", title);
+  snprintf(notification->detail, sizeof(notification->detail), "%s", detail);
+  notification->color = color;
+  notification->age = 0.0f;
+  notification->duration = duration;
+  notification->active = true;
+  game->notification_cursor =
+      (game->notification_cursor + 1u) % SHROOM_CLIENT_NOTIFICATION_CAPACITY;
+}
+
+static const ShroomPlayerState* FindLargestMassGainer(const Game* game, float* mass_gain) {
+  const ShroomPlayerState* best_player = NULL;
+  float best_gain = 0.0f;
+
+  for (size_t index = 0; index < game->world.player_count; ++index) {
+    const ShroomPlayerState* player = &game->world.players[index];
+    const float gain = player->mass - game->previous_player_masses[index];
+
+    if (!player->alive || !game->previous_player_alive[index] ||
+        (game->previous_player_entity_ids[index] != player->entity_id)) {
+      continue;
+    }
+    if (gain > best_gain) {
+      best_gain = gain;
+      best_player = player;
+    }
+  }
+
+  if (mass_gain != NULL) {
+    *mass_gain = best_gain;
+  }
+  return best_player;
+}
+
+static void UpdateCombatNotifications(Game* game, float delta_time) {
+  for (size_t index = 0; index < SHROOM_CLIENT_NOTIFICATION_CAPACITY; ++index) {
+    CombatNotification* notification = &game->notifications[index];
+    if (!notification->active) {
+      continue;
+    }
+    notification->age += delta_time;
+    if (notification->age >= notification->duration) {
+      notification->active = false;
+    }
+  }
+
+  if (game->screen_flash_timer > 0.0f) {
+    game->screen_flash_timer = fmaxf(0.0f, game->screen_flash_timer - delta_time);
+  }
+  if (game->combat_feedback_cooldown > 0.0f) {
+    game->combat_feedback_cooldown = fmaxf(0.0f, game->combat_feedback_cooldown - delta_time);
+  }
+}
+
+static void DrawCombatNotifications(const Game* game) {
+  int visible_index = 0;
+
+  if (game->screen_flash_timer > 0.0f) {
+    const float alpha = fminf(game->screen_flash_timer / 0.34f, 1.0f) * 0.24f;
+    DrawRectangle(0, 0, game->screen_width, game->screen_height,
+                  Fade(game->screen_flash_color, alpha));
+  }
+
+  for (size_t index = 0; index < SHROOM_CLIENT_NOTIFICATION_CAPACITY; ++index) {
+    const CombatNotification* notification = &game->notifications[index];
+    float alpha;
+    float y;
+    Rectangle panel;
+
+    if (!notification->active) {
+      continue;
+    }
+
+    alpha = 1.0f;
+    if (notification->age < 0.18f) {
+      alpha = notification->age / 0.18f;
+    } else if (notification->duration - notification->age < 0.55f) {
+      alpha = fmaxf(0.0f, (notification->duration - notification->age) / 0.55f);
+    }
+
+    y = 92.0f + (float)visible_index * 74.0f;
+    panel = (Rectangle){(game->screen_width - 440.0f) * 0.5f, y, 440.0f, 58.0f};
+    DrawRectangleRounded(panel, 0.22f, 8, Fade((Color){18, 21, 18, 255}, 0.78f * alpha));
+    DrawRectangleRoundedLines(panel, 0.22f, 8, Fade(notification->color, 0.82f * alpha));
+    DrawCircleV((Vector2){panel.x + 24.0f, panel.y + 29.0f}, 9.0f,
+                Fade(notification->color, 0.86f * alpha));
+    DrawText(notification->title, (int)(panel.x + 46.0f), (int)(panel.y + 10.0f), 18,
+             Fade(RAYWHITE, alpha));
+    DrawText(notification->detail, (int)(panel.x + 46.0f), (int)(panel.y + 34.0f), 13,
+             Fade((Color){226, 232, 210, 255}, 0.86f * alpha));
+    ++visible_index;
+  }
+}
+
 static void CaptureParticleBaselines(Game* game) {
   size_t index;
 
@@ -155,6 +256,11 @@ static void CaptureParticleBaselines(Game* game) {
 
 static void EmitGameplayEventParticles(Game* game) {
   size_t index;
+  const ShroomPlayerId local_player_id =
+      game->local_player != NULL ? game->local_player->player_id : 0u;
+  float largest_gain = 0.0f;
+  const ShroomPlayerState* largest_gainer = FindLargestMassGainer(game, &largest_gain);
+  bool local_kill_reported = false;
 
   if (!game->particle_baseline_ready || (game->settings.particle_quality == CLIENT_PARTICLES_OFF)) {
     CaptureParticleBaselines(game);
@@ -184,15 +290,44 @@ static void EmitGameplayEventParticles(Game* game) {
     const bool had_same_entity = game->previous_player_entity_ids[index] == player->entity_id;
     const bool had_same_player = game->previous_player_ids[index] == player->player_id;
     const float previous_mass = game->previous_player_masses[index];
+    const bool was_local_player =
+        (local_player_id != 0u) && (game->previous_player_ids[index] == local_player_id);
+    const bool local_consumed_player = (largest_gainer != NULL) && (local_player_id != 0u) &&
+                                       (largest_gainer->player_id == local_player_id) &&
+                                       (largest_gain >= 10.0f) &&
+                                       game->previous_player_alive[index] && !was_local_player &&
+                                       (!player->alive || (had_same_player && !had_same_entity));
 
     if (game->previous_player_alive[index] && had_same_player && !had_same_entity) {
       SpawnParticleBurst(game, game->previous_player_positions[index], (Color){150, 45, 42, 255},
                          28, 150.0f, 7.0f, 0.76f);
       SpawnParticleBurst(game, player->position, (Color){122, 220, 118, 255}, 14, 82.0f, 5.0f,
                          0.58f);
+      if (was_local_player) {
+        AddCombatNotification(
+            game, "You were consumed",
+            TextFormat("Final mass %.0f  Rank %d  Survived %.0fs", previous_mass,
+                       game->previous_local_rank > 0 ? game->previous_local_rank : 0,
+                       fmaxf(0.0f, (float)GetTime() - game->session_start_time)),
+            (Color){245, 84, 84, 255}, 3.6f);
+        game->screen_flash_color = (Color){180, 32, 42, 255};
+        game->screen_flash_timer = 0.34f;
+      }
     } else if (game->previous_player_alive[index] && !player->alive) {
       SpawnParticleBurst(game, game->previous_player_positions[index], (Color){190, 62, 64, 255},
                          24, 132.0f, 7.0f, 0.72f);
+    }
+
+    if (local_consumed_player && !local_kill_reported) {
+      char title[96];
+      char detail[128];
+      snprintf(title, sizeof(title), "You consumed %s", GetPlayerDisplayName(game, player));
+      snprintf(detail, sizeof(detail), "Victim mass %.0f  +%.0f mass  Rank %d", previous_mass,
+               largest_gain, GetPlayerRank(game, largest_gainer));
+      AddCombatNotification(game, title, detail, (Color){112, 224, 128, 255}, 3.0f);
+      game->screen_flash_color = (Color){104, 220, 122, 255};
+      game->screen_flash_timer = 0.24f;
+      local_kill_reported = true;
     }
 
     if (!player->alive) {
@@ -202,6 +337,11 @@ static void EmitGameplayEventParticles(Game* game) {
         (player->mass >= previous_mass + 18.0f)) {
       SpawnParticleBurst(game, player->position, (Color){118, 210, 255, 255}, 16, 96.0f, 5.5f,
                          0.54f);
+      if ((local_player_id != 0u) && (player->player_id == local_player_id) &&
+          !local_kill_reported) {
+        AddCombatNotification(game, TextFormat("+%.0f mass", player->mass - previous_mass),
+                              "Spores absorbed into the colony", (Color){255, 228, 112, 255}, 1.8f);
+      }
     }
     if ((player->piece_index > 0u) &&
         (!game->previous_player_alive[index] || !had_same_entity || (previous_mass <= 0.0f))) {
@@ -1398,6 +1538,8 @@ static void UpdateStatusBanners(Game* game, float delta_time) {
   if (zone != game->current_zone) {
     SpawnParticleBurst(game, game->local_player->position, GetZoneColor(zone), 22, 96.0f, 5.5f,
                        0.64f);
+    AddCombatNotification(game, TextFormat("Entered %s zone", GetZoneLabel(zone)),
+                          GetZoneSummary(zone), GetZoneColor(zone), 2.4f);
     game->current_zone = zone;
     game->zone_callout_timer = kStatusBannerDuration;
   } else if (game->zone_callout_timer > 0.0f) {
@@ -1469,6 +1611,61 @@ static void DrawStatusBanners(const Game* game) {
       ShroomImGui_Text(TextFormat("avg RTT %ums", game->net.rtt_average_ms));
     }
     ShroomImGui_End();
+  }
+}
+
+static void UpdateCombatFeedback(Game* game) {
+  LeaderboardEntry leaderboard[SHROOM_MAX_PLAYERS];
+  size_t leaderboard_count = 0;
+  int local_rank;
+
+  if (game->local_player == NULL) {
+    return;
+  }
+
+  BuildLeaderboard(game, leaderboard, &leaderboard_count);
+  local_rank = GetLocalPlayerRank(game, leaderboard, leaderboard_count);
+  if (local_rank > 0) {
+    if ((game->previous_local_rank > 0) && (local_rank != game->previous_local_rank)) {
+      AddCombatNotification(game, local_rank < game->previous_local_rank ? "Rank up" : "Rank down",
+                            TextFormat("Canopy rank %d/%d", local_rank, (int)leaderboard_count),
+                            local_rank < game->previous_local_rank ? (Color){112, 224, 128, 255}
+                                                                   : (Color){245, 184, 84, 255},
+                            2.2f);
+    }
+    game->previous_local_rank = local_rank;
+  }
+
+  if (game->combat_feedback_cooldown > 0.0f) {
+    return;
+  }
+
+  for (size_t index = 0; index < game->world.player_count; ++index) {
+    const ShroomPlayerState* player = &game->world.players[index];
+    const PlayerThreatState threat_state = GetThreatState(&game->world, game->local_player, player);
+    const float distance_sqr = ShroomDistanceSqr(game->local_player->position, player->position);
+    const float close_call_radius = game->local_player->radius + player->radius + 62.0f;
+
+    if (!player->alive || IsLocalPlayerPiece(game, player) ||
+        (threat_state != PLAYER_THREAT_DANGER)) {
+      continue;
+    }
+    if (distance_sqr <= (close_call_radius * close_call_radius)) {
+      AddCombatNotification(
+          game, "Close call",
+          TextFormat("%s is big enough to consume you", GetPlayerDisplayName(game, player)),
+          (Color){245, 84, 84, 255}, 2.0f);
+      game->combat_feedback_cooldown = 4.0f;
+      break;
+    }
+    if (distance_sqr <= (420.0f * 420.0f)) {
+      AddCombatNotification(
+          game, "Danger nearby",
+          TextFormat("Avoid %s until you grow", GetPlayerDisplayName(game, player)),
+          (Color){245, 184, 84, 255}, 2.0f);
+      game->combat_feedback_cooldown = 4.0f;
+      break;
+    }
   }
 }
 
@@ -2308,6 +2505,8 @@ void GameUpdate(Game* game, float delta_time) {
   UpdateGameplayParticles(game, delta_time);
   SyncRenderPositions(game, delta_time);
   UpdateStatusBanners(game, delta_time);
+  UpdateCombatFeedback(game);
+  UpdateCombatNotifications(game, delta_time);
   UpdateInspectOverlay(game, delta_time);
   UpdateChatState(game, delta_time);
   if (game->local_player != NULL) {
@@ -2363,6 +2562,7 @@ void GameDraw(Game* game) {
   DrawGameplayHud(game, local_rank, leaderboard_count, zone);
   DrawInspectPrompt(game);
   DrawStatusBanners(game);
+  DrawCombatNotifications(game);
   DrawLeaderboardOverlay(game, leaderboard, shown_count);
   DrawMenuOverlay(game);
   DrawLeaveConfirmationOverlay(game);

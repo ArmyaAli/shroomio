@@ -11,6 +11,7 @@
 
 #define SHROOM_CLIENT_PENDING_INPUT_CAPACITY 128u
 #define SHROOM_CLIENT_PARTICLE_CAPACITY 384u
+#define SHROOM_CLIENT_NOTIFICATION_CAPACITY 6u
 
 typedef enum GameSessionMode {
   SHROOM_SESSION_MODE_QUICK_PLAY = 0,
@@ -38,6 +39,15 @@ typedef struct GameplayParticle {
   bool active;
 } GameplayParticle;
 
+typedef struct CombatNotification {
+  char title[96];
+  char detail[128];
+  Color color;
+  float age;
+  float duration;
+  bool active;
+} CombatNotification;
+
 typedef struct Game {
   Camera2D camera;
   ClientSettings settings;
@@ -51,9 +61,11 @@ typedef struct Game {
   uint32_t pending_input_count;
   uint32_t tracked_input_sequence;
   uint32_t particle_cursor;
+  uint32_t notification_cursor;
   ShroomVec2 render_positions[SHROOM_MAX_PLAYERS];
   ShroomVec2 previous_local_position;
   GameplayParticle particles[SHROOM_CLIENT_PARTICLE_CAPACITY];
+  CombatNotification notifications[SHROOM_CLIENT_NOTIFICATION_CAPACITY];
   ShroomVec2 previous_spore_positions[SHROOM_MAX_SPORES];
   ShroomEntityId previous_spore_entity_ids[SHROOM_MAX_SPORES];
   ShroomVec2 previous_player_positions[SHROOM_MAX_PLAYERS];
@@ -90,6 +102,10 @@ typedef struct Game {
   float inspect_overlay_progress;
   float inspect_prompt_timer;
   float previous_local_mass;
+  int previous_local_rank;
+  float combat_feedback_cooldown;
+  float screen_flash_timer;
+  Color screen_flash_color;
   float zone_callout_timer;
   float respawn_banner_timer;
   int screen_width;
