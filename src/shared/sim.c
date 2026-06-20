@@ -464,8 +464,10 @@ static void ShroomCollectSpores(ShroomWorldState* world) {
 
 static bool ShroomCanConsume(const ShroomWorldState* world, const ShroomPlayerState* attacker,
                              const ShroomPlayerState* target) {
-  const float overlap_radius = attacker->radius * 0.88f;
+  float overlap_radius = attacker->radius * 0.88f;
   const float required_advantage = ShroomGetConsumeMassAdvantageAtPosition(world, target->position);
+  const float boundary_margin = 100.0f;
+  bool near_boundary = false;
 
   if (!attacker->alive || !target->alive) {
     return false;
@@ -479,6 +481,23 @@ static bool ShroomCanConsume(const ShroomWorldState* world, const ShroomPlayerSt
   }
   if (attacker->mass < (target->mass * required_advantage)) {
     return false;
+  }
+
+  /* Check if either player is near a boundary */
+  if (attacker->position.x < boundary_margin ||
+      attacker->position.x > (world->width - boundary_margin) ||
+      attacker->position.y < boundary_margin ||
+      attacker->position.y > (world->height - boundary_margin) ||
+      target->position.x < boundary_margin ||
+      target->position.x > (world->width - boundary_margin) ||
+      target->position.y < boundary_margin ||
+      target->position.y > (world->height - boundary_margin)) {
+    near_boundary = true;
+  }
+
+  /* Use more generous overlap check near boundaries */
+  if (near_boundary) {
+    overlap_radius = attacker->radius * 1.2f + target->radius * 0.5f;
   }
 
   return ShroomDistanceSqr(attacker->position, target->position) <=
