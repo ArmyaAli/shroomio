@@ -61,11 +61,6 @@ typedef enum PlayerThreatState {
   PLAYER_THREAT_DANGER,
 } PlayerThreatState;
 
-typedef struct LeaderboardEntry {
-  size_t index;
-  float mass;
-} LeaderboardEntry;
-
 typedef struct InspectCandidate {
   uint32_t player_id;
   float distance_sqr;
@@ -73,7 +68,6 @@ typedef struct InspectCandidate {
 
 static bool IsConnectionOverlayOpen(const Game* game);
 static bool IsOverlayBlockingGameplay(const Game* game);
-static void BuildLeaderboard(const Game* game, LeaderboardEntry* entries, size_t* entry_count);
 
 static const float kInspectRadius = 520.0f;
 static const float kInspectOpenRate = 8.5f;
@@ -188,8 +182,8 @@ static bool IsDecayMassActive(const ShroomPlayerState* player) {
   return (player != NULL) && player->alive && (player->mass > SHROOM_DECAY_MASS_THRESHOLD);
 }
 
-static int GetLocalPlayerRank(const Game* game, const LeaderboardEntry* leaderboard,
-                              size_t leaderboard_count) {
+int GetLocalPlayerRank(const Game* game, const LeaderboardEntry* leaderboard,
+                       size_t leaderboard_count) {
   for (size_t index = 0; index < leaderboard_count; ++index) {
     if (&game->world.players[leaderboard[index].index] == game->local_player) {
       return (int)index + 1;
@@ -626,7 +620,7 @@ static int CompareLeaderboardEntries(const void* left, const void* right) {
   return 0;
 }
 
-static void BuildLeaderboard(const Game* game, LeaderboardEntry* entries, size_t* entry_count) {
+void BuildLeaderboard(const Game* game, LeaderboardEntry* entries, size_t* entry_count) {
   size_t index;
 
   *entry_count = game->world.player_count;
@@ -1652,6 +1646,11 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
     game->camera.zoom = game->settings.camera_zoom;
     game->camera_zoom_target = game->settings.camera_zoom;
     game->diagnostics_overlay_open = game->settings.diagnostics_enabled;
+    game->session_start_time = (float)GetTime();
+    game->peak_mass = 0.0f;
+    game->final_mass = 0.0f;
+    game->final_rank = 0;
+    game->show_results = false;
     ShroomWorldInit(&game->world);
     /* local_player is NULL until first snapshot from server. */
     return;
@@ -1849,6 +1848,11 @@ void GameUpdate(Game* game, float delta_time) {
     }
     game->camera.target = (Vector2){cam_target->position.x, cam_target->position.y};
     game->piece_focus_changed = false;
+  }
+
+  /* Track peak mass for results screen */
+  if (game->local_player != NULL && game->local_player->mass > game->peak_mass) {
+    game->peak_mass = game->local_player->mass;
   }
 }
 
