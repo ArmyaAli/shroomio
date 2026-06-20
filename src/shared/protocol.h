@@ -22,6 +22,9 @@
 #define SHROOM_CHAT_MAX_MESSAGE_LENGTH 200u
 #define SHROOM_CHAT_RATE_LIMIT_COUNT 5u
 #define SHROOM_CHAT_RATE_LIMIT_WINDOW_MS 10000u
+#define SHROOM_MAX_MUSHROOM_SPECIES 10u
+#define SHROOM_MUSHROOM_SPECIES_NAME_LENGTH 32u
+#define SHROOM_MUSHROOM_SPECIES_DESCRIPTION_LENGTH 128u
 
 typedef enum ShroomPacketChannel {
   SHROOM_ENET_CHANNEL_CONTROL = 0u,
@@ -51,6 +54,7 @@ typedef enum ShroomPacketType {
   SHROOM_PACKET_LOBBY_CREATE = 16,
   SHROOM_PACKET_LOBBY_CREATED = 17,
   SHROOM_PACKET_POWERUP_STATE = 18,
+  SHROOM_PACKET_MUSHROOM_SPECIES_CATALOG = 19,
 } ShroomPacketType;
 
 typedef enum ShroomAuthMethod {
@@ -83,6 +87,7 @@ static inline uint8_t ShroomPacketTypeToChannel(ShroomPacketType type) {
   case SHROOM_PACKET_PONG:
   case SHROOM_PACKET_AUTH_REQUEST:
   case SHROOM_PACKET_AUTH_RESPONSE:
+  case SHROOM_PACKET_MUSHROOM_SPECIES_CATALOG:
     return SHROOM_ENET_CHANNEL_CONTROL;
   case SHROOM_PACKET_SNAPSHOT:
   case SHROOM_PACKET_SPORE_STATE:
@@ -113,6 +118,7 @@ static inline bool ShroomPacketTypeUsesReliableDelivery(ShroomPacketType type) {
   case SHROOM_PACKET_PONG:
   case SHROOM_PACKET_AUTH_REQUEST:
   case SHROOM_PACKET_AUTH_RESPONSE:
+  case SHROOM_PACKET_MUSHROOM_SPECIES_CATALOG:
     return true;
   case SHROOM_PACKET_CHAT:
   case SHROOM_PACKET_LOBBY_LIST_QUERY:
@@ -246,6 +252,23 @@ typedef struct ShroomPowerupStatePacket {
   uint16_t reserved;
   ShroomSnapshotPowerupState powerups[SHROOM_MAX_POWERUPS];
 } ShroomPowerupStatePacket;
+
+typedef struct ShroomMushroomSpeciesEntry {
+  uint8_t species_id;
+  uint8_t pattern_id;
+  uint8_t rarity_tier;
+  uint8_t reserved;
+  uint32_t cap_color_rgba;
+  char name[SHROOM_MUSHROOM_SPECIES_NAME_LENGTH];
+  char description[SHROOM_MUSHROOM_SPECIES_DESCRIPTION_LENGTH];
+} ShroomMushroomSpeciesEntry;
+
+typedef struct ShroomMushroomSpeciesCatalogPacket {
+  ShroomPacketHeader header;
+  uint8_t species_count;
+  uint8_t reserved[3];
+  ShroomMushroomSpeciesEntry species[SHROOM_MAX_MUSHROOM_SPECIES];
+} ShroomMushroomSpeciesCatalogPacket;
 
 typedef struct ShroomAuthRequestPacket {
   ShroomPacketHeader header;

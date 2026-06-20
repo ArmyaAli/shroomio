@@ -1211,7 +1211,31 @@ static ClientMushroomSpecies GetPlayerSpecies(const Game* game, const ShroomPlay
   return (ClientMushroomSpecies)(player->player_id % CLIENT_MUSHROOM_COUNT);
 }
 
-static Color GetSpeciesCapColor(ClientMushroomSpecies species, Color fallback) {
+static const ShroomMushroomSpeciesEntry* FindSpeciesEntry(const Game* game,
+                                                          ClientMushroomSpecies species) {
+  if ((game == NULL) || !game->net.mushroom_species_catalog_received) {
+    return NULL;
+  }
+  for (uint8_t index = 0; index < game->net.mushroom_species_count; ++index) {
+    if (game->net.mushroom_species[index].species_id == (uint8_t)species) {
+      return &game->net.mushroom_species[index];
+    }
+  }
+  return NULL;
+}
+
+static Color ColorFromRgba(uint32_t rgba) {
+  return (Color){(unsigned char)((rgba >> 24u) & 0xFFu), (unsigned char)((rgba >> 16u) & 0xFFu),
+                 (unsigned char)((rgba >> 8u) & 0xFFu), (unsigned char)(rgba & 0xFFu)};
+}
+
+static Color GetSpeciesCapColor(const Game* game, ClientMushroomSpecies species, Color fallback) {
+  const ShroomMushroomSpeciesEntry* entry = FindSpeciesEntry(game, species);
+
+  if ((entry != NULL) && (entry->cap_color_rgba != 0u)) {
+    return ColorFromRgba(entry->cap_color_rgba);
+  }
+
   switch (species) {
   case CLIENT_MUSHROOM_AMANITA:
     return (Color){214, 48, 58, 255};
@@ -1239,8 +1263,12 @@ static Color GetSpeciesCapColor(ClientMushroomSpecies species, Color fallback) {
   }
 }
 
-static void DrawSpeciesPattern(ClientMushroomSpecies species, Vector2 position, float radius) {
-  switch (species) {
+static void DrawSpeciesPattern(const Game* game, ClientMushroomSpecies species, Vector2 position,
+                               float radius) {
+  const ShroomMushroomSpeciesEntry* entry = FindSpeciesEntry(game, species);
+  const uint8_t pattern_id = entry != NULL ? entry->pattern_id : (uint8_t)species;
+
+  switch (pattern_id) {
   case CLIENT_MUSHROOM_MOREL:
     for (int i = -2; i <= 2; ++i) {
       DrawLineEx((Vector2){position.x + i * radius * 0.22f, position.y - radius * 0.58f},
@@ -1541,7 +1569,7 @@ static void DrawPlayers(const Game* game, Rectangle view_bounds) {
     const Color fallback_fill = GetPlayerFillColor(game, player);
     const Color fill = game->settings.palette_preset == CLIENT_PALETTE_HIGH_CONTRAST
                            ? fallback_fill
-                           : GetSpeciesCapColor(species, fallback_fill);
+                           : GetSpeciesCapColor(game, species, fallback_fill);
     const PlayerThreatState threat_state = GetThreatState(&game->world, game->local_player, player);
     const Color threat_outline = GetThreatOutlineColor(threat_state);
     const float decay_pulse =
@@ -1580,7 +1608,7 @@ static void DrawPlayers(const Game* game, Rectangle view_bounds) {
 
       // Large, visible mushroom species markings based on size.
       if (player->radius > 12.0f) {
-        DrawSpeciesPattern(species, position, player->radius);
+        DrawSpeciesPattern(game, species, position, player->radius);
       }
 
       char mass_text[32];
