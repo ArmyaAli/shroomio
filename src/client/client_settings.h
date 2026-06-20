@@ -8,6 +8,12 @@ typedef enum ClientPalettePreset {
   CLIENT_PALETTE_HIGH_CONTRAST,
 } ClientPalettePreset;
 
+typedef enum ClientHudDensity {
+  CLIENT_HUD_FULL = 0,
+  CLIENT_HUD_COMPACT,
+  CLIENT_HUD_MINIMAL,
+} ClientHudDensity;
+
 typedef struct ClientSettings {
   int ui_scale_percent;
   int master_volume_percent;
@@ -19,6 +25,7 @@ typedef struct ClientSettings {
   float camera_zoom;
   int preferred_region_index;
   ClientPalettePreset palette_preset;
+  ClientHudDensity hud_density;
 } ClientSettings;
 
 void ClientSettingsSetDefaults(ClientSettings* settings);
@@ -27,5 +34,6 @@ bool ClientSettingsLoad(ClientSettings* settings);
 bool ClientSettingsSave(const ClientSettings* settings);
 const char* ClientSettingsPreferredRegionLabel(int region_index);
 const char* ClientSettingsPaletteLabel(ClientPalettePreset preset);
+const char* ClientSettingsHudDensityLabel(ClientHudDensity density);
 
 #endif
