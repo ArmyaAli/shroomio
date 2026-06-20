@@ -20,6 +20,7 @@ void ClientSettingsSetDefaults(ClientSettings* settings) {
       .invert_mouse = false,
       .diagnostics_enabled = false,
       .show_ping_ms = true,
+      .menu_animations_enabled = true,
       .camera_zoom = 1.0f,
       .preferred_region_index = 0,
       .palette_preset = CLIENT_PALETTE_CLASSIC,
@@ -96,6 +97,8 @@ bool ClientSettingsLoad(ClientSettings* settings) {
       settings->diagnostics_enabled = value != 0;
     } else if (strcmp(key, "show_ping_ms") == 0) {
       settings->show_ping_ms = value != 0;
+    } else if (strcmp(key, "menu_animations_enabled") == 0) {
+      settings->menu_animations_enabled = value != 0;
     } else if (strcmp(key, "preferred_region_index") == 0) {
       settings->preferred_region_index = value;
     } else if (strcmp(key, "palette_preset") == 0) {
@@ -138,6 +141,7 @@ bool ClientSettingsSave(const ClientSettings* settings) {
   fprintf(file, "invert_mouse=%d\n", settings->invert_mouse ? 1 : 0);
   fprintf(file, "diagnostics_enabled=%d\n", settings->diagnostics_enabled ? 1 : 0);
   fprintf(file, "show_ping_ms=%d\n", settings->show_ping_ms ? 1 : 0);
+  fprintf(file, "menu_animations_enabled=%d\n", settings->menu_animations_enabled ? 1 : 0);
   fprintf(file, "preferred_region_index=%d\n", settings->preferred_region_index);
   fprintf(file, "palette_preset=%d\n", (int)settings->palette_preset);
   fprintf(file, "hud_density=%d\n", (int)settings->hud_density);

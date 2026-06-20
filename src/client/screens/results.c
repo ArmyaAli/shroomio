@@ -1,5 +1,6 @@
 #include "client/game.h"
 #include "client/screen.h"
+#include "client/screens/screen_background.h"
 #include "imgui_wrapper.h"
 #include "raylib.h"
 
@@ -19,11 +20,12 @@ static void ResultsDraw(ShroomScreenManager* manager) {
     return;
   }
 
-  ClearBackground((Color){18, 20, 32, 255});
+  ShroomScreenDrawFungalBackground(game->settings.menu_animations_enabled);
 
   ShroomImGui_SetNextWindowPos((screen_width - 500.0f) * 0.5f, (screen_height - 400.0f) * 0.5f,
                                SHROOM_IMGUI_COND_ALWAYS);
   ShroomImGui_SetNextWindowSize(500.0f, 400.0f, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowBgAlpha(0.88f);
   if (!ShroomImGui_Begin("Match Results", NULL,
                          SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
                              SHROOM_IMGUI_WINDOW_NO_COLLAPSE |

@@ -2,6 +2,7 @@
 #include "client/imgui_wrapper.h"
 #include "client/net.h"
 #include "client/screen.h"
+#include "client/screens/screen_background.h"
 
 #include "raylib.h"
 
@@ -152,7 +153,7 @@ static void LobbyBrowserDraw(ShroomScreenManager* manager) {
     return;
   }
 
-  ClearBackground((Color){12, 12, 20, 255});
+  ShroomScreenDrawFungalBackground(game->settings.menu_animations_enabled);
 
   /* Show connection state modal during connection phases or errors. */
   if (game->auto_join_lobby || (!game->net.handshake_received) ||
@@ -164,6 +165,7 @@ static void LobbyBrowserDraw(ShroomScreenManager* manager) {
   ShroomImGui_SetNextWindowPos((GetScreenWidth() - 600.0f) * 0.5f,
                                (GetScreenHeight() - 480.0f) * 0.5f, SHROOM_IMGUI_COND_ALWAYS);
   ShroomImGui_SetNextWindowSize(600.0f, 480.0f, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowBgAlpha(0.88f);
   if (!ShroomImGui_Begin("Lobby Browser", NULL,
                          SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
                              SHROOM_IMGUI_WINDOW_NO_COLLAPSE |

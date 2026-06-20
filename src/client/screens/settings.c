@@ -1,5 +1,6 @@
 #include "game.h"
 #include "screen.h"
+#include "screen_background.h"
 
 #include "imgui_wrapper.h"
 #include "raylib.h"
@@ -51,7 +52,7 @@ static void SettingsDraw(ShroomScreenManager* manager) {
     return;
   }
 
-  ClearBackground((Color){18, 20, 32, 255});
+  ShroomScreenDrawFungalBackground(game->settings.menu_animations_enabled);
 
   ShroomImGui_SetNextWindowPos((float)screen_width * 0.18f, (float)screen_height * 0.1f,
                                SHROOM_IMGUI_COND_ALWAYS);
@@ -88,6 +89,8 @@ static void SettingsDraw(ShroomScreenManager* manager) {
   changed |= ShroomImGui_Checkbox("Show Diagnostics On Launch",
                                   &g_settings_screen.pending.diagnostics_enabled);
   changed |= ShroomImGui_Checkbox("Show Ping In HUD", &g_settings_screen.pending.show_ping_ms);
+  changed |= ShroomImGui_Checkbox("Animated Menu Backgrounds",
+                                  &g_settings_screen.pending.menu_animations_enabled);
 
   if (changed) {
     ClientSettingsValidate(&g_settings_screen.pending);

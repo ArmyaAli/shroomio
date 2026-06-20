@@ -1,4 +1,6 @@
+#include "game.h"
 #include "screen.h"
+#include "screen_background.h"
 
 #include "imgui_wrapper.h"
 #include "raylib.h"
@@ -9,14 +11,16 @@ static bool CreditsInit(ShroomScreenManager* manager) {
 }
 
 static void CreditsDraw(ShroomScreenManager* manager) {
+  Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
   const int screen_width = GetScreenWidth();
   const int screen_height = GetScreenHeight();
 
-  ClearBackground((Color){18, 20, 32, 255});
+  ShroomScreenDrawFungalBackground((game == NULL) || game->settings.menu_animations_enabled);
 
   ShroomImGui_SetNextWindowPos((screen_width - 460) * 0.5f, (screen_height - 300) * 0.5f,
                                SHROOM_IMGUI_COND_ALWAYS);
   ShroomImGui_SetNextWindowSize(460.0f, 300.0f, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowBgAlpha(0.88f);
   if (!ShroomImGui_Begin("Credits", NULL,
                          SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
                              SHROOM_IMGUI_WINDOW_NO_COLLAPSE |

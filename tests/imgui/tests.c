@@ -122,6 +122,7 @@ static void Test_SettingsPersistence(ImGuiTestContext* ctx) {
   ShroomTeCtx_ItemCheckbox(ctx, "Invert Mouse");
   ShroomTeCtx_ItemCheckbox(ctx, "Show Diagnostics On Launch");
   ShroomTeCtx_ItemCheckbox(ctx, "Show Ping In HUD");
+  ShroomTeCtx_ItemCheckbox(ctx, "Animated Menu Backgrounds");
   ShroomTeCtx_ItemClick(ctx, "Save");
 
   IM_CHECK(ClientSettingsLoad(&loaded));
@@ -132,6 +133,7 @@ static void Test_SettingsPersistence(ImGuiTestContext* ctx) {
   IM_CHECK(loaded.invert_mouse);
   IM_CHECK(loaded.diagnostics_enabled);
   IM_CHECK(loaded.show_ping_ms);
+  IM_CHECK(loaded.menu_animations_enabled);
 }
 
 static void Test_ServerBrowserJoinAndValidation(ImGuiTestContext* ctx) {
