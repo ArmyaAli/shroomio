@@ -21,6 +21,20 @@ typedef enum ClientParticleQuality {
   CLIENT_PARTICLES_HIGH,
 } ClientParticleQuality;
 
+typedef enum ClientMushroomSpecies {
+  CLIENT_MUSHROOM_AMANITA = 0,
+  CLIENT_MUSHROOM_CHANTERELLE,
+  CLIENT_MUSHROOM_MOREL,
+  CLIENT_MUSHROOM_SHIITAKE,
+  CLIENT_MUSHROOM_OYSTER,
+  CLIENT_MUSHROOM_ENOKI,
+  CLIENT_MUSHROOM_PORTOBELLO,
+  CLIENT_MUSHROOM_LIONS_MANE,
+  CLIENT_MUSHROOM_REISHI,
+  CLIENT_MUSHROOM_BLEWIT,
+  CLIENT_MUSHROOM_COUNT,
+} ClientMushroomSpecies;
+
 typedef struct ClientSettings {
   int ui_scale_percent;
   int master_volume_percent;
@@ -36,6 +50,7 @@ typedef struct ClientSettings {
   ClientPalettePreset palette_preset;
   ClientHudDensity hud_density;
   ClientParticleQuality particle_quality;
+  ClientMushroomSpecies mushroom_species;
 } ClientSettings;
 
 void ClientSettingsSetDefaults(ClientSettings* settings);

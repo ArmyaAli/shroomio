@@ -1204,6 +1204,87 @@ static Color GetPlayerFillColor(const Game* game, const ShroomPlayerState* playe
   return kBotColors[player->player_id % (sizeof(kBotColors) / sizeof(kBotColors[0]))];
 }
 
+static ClientMushroomSpecies GetPlayerSpecies(const Game* game, const ShroomPlayerState* player) {
+  if (IsLocalPlayerPiece(game, player)) {
+    return game->settings.mushroom_species;
+  }
+  return (ClientMushroomSpecies)(player->player_id % CLIENT_MUSHROOM_COUNT);
+}
+
+static Color GetSpeciesCapColor(ClientMushroomSpecies species, Color fallback) {
+  switch (species) {
+  case CLIENT_MUSHROOM_AMANITA:
+    return (Color){214, 48, 58, 255};
+  case CLIENT_MUSHROOM_CHANTERELLE:
+    return (Color){240, 173, 58, 255};
+  case CLIENT_MUSHROOM_MOREL:
+    return (Color){160, 118, 72, 255};
+  case CLIENT_MUSHROOM_SHIITAKE:
+    return (Color){126, 82, 48, 255};
+  case CLIENT_MUSHROOM_OYSTER:
+    return (Color){210, 188, 178, 255};
+  case CLIENT_MUSHROOM_ENOKI:
+    return (Color){236, 226, 184, 255};
+  case CLIENT_MUSHROOM_PORTOBELLO:
+    return (Color){96, 58, 42, 255};
+  case CLIENT_MUSHROOM_LIONS_MANE:
+    return (Color){240, 234, 204, 255};
+  case CLIENT_MUSHROOM_REISHI:
+    return (Color){178, 54, 38, 255};
+  case CLIENT_MUSHROOM_BLEWIT:
+    return (Color){132, 92, 174, 255};
+  case CLIENT_MUSHROOM_COUNT:
+  default:
+    return fallback;
+  }
+}
+
+static void DrawSpeciesPattern(ClientMushroomSpecies species, Vector2 position, float radius) {
+  switch (species) {
+  case CLIENT_MUSHROOM_MOREL:
+    for (int i = -2; i <= 2; ++i) {
+      DrawLineEx((Vector2){position.x + i * radius * 0.22f, position.y - radius * 0.58f},
+                 (Vector2){position.x + i * radius * 0.08f, position.y + radius * 0.48f}, 2.0f,
+                 Fade((Color){70, 48, 34, 255}, 0.42f));
+      DrawLineEx((Vector2){position.x - radius * 0.56f, position.y + i * radius * 0.18f},
+                 (Vector2){position.x + radius * 0.56f, position.y - i * radius * 0.08f}, 1.6f,
+                 Fade((Color){70, 48, 34, 255}, 0.34f));
+    }
+    break;
+  case CLIENT_MUSHROOM_OYSTER:
+  case CLIENT_MUSHROOM_REISHI:
+    for (int i = 0; i < 4; ++i) {
+      DrawRing(position, radius * (0.34f + i * 0.12f), radius * (0.36f + i * 0.12f), 205.0f, 338.0f,
+               20, Fade(RAYWHITE, 0.20f));
+    }
+    break;
+  case CLIENT_MUSHROOM_LIONS_MANE:
+    for (int i = 0; i < 11; ++i) {
+      const float angle = ((float)i / 11.0f) * 2.0f * PI;
+      DrawCircleV((Vector2){position.x + cosf(angle) * radius * 0.42f,
+                            position.y + sinf(angle) * radius * 0.38f},
+                  radius * 0.19f, Fade(RAYWHITE, 0.34f));
+    }
+    break;
+  case CLIENT_MUSHROOM_ENOKI:
+    for (int i = -2; i <= 2; ++i) {
+      DrawLineEx((Vector2){position.x + i * radius * 0.16f, position.y + radius * 0.08f},
+                 (Vector2){position.x + i * radius * 0.10f, position.y + radius * 0.72f}, 2.0f,
+                 Fade((Color){255, 248, 220, 255}, 0.36f));
+    }
+    break;
+  default:
+    for (int i = 0; i < 5; i++) {
+      float angle = (i / 5.0f) * 2.0f * PI;
+      float spot_radius = radius * 0.18f;
+      float spot_distance = radius * 0.48f;
+      DrawCircle(position.x + cosf(angle) * spot_distance, position.y + sinf(angle) * spot_distance,
+                 spot_radius, Fade((Color){255, 255, 255, 255}, 0.56f));
+    }
+    break;
+  }
+}
+
 static int CompareLeaderboardEntries(const void* left, const void* right) {
   const LeaderboardEntry* lhs = left;
   const LeaderboardEntry* rhs = right;
@@ -1456,7 +1537,11 @@ static void DrawPlayers(const Game* game, Rectangle view_bounds) {
     const ShroomPlayerState* player = &game->world.players[index];
     const ShroomVec2 render_position = game->render_positions[index];
     const Vector2 position = {render_position.x, render_position.y};
-    const Color fill = GetPlayerFillColor(game, player);
+    const ClientMushroomSpecies species = GetPlayerSpecies(game, player);
+    const Color fallback_fill = GetPlayerFillColor(game, player);
+    const Color fill = game->settings.palette_preset == CLIENT_PALETTE_HIGH_CONTRAST
+                           ? fallback_fill
+                           : GetSpeciesCapColor(species, fallback_fill);
     const PlayerThreatState threat_state = GetThreatState(&game->world, game->local_player, player);
     const Color threat_outline = GetThreatOutlineColor(threat_state);
     const float decay_pulse =
@@ -1493,18 +1578,9 @@ static void DrawPlayers(const Game* game, Rectangle view_bounds) {
           (Vector2){position.x - player->radius * 0.15f, position.y - player->radius * 0.35f},
           player->radius * 0.4f, Fade((Color){255, 255, 255, 255}, 0.25f));
 
-      // Large, visible mushroom spots/patterns based on size
+      // Large, visible mushroom species markings based on size.
       if (player->radius > 12.0f) {
-        int spot_count = (int)(player->radius / 6.0f);
-        for (int i = 0; i < spot_count; i++) {
-          float angle = (i / (float)spot_count) * 2.0f * PI;
-          float spot_radius = player->radius * 0.25f;
-          float spot_distance = player->radius * 0.55f;
-          float spot_x = position.x + cosf(angle) * spot_distance;
-          float spot_y = position.y + sinf(angle) * spot_distance;
-          DrawCircle(spot_x, spot_y, spot_radius, Fade((Color){255, 255, 255, 255}, 0.6f));
-          DrawCircle(spot_x, spot_y, spot_radius * 0.6f, Fade((Color){255, 255, 255, 255}, 0.4f));
-        }
+        DrawSpeciesPattern(species, position, player->radius);
       }
 
       char mass_text[32];

@@ -31,6 +31,37 @@ static const char* const kParticleItems[] = {
     "High",
 };
 
+static const char* const kSpeciesItems[] = {
+    "Amanita muscaria", "Chanterelle", "Morel",  "Shiitake",    "Oyster", "Enoki",
+    "Portobello",       "Lion's Mane", "Reishi", "Wood Blewit",
+};
+
+static const char* GetSpeciesInfo(ClientMushroomSpecies species) {
+  switch (species) {
+  case CLIENT_MUSHROOM_CHANTERELLE:
+    return "Golden funnel cap; prized edible forest mushroom.";
+  case CLIENT_MUSHROOM_MOREL:
+    return "Honeycomb cap; spring mushroom with a rugged silhouette.";
+  case CLIENT_MUSHROOM_SHIITAKE:
+    return "Brown cap; classic cultivated mushroom with bold gills.";
+  case CLIENT_MUSHROOM_OYSTER:
+    return "Layered fan caps; soft clustered shelf mushroom.";
+  case CLIENT_MUSHROOM_ENOKI:
+    return "Tiny pale caps and long stems; delicate clustered look.";
+  case CLIENT_MUSHROOM_PORTOBELLO:
+    return "Broad brown cap; sturdy heavyweight arena profile.";
+  case CLIENT_MUSHROOM_LIONS_MANE:
+    return "Shaggy white spines; fluffy pom-pom silhouette.";
+  case CLIENT_MUSHROOM_REISHI:
+    return "Glossy red bracket; dramatic medicinal shelf form.";
+  case CLIENT_MUSHROOM_BLEWIT:
+    return "Violet woodland cap; rare purple accent species.";
+  case CLIENT_MUSHROOM_AMANITA:
+  default:
+    return "Red cap with white spots; iconic fairy-tale mushroom.";
+  }
+}
+
 static void ApplySettings(Game* game) {
   game->settings = g_settings_screen.pending;
   SetMasterVolume((float)game->settings.master_volume_percent / 100.0f);
@@ -102,6 +133,11 @@ static void SettingsDraw(ShroomScreenManager* manager) {
                                   &g_settings_screen.pending.menu_animations_enabled);
   changed |=
       ShroomImGui_Checkbox("Death Cutscene", &g_settings_screen.pending.death_cutscene_enabled);
+  changed |=
+      ShroomImGui_Combo("Mushroom Species", (int*)&g_settings_screen.pending.mushroom_species,
+                        kSpeciesItems, CLIENT_MUSHROOM_COUNT);
+  ShroomImGui_TextWrapped(GetSpeciesInfo(g_settings_screen.pending.mushroom_species));
+  ShroomImGui_Text("Collection: all 10 species unlocked for pre-release testing.");
 
   if (changed) {
     ClientSettingsValidate(&g_settings_screen.pending);

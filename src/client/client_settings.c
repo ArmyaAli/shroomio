@@ -27,6 +27,7 @@ void ClientSettingsSetDefaults(ClientSettings* settings) {
       .palette_preset = CLIENT_PALETTE_CLASSIC,
       .hud_density = CLIENT_HUD_FULL,
       .particle_quality = CLIENT_PARTICLES_MEDIUM,
+      .mushroom_species = CLIENT_MUSHROOM_AMANITA,
   };
 }
 
@@ -63,6 +64,10 @@ void ClientSettingsValidate(ClientSettings* settings) {
   if ((settings->particle_quality < CLIENT_PARTICLES_OFF) ||
       (settings->particle_quality > CLIENT_PARTICLES_HIGH)) {
     settings->particle_quality = CLIENT_PARTICLES_MEDIUM;
+  }
+  if ((settings->mushroom_species < CLIENT_MUSHROOM_AMANITA) ||
+      (settings->mushroom_species >= CLIENT_MUSHROOM_COUNT)) {
+    settings->mushroom_species = CLIENT_MUSHROOM_AMANITA;
   }
 }
 
@@ -115,6 +120,8 @@ bool ClientSettingsLoad(ClientSettings* settings) {
       settings->hud_density = (ClientHudDensity)value;
     } else if (strcmp(key, "particle_quality") == 0) {
       settings->particle_quality = (ClientParticleQuality)value;
+    } else if (strcmp(key, "mushroom_species") == 0) {
+      settings->mushroom_species = (ClientMushroomSpecies)value;
     } else if (strcmp(key, "camera_zoom_x100") == 0) {
       settings->camera_zoom = (float)value / 100.0f;
     }
@@ -157,6 +164,7 @@ bool ClientSettingsSave(const ClientSettings* settings) {
   fprintf(file, "palette_preset=%d\n", (int)settings->palette_preset);
   fprintf(file, "hud_density=%d\n", (int)settings->hud_density);
   fprintf(file, "particle_quality=%d\n", (int)settings->particle_quality);
+  fprintf(file, "mushroom_species=%d\n", (int)settings->mushroom_species);
   fprintf(file, "camera_zoom_x100=%d\n", (int)(settings->camera_zoom * 100.0f));
 
   fclose(file);
