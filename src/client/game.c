@@ -776,8 +776,15 @@ static Color GetThreatOutlineColor(PlayerThreatState state) {
   }
 }
 
-static bool IsDecayMassActive(const ShroomPlayerState* player) {
-  return (player != NULL) && player->alive && (player->mass > SHROOM_DECAY_MASS_THRESHOLD);
+static bool IsDecayMassActive(const ShroomWorldState* world, const ShroomPlayerState* player) {
+  if ((player == NULL) || !player->alive) {
+    return false;
+  }
+  const ShroomZone zone = ShroomGetZoneAtPosition(world, player->position);
+  const float decay_threshold = zone == SHROOM_ZONE_CENTER ? (SHROOM_DEFAULT_PLAYER_MASS * 2.0f)
+                                : zone == SHROOM_ZONE_MID  ? SHROOM_DECAY_MASS_THRESHOLD
+                                                           : SHROOM_MAX_PLAYER_MASS;
+  return player->mass > decay_threshold;
 }
 
 int GetLocalPlayerRank(const Game* game, const LeaderboardEntry* leaderboard,
@@ -1655,7 +1662,7 @@ static void DrawPlayers(const Game* game, Rectangle view_bounds) {
         DrawCircleLines((int)position.x, (int)position.y, player->radius + 12.0f,
                         Fade((Color){255, 255, 220, 255}, 0.48f));
       }
-      if (IsDecayMassActive(player)) {
+      if (IsDecayMassActive(&game->world, player)) {
         DrawCircleLines((int)position.x, (int)position.y, player->radius + 11.0f,
                         Fade(RED, decay_pulse));
       }
@@ -2406,10 +2413,13 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
                                 (int)leaderboard_count));
     ShroomImGui_TextColored(ToImGuiColor(GetZoneColor(zone)),
                             TextFormat("Zone %s", GetZoneLabel(zone)));
-    if (IsDecayMassActive(game->local_player)) {
-      ShroomImGui_TextColored(ToImGuiColor(RED),
-                              TextFormat("Decaying  excess %.0f",
-                                         game->local_player->mass - SHROOM_DECAY_MASS_THRESHOLD));
+    if (IsDecayMassActive(&game->world, game->local_player)) {
+      const float decay_threshold = zone == SHROOM_ZONE_CENTER ? (SHROOM_DEFAULT_PLAYER_MASS * 2.0f)
+                                    : zone == SHROOM_ZONE_MID  ? SHROOM_DECAY_MASS_THRESHOLD
+                                                               : SHROOM_MAX_PLAYER_MASS;
+      ShroomImGui_TextColored(
+          ToImGuiColor(RED),
+          TextFormat("Decaying  excess %.0f", game->local_player->mass - decay_threshold));
     }
     if (game->local_piece_count > 1) {
       ShroomImGui_TextColored(ToImGuiColor(YELLOW),
