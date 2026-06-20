@@ -67,6 +67,7 @@ void ShroomScreenRegisterGame(ShroomScreenManager* manager);
 const char* ShroomTestGetServerBrowserValidationMessage(void);
 int ShroomTestGetServerBrowserSelectedIndex(void);
 const char* ShroomTestGetServerBrowserSelectedHost(void);
+int ShroomTestGetServerBrowserRecentCount(void);
 #endif
 
 #endif
