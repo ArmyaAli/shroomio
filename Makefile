@@ -380,7 +380,7 @@ $(WINDOWS_BUILD_DIR)/client/%.o: $(CLIENT_SRC_DIR)/%.c $(CLIENT_SRC_DIR)/game.h 
 
 $(MACOS_BUILD_DIR)/client/%.o: $(CLIENT_SRC_DIR)/%.c $(CLIENT_SRC_DIR)/game.h $(CLIENT_SRC_DIR)/net.h $(SHARED_HEADERS) | $(VCPKG_MACOS_STAMP)
 	@$(MKDIR_P) $(dir $@)
-	$(MACOS_CC) $(MACOS_CFLAGS) -D_POSIX_C_SOURCE=199309L -D_DEFAULT_SOURCE -c $< -o $@
+	$(MACOS_CC) $(MACOS_CFLAGS) -c $< -o $@
 
 $(LINUX_BUILD_DIR)/client/imgui_impl_raylib.o: $(CLIENT_SRC_DIR)/imgui_impl_raylib.cpp | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
