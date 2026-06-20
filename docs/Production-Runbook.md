@@ -27,7 +27,7 @@ The server is self-hostable without recompiling. CLI flags override environment 
 
 | Setting | CLI | Environment | Default |
 |---|---|---|---|
-| Bind host | `--bind HOST` | `SHROOM_SERVER_BIND` | `0.0.0.0` |
+| Bind address | `--bind ADDRESS` | `SHROOM_SERVER_BIND` | `0.0.0.0` |
 | UDP port | `--port PORT` | `SHROOM_SERVER_PORT` | `7777` |
 | SQLite database | `--database PATH` | `SHROOM_SERVER_DB_PATH` | `shroomio.db` |
 
@@ -106,7 +106,7 @@ make server
 - **Port**: UDP 7777 must be open to the internet (or to your player network).
 - **Firewall**: allow inbound UDP on port 7777 from player IP ranges.
 - **NAT/port forwarding**: forward the public UDP port to the host running `shroomio-server`.
-- **DNS**: optional. Point an `A` or `AAAA` record such as `play.example.com` at the server's public address, then clients can connect to that hostname.
+- **DNS**: optional. Point an `A` or `AAAA` record such as `play.example.com` at the server's public address, then clients can connect to that hostname. The server's `--bind` value is still a local IP address such as `0.0.0.0` or `127.0.0.1`, not the public DNS name.
 - **Bandwidth**: approximately 5–10 KB/s per connected client at 15 Hz snapshot rate (depends on player count in snapshots).
 - **Latency**: players will experience jitter proportional to round-trip time. Target <50 ms RTT for LAN play, <100 ms for internet play.
 

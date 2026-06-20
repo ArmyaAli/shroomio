@@ -207,10 +207,10 @@ static void CopyConfigString(char* destination, size_t destination_size, const c
 }
 
 static void PrintUsage(const char* program_name) {
-  printf("Usage: %s [--bind HOST] [--port PORT] [--database PATH]\n", program_name);
+  printf("Usage: %s [--bind ADDRESS] [--port PORT] [--database PATH]\n", program_name);
   printf("\n");
   printf("Self-hosted server options:\n");
-  printf("  --bind HOST       Bind address or hostname, default 0.0.0.0\n");
+  printf("  --bind ADDRESS    Local bind IP address, default 0.0.0.0\n");
   printf("  --port PORT       UDP listen port, default %u\n", SHROOM_SERVER_PORT);
   printf("  --database PATH   SQLite database path, default shroomio.db\n");
   printf("  --help            Show this help text\n");
@@ -239,36 +239,41 @@ static bool LoadServerConfig(ServerConfig* config, int argc, char** argv) {
     return false;
   }
 
-  for (int i = 1; i < argc; ++i) {
+  int i = 1;
+  while (i < argc) {
     if (strcmp(argv[i], "--help") == 0) {
       PrintUsage(argv[0]);
       exit(0);
     } else if (strcmp(argv[i], "--bind") == 0) {
-      if (++i >= argc) {
+      if ((i + 1) >= argc) {
         fprintf(stderr, "Missing value for --bind\n");
         return false;
       }
+      ++i;
       CopyConfigString(config->bind_host, sizeof(config->bind_host), argv[i]);
     } else if (strcmp(argv[i], "--port") == 0) {
-      if (++i >= argc) {
+      if ((i + 1) >= argc) {
         fprintf(stderr, "Missing value for --port\n");
         return false;
       }
+      ++i;
       if (!ParsePort(argv[i], &config->port)) {
         fprintf(stderr, "Invalid --port: %s\n", argv[i]);
         return false;
       }
     } else if (strcmp(argv[i], "--database") == 0) {
-      if (++i >= argc) {
+      if ((i + 1) >= argc) {
         fprintf(stderr, "Missing value for --database\n");
         return false;
       }
+      ++i;
       CopyConfigString(config->database_path, sizeof(config->database_path), argv[i]);
     } else {
       fprintf(stderr, "Unknown option: %s\n", argv[i]);
       PrintUsage(argv[0]);
       return false;
     }
+    ++i;
   }
 
   return true;
@@ -1229,10 +1234,10 @@ int main(int argc, char** argv) {
     }
   }
 
-  if (strcmp(config.bind_host, "0.0.0.0") == 0) {
+  if ((strcmp(config.bind_host, "0.0.0.0") == 0) || (strcmp(config.bind_host, "*") == 0)) {
     address.host = ENET_HOST_ANY;
-  } else if (enet_address_set_host(&address, config.bind_host) != 0) {
-    LOG_ERROR("failed to resolve bind address: %s", config.bind_host);
+  } else if (enet_address_set_host_ip(&address, config.bind_host) != 0) {
+    LOG_ERROR("invalid bind address: %s", config.bind_host);
     enet_deinitialize();
     ShroomAuthShutdown(&auth_ctx);
     sqlite3_close(db);
