@@ -5,12 +5,148 @@
 #include <math.h>
 #include <stdint.h>
 
+#define SHROOM_MENU_BACKGROUND_SPORE_COUNT 50
+#define SHROOM_MENU_BACKGROUND_MUSHROOM_COUNT 8
+#define SHROOM_MENU_BACKGROUND_PARTICLE_COUNT 100
+
+typedef struct MenuBackgroundSpore {
+  float x_ratio;
+  float y_ratio;
+  float speed;
+  float size;
+  float alpha;
+  float phase;
+} MenuBackgroundSpore;
+
+typedef struct MenuBackgroundMushroom {
+  float x_ratio;
+  float y_ratio;
+  float scale;
+  float sway_phase;
+  float sway_speed;
+  int type;
+} MenuBackgroundMushroom;
+
+typedef struct MenuBackgroundParticle {
+  float x_ratio;
+  float y_ratio;
+  float vx;
+  float vy;
+  float life;
+  float max_life;
+  float size;
+  Color color;
+} MenuBackgroundParticle;
+
+static MenuBackgroundSpore g_spores[SHROOM_MENU_BACKGROUND_SPORE_COUNT];
+static MenuBackgroundMushroom g_mushrooms[SHROOM_MENU_BACKGROUND_MUSHROOM_COUNT];
+static MenuBackgroundParticle g_particles[SHROOM_MENU_BACKGROUND_PARTICLE_COUNT];
+static float g_global_time = 0.0f;
+static float g_spawn_accumulator = 0.0f;
+static bool g_background_initialized = false;
+
 static float WrappedUnit(float value) {
   value = fmodf(value, 1.0f);
   if (value < 0.0f) {
     value += 1.0f;
   }
   return value;
+}
+
+static float HashUnit(int index, int salt) {
+  return WrappedUnit(sinf((float)(index * 37 + salt * 101)) * 43758.547f);
+}
+
+static void SpawnParticle(float x_ratio, float y_ratio) {
+  for (int index = 0; index < SHROOM_MENU_BACKGROUND_PARTICLE_COUNT; ++index) {
+    MenuBackgroundParticle* particle = &g_particles[index];
+    if (particle->life <= 0.0f) {
+      const float seed = HashUnit(index, (int)(g_global_time * 17.0f));
+      particle->x_ratio = x_ratio;
+      particle->y_ratio = y_ratio;
+      particle->vx = (seed - 0.5f) * 0.06f;
+      particle->vy = -(0.05f + HashUnit(index, 19) * 0.08f);
+      particle->life = 1.6f + HashUnit(index, 23) * 1.4f;
+      particle->max_life = particle->life;
+      particle->size = 1.0f + HashUnit(index, 29) * 3.0f;
+      particle->color = (Color){200, 150, 255, 200};
+      break;
+    }
+  }
+}
+
+void ShroomScreenResetFungalBackground(void) {
+  for (int index = 0; index < SHROOM_MENU_BACKGROUND_SPORE_COUNT; ++index) {
+    MenuBackgroundSpore* spore = &g_spores[index];
+    spore->x_ratio = HashUnit(index, 1);
+    spore->y_ratio = HashUnit(index, 2);
+    spore->speed = 0.035f + HashUnit(index, 3) * 0.065f;
+    spore->size = 2.0f + HashUnit(index, 4) * 4.0f;
+    spore->alpha = 0.28f + HashUnit(index, 5) * 0.52f;
+    spore->phase = HashUnit(index, 6) * 10.0f;
+  }
+
+  for (int index = 0; index < SHROOM_MENU_BACKGROUND_MUSHROOM_COUNT; ++index) {
+    MenuBackgroundMushroom* mushroom = &g_mushrooms[index];
+    mushroom->x_ratio = WrappedUnit(0.11f + (float)index * 0.137f);
+    mushroom->y_ratio = 0.70f + WrappedUnit(0.19f + (float)index * 0.21f) * 0.28f;
+    mushroom->scale = 0.55f + WrappedUnit(0.31f + (float)index * 0.17f) * 0.95f;
+    mushroom->sway_phase = HashUnit(index, 7) * 10.0f;
+    mushroom->sway_speed = 0.55f + HashUnit(index, 8) * 0.65f;
+    mushroom->type = index % 3;
+  }
+
+  for (int index = 0; index < SHROOM_MENU_BACKGROUND_PARTICLE_COUNT; ++index) {
+    g_particles[index].life = 0.0f;
+  }
+
+  g_global_time = 0.0f;
+  g_spawn_accumulator = 0.0f;
+  g_background_initialized = true;
+}
+
+void ShroomScreenUpdateFungalBackground(float delta_time, bool animate) {
+  if (!g_background_initialized) {
+    ShroomScreenResetFungalBackground();
+  }
+  if (!animate) {
+    return;
+  }
+
+  delta_time = fminf(fmaxf(delta_time, 0.0f), 0.05f);
+  g_global_time += delta_time;
+
+  for (int index = 0; index < SHROOM_MENU_BACKGROUND_SPORE_COUNT; ++index) {
+    MenuBackgroundSpore* spore = &g_spores[index];
+    spore->y_ratio -= spore->speed * delta_time;
+    spore->x_ratio += sinf(g_global_time + spore->phase) * 0.018f * delta_time;
+    if (spore->y_ratio < -0.02f) {
+      spore->y_ratio = 1.02f;
+      spore->x_ratio = HashUnit(index, (int)(g_global_time * 11.0f) + 31);
+    }
+    spore->x_ratio = WrappedUnit(spore->x_ratio);
+  }
+
+  for (int index = 0; index < SHROOM_MENU_BACKGROUND_MUSHROOM_COUNT; ++index) {
+    g_mushrooms[index].sway_phase += g_mushrooms[index].sway_speed * delta_time;
+  }
+
+  for (int index = 0; index < SHROOM_MENU_BACKGROUND_PARTICLE_COUNT; ++index) {
+    MenuBackgroundParticle* particle = &g_particles[index];
+    if (particle->life > 0.0f) {
+      particle->x_ratio += particle->vx * delta_time;
+      particle->y_ratio += particle->vy * delta_time;
+      particle->vy += 0.10f * delta_time;
+      particle->life -= delta_time;
+    }
+  }
+
+  g_spawn_accumulator += delta_time;
+  while (g_spawn_accumulator >= 0.18f) {
+    const int seed = (int)(g_global_time * 1000.0f);
+    SpawnParticle(HashUnit(seed, 41), HashUnit(seed, 43));
+    g_spawn_accumulator -= 0.18f;
+  }
 }
 
 static void DrawFungalMushroom(float x, float y, float scale, float sway, int type) {
@@ -39,26 +175,17 @@ static void DrawFungalMushroom(float x, float y, float scale, float sway, int ty
 }
 
 void ShroomScreenDrawFungalBackground(bool animate) {
-  static double previous_time = 0.0;
-  static float animation_time = 0.0f;
   const int screen_width = GetScreenWidth();
   const int screen_height = GetScreenHeight();
-  const double current_time = GetTime();
-  float frame_time = 0.0f;
-  const float time = animate ? animation_time : 0.0f;
-  const float pulse = animate ? (0.5f + 0.5f * sinf(time * 0.5f)) : 0.0f;
+  const float pulse = animate ? (0.5f + 0.5f * sinf(g_global_time * 0.5f)) : 0.0f;
   const Color gradient_top =
       (Color){(uint8_t)(30 + pulse * 16.0f), 20, (uint8_t)(50 + pulse * 24.0f), 255};
   const Color gradient_bottom =
       (Color){50, (uint8_t)(30 + pulse * 18.0f), (uint8_t)(70 + pulse * 20.0f), 255};
 
-  if (animate) {
-    if (previous_time > 0.0) {
-      frame_time = fminf(fmaxf((float)(current_time - previous_time), 0.0f), 0.05f);
-    }
-    animation_time += frame_time;
+  if (!g_background_initialized) {
+    ShroomScreenResetFungalBackground();
   }
-  previous_time = current_time;
 
   for (int y = 0; y < screen_height; y++) {
     const float t = screen_height > 0 ? (float)y / (float)screen_height : 0.0f;
@@ -70,53 +197,30 @@ void ShroomScreenDrawFungalBackground(bool animate) {
     DrawLine(0, y, screen_width, y, color);
   }
 
-  for (int index = 0; index < 8; index++) {
-    const float x_ratio = WrappedUnit(0.11f + (float)index * 0.137f + time * 0.02f);
-    const float y_ratio = 0.70f + WrappedUnit(0.19f + (float)index * 0.21f) * 0.28f;
-    const float scale = 0.55f + WrappedUnit(0.31f + (float)index * 0.17f) * 0.95f;
-    DrawFungalMushroom(x_ratio * (float)screen_width, y_ratio * (float)screen_height, scale,
-                       time * (0.6f + (float)index * 0.07f) + (float)index, index % 3);
+  for (int index = 0; index < SHROOM_MENU_BACKGROUND_MUSHROOM_COUNT; ++index) {
+    const MenuBackgroundMushroom* mushroom = &g_mushrooms[index];
+    DrawFungalMushroom(mushroom->x_ratio * (float)screen_width,
+                       mushroom->y_ratio * (float)screen_height, mushroom->scale,
+                       animate ? mushroom->sway_phase : 0.0f, mushroom->type);
   }
 
-  if (animate) {
-    for (int index = 0; index < 4; index++) {
-      const float x =
-          WrappedUnit(-0.2f + (float)index * 0.34f + time * 0.08f) * (float)screen_width;
-      const float y =
-          (0.18f + (float)index * 0.16f + sinf(time * 0.5f + index) * 0.04f) * (float)screen_height;
-      const float radius = (float)screen_width * (0.18f + (float)index * 0.02f);
-
-      DrawCircleV((Vector2){x, y}, radius, Fade((Color){80, 180, 140, 255}, 0.055f));
-      DrawCircleV((Vector2){x + 42.0f, y + 28.0f}, radius * 0.52f,
-                  Fade((Color){190, 150, 255, 255}, 0.045f));
+  for (int index = 0; index < SHROOM_MENU_BACKGROUND_PARTICLE_COUNT; ++index) {
+    const MenuBackgroundParticle* particle = &g_particles[index];
+    if (animate && (particle->life > 0.0f) && (particle->max_life > 0.0f)) {
+      Color color = particle->color;
+      color.a = (uint8_t)((particle->life / particle->max_life) * (float)color.a);
+      DrawCircle((int)(particle->x_ratio * (float)screen_width),
+                 (int)(particle->y_ratio * (float)screen_height), particle->size, color);
     }
   }
 
-  for (int index = 0; index < 10; index++) {
-    const float phase = (float)index * 0.63f;
-    const float x = WrappedUnit(0.08f + (float)index * 0.113f + time * 0.03f) * (float)screen_width;
-    const float y =
-        (0.18f + WrappedUnit(0.23f + (float)index * 0.171f) * 0.56f) * (float)screen_height;
-    const float radius = 42.0f + sinf(time * 1.4f + phase) * 20.0f;
-    const Color color = (Color){120, 220, 170, 255};
-
-    DrawCircleLines((int)x, (int)y, radius, Fade(color, animate ? 0.24f : 0.08f));
-    if (animate) {
-      DrawCircleLines((int)(x + sinf(time * 0.4f + phase) * 14.0f), (int)y, radius * 0.62f,
-                      Fade((Color){210, 190, 255, 255}, 0.12f));
-    }
-  }
-
-  for (int index = 0; index < 36; index++) {
-    const float x_ratio =
-        WrappedUnit(0.07f + (float)index * 0.173f + sinf(time * 0.8f + index) * 0.05f);
-    const float y_ratio =
-        WrappedUnit(0.13f + (float)index * 0.097f - time * (0.06f + (float)(index % 5) * 0.012f));
-    const float size = 2.5f + (float)(index % 4);
-    const float alpha = (animate ? 0.36f : 0.24f) + (float)(index % 5) * 0.08f;
-    const Vector2 position = {x_ratio * (float)screen_width, y_ratio * (float)screen_height};
-
-    DrawCircleV(position, size * 1.7f, Fade((Color){220, 200, 255, 255}, alpha * 0.35f));
-    DrawCircleV(position, size, Fade((Color){200, 180, 255, 255}, alpha));
+  for (int index = 0; index < SHROOM_MENU_BACKGROUND_SPORE_COUNT; ++index) {
+    const MenuBackgroundSpore* spore = &g_spores[index];
+    const Vector2 position = {spore->x_ratio * (float)screen_width,
+                              spore->y_ratio * (float)screen_height};
+    const Color color = {200, 180, 255, (uint8_t)(spore->alpha * 255.0f)};
+    const Color glow_color = {220, 200, 255, (uint8_t)(spore->alpha * 100.0f)};
+    DrawCircleV(position, spore->size * 1.7f, glow_color);
+    DrawCircleV(position, spore->size, color);
   }
 }
