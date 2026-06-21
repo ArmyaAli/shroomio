@@ -557,7 +557,7 @@ $(UNITY_DIR):
 # =============================================================================
 # 8. Test Targets
 # =============================================================================
-.PHONY: test unit-test imgui-test test-coverage test-clean
+.PHONY: test unit-test imgui-test valgrind-test valgrind-unit-test valgrind-imgui-test test-coverage test-clean
 
 test: unit-test imgui-test
 
@@ -587,6 +587,41 @@ $(IMGUI_TEST_BIN): $(IMGUI_TEST_CLIENT_OBJECTS) $(IMGUI_TEST_C_OBJECTS) $(IMGUI_
 imgui-test: $(IMGUI_TEST_BIN)
 	@echo "Running ImGui tests..."
 	@if command -v xvfb-run >/dev/null 2>&1; then xvfb-run -a ./$(IMGUI_TEST_BIN); else ./$(IMGUI_TEST_BIN); fi
+
+VALGRIND ?= valgrind
+VALGRIND_FLAGS ?= --leak-check=full --show-leak-kinds=definite,indirect --errors-for-leak-kinds=definite,indirect --error-exitcode=99 --track-origins=yes
+VALGRIND_IMGUI_FLAGS ?= --leak-check=full --show-leak-kinds=definite,indirect --errors-for-leak-kinds=none --error-exitcode=99 --track-origins=yes
+
+valgrind-test: valgrind-unit-test
+
+valgrind-unit-test: $(TEST_BINS)
+	@command -v $(VALGRIND) >/dev/null 2>&1 || (printf '%s\n' 'valgrind is not installed. Rebuild the devcontainer with make devcontainer-build && make devcontainer-up.' && exit 1)
+	@echo "Running unit tests under Valgrind..."
+	@failed=0; total=0; \
+	for test in $(TEST_BINS); do \
+		total=$$((total + 1)); \
+		echo ""; \
+		echo "=== Valgrind $$(basename $$test) ==="; \
+		if $(VALGRIND) $(VALGRIND_FLAGS) $$test; then \
+			echo "✓ $$(basename $$test) passed under Valgrind"; \
+		else \
+			echo "✗ $$(basename $$test) failed under Valgrind"; \
+			failed=$$((failed + 1)); \
+		fi; \
+	done; \
+	echo ""; \
+	echo "=== Valgrind Test Summary ==="; \
+	echo "Total: $$total, Passed: $$((total - failed)), Failed: $$failed"; \
+	if [ $$failed -gt 0 ]; then exit 1; fi
+
+valgrind-imgui-test: $(IMGUI_TEST_BIN)
+	@command -v $(VALGRIND) >/dev/null 2>&1 || (printf '%s\n' 'valgrind is not installed. Rebuild the devcontainer with make devcontainer-build && make devcontainer-up.' && exit 1)
+	@echo "Running ImGui tests under Valgrind..."
+	@if command -v xvfb-run >/dev/null 2>&1; then \
+		SHROOM_VALGRIND_IMGUI=1 SHROOM_IMGUI_TEST_FILTER=history_renders_incoming_messages xvfb-run -a $(VALGRIND) $(VALGRIND_IMGUI_FLAGS) ./$(IMGUI_TEST_BIN); \
+	else \
+		SHROOM_VALGRIND_IMGUI=1 SHROOM_IMGUI_TEST_FILTER=history_renders_incoming_messages $(VALGRIND) $(VALGRIND_IMGUI_FLAGS) ./$(IMGUI_TEST_BIN); \
+	fi
 
 # Test with coverage (requires gcovr)
 test-coverage:

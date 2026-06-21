@@ -17,7 +17,9 @@
 
 #include "imgui_te_wrapper.h"
 
+#include <float.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* -------------------------------------------------------------------------
@@ -34,6 +36,10 @@ ImGuiTestEngine *ShroomTeEngine_Create(void) {
   io.ConfigRunSpeed = ImGuiTestRunSpeed_Fast;
   io.ConfigVerboseLevel = ImGuiTestVerboseLevel_Info;
   io.ConfigVerboseLevelOnError = ImGuiTestVerboseLevel_Debug;
+  if (getenv("SHROOM_VALGRIND_IMGUI") != NULL) {
+    io.ConfigWatchdogWarning = FLT_MAX;
+    io.ConfigWatchdogKillTest = FLT_MAX;
+  }
 
   ImGuiTestEngine_Start(engine, ImGui::GetCurrentContext());
   ImGuiTestEngine_InstallDefaultCrashHandler();
@@ -41,7 +47,9 @@ ImGuiTestEngine *ShroomTeEngine_Create(void) {
 }
 
 void ShroomTeEngine_QueueAll(ImGuiTestEngine *engine) {
-  ImGuiTestEngine_QueueTests(engine, ImGuiTestGroup_Tests);
+  const char *filter = getenv("SHROOM_IMGUI_TEST_FILTER");
+  ImGuiTestEngine_QueueTests(engine, ImGuiTestGroup_Tests,
+                             (filter != NULL && filter[0] != '\0') ? filter : NULL);
 }
 
 void ShroomTeEngine_Stop(ImGuiTestEngine *engine) {

@@ -32,6 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     texlive-latex-extra \
     texlive-latex-recommended \
     unzip \
+    valgrind \
     xvfb \
     xz-utils \
     yamllint \

@@ -18,6 +18,7 @@ int main(void) {
   ShroomLifecycleInit(&g_lifecycle);
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_INIT);
 
+  SetConfigFlags(FLAG_WINDOW_RESIZABLE);
   InitWindow(screen_width, screen_height, "shroomio");
   InitAudioDevice();
   SetExitKey(KEY_NULL);
@@ -46,6 +47,10 @@ int main(void) {
 
   while (!WindowShouldClose() && !ShroomLifecycleIsShutdownRequested(&g_lifecycle) &&
          ShroomScreenManagerIsRunning(&g_screen_manager)) {
+    if (IsWindowResized()) {
+      GameHandleResize(&g_game, GetScreenWidth(), GetScreenHeight());
+    }
+
     ShroomScreenManagerHandleInput(&g_screen_manager);
     ShroomScreenManagerUpdate(&g_screen_manager, GetFrameTime());
 

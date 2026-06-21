@@ -132,6 +132,7 @@ typedef struct Game {
 } Game;
 
 void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode mode);
+void GameHandleResize(Game* game, int screen_width, int screen_height);
 void GameUpdate(Game* game, float delta_time);
 void GameDraw(Game* game);
 void GameShutdown(Game* game);
