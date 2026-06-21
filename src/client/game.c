@@ -113,11 +113,17 @@ typedef enum ClientSfx {
   CLIENT_SFX_DEATH,
   CLIENT_SFX_ZONE,
   CLIENT_SFX_WARNING,
+  CLIENT_SFX_POWERUP,
+  CLIENT_SFX_SPLIT,
+  CLIENT_SFX_UI_CLICK,
+  CLIENT_SFX_UI_ERROR,
   CLIENT_SFX_COUNT,
 } ClientSfx;
 
 static Sound g_client_sfx[CLIENT_SFX_COUNT];
 static bool g_client_sfx_loaded[CLIENT_SFX_COUNT];
+static Sound g_client_music_loop;
+static bool g_client_music_loaded;
 
 static Sound GenerateToneSound(float start_hz, float end_hz, float seconds, float decay) {
   const unsigned int sample_rate = 32000u;
@@ -159,6 +165,40 @@ static Sound GenerateToneSound(float start_hz, float end_hz, float seconds, floa
   return sound;
 }
 
+static Sound GenerateAmbientLoopSound(void) {
+  const unsigned int sample_rate = 32000u;
+  const float seconds = 3.2f;
+  const unsigned int frame_count = (unsigned int)(seconds * (float)sample_rate);
+  int16_t* samples = malloc(frame_count * sizeof(int16_t));
+  Wave wave = {0};
+  Sound sound = {0};
+
+  if ((samples == NULL) || (frame_count == 0u)) {
+    free(samples);
+    return sound;
+  }
+
+  for (unsigned int index = 0u; index < frame_count; ++index) {
+    const float t = (float)index / (float)sample_rate;
+    const float loop_phase = (float)index / (float)frame_count;
+    const float fade = sinf(PI * loop_phase);
+    const float drone = sinf(2.0f * PI * 92.0f * t) * 0.34f;
+    const float overtone = sinf(2.0f * PI * 184.0f * t + sinf(2.0f * PI * 0.31f * t)) * 0.18f;
+    const float shimmer = sinf(2.0f * PI * 276.0f * t) * sinf(2.0f * PI * 0.17f * t) * 0.08f;
+    const float sample = (drone + overtone + shimmer) * (0.52f + (0.48f * fade));
+    samples[index] = (int16_t)(Clamp(sample, -1.0f, 1.0f) * 5200.0f);
+  }
+
+  wave.frameCount = frame_count;
+  wave.sampleRate = sample_rate;
+  wave.sampleSize = 16u;
+  wave.channels = 1u;
+  wave.data = samples;
+  sound = LoadSoundFromWave(wave);
+  free(samples);
+  return sound;
+}
+
 static void EnsureClientSfxLoaded(ClientSfx sfx) {
   if ((sfx < 0) || (sfx >= CLIENT_SFX_COUNT) || g_client_sfx_loaded[sfx] || !IsAudioDeviceReady()) {
     return;
@@ -180,6 +220,18 @@ static void EnsureClientSfxLoaded(ClientSfx sfx) {
   case CLIENT_SFX_WARNING:
     g_client_sfx[sfx] = GenerateToneSound(260.0f, 170.0f, 0.22f, 1.0f);
     break;
+  case CLIENT_SFX_POWERUP:
+    g_client_sfx[sfx] = GenerateToneSound(430.0f, 980.0f, 0.24f, 1.35f);
+    break;
+  case CLIENT_SFX_SPLIT:
+    g_client_sfx[sfx] = GenerateToneSound(180.0f, 420.0f, 0.28f, 1.05f);
+    break;
+  case CLIENT_SFX_UI_CLICK:
+    g_client_sfx[sfx] = GenerateToneSound(680.0f, 760.0f, 0.08f, 2.4f);
+    break;
+  case CLIENT_SFX_UI_ERROR:
+    g_client_sfx[sfx] = GenerateToneSound(210.0f, 130.0f, 0.18f, 1.8f);
+    break;
   case CLIENT_SFX_COUNT:
   default:
     return;
@@ -190,6 +242,33 @@ static void EnsureClientSfxLoaded(ClientSfx sfx) {
 static void EnsureAllClientSfxLoaded(void) {
   for (int index = 0; index < CLIENT_SFX_COUNT; ++index) {
     EnsureClientSfxLoaded((ClientSfx)index);
+  }
+}
+
+static void EnsureClientMusicLoaded(void) {
+  if (g_client_music_loaded || !IsAudioDeviceReady()) {
+    return;
+  }
+  g_client_music_loop = GenerateAmbientLoopSound();
+  g_client_music_loaded = true;
+}
+
+static void UpdateClientMusic(const Game* game) {
+  float volume;
+
+  EnsureClientMusicLoaded();
+  if (!g_client_music_loaded) {
+    return;
+  }
+
+  volume = ((float)game->settings.music_volume_percent / 100.0f) * 0.34f;
+  SetSoundVolume(g_client_music_loop, volume);
+  SetSoundPan(g_client_music_loop, 0.5f);
+  if ((volume > 0.0f) && !IsSoundPlaying(g_client_music_loop)) {
+    PlaySound(g_client_music_loop);
+  }
+  if ((volume <= 0.0f) && IsSoundPlaying(g_client_music_loop)) {
+    StopSound(g_client_music_loop);
   }
 }
 
@@ -204,6 +283,11 @@ static void UnloadClientSfx(void) {
   }
   memset(g_client_sfx, 0, sizeof(g_client_sfx));
   memset(g_client_sfx_loaded, 0, sizeof(g_client_sfx_loaded));
+  if (g_client_music_loaded) {
+    UnloadSound(g_client_music_loop);
+  }
+  memset(&g_client_music_loop, 0, sizeof(g_client_music_loop));
+  g_client_music_loaded = false;
 }
 
 static void PlayClientSfx(const Game* game, ClientSfx sfx, float importance) {
@@ -242,6 +326,18 @@ static void PlayClientSfx(const Game* game, ClientSfx sfx, float importance) {
   SetSoundVolume(g_client_sfx[sfx], volume);
   SetSoundPan(g_client_sfx[sfx], 0.5f);
   PlaySound(g_client_sfx[sfx]);
+}
+
+void GamePlayUiClickSound(const Game* game) {
+  if (game != NULL) {
+    PlayClientSfx(game, CLIENT_SFX_UI_CLICK, 0.46f);
+  }
+}
+
+void GamePlayUiErrorSound(const Game* game) {
+  if (game != NULL) {
+    PlayClientSfx(game, CLIENT_SFX_UI_ERROR, 0.58f);
+  }
 }
 
 static void SpawnGameplayParticle(Game* game, Vector2 position, Vector2 velocity, Color color,
@@ -586,7 +682,7 @@ static void EmitGameplayEventParticles(Game* game) {
       if ((game->local_player != NULL) &&
           (ShroomDistanceSqr(game->local_player->position,
                              game->previous_powerup_positions[index]) < 6400.0f)) {
-        PlayClientSfx(game, CLIENT_SFX_ZONE, 0.66f);
+        PlayClientSfx(game, CLIENT_SFX_POWERUP, 0.66f);
       }
     }
   }
@@ -669,7 +765,7 @@ static void EmitGameplayEventParticles(Game* game) {
       SpawnParticleBurst(game, player->position, (Color){255, 215, 116, 255}, 10, 130.0f, 4.6f,
                          0.58f);
       if ((local_player_id != 0u) && (player->player_id == local_player_id)) {
-        PlayClientSfx(game, CLIENT_SFX_ZONE, 0.64f);
+        PlayClientSfx(game, CLIENT_SFX_SPLIT, 0.64f);
       }
     }
     if (had_same_entity && game->previous_player_alive[index] &&
@@ -677,7 +773,7 @@ static void EmitGameplayEventParticles(Game* game) {
       SpawnParticleBurst(game, player->position, (Color){255, 215, 116, 255}, 9, 112.0f, 4.4f,
                          0.52f);
       if ((local_player_id != 0u) && (player->player_id == local_player_id)) {
-        PlayClientSfx(game, CLIENT_SFX_ZONE, 0.64f);
+        PlayClientSfx(game, CLIENT_SFX_SPLIT, 0.64f);
       }
     }
   }
@@ -2858,6 +2954,7 @@ void GameUpdate(Game* game, float delta_time) {
   const uint32_t previous_input_sequence = game->net.last_input_sequence;
 
   GameHandleResize(game, GetScreenWidth(), GetScreenHeight());
+  UpdateClientMusic(game);
 
   if (IsOverlayBlockingGameplay(game) || game->chat_open) {
     input_direction = (ShroomVec2){0};

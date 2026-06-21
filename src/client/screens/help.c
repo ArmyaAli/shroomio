@@ -11,7 +11,7 @@ static bool HelpInit(ShroomScreenManager* manager) {
 }
 
 static void HelpDraw(ShroomScreenManager* manager) {
-  const Game* game = manager != NULL ? (const Game*)manager->user_data : NULL;
+  Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
   const int screen_width = GetScreenWidth();
   const int screen_height = GetScreenHeight();
 
@@ -45,6 +45,7 @@ static void HelpDraw(ShroomScreenManager* manager) {
   ShroomImGui_Spacing();
 
   if (ShroomImGui_Button("Back", 140.0f, 36.0f)) {
+    GamePlayUiClickSound(game);
     ShroomScreenManagerGoBack(manager);
   }
 

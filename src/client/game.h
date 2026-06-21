@@ -136,6 +136,8 @@ void GameHandleResize(Game* game, int screen_width, int screen_height);
 void GameUpdate(Game* game, float delta_time);
 void GameDraw(Game* game);
 void GameShutdown(Game* game);
+void GamePlayUiClickSound(const Game* game);
+void GamePlayUiErrorSound(const Game* game);
 
 /* Leaderboard and ranking functions */
 void BuildLeaderboard(const Game* game, LeaderboardEntry* entries, size_t* entry_count);

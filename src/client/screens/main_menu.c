@@ -43,6 +43,7 @@ static void MainMenuDraw(ShroomScreenManager* manager) {
   ShroomImGui_Spacing();
 
   if (ShroomImGui_Button("Play Online", -1.0f, 38.0f)) {
+    GamePlayUiClickSound(game);
     if (game != NULL) {
       ClientNetInit(&game->net, game->selected_server_host, game->selected_server_port);
       game->auto_join_lobby = true;
@@ -50,24 +51,30 @@ static void MainMenuDraw(ShroomScreenManager* manager) {
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_LOBBY);
   }
   if (ShroomImGui_Button("Custom Server", -1.0f, 38.0f)) {
+    GamePlayUiClickSound(game);
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
   }
   if (ShroomImGui_Button("Offline Practice", -1.0f, 38.0f)) {
+    GamePlayUiClickSound(game);
     if (game != NULL) {
       game->selected_mode = SHROOM_SESSION_MODE_OFFLINE_PRACTICE;
     }
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
   }
   if (ShroomImGui_Button("Settings", -1.0f, 38.0f)) {
+    GamePlayUiClickSound(game);
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SETTINGS);
   }
   if (ShroomImGui_Button("Help", -1.0f, 38.0f)) {
+    GamePlayUiClickSound(game);
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_HELP);
   }
   if (ShroomImGui_Button("Credits", -1.0f, 38.0f)) {
+    GamePlayUiClickSound(game);
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_CREDITS);
   }
   if (ShroomImGui_Button("Exit", -1.0f, 38.0f)) {
+    GamePlayUiClickSound(game);
     ShroomScreenManagerRequestExit(manager);
   }
 

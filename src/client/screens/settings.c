@@ -162,9 +162,15 @@ static void SettingsDraw(ShroomScreenManager* manager) {
     ApplySettings(game);
     g_settings_screen.save_succeeded = ClientSettingsSave(&game->settings);
     g_settings_screen.dirty = !g_settings_screen.save_succeeded;
+    if (g_settings_screen.save_succeeded) {
+      GamePlayUiClickSound(game);
+    } else {
+      GamePlayUiErrorSound(game);
+    }
   }
   ShroomImGui_SameLine();
   if (ShroomImGui_Button("Back", 140.0f, 36.0f)) {
+    GamePlayUiClickSound(game);
     ShroomScreenManagerGoBack(manager);
   }
 
