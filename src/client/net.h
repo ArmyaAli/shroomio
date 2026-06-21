@@ -74,7 +74,7 @@ typedef struct ClientNetState {
 
 bool ClientNetInit(ClientNetState* net, const char* host_name, uint16_t port);
 void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, bool split_requested,
-                     uint32_t focused_entity_id, float delta_time);
+                     ShroomVec2 split_direction, uint32_t focused_entity_id, float delta_time);
 void ClientNetShutdown(ClientNetState* net);
 const char* ClientNetStatusLabel(const ClientNetState* net);
 bool ClientNetSendChat(ClientNetState* net, uint32_t player_id, const char* sender_name,

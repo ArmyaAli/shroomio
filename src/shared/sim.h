@@ -12,6 +12,8 @@ ShroomPlayerState* ShroomWorldSpawnPlayer(ShroomWorldState* world, ShroomPlayerI
 
 void ShroomPlayerSetInput(ShroomPlayerState* player, ShroomVec2 input_direction);
 bool ShroomWorldSplitPlayer(ShroomWorldState* world, ShroomPlayerState* player);
+bool ShroomWorldSplitPlayerToward(ShroomWorldState* world, ShroomPlayerState* player,
+                                  ShroomVec2 aim_direction);
 
 float ShroomMassToRadius(float mass);
 float ShroomMassToSpeed(float mass);

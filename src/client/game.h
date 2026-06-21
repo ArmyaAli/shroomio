@@ -89,12 +89,15 @@ typedef struct Game {
   bool play_again_requested;
   float camera_zoom_target;
   bool split_requested;
-  float split_hold_timer;           /* seconds Space held; fires at SHROOM_SPLIT_HOLD_SECONDS */
-  bool piece_focus_changed;         /* set when Tab cycles pieces */
-  bool local_has_split;             /* true after local player uses their one split per life */
-  uint32_t focused_piece_entity_id; /* entity_id of the piece being controlled; 0 = primary */
-  int local_piece_count;            /* how many alive pieces the local player has */
-  bool auto_join_lobby;             /* set by Play Online — join best lobby on list receipt */
+  float split_hold_timer; /* seconds Space held; fires at SHROOM_SPLIT_HOLD_SECONDS */
+  ShroomVec2
+      split_aim_direction; /* normalized launch aim, cursor direction with movement fallback */
+  ShroomVec2 split_aim_visual_direction; /* smoothed direction used only for arrow rendering */
+  bool piece_focus_changed;              /* set when Tab cycles pieces */
+  bool local_has_split;                  /* true after local player uses their one split per life */
+  uint32_t focused_piece_entity_id;      /* entity_id of the piece being controlled; 0 = primary */
+  int local_piece_count;                 /* how many alive pieces the local player has */
+  bool auto_join_lobby; /* set by Play Online — join best lobby on list receipt */
   bool chat_open;
   bool chat_minimized;
   bool chat_focus_input;

@@ -469,6 +469,29 @@ void test_player_can_voluntarily_split_at_large_colony_threshold(void) {
   TEST_ASSERT_TRUE(piece->ai_controlled);
 }
 
+void test_player_split_uses_requested_aim_direction(void) {
+  ShroomPlayerState* player;
+  ShroomPlayerState* piece;
+
+  ResetWorldForPlayers();
+
+  player = ShroomWorldSpawnPlayer(&world, 1, false);
+  TEST_ASSERT_NOT_NULL(player);
+
+  player->mass = SHROOM_SPLIT_MIN_MASS;
+  player->radius = ShroomMassToRadius(player->mass);
+  player->input_direction = (ShroomVec2){1.0f, 0.0f};
+
+  TEST_ASSERT_TRUE(ShroomWorldSplitPlayerToward(&world, player, (ShroomVec2){0.0f, -3.0f}));
+
+  piece = FindSplitPiece(player->player_id);
+  TEST_ASSERT_NOT_NULL(piece);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, piece->split_velocity.x);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, -SHROOM_SPLIT_IMPULSE_SPEED, piece->split_velocity.y);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, piece->input_direction.x);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, -1.0f, piece->input_direction.y);
+}
+
 void test_player_cannot_voluntarily_split_below_large_colony_threshold(void) {
   ShroomPlayerState* player;
 
@@ -1013,6 +1036,7 @@ int main(void) {
   RUN_TEST(test_spawn_player_reuses_inactive_slot);
   RUN_TEST(test_world_step_caps_mass_gain_at_configured_maximum);
   RUN_TEST(test_player_can_voluntarily_split_at_large_colony_threshold);
+  RUN_TEST(test_player_split_uses_requested_aim_direction);
   RUN_TEST(test_player_cannot_voluntarily_split_below_large_colony_threshold);
   RUN_TEST(test_split_pieces_wait_to_merge_until_cooldown_and_proximity);
   RUN_TEST(test_consuming_primary_clears_old_split_fragments_after_respawn);

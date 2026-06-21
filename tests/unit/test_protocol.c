@@ -18,9 +18,9 @@ void test_welcome_packet_size(void) {
 }
 
 void test_input_packet_size(void) {
-  /* header + sequence + direction_x + direction_y + split_requested + reserved[3] +
-   * focused_entity_id */
-  TEST_ASSERT_EQUAL(sizeof(ShroomPacketHeader) + 4 + 4 + 4 + 1 + 3 + 4, sizeof(ShroomInputPacket));
+  /* header + sequence + movement direction + split direction + split flag/reserved + focused id */
+  TEST_ASSERT_EQUAL(sizeof(ShroomPacketHeader) + 4 + 4 + 4 + 4 + 4 + 1 + 3 + 4,
+                    sizeof(ShroomInputPacket));
 }
 
 void test_ping_packet_size(void) {
@@ -162,7 +162,7 @@ void test_lobby_config_constants(void) {
 
 void test_protocol_constants(void) {
   TEST_ASSERT_EQUAL(7777, SHROOM_SERVER_PORT);
-  TEST_ASSERT_EQUAL(2, SHROOM_PROTOCOL_VERSION);
+  TEST_ASSERT_EQUAL(3, SHROOM_PROTOCOL_VERSION);
   TEST_ASSERT_EQUAL(32, SHROOM_MAX_NAME_LENGTH);
   TEST_ASSERT_EQUAL(15, SHROOM_SNAPSHOT_RATE);
   TEST_ASSERT_EQUAL(256, SHROOM_MAX_SNAPSHOT_PLAYERS);
@@ -315,6 +315,8 @@ void test_input_packet_initialization(void) {
   packet.sequence = 42;
   packet.direction_x = 0.5f;
   packet.direction_y = -0.5f;
+  packet.split_direction_x = 1.0f;
+  packet.split_direction_y = 0.25f;
 
   TEST_ASSERT_EQUAL(SHROOM_PACKET_INPUT, packet.header.type);
   TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_INPUT, packet.header.reserved);
@@ -322,6 +324,8 @@ void test_input_packet_initialization(void) {
   TEST_ASSERT_EQUAL(42, packet.sequence);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.5f, packet.direction_x);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, -0.5f, packet.direction_y);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, packet.split_direction_x);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.25f, packet.split_direction_y);
 }
 
 void test_snapshot_player_state_initialization(void) {
