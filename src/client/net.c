@@ -37,6 +37,32 @@ static void RecordRTTSample(ClientNetState* net, uint32_t rtt_ms) {
   net->rtt_average_ms = net->rtt_sample_count > 0 ? (uint32_t)(total / net->rtt_sample_count) : 0;
 }
 
+static uint32_t ElapsedMs(uint32_t now_ms, uint32_t then_ms) { return now_ms - then_ms; }
+
+static void ClearStalePendingPing(ClientNetState* net, uint32_t now_ms) {
+  if ((net->pending_ping_nonce != 0) &&
+      (ElapsedMs(now_ms, net->pending_ping_sent_time_ms) >= SHROOM_CLIENT_PING_TIMEOUT_MS)) {
+    net->pending_ping_nonce = 0;
+  }
+}
+
+static bool CompletePendingPing(ClientNetState* net, uint32_t nonce, uint32_t now_ms) {
+  uint32_t rtt_ms;
+
+  if ((net->pending_ping_nonce == 0) || (nonce != net->pending_ping_nonce)) {
+    return false;
+  }
+
+  rtt_ms = ElapsedMs(now_ms, net->pending_ping_sent_time_ms);
+  net->pending_ping_nonce = 0;
+  if (rtt_ms >= SHROOM_CLIENT_PING_TIMEOUT_MS) {
+    return false;
+  }
+
+  RecordRTTSample(net, rtt_ms);
+  return true;
+}
+
 static void SendPing(ClientNetState* net) {
   ShroomPingPacket packet = {0};
 
@@ -149,12 +175,7 @@ static void HandlePong(ClientNetState* net, const ENetPacket* enet_packet) {
   if (enet_packet->dataLength < sizeof(*packet)) {
     return;
   }
-  if ((net->pending_ping_nonce == 0) || (packet->nonce != net->pending_ping_nonce)) {
-    return;
-  }
-
-  RecordRTTSample(net, enet_time_get() - net->pending_ping_sent_time_ms);
-  net->pending_ping_nonce = 0;
+  CompletePendingPing(net, packet->nonce, enet_time_get());
 }
 
 static void HandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet) {
@@ -414,6 +435,7 @@ void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, bool split
   }
 
   if (net->peer != 0) {
+    ClearStalePendingPing(net, enet_time_get());
     net->input_send_accumulator += delta_time;
     while (net->input_send_accumulator >= (1.0f / SHROOM_SERVER_TICK_RATE)) {
       SendInput(net, input_direction, split_requested, focused_entity_id);
@@ -429,6 +451,16 @@ void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, bool split
     enet_host_flush(net->host);
   }
 }
+
+#ifdef TEST_MODE
+bool ClientNetTestCompletePendingPing(ClientNetState* net, uint32_t nonce, uint32_t now_ms) {
+  return CompletePendingPing(net, nonce, now_ms);
+}
+
+void ClientNetTestClearStalePendingPing(ClientNetState* net, uint32_t now_ms) {
+  ClearStalePendingPing(net, now_ms);
+}
+#endif
 
 void ClientNetShutdown(ClientNetState* net) {
   if (net->peer != 0) {
