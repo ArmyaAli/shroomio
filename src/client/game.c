@@ -27,6 +27,9 @@ static const float kRenderCullMargin = 96.0f;
 static const char* GetPlayerDisplayName(const Game* game, const ShroomPlayerState* player);
 static int GetPlayerRank(const Game* game, const ShroomPlayerState* target_player);
 static Color GetPowerupColor(ShroomPowerupType type);
+static Color GetZoneColor(ShroomZone zone);
+static const char* GetZoneSummary(ShroomZone zone);
+static const char* GetZoneLabel(ShroomZone zone);
 
 static bool IsOnlineMode(GameSessionMode mode) {
   return mode == SHROOM_SESSION_MODE_QUICK_PLAY || mode == SHROOM_SESSION_MODE_LOBBY_PLAY;
