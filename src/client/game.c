@@ -2331,6 +2331,8 @@ static void DrawDiagnosticsOverlay(const Game* game) {
 
 static const float kChatInactiveTimeout = 8.0f;
 
+static void DrawFungalHudPanel(Rectangle rect, Color accent);
+
 static void UpdateChatState(Game* game, float delta_time) {
   if (!IsOnlineMode(game->active_mode) || game->chat_minimized) {
     return;
@@ -2354,28 +2356,31 @@ static void DrawChatDock(Game* game) {
   const float pos_x = (float)game->screen_width - dock_width - 18.0f;
   const float pos_y = 132.0f;
   const float btn_size = 44.0f;
+  const float btn_panel_size = btn_size + 8.0f;
+  const Color hud_accent = (Color){130, 210, 150, 255};
+  const Color unread_accent = (Color){214, 178, 92, 255};
 
   if (!IsOnlineMode(game->active_mode)) {
     return;
   }
 
-  /* Minimised state: circular button with zero padding so the button fills
-   * the window exactly and its label is centred inside the circle.
-   * Colours: muted dark-teal at ~55 % opacity, lighter on hover/press — echoes
-   * the proximity-radar palette and is more transparent than other controls. */
+  /* Minimized state: frame the chat button with the same fungal HUD panel
+   * treatment as gameplay panels so it reads as part of the HUD. */
   if (game->chat_minimized) {
     const bool has_unread = game->net.chat_unread_count > 0u;
+    const Color accent = has_unread ? unread_accent : hud_accent;
+    const float panel_x = (float)game->screen_width - btn_panel_size - 18.0f;
     const char* label =
         has_unread
             ? TextFormat("%u", game->net.chat_unread_count > 9u ? 9u : game->net.chat_unread_count)
             : "C";
-    ShroomImGui_PushStyleColor(SHROOM_IMGUI_COL_BUTTON, 0.10f, 0.22f, 0.28f, 0.55f);
-    ShroomImGui_PushStyleColor(SHROOM_IMGUI_COL_BUTTON_HOVERED, 0.16f, 0.32f, 0.42f, 0.78f);
-    ShroomImGui_PushStyleColor(SHROOM_IMGUI_COL_BUTTON_ACTIVE, 0.20f, 0.42f, 0.56f, 0.92f);
+    DrawFungalHudPanel((Rectangle){panel_x, pos_y, btn_panel_size, btn_panel_size}, accent);
+    ShroomImGui_PushStyleColor(SHROOM_IMGUI_COL_BUTTON, 0.09f, 0.12f, 0.09f, 0.72f);
+    ShroomImGui_PushStyleColor(SHROOM_IMGUI_COL_BUTTON_HOVERED, 0.21f, 0.34f, 0.19f, 0.88f);
+    ShroomImGui_PushStyleColor(SHROOM_IMGUI_COL_BUTTON_ACTIVE, 0.36f, 0.55f, 0.31f, 0.96f);
     ShroomImGui_PushWindowPadding(0.0f, 0.0f);
-    ShroomImGui_PushWindowRounding(btn_size * 0.5f);
-    ShroomImGui_SetNextWindowPos((float)game->screen_width - btn_size - 18.0f, pos_y,
-                                 SHROOM_IMGUI_COND_ALWAYS);
+    ShroomImGui_PushWindowRounding(8.0f);
+    ShroomImGui_SetNextWindowPos(panel_x + 4.0f, pos_y + 4.0f, SHROOM_IMGUI_COND_ALWAYS);
     ShroomImGui_SetNextWindowSize(btn_size, btn_size, SHROOM_IMGUI_COND_ALWAYS);
     ShroomImGui_SetNextWindowBgAlpha(0.0f);
     if (ShroomImGui_Begin("ChatBtn", NULL,
@@ -2397,14 +2402,19 @@ static void DrawChatDock(Game* game) {
     return;
   }
 
+  DrawFungalHudPanel((Rectangle){pos_x, pos_y, dock_width, total_height}, hud_accent);
+  ShroomImGui_PushWindowPadding(12.0f, 10.0f);
+  ShroomImGui_PushWindowRounding(8.0f);
   ShroomImGui_SetNextWindowPos(pos_x, pos_y, SHROOM_IMGUI_COND_ALWAYS);
   ShroomImGui_SetNextWindowSize(dock_width, total_height, SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowBgAlpha(game->chat_open ? 0.82f : 0.46f);
+  ShroomImGui_SetNextWindowBgAlpha(0.30f);
   if (!ShroomImGui_Begin("Chat", NULL,
-                         SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
-                             SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
+                         SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
+                             SHROOM_IMGUI_WINDOW_NO_MOVE | SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
                              SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
     ShroomImGui_End();
+    ShroomImGui_PopStyleVar(); /* rounding */
+    ShroomImGui_PopStyleVar(); /* padding */
     return;
   }
 
@@ -2469,14 +2479,16 @@ static void DrawChatDock(Game* game) {
     ShroomImGui_Text("Enter sends   Esc closes");
   } else {
     if (game->net.chat_unread_count > 0u) {
-      ShroomImGui_TextColored(ToImGuiColor(ORANGE), TextFormat("%u unread  Enter/T to type",
-                                                               game->net.chat_unread_count));
+      ShroomImGui_TextColored(ToImGuiColor(unread_accent), TextFormat("%u unread  Enter/T to type",
+                                                                      game->net.chat_unread_count));
     } else {
       ShroomImGui_Text("Enter/T to type");
     }
   }
 
   ShroomImGui_End();
+  ShroomImGui_PopStyleVar(); /* rounding */
+  ShroomImGui_PopStyleVar(); /* padding */
 }
 
 static void DrawFungalHudPanel(Rectangle rect, Color accent) {
