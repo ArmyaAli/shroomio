@@ -12,6 +12,7 @@
 #define SHROOM_CLIENT_PENDING_INPUT_CAPACITY 128u
 #define SHROOM_CLIENT_PARTICLE_CAPACITY 384u
 #define SHROOM_CLIENT_NOTIFICATION_CAPACITY 6u
+#define SHROOM_CLIENT_GAMEPLAY_EVENT_CAPACITY 64u
 
 typedef enum GameSessionMode {
   SHROOM_SESSION_MODE_QUICK_PLAY = 0,
@@ -48,6 +49,35 @@ typedef struct CombatNotification {
   bool active;
 } CombatNotification;
 
+typedef enum GameplayEventType {
+  GAMEPLAY_EVENT_PARTICLE_BURST = 0,
+  GAMEPLAY_EVENT_NOTIFICATION,
+  GAMEPLAY_EVENT_SCREEN_FLASH,
+  GAMEPLAY_EVENT_SFX,
+  GAMEPLAY_EVENT_DEATH_CUTSCENE,
+  GAMEPLAY_EVENT_ZONE_CALLOUT,
+  GAMEPLAY_EVENT_RESPAWN_BANNER,
+} GameplayEventType;
+
+typedef struct GameplayEvent {
+  GameplayEventType type;
+  ShroomVec2 position;
+  Color color;
+  int count;
+  float speed;
+  float radius;
+  float lifetime;
+  float duration;
+  float importance;
+  float final_mass;
+  float survival_time;
+  int final_rank;
+  int sfx;
+  char title[96];
+  char detail[128];
+  char name[SHROOM_MAX_NAME_LENGTH];
+} GameplayEvent;
+
 typedef struct Game {
   Camera2D camera;
   ClientSettings settings;
@@ -63,10 +93,13 @@ typedef struct Game {
   uint32_t particle_cursor;
   uint32_t notification_head;
   uint32_t notification_count;
+  uint32_t gameplay_event_head;
+  uint32_t gameplay_event_count;
   ShroomVec2 render_positions[SHROOM_MAX_PLAYERS];
   ShroomVec2 previous_local_position;
   GameplayParticle particles[SHROOM_CLIENT_PARTICLE_CAPACITY];
   CombatNotification notifications[SHROOM_CLIENT_NOTIFICATION_CAPACITY];
+  GameplayEvent gameplay_events[SHROOM_CLIENT_GAMEPLAY_EVENT_CAPACITY];
   ShroomVec2 previous_spore_positions[SHROOM_MAX_SPORES];
   ShroomEntityId previous_spore_entity_ids[SHROOM_MAX_SPORES];
   ShroomVec2 previous_player_positions[SHROOM_MAX_PLAYERS];

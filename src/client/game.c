@@ -190,6 +190,118 @@ static void StartDeathCutscene(Game* game, const char* killer_name, float final_
   game->death_cutscene_survival_time = fmaxf(0.0f, (float)GetTime() - game->session_start_time);
 }
 
+static GameplayEvent* PushGameplayEvent(Game* game, GameplayEventType type) {
+  GameplayEvent* event;
+  uint32_t slot;
+
+  if (game->gameplay_event_count >= SHROOM_CLIENT_GAMEPLAY_EVENT_CAPACITY) {
+    game->gameplay_event_head =
+        (game->gameplay_event_head + 1u) % SHROOM_CLIENT_GAMEPLAY_EVENT_CAPACITY;
+    game->gameplay_event_count -= 1u;
+  }
+
+  slot = (game->gameplay_event_head + game->gameplay_event_count) %
+         SHROOM_CLIENT_GAMEPLAY_EVENT_CAPACITY;
+  event = &game->gameplay_events[slot];
+  memset(event, 0, sizeof(*event));
+  event->type = type;
+  game->gameplay_event_count += 1u;
+  return event;
+}
+
+static void QueueGameplayParticleBurst(Game* game, ShroomVec2 position, Color color, int count,
+                                       float speed, float radius, float lifetime) {
+  GameplayEvent* event = PushGameplayEvent(game, GAMEPLAY_EVENT_PARTICLE_BURST);
+  event->position = position;
+  event->color = color;
+  event->count = count;
+  event->speed = speed;
+  event->radius = radius;
+  event->lifetime = lifetime;
+}
+
+static void QueueGameplayNotification(Game* game, const char* title, const char* detail,
+                                      Color color, float duration) {
+  GameplayEvent* event = PushGameplayEvent(game, GAMEPLAY_EVENT_NOTIFICATION);
+  snprintf(event->title, sizeof(event->title), "%s", title);
+  snprintf(event->detail, sizeof(event->detail), "%s", detail);
+  event->color = color;
+  event->duration = duration;
+}
+
+static void QueueGameplayScreenFlash(Game* game, Color color, float duration) {
+  GameplayEvent* event = PushGameplayEvent(game, GAMEPLAY_EVENT_SCREEN_FLASH);
+  event->color = color;
+  event->duration = duration;
+}
+
+static void QueueGameplaySfx(Game* game, ShroomClientSfx sfx, float importance) {
+  GameplayEvent* event = PushGameplayEvent(game, GAMEPLAY_EVENT_SFX);
+  event->sfx = (int)sfx;
+  event->importance = importance;
+}
+
+static void QueueGameplayDeathCutscene(Game* game, const char* killer_name, float final_mass,
+                                       int final_rank) {
+  GameplayEvent* event = PushGameplayEvent(game, GAMEPLAY_EVENT_DEATH_CUTSCENE);
+  snprintf(event->name, sizeof(event->name), "%s", killer_name);
+  event->final_mass = final_mass;
+  event->final_rank = final_rank;
+}
+
+static void QueueGameplayZoneCallout(Game* game, ShroomZone zone) {
+  GameplayEvent* event = PushGameplayEvent(game, GAMEPLAY_EVENT_ZONE_CALLOUT);
+  event->position = game->local_player != NULL ? game->local_player->position : (ShroomVec2){0};
+  event->color = GetZoneColor(zone);
+  snprintf(event->title, sizeof(event->title), "Entered %s zone", GetZoneLabel(zone));
+  snprintf(event->detail, sizeof(event->detail), "%s", GetZoneSummary(zone));
+}
+
+static void QueueGameplayRespawnBanner(Game* game) {
+  (void)PushGameplayEvent(game, GAMEPLAY_EVENT_RESPAWN_BANNER);
+}
+
+static void DispatchGameplayEvent(Game* game, const GameplayEvent* event) {
+  switch (event->type) {
+  case GAMEPLAY_EVENT_PARTICLE_BURST:
+    SpawnParticleBurst(game, event->position, event->color, event->count, event->speed,
+                       event->radius, event->lifetime);
+    break;
+  case GAMEPLAY_EVENT_NOTIFICATION:
+    AddCombatNotification(game, event->title, event->detail, event->color, event->duration);
+    break;
+  case GAMEPLAY_EVENT_SCREEN_FLASH:
+    game->screen_flash_color = event->color;
+    game->screen_flash_timer = event->duration;
+    break;
+  case GAMEPLAY_EVENT_SFX:
+    ShroomClientAudioPlaySfx(&game->settings, (ShroomClientSfx)event->sfx, event->importance);
+    break;
+  case GAMEPLAY_EVENT_DEATH_CUTSCENE:
+    StartDeathCutscene(game, event->name, event->final_mass, event->final_rank);
+    break;
+  case GAMEPLAY_EVENT_ZONE_CALLOUT:
+    SpawnParticleBurst(game, event->position, event->color, 12, 86.0f, 5.0f, 0.64f);
+    AddCombatNotification(game, event->title, event->detail, event->color, 2.4f);
+    ShroomClientAudioPlaySfx(&game->settings, SHROOM_CLIENT_SFX_ZONE, 0.62f);
+    game->zone_callout_timer = kStatusBannerDuration;
+    break;
+  case GAMEPLAY_EVENT_RESPAWN_BANNER:
+    game->respawn_banner_timer = kStatusBannerDuration;
+    break;
+  }
+}
+
+static void DispatchQueuedGameplayEvents(Game* game) {
+  while (game->gameplay_event_count > 0u) {
+    const GameplayEvent event = game->gameplay_events[game->gameplay_event_head];
+    game->gameplay_event_head =
+        (game->gameplay_event_head + 1u) % SHROOM_CLIENT_GAMEPLAY_EVENT_CAPACITY;
+    game->gameplay_event_count -= 1u;
+    DispatchGameplayEvent(game, &event);
+  }
+}
+
 static const ShroomPlayerState* FindLargestMassGainer(const Game* game, float* mass_gain) {
   const ShroomPlayerState* best_player = NULL;
   float best_gain = 0.0f;
@@ -448,8 +560,8 @@ static void EmitGameplayEventParticles(Game* game) {
     const ShroomSporeState* spore = &game->world.spores[index];
     if ((game->previous_spore_entity_ids[index] == spore->entity_id) && spore->active &&
         (ShroomDistanceSqr(game->previous_spore_positions[index], spore->position) > 4096.0f)) {
-      SpawnParticleBurst(game, game->previous_spore_positions[index], (Color){255, 228, 112, 255},
-                         5, 70.0f, 4.0f, 0.42f);
+      QueueGameplayParticleBurst(game, game->previous_spore_positions[index],
+                                 (Color){255, 228, 112, 255}, 5, 70.0f, 4.0f, 0.42f);
     }
   }
 
@@ -457,14 +569,14 @@ static void EmitGameplayEventParticles(Game* game) {
     const ShroomPowerupState* powerup = &game->world.powerups[index];
     if (game->previous_powerup_active[index] && !powerup->active &&
         (game->previous_powerup_entity_ids[index] == powerup->entity_id)) {
-      SpawnParticleBurst(game, game->previous_powerup_positions[index],
-                         GetPowerupColor(powerup->type), 18, 118.0f, 6.0f, 0.62f);
+      QueueGameplayParticleBurst(game, game->previous_powerup_positions[index],
+                                 GetPowerupColor(powerup->type), 18, 118.0f, 6.0f, 0.62f);
       if (game->local_player != NULL) {
         const float pickup_radius = game->local_player->radius + SHROOM_POWERUP_RADIUS + 48.0f;
         if (ShroomDistanceSqr(game->local_player->position,
                               game->previous_powerup_positions[index]) <
             (pickup_radius * pickup_radius)) {
-          ShroomClientAudioPlaySfx(&game->settings, SHROOM_CLIENT_SFX_POWERUP, 0.66f);
+          QueueGameplaySfx(game, SHROOM_CLIENT_SFX_POWERUP, 0.66f);
         }
       }
     }
@@ -475,18 +587,18 @@ static void EmitGameplayEventParticles(Game* game) {
     const char* killer_name =
         largest_gainer != NULL ? GetPlayerDisplayName(game, largest_gainer) : "a larger colony";
 
-    SpawnParticleBurst(game, game->previous_player_positions[previous_local_primary_index],
-                       (Color){150, 45, 42, 255}, 16, 132.0f, 6.5f, 0.68f);
-    AddCombatNotification(game, "You were consumed",
-                          TextFormat("Final mass %.0f  Rank %d  Survived %.0fs", previous_mass,
-                                     game->previous_local_rank > 0 ? game->previous_local_rank : 0,
-                                     fmaxf(0.0f, (float)GetTime() - game->session_start_time)),
-                          (Color){245, 84, 84, 255}, 3.6f);
-    StartDeathCutscene(game, killer_name, previous_mass,
-                       game->previous_local_rank > 0 ? game->previous_local_rank : 0);
-    game->screen_flash_color = (Color){180, 32, 42, 255};
-    game->screen_flash_timer = 0.34f;
-    ShroomClientAudioPlaySfx(&game->settings, SHROOM_CLIENT_SFX_DEATH, 0.92f);
+    QueueGameplayParticleBurst(game, game->previous_player_positions[previous_local_primary_index],
+                               (Color){150, 45, 42, 255}, 16, 132.0f, 6.5f, 0.68f);
+    QueueGameplayNotification(
+        game, "You were consumed",
+        TextFormat("Final mass %.0f  Rank %d  Survived %.0fs", previous_mass,
+                   game->previous_local_rank > 0 ? game->previous_local_rank : 0,
+                   fmaxf(0.0f, (float)GetTime() - game->session_start_time)),
+        (Color){245, 84, 84, 255}, 3.6f);
+    QueueGameplayDeathCutscene(game, killer_name, previous_mass,
+                               game->previous_local_rank > 0 ? game->previous_local_rank : 0);
+    QueueGameplayScreenFlash(game, (Color){180, 32, 42, 255}, 0.34f);
+    QueueGameplaySfx(game, SHROOM_CLIENT_SFX_DEATH, 0.92f);
     local_death_reported = true;
   }
 
@@ -507,13 +619,13 @@ static void EmitGameplayEventParticles(Game* game) {
 
     if (game->previous_player_alive[index] && had_same_player && !had_same_entity &&
         was_primary_piece) {
-      SpawnParticleBurst(game, game->previous_player_positions[index], (Color){150, 45, 42, 255},
-                         28, 150.0f, 7.0f, 0.76f);
-      SpawnParticleBurst(game, player->position, (Color){122, 220, 118, 255}, 14, 82.0f, 5.0f,
-                         0.58f);
+      QueueGameplayParticleBurst(game, game->previous_player_positions[index],
+                                 (Color){150, 45, 42, 255}, 28, 150.0f, 7.0f, 0.76f);
+      QueueGameplayParticleBurst(game, player->position, (Color){122, 220, 118, 255}, 14, 82.0f,
+                                 5.0f, 0.58f);
     } else if (game->previous_player_alive[index] && !player->alive) {
-      SpawnParticleBurst(game, game->previous_player_positions[index], (Color){190, 62, 64, 255},
-                         24, 132.0f, 7.0f, 0.72f);
+      QueueGameplayParticleBurst(game, game->previous_player_positions[index],
+                                 (Color){190, 62, 64, 255}, 24, 132.0f, 7.0f, 0.72f);
     }
 
     if (local_consumed_player && !local_kill_reported && !local_death_reported) {
@@ -522,10 +634,9 @@ static void EmitGameplayEventParticles(Game* game) {
       snprintf(title, sizeof(title), "You consumed %s", GetPlayerDisplayName(game, player));
       snprintf(detail, sizeof(detail), "Victim mass %.0f  +%.0f mass  Rank %d", previous_mass,
                largest_gain, GetPlayerRank(game, largest_gainer));
-      AddCombatNotification(game, title, detail, (Color){112, 224, 128, 255}, 3.0f);
-      game->screen_flash_color = (Color){104, 220, 122, 255};
-      game->screen_flash_timer = 0.24f;
-      ShroomClientAudioPlaySfx(&game->settings, SHROOM_CLIENT_SFX_CONSUME, 0.86f);
+      QueueGameplayNotification(game, title, detail, (Color){112, 224, 128, 255}, 3.0f);
+      QueueGameplayScreenFlash(game, (Color){104, 220, 122, 255}, 0.24f);
+      QueueGameplaySfx(game, SHROOM_CLIENT_SFX_CONSUME, 0.86f);
       local_kill_reported = true;
     }
 
@@ -534,31 +645,33 @@ static void EmitGameplayEventParticles(Game* game) {
     }
     if (had_same_entity && game->previous_player_alive[index] &&
         (player->mass >= previous_mass + 18.0f)) {
-      SpawnParticleBurst(game, player->position, (Color){118, 210, 255, 255}, 16, 96.0f, 5.5f,
-                         0.54f);
+      QueueGameplayParticleBurst(game, player->position, (Color){118, 210, 255, 255}, 16, 96.0f,
+                                 5.5f, 0.54f);
       if ((local_player_id != 0u) && (player->player_id == local_player_id) &&
           !local_kill_reported) {
-        AddCombatNotification(game, TextFormat("+%.0f mass", player->mass - previous_mass),
-                              "Spores absorbed into the colony", (Color){255, 228, 112, 255}, 1.8f);
+        QueueGameplayNotification(game, TextFormat("+%.0f mass", player->mass - previous_mass),
+                                  "Spores absorbed into the colony", (Color){255, 228, 112, 255},
+                                  1.8f);
       }
     }
     if (had_same_entity && game->previous_player_alive[index] &&
         (player->mass > previous_mass + 0.5f) && (local_player_id != 0u) &&
         (player->player_id == local_player_id) && !local_kill_reported) {
-      ShroomClientAudioPlaySfx(&game->settings, SHROOM_CLIENT_SFX_SPORE, 0.42f);
+      QueueGameplaySfx(game, SHROOM_CLIENT_SFX_SPORE, 0.42f);
     }
     if ((player->piece_index > 0u) &&
         (!game->previous_player_alive[index] || !had_same_entity || (previous_mass <= 0.0f))) {
-      SpawnParticleBurst(game, player->position, (Color){255, 215, 116, 255}, 10, 130.0f, 4.6f,
-                         0.58f);
+      QueueGameplayParticleBurst(game, player->position, (Color){255, 215, 116, 255}, 10, 130.0f,
+                                 4.6f, 0.58f);
     }
     if (had_same_entity && game->previous_player_alive[index] &&
         (player->mass < previous_mass * 0.72f) && (previous_mass >= SHROOM_SPLIT_MIN_MASS)) {
-      SpawnParticleBurst(game, player->position, (Color){255, 215, 116, 255}, 9, 112.0f, 4.4f,
-                         0.52f);
+      QueueGameplayParticleBurst(game, player->position, (Color){255, 215, 116, 255}, 9, 112.0f,
+                                 4.4f, 0.52f);
     }
   }
 
+  DispatchQueuedGameplayEvents(game);
   CaptureParticleBaselines(game);
 }
 
@@ -1865,13 +1978,8 @@ static void UpdateStatusBanners(Game* game, float delta_time) {
       sqrtf(ShroomDistanceSqr(game->local_player->position, game->previous_local_position));
 
   if (zone != game->current_zone) {
-    SpawnParticleBurst(game, game->local_player->position, GetZoneColor(zone), 12, 86.0f, 5.0f,
-                       0.64f);
-    AddCombatNotification(game, TextFormat("Entered %s zone", GetZoneLabel(zone)),
-                          GetZoneSummary(zone), GetZoneColor(zone), 2.4f);
-    ShroomClientAudioPlaySfx(&game->settings, SHROOM_CLIENT_SFX_ZONE, 0.62f);
+    QueueGameplayZoneCallout(game, zone);
     game->current_zone = zone;
-    game->zone_callout_timer = kStatusBannerDuration;
   } else if (game->zone_callout_timer > 0.0f) {
     game->zone_callout_timer -= delta_time;
   }
@@ -1879,10 +1987,12 @@ static void UpdateStatusBanners(Game* game, float delta_time) {
   if ((game->previous_local_mass > (SHROOM_DEFAULT_PLAYER_MASS * 1.5f)) &&
       (game->local_player->mass <= (SHROOM_DEFAULT_PLAYER_MASS + 0.1f)) &&
       (moved_distance > 250.0f)) {
-    game->respawn_banner_timer = kStatusBannerDuration;
+    QueueGameplayRespawnBanner(game);
   } else if (game->respawn_banner_timer > 0.0f) {
     game->respawn_banner_timer -= delta_time;
   }
+
+  DispatchQueuedGameplayEvents(game);
 
   game->previous_local_mass = game->local_player->mass;
   game->previous_local_position = game->local_player->position;
@@ -1959,11 +2069,12 @@ static void UpdateCombatFeedback(Game* game) {
   local_rank = GetLocalPlayerRank(game, leaderboard, leaderboard_count);
   if (local_rank > 0) {
     if ((game->previous_local_rank > 0) && (local_rank != game->previous_local_rank)) {
-      AddCombatNotification(game, local_rank < game->previous_local_rank ? "Rank up" : "Rank down",
-                            TextFormat("Canopy rank %d/%d", local_rank, (int)leaderboard_count),
-                            local_rank < game->previous_local_rank ? (Color){112, 224, 128, 255}
-                                                                   : (Color){245, 184, 84, 255},
-                            2.2f);
+      QueueGameplayNotification(game,
+                                local_rank < game->previous_local_rank ? "Rank up" : "Rank down",
+                                TextFormat("Canopy rank %d/%d", local_rank, (int)leaderboard_count),
+                                local_rank < game->previous_local_rank ? (Color){112, 224, 128, 255}
+                                                                       : (Color){245, 184, 84, 255},
+                                2.2f);
     }
     game->previous_local_rank = local_rank;
   }
@@ -1983,24 +2094,26 @@ static void UpdateCombatFeedback(Game* game) {
       continue;
     }
     if (distance_sqr <= (close_call_radius * close_call_radius)) {
-      AddCombatNotification(
+      QueueGameplayNotification(
           game, "Close call",
           TextFormat("%s is big enough to consume you", GetPlayerDisplayName(game, player)),
           (Color){245, 84, 84, 255}, 2.0f);
-      ShroomClientAudioPlaySfx(&game->settings, SHROOM_CLIENT_SFX_WARNING, 0.74f);
+      QueueGameplaySfx(game, SHROOM_CLIENT_SFX_WARNING, 0.74f);
       game->combat_feedback_cooldown = 4.0f;
       break;
     }
     if (distance_sqr <= (420.0f * 420.0f)) {
-      AddCombatNotification(
+      QueueGameplayNotification(
           game, "Danger nearby",
           TextFormat("Avoid %s until you grow", GetPlayerDisplayName(game, player)),
           (Color){245, 184, 84, 255}, 2.0f);
-      ShroomClientAudioPlaySfx(&game->settings, SHROOM_CLIENT_SFX_WARNING, 0.54f);
+      QueueGameplaySfx(game, SHROOM_CLIENT_SFX_WARNING, 0.54f);
       game->combat_feedback_cooldown = 4.0f;
       break;
     }
   }
+
+  DispatchQueuedGameplayEvents(game);
 }
 
 static void DrawLeaderboardOverlay(Game* game, const LeaderboardEntry* leaderboard,
@@ -2865,7 +2978,7 @@ void GameUpdate(Game* game, float delta_time) {
   if (IsOnlineMode(game->active_mode)) {
     if (game->split_requested && (game->local_player != NULL) && game->local_player->alive &&
         (game->local_player->mass >= SHROOM_SPLIT_MIN_MASS) && !game->local_player->has_split) {
-      ShroomClientAudioPlaySfx(&game->settings, SHROOM_CLIENT_SFX_SPLIT, 0.64f);
+      QueueGameplaySfx(game, SHROOM_CLIENT_SFX_SPLIT, 0.64f);
     }
     ClientNetUpdate(&game->net, input_direction, game->split_requested, split_aim_direction,
                     game->focused_piece_entity_id, delta_time);
@@ -2931,7 +3044,7 @@ void GameUpdate(Game* game, float delta_time) {
       ShroomPlayerSetInput(ctrl, input_direction);
       if (game->split_requested && (ctrl != NULL)) {
         if (ShroomWorldSplitPlayerToward(&game->world, ctrl, split_aim_direction)) {
-          ShroomClientAudioPlaySfx(&game->settings, SHROOM_CLIENT_SFX_SPLIT, 0.64f);
+          QueueGameplaySfx(game, SHROOM_CLIENT_SFX_SPLIT, 0.64f);
         }
       }
       game->split_requested = false;
@@ -2940,6 +3053,7 @@ void GameUpdate(Game* game, float delta_time) {
   }
 
   EmitGameplayEventParticles(game);
+  DispatchQueuedGameplayEvents(game);
   UpdateAmbientParticles(game, delta_time);
   UpdateGameplayParticles(game, delta_time);
   SyncRenderPositions(game, delta_time);
