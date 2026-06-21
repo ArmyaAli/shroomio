@@ -171,6 +171,9 @@ jobs:
       - name: Install Linux vcpkg dependencies
         run: make vcpkg-install-linux
 
+      - name: Download manual test dependencies
+        run: make vendor
+
       - name: Run Valgrind memory checks
         run: make valgrind-test
 
