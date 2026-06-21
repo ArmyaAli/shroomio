@@ -121,6 +121,10 @@ void ShroomTeCtx_Yield(ImGuiTestContext *ctx, int count) {
   ctx->Yield(count);
 }
 
+bool ShroomTeCtx_ItemExists(ImGuiTestContext *ctx, const char *ref) {
+  return ctx->ItemExists(ref);
+}
+
 /* -------------------------------------------------------------------------
  * ImGui window queries
  * ---------------------------------------------------------------------- */

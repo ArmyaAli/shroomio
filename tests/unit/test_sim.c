@@ -1,6 +1,9 @@
 #include "unity.h"
 #include "../src/shared/sim.h"
 
+#include <math.h>
+#include <time.h>
+
 static ShroomWorldState world;
 
 void setUp(void) { ShroomWorldInitWithSeed(&world, 7u); }
@@ -933,6 +936,58 @@ void test_split_spawn_protection_expires_before_merge_timer(void) {
   TEST_ASSERT_TRUE(piece->merge_timer > 0.0f);
 }
 
+void test_center_zone_max_players_stress_remains_bounded(void) {
+  const ShroomVec2 center = {SHROOM_WORLD_WIDTH * 0.5f, SHROOM_WORLD_HEIGHT * 0.5f};
+  const int columns = 16;
+  const float spacing = 42.0f;
+  const int steps = 90;
+  clock_t start_time;
+  double elapsed_seconds;
+
+  ResetWorldForPlayers();
+
+  for (size_t index = 0; index < SHROOM_MAX_PLAYERS; ++index) {
+    ShroomPlayerState* player = ShroomWorldSpawnPlayer(&world, (ShroomPlayerId)(index + 1u), false);
+    const int column = (int)(index % (size_t)columns);
+    const int row = (int)(index / (size_t)columns);
+    const float offset_x = ((float)column - 7.5f) * spacing;
+    const float offset_y = ((float)row - 7.5f) * spacing;
+
+    TEST_ASSERT_NOT_NULL(player);
+    player->position = (ShroomVec2){center.x + offset_x, center.y + offset_y};
+    player->mass = SHROOM_DEFAULT_PLAYER_MASS * 2.0f;
+    player->radius = ShroomMassToRadius(player->mass);
+    player->input_direction = (ShroomVec2){(index % 2u) == 0u ? 1.0f : -1.0f,
+                                           (index % 3u) == 0u ? 1.0f : -1.0f};
+    player->is_bot = false;
+    player->ai_controlled = false;
+  }
+
+  TEST_ASSERT_EQUAL_size_t(SHROOM_MAX_PLAYERS, world.player_count);
+
+  start_time = clock();
+  for (int step = 0; step < steps; ++step) {
+    ShroomWorldStep(&world, 1.0f / 60.0f);
+  }
+  elapsed_seconds = (double)(clock() - start_time) / (double)CLOCKS_PER_SEC;
+
+  TEST_ASSERT_EQUAL_size_t(SHROOM_MAX_PLAYERS, world.player_count);
+  TEST_ASSERT_EQUAL_UINT64((uint64_t)steps, world.tick);
+  TEST_ASSERT_TRUE(elapsed_seconds < 5.0);
+
+  for (size_t index = 0; index < world.player_count; ++index) {
+    const ShroomPlayerState* player = &world.players[index];
+
+    TEST_ASSERT_TRUE(isfinite(player->position.x));
+    TEST_ASSERT_TRUE(isfinite(player->position.y));
+    TEST_ASSERT_TRUE(isfinite(player->mass));
+    TEST_ASSERT_TRUE(player->position.x >= player->radius);
+    TEST_ASSERT_TRUE(player->position.x <= world.width - player->radius);
+    TEST_ASSERT_TRUE(player->position.y >= player->radius);
+    TEST_ASSERT_TRUE(player->position.y <= world.height - player->radius);
+  }
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_world_init_sets_expected_defaults);
@@ -971,5 +1026,6 @@ int main(void) {
   RUN_TEST(test_split_piece_not_consumed_by_nearby_larger_player);
   RUN_TEST(test_split_spawn_protection_blocks_larger_player_consumption);
   RUN_TEST(test_split_spawn_protection_expires_before_merge_timer);
+  RUN_TEST(test_center_zone_max_players_stress_remains_bounded);
   return UNITY_END();
 }
