@@ -11,6 +11,7 @@
 #include "raymath.h"
 #include "shared/config.h"
 #include "shared/protocol.h"
+#include "shared/profiler.h"
 #include "shared/sim.h"
 
 static const Color kBotColors[] = {
@@ -2331,7 +2332,49 @@ static void DrawDiagnosticsOverlay(const Game* game) {
 
 static const float kChatInactiveTimeout = 8.0f;
 
+typedef struct ClientProfileStats {
+  ShroomProfileWindow frame;
+  ShroomProfileWindow update;
+  ShroomProfileWindow draw;
+  ShroomProfileWindow network;
+  ShroomProfileWindow snapshot_prediction;
+  double pending_update_ms;
+  uint64_t last_log_ms;
+} ClientProfileStats;
+
+static ClientProfileStats g_client_profile;
+
 static void DrawFungalHudPanel(Rectangle rect, Color accent);
+
+static uint64_t ClientProfileNowNanos(void) { return (uint64_t)(GetTime() * 1000000000.0); }
+
+static void ClientProfileMaybeLog(void) {
+  const uint64_t now_ms = ClientProfileNowNanos() / 1000000ull;
+
+  if (!ShroomProfileEnabled()) {
+    return;
+  }
+  if ((g_client_profile.last_log_ms != 0ull) &&
+      ((now_ms - g_client_profile.last_log_ms) < 5000ull)) {
+    return;
+  }
+
+  g_client_profile.last_log_ms = now_ms;
+  printf("profile,client,frame_avg_ms=%.3f,frame_peak_ms=%.3f,update_avg_ms=%.3f,"
+         "update_peak_ms=%.3f,draw_avg_ms=%.3f,draw_peak_ms=%.3f,net_avg_ms=%.3f,"
+         "net_peak_ms=%.3f,snapshot_prediction_avg_ms=%.3f,snapshot_prediction_peak_ms=%.3f\n",
+         ShroomProfileAverageMs(&g_client_profile.frame), g_client_profile.frame.peak_ms,
+         ShroomProfileAverageMs(&g_client_profile.update), g_client_profile.update.peak_ms,
+         ShroomProfileAverageMs(&g_client_profile.draw), g_client_profile.draw.peak_ms,
+         ShroomProfileAverageMs(&g_client_profile.network), g_client_profile.network.peak_ms,
+         ShroomProfileAverageMs(&g_client_profile.snapshot_prediction),
+         g_client_profile.snapshot_prediction.peak_ms);
+  ShroomProfileResetPeak(&g_client_profile.frame);
+  ShroomProfileResetPeak(&g_client_profile.update);
+  ShroomProfileResetPeak(&g_client_profile.draw);
+  ShroomProfileResetPeak(&g_client_profile.network);
+  ShroomProfileResetPeak(&g_client_profile.snapshot_prediction);
+}
 
 static void UpdateChatState(Game* game, float delta_time) {
   if (!IsOnlineMode(game->active_mode) || game->chat_minimized) {
@@ -2917,6 +2960,8 @@ void GameUpdate(Game* game, float delta_time) {
   ShroomVec2 input_direction;
   ShroomVec2 split_aim_direction;
   const uint32_t previous_input_sequence = game->net.last_input_sequence;
+  const bool profile_enabled = ShroomProfileEnabled();
+  const uint64_t update_start_nanos = profile_enabled ? ClientProfileNowNanos() : 0ull;
 
   GameHandleResize(game, GetScreenWidth(), GetScreenHeight());
   ShroomClientAudioUpdateMusic(&game->settings);
@@ -2995,8 +3040,13 @@ void GameUpdate(Game* game, float delta_time) {
         (game->local_player->mass >= SHROOM_SPLIT_MIN_MASS) && !game->local_player->has_split) {
       QueueGameplaySfx(game, SHROOM_CLIENT_SFX_SPLIT, 0.64f);
     }
+    const uint64_t network_start_nanos = profile_enabled ? ClientProfileNowNanos() : 0ull;
     ClientNetUpdate(&game->net, input_direction, game->split_requested, split_aim_direction,
                     game->focused_piece_entity_id, delta_time);
+    if (profile_enabled) {
+      ShroomProfileRecord(&g_client_profile.network,
+                          ShroomProfileNanosToMs(ClientProfileNowNanos() - network_start_nanos));
+    }
     game->split_requested = false;
   }
 
@@ -3011,6 +3061,7 @@ void GameUpdate(Game* game, float delta_time) {
 
   if (IsOnlineMode(game->active_mode) && game->net.welcome_received &&
       (game->net.snapshot_player_count > 0)) {
+    const uint64_t snapshot_start_nanos = profile_enabled ? ClientProfileNowNanos() : 0ull;
     ApplyNetworkSnapshot(game);
     /* Apply prediction to the focused piece, not necessarily local_player. */
     {
@@ -3028,6 +3079,10 @@ void GameUpdate(Game* game, float delta_time) {
       if (predicted != NULL) {
         ApplyPredictedInputToPlayer(&game->world, predicted, input_direction, delta_time);
       }
+    }
+    if (profile_enabled) {
+      ShroomProfileRecord(&g_client_profile.snapshot_prediction,
+                          ShroomProfileNanosToMs(ClientProfileNowNanos() - snapshot_start_nanos));
     }
   } else {
     /* Offline: find the focused piece to apply player input to, mark others as AI. */
@@ -3098,6 +3153,12 @@ void GameUpdate(Game* game, float delta_time) {
   if (game->local_player != NULL && game->local_player->mass > game->peak_mass) {
     game->peak_mass = game->local_player->mass;
   }
+
+  if (profile_enabled) {
+    g_client_profile.pending_update_ms =
+        ShroomProfileNanosToMs(ClientProfileNowNanos() - update_start_nanos);
+    ShroomProfileRecord(&g_client_profile.update, g_client_profile.pending_update_ms);
+  }
 }
 
 void GameDraw(Game* game) {
@@ -3109,6 +3170,8 @@ void GameDraw(Game* game) {
                               ? ShroomGetZoneAtPosition(&game->world, game->local_player->position)
                               : SHROOM_ZONE_OUTER;
   int local_rank;
+  const bool profile_enabled = ShroomProfileEnabled();
+  const uint64_t draw_start_nanos = profile_enabled ? ClientProfileNowNanos() : 0ull;
 
   BuildLeaderboard(game, leaderboard, &leaderboard_count);
   local_rank = GetLocalPlayerRank(game, leaderboard, leaderboard_count);
@@ -3140,6 +3203,13 @@ void GameDraw(Game* game) {
   DrawDiagnosticsOverlay(game);
   DrawChatDock(game);
   DrawInspectOverlay(game);
+
+  if (profile_enabled) {
+    const double draw_ms = ShroomProfileNanosToMs(ClientProfileNowNanos() - draw_start_nanos);
+    ShroomProfileRecord(&g_client_profile.draw, draw_ms);
+    ShroomProfileRecord(&g_client_profile.frame, g_client_profile.pending_update_ms + draw_ms);
+    ClientProfileMaybeLog();
+  }
 }
 
 void GameShutdown(Game* game) {
