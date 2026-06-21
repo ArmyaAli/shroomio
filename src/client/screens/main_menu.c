@@ -12,12 +12,7 @@ static bool MainMenuAnimationsEnabled(const Game* game) {
   return (game == NULL) || game->settings.menu_animations_enabled;
 }
 
-static void MainMenuDrawAnimatedTitle(bool animate) {
-  if (!animate) {
-    ShroomImGui_Text("SHROOMIO");
-    return;
-  }
-
+static void MainMenuDrawAnimatedTitle(void) {
   const float time = (float)GetTime();
   const float glow = 0.72f + 0.28f * sinf(time * 2.0f);
   const int spore_index = (int)(time * 9.0f) % 18;
@@ -59,7 +54,7 @@ static void MainMenuDraw(ShroomScreenManager* manager) {
     return;
   }
 
-  MainMenuDrawAnimatedTitle(animate);
+  MainMenuDrawAnimatedTitle();
   ShroomImGui_TextWrapped(
       "Grow by collecting spores, out-position bigger threats, and take over the arena.");
   ShroomImGui_Spacing();
