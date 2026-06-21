@@ -67,6 +67,7 @@ typedef struct ClientNetState {
   bool spectating;
   uint32_t lobby_id;
   char lobby_name[SHROOM_LOBBY_MAX_NAME_LENGTH];
+  uint16_t lobby_max_players;
   float world_width;
   float world_height;
   uint8_t lobby_count;

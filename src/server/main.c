@@ -596,6 +596,7 @@ static void SendLobbyJoined(ENetPeer* peer, const ServerSession* session,
   packet.entity_id = session->player != NULL ? session->player->entity_id : 0u;
   packet.server_tick_rate = (uint16_t)SHROOM_SERVER_TICK_RATE;
   packet.snapshot_rate = SHROOM_SNAPSHOT_RATE;
+  packet.max_players = (uint16_t)(SHROOM_MAX_PLAYERS - SHROOM_BOT_FLOOR);
   packet.world_width = lobby->world.width;
   packet.world_height = lobby->world.height;
   snprintf(packet.lobby_name, sizeof(packet.lobby_name), "%s", lobby->name);

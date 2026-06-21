@@ -164,6 +164,7 @@ static void HandleLobbyJoined(ClientNetState* net, const ENetPacket* enet_packet
   net->spectating = (packet->spectating != 0);
   net->world_width = packet->world_width;
   net->world_height = packet->world_height;
+  net->lobby_max_players = packet->max_players;
   snprintf(net->lobby_name, sizeof(net->lobby_name), "%s", packet->lobby_name);
 
   if (!net->spectating) {

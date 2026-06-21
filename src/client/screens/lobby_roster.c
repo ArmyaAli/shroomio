@@ -108,6 +108,12 @@ static void LobbyRosterDraw(ShroomScreenManager* manager) {
   ShroomImGui_SameLine();
   ShroomImGui_TextDisabled(TextFormat("(id %u)", game->net.lobby_id));
 
+  /* Capacity line refreshes every frame from the live snapshot count. */
+  const uint16_t current = game->net.snapshot_player_count;
+  const uint16_t capacity = (game->net.lobby_max_players > 0u) ? game->net.lobby_max_players
+                                                               : (uint16_t)SHROOM_MAX_PLAYERS;
+  ShroomImGui_TextDisabled(TextFormat("%u / %u players in match", current, capacity));
+
   ShroomImGui_Separator();
 
   if (ShroomImGui_BeginTable("RosterTable", 3,
@@ -129,8 +135,9 @@ static void LobbyRosterDraw(ShroomScreenManager* manager) {
     ShroomImGui_TableSetColumnIndex(2);
     ShroomImGui_Text(g_ready_state ? "Ready" : "Not Ready");
 
-    /* Snapshot peers — transitional; real roster packet (follow-up issue)
-     * will replace this with authoritative lobby state. */
+    /* Peers sourced from the latest snapshot; the list refreshes every
+     * frame as players join and leave. Bots auto-ready so the lobby reads
+     * as live while the local player decides. */
     if (game->net.snapshot_player_count > 0u) {
       uint16_t i;
       for (i = 0u; i < game->net.snapshot_player_count; ++i) {
@@ -144,7 +151,7 @@ static void LobbyRosterDraw(ShroomScreenManager* manager) {
         ShroomImGui_TableSetColumnIndex(1);
         ShroomImGui_Text(peer->is_bot ? "Bot" : "Player");
         ShroomImGui_TableSetColumnIndex(2);
-        ShroomImGui_TextDisabled("--");
+        ShroomImGui_Text(peer->is_bot ? "Ready" : "Not Ready");
       }
     } else {
       ShroomImGui_TableNextRow();
