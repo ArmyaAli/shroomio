@@ -61,6 +61,7 @@ void ShroomImGui_SetNextItemWidth(float width);
 void ShroomImGui_Text(const char* text);
 void ShroomImGui_TextWrapped(const char* text);
 void ShroomImGui_TextColored(ShroomImGuiColor color, const char* text);
+void ShroomImGui_TextDisabled(const char* text);
 void ShroomImGui_Separator(void);
 void ShroomImGui_Spacing(void);
 void ShroomImGui_SameLine(void);

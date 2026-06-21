@@ -190,6 +190,8 @@ void ShroomImGui_TextColored(ShroomImGuiColor color, const char* text) {
   ImGui::TextColored(ImVec4(color.r, color.g, color.b, color.a), "%s", text);
 }
 
+void ShroomImGui_TextDisabled(const char* text) { ImGui::TextDisabled("%s", text); }
+
 void ShroomImGui_Separator(void) { ImGui::Separator(); }
 
 void ShroomImGui_Spacing(void) { ImGui::Spacing(); }

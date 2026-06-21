@@ -66,6 +66,7 @@ typedef struct ClientNetState {
   bool handshake_received; /* set on WELCOME (version ack) */
   bool spectating;
   uint32_t lobby_id;
+  char lobby_name[SHROOM_LOBBY_MAX_NAME_LENGTH];
   float world_width;
   float world_height;
   uint8_t lobby_count;

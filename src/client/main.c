@@ -39,6 +39,7 @@ int main(void) {
   ShroomScreenRegisterCredits(&g_screen_manager);
   ShroomScreenRegisterServerBrowser(&g_screen_manager);
   ShroomScreenRegisterLobbyBrowser(&g_screen_manager);
+  ShroomScreenRegisterLobbyRoster(&g_screen_manager);
   ShroomScreenRegisterGame(&g_screen_manager);
   ShroomScreenRegisterResults(&g_screen_manager);
   ShroomScreenManagerTransition(&g_screen_manager, SHROOM_SCREEN_MAIN_MENU);
