@@ -6,6 +6,32 @@
 #include "imgui_wrapper.h"
 #include "raylib.h"
 
+#include <math.h>
+
+static bool MainMenuAnimationsEnabled(const Game* game) {
+  return (game == NULL) || game->settings.menu_animations_enabled;
+}
+
+static void MainMenuDrawAnimatedTitle(bool animate) {
+  if (!animate) {
+    ShroomImGui_Text("SHROOMIO");
+    return;
+  }
+
+  const float time = (float)GetTime();
+  const float glow = 0.72f + 0.28f * sinf(time * 2.0f);
+  const int spore_index = (int)(time * 9.0f) % 18;
+  char spore_trail[24];
+
+  for (int index = 0; index < 18; ++index) {
+    spore_trail[index] = index == spore_index ? '*' : '.';
+  }
+  spore_trail[18] = '\0';
+
+  ShroomImGui_TextColored((ShroomImGuiColor){0.78f, 1.0f, 0.56f, 1.0f}, "SHROOMIO");
+  ShroomImGui_TextColored((ShroomImGuiColor){0.60f, 0.95f, 0.72f, glow}, spore_trail);
+}
+
 static bool MainMenuInit(ShroomScreenManager* manager) {
   (void)manager;
   ShroomScreenResetFungalBackground();
@@ -13,17 +39,17 @@ static bool MainMenuInit(ShroomScreenManager* manager) {
 }
 
 static void MainMenuUpdate(ShroomScreenManager* manager, float delta_time) {
-  Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
-  ShroomScreenUpdateFungalBackground(delta_time,
-                                     (game == NULL) || game->settings.menu_animations_enabled);
+  const Game* game = manager != NULL ? (const Game*)manager->user_data : NULL;
+  ShroomScreenUpdateFungalBackground(delta_time, MainMenuAnimationsEnabled(game));
 }
 
 static void MainMenuDraw(ShroomScreenManager* manager) {
   Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
+  const bool animate = MainMenuAnimationsEnabled(game);
   const float panel_width = 340.0f;
   const float panel_height = 470.0f;
 
-  ShroomScreenDrawFungalBackground((game == NULL) || game->settings.menu_animations_enabled);
+  ShroomScreenDrawFungalBackground(animate);
 
   if (!ShroomLayoutBeginCenteredPanel("Main Menu", panel_width, panel_height, 0.85f,
                                       SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
@@ -33,7 +59,7 @@ static void MainMenuDraw(ShroomScreenManager* manager) {
     return;
   }
 
-  ShroomImGui_Text("SHROOMIO");
+  MainMenuDrawAnimatedTitle(animate);
   ShroomImGui_TextWrapped(
       "Grow by collecting spores, out-position bigger threats, and take over the arena.");
   ShroomImGui_Spacing();
