@@ -68,19 +68,12 @@ static void LobbyRosterUpdate(ShroomScreenManager* manager, float delta_time) {
     return;
   }
 
-  /* Keep pumping ENet so LOBBY_JOINED and any transitional packets flow. */
+  /* Keep pumping ENet so LOBBY_JOINED and snapshots continue to flow
+   * while the player reviews the roster. We do NOT auto-transition to
+   * gameplay — entering the match is explicit via the Enter Match button. */
   ClientNetUpdate(&game->net, no_input, false, no_input, 0u, delta_time);
 
   g_status_pulse_timer += delta_time;
-
-  /* If the server transitions us into the match, hand off to gameplay. */
-  if (game->net.welcome_received || game->net.spectating) {
-    if (game->net.last_snapshot_tick != 0ull) {
-      game->selected_mode = SHROOM_SESSION_MODE_LOBBY_PLAY;
-      game->active_mode = SHROOM_SESSION_MODE_LOBBY_PLAY;
-      ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
-    }
-  }
 }
 
 static void LobbyRosterDraw(ShroomScreenManager* manager) {
@@ -183,6 +176,22 @@ static void LobbyRosterDraw(ShroomScreenManager* manager) {
     ClientNetSendLobbyLeave(&game->net);
     ClientNetShutdown(&game->net);
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
+  }
+
+  ShroomImGui_Spacing();
+
+  /* Entering the match is explicit — the player stays on the roster until
+   * they choose to enter. The server is already sending snapshots, so we
+   * just need to flip the session mode and transition. */
+  const bool can_enter = game->net.welcome_received || game->net.spectating;
+  if (can_enter) {
+    if (ShroomImGui_Button("Enter Match", 140.0f, 0.0f)) {
+      game->selected_mode = SHROOM_SESSION_MODE_LOBBY_PLAY;
+      game->active_mode = SHROOM_SESSION_MODE_LOBBY_PLAY;
+      ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
+    }
+  } else {
+    ShroomImGui_TextDisabled("Waiting for server...");
   }
 
   ShroomImGui_End();
