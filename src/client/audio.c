@@ -13,6 +13,10 @@ static bool g_client_sfx_loaded[SHROOM_CLIENT_SFX_COUNT];
 static Sound g_client_music_loop;
 static bool g_client_music_loaded;
 
+static bool SoundIsUsable(Sound sound) {
+  return (sound.stream.buffer != NULL) && (sound.frameCount > 0u);
+}
+
 static float SmoothStep01(float value) {
   const float t = Clamp(value, 0.0f, 1.0f);
   return t * t * (3.0f - (2.0f * t));
@@ -153,7 +157,7 @@ static void EnsureClientSfxLoaded(ShroomClientSfx sfx) {
   default:
     return;
   }
-  g_client_sfx_loaded[sfx] = true;
+  g_client_sfx_loaded[sfx] = SoundIsUsable(g_client_sfx[sfx]);
 }
 
 void ShroomClientAudioEnsureAllSfxLoaded(void) {
@@ -167,7 +171,7 @@ static void EnsureClientMusicLoaded(void) {
     return;
   }
   g_client_music_loop = GenerateAmbientLoopSound();
-  g_client_music_loaded = true;
+  g_client_music_loaded = SoundIsUsable(g_client_music_loop);
 }
 
 void ShroomClientAudioUpdateMusic(const ClientSettings* settings) {

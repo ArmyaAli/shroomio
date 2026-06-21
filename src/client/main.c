@@ -3,7 +3,11 @@
 #include "screen.h"
 #include "shared/lifecycle.h"
 
+#include <execinfo.h>
+#include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 #include "raylib.h"
 
@@ -11,9 +15,22 @@ static ShroomLifecycle g_lifecycle;
 static ShroomScreenManager g_screen_manager;
 static Game g_game;
 
+static void HandleCrashSignal(int signal_number) {
+  void* frames[64];
+  const int frame_count = backtrace(frames, 64);
+
+  fprintf(stderr, "\nshroomio caught signal %d on screen %s\n", signal_number,
+          ShroomScreenManagerGetCurrentScreenName(&g_screen_manager));
+  backtrace_symbols_fd(frames, frame_count, STDERR_FILENO);
+  _Exit(128 + signal_number);
+}
+
 int main(void) {
   const int screen_width = 1280;
   const int screen_height = 720;
+
+  signal(SIGSEGV, HandleCrashSignal);
+  signal(SIGABRT, HandleCrashSignal);
 
   ShroomLifecycleInit(&g_lifecycle);
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_INIT);

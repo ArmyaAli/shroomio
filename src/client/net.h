@@ -90,6 +90,8 @@ void ClientNetSendLobbyCreate(ClientNetState* net, const char* name, uint16_t ma
 bool ClientNetTestCompletePendingPing(ClientNetState* net, uint32_t nonce, uint32_t now_ms);
 void ClientNetTestClearStalePendingPing(ClientNetState* net, uint32_t now_ms);
 void ClientNetTestHandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet);
+void ClientNetTestHandleLobbyList(ClientNetState* net, const ENetPacket* enet_packet);
+void ClientNetTestHandleMushroomSpeciesCatalog(ClientNetState* net, const ENetPacket* enet_packet);
 #endif
 
 #endif

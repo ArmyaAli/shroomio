@@ -3,6 +3,7 @@
 
 #include "shared/protocol.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -142,6 +143,31 @@ static void Test_OfflinePracticeEntryInitializesGame(ImGuiTestContext* ctx) {
   IM_CHECK_EQ(g_imgui_test_app.game.selected_mode, SHROOM_SESSION_MODE_OFFLINE_PRACTICE);
   IM_CHECK_EQ(g_imgui_test_app.game.active_mode, SHROOM_SESSION_MODE_OFFLINE_PRACTICE);
   IM_CHECK(g_imgui_test_app.game.local_player != NULL);
+}
+
+/* screens: Offline Practice should not inherit the menu spin regression into
+ * gameplay camera state, even with persisted settings from the WSL repro. */
+static void Test_OfflinePracticePersistedSettingsCameraStaysStable(ImGuiTestContext* ctx) {
+  ShroomImGuiTestAppReset(true);
+  g_imgui_test_app.game.settings.ui_scale_percent = 119;
+  g_imgui_test_app.game.settings.menu_animations_enabled = false;
+  g_imgui_test_app.game.settings.camera_zoom = 0.44f;
+
+  ShroomTeCtx_SetRef(ctx, "Main Menu");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Main Menu"));
+
+  ShroomTeCtx_ItemClick(ctx, "Offline Practice");
+  ShroomTeCtx_Yield(ctx, 90);
+
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_GAME);
+  IM_CHECK_EQ(g_imgui_test_app.game.active_mode, SHROOM_SESSION_MODE_OFFLINE_PRACTICE);
+  IM_CHECK(g_imgui_test_app.game.local_player != NULL);
+  IM_CHECK(fabsf(g_imgui_test_app.game.camera.rotation) <= 0.001f);
+  IM_CHECK(fabsf(g_imgui_test_app.game.camera.zoom - 0.44f) <= 0.01f);
+  IM_CHECK(fabsf(g_imgui_test_app.game.camera_zoom_target - 0.44f) <= 0.001f);
+  IM_CHECK(ShroomScreenManagerIsRunning(&g_imgui_test_app.screen_manager));
 }
 
 static void Test_SettingsExposesSpecControlsAndAppliesBoundaryValues(ImGuiTestContext* ctx) {
@@ -636,6 +662,27 @@ static void Test_PlayOnlineClickTransitionsToLobby(ImGuiTestContext* ctx) {
   IM_CHECK_EQ(g_imgui_test_app.game.net.status, CLIENT_NET_CONNECTING);
 }
 
+/* menu: Play Online must survive the real post-click lobby frames with the
+ * same persisted settings shape that exposed the WSL crash. */
+static void Test_PlayOnlineWithPersistedSettingsSurvivesLobbyFrames(ImGuiTestContext* ctx) {
+  ShroomImGuiTestAppReset(true);
+  g_imgui_test_app.game.settings.ui_scale_percent = 119;
+  g_imgui_test_app.game.settings.menu_animations_enabled = false;
+  g_imgui_test_app.game.settings.camera_zoom = 0.44f;
+  ShroomTeCtx_SetRef(ctx, "Main Menu");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Main Menu"));
+
+  ShroomTeCtx_ItemClick(ctx, "Play Online");
+  ShroomTeCtx_Yield(ctx, 90);
+
+  IM_CHECK(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager) ==
+               SHROOM_SCREEN_LOBBY ||
+           ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager) ==
+               SHROOM_SCREEN_LOBBY_ROSTER);
+  IM_CHECK(ShroomScreenManagerIsRunning(&g_imgui_test_app.screen_manager));
+}
+
 /* menu: MainMenuAnimationsEnabled must honor menu_animations_enabled.
  * Regression for #334 — d95936a accidentally hard-coded it to true so the
  * menu mushrooms spun even when the player disabled menu animations. */
@@ -691,6 +738,9 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_MainMenuExposesPrimaryActions);
   ShroomTeEngine_RegisterTest(engine, "screens", "offline_practice_entry_initializes_game",
                               Test_OfflinePracticeEntryInitializesGame);
+  ShroomTeEngine_RegisterTest(engine, "screens",
+                              "offline_practice_persisted_settings_camera_stays_stable",
+                              Test_OfflinePracticePersistedSettingsCameraStaysStable);
   ShroomTeEngine_RegisterTest(engine, "screens", "settings_exposes_controls_and_applies_bounds",
                               Test_SettingsExposesSpecControlsAndAppliesBoundaryValues);
   ShroomTeEngine_RegisterTest(engine, "screens", "settings_persistence", Test_SettingsPersistence);
@@ -733,6 +783,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_LobbyAutoJoinTransitionsToRoster);
   ShroomTeEngine_RegisterTest(engine, "menu", "play_online_click_transitions_to_lobby",
                               Test_PlayOnlineClickTransitionsToLobby);
+  ShroomTeEngine_RegisterTest(engine, "menu", "play_online_persisted_settings_survives_lobby_frames",
+                              Test_PlayOnlineWithPersistedSettingsSurvivesLobbyFrames);
   ShroomTeEngine_RegisterTest(engine, "lobby", "back_returns_to_server_browser",
                               Test_LobbyBackReturnsToServerBrowser);
   ShroomTeEngine_RegisterTest(engine, "menu", "respects_animations_toggle",

@@ -1536,12 +1536,13 @@ static void DrawArenaZones(const ShroomWorldState* world, Rectangle view_bounds)
     DrawCircleV(center, SHROOM_ZONE_MID_RADIUS, Fade((Color){45, 75, 50, 255}, 0.85f));
   }
 
-  // Prominent mycelium-like patterns with animation
+  // Prominent mycelium-like patterns. Keep these static; rotating world
+  // decoration reads like the camera is orbiting in Offline Practice.
   for (int i = 0; i < 8; i++) {
     float angle = (i / 8.0f) * 2.0f * PI;
     float radius = SHROOM_ZONE_MID_RADIUS * 0.7f;
-    float x = center.x + cosf(angle + time * 0.04f) * radius;
-    float y = center.y + sinf(angle + time * 0.04f) * radius;
+    float x = center.x + cosf(angle) * radius;
+    float y = center.y + sinf(angle) * radius;
     float size = 42.0f + sinf(i * 2.0f + time * 0.22f) * 12.0f;
     if (CircleIntersectsRect((Vector2){x, y}, size, view_bounds)) {
       DrawCircle(x, y, size, Fade((Color){80, 130, 80, 255}, 0.32f));
@@ -1561,9 +1562,9 @@ static void DrawArenaZones(const ShroomWorldState* world, Rectangle view_bounds)
                        Fade((Color){70, 110, 55, 255}, 0.0f));
   }
 
-  // Add radial glow lines
+  // Add static radial glow lines; animated rotation was mistaken for camera spin.
   for (int i = 0; i < 6; i++) {
-    float angle = (i / 6.0f) * 2.0f * PI + time * 0.08f;
+    float angle = (i / 6.0f) * 2.0f * PI;
     float inner_radius = SHROOM_ZONE_CENTER_RADIUS * 0.3f;
     float outer_radius = SHROOM_ZONE_CENTER_RADIUS * 0.9f;
     Vector2 start = {center.x + cosf(angle) * inner_radius, center.y + sinf(angle) * inner_radius};
@@ -1655,7 +1656,7 @@ static void DrawPowerups(const ShroomWorldState* world, Rectangle view_bounds) {
       continue;
     }
     float pulse = sinf((float)index * 0.5f + time * 4.0f) * 0.4f + 0.8f;
-    float rotation = time * 2.0f + (float)index;
+    float rotation = (float)index;
 
     // Large outer glow with restrained overdraw.
     DrawCircleV(position, SHROOM_POWERUP_RADIUS + 24.0f, Fade(color, 0.20f * pulse));

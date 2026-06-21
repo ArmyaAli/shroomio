@@ -421,6 +421,7 @@ static void SendMushroomSpeciesCatalog(ENetPeer* peer, sqlite3* db) {
       "FROM mushroom_species WHERE unlocked_by_default = 1 ORDER BY sort_order ASC";
   ShroomMushroomSpeciesCatalogPacket packet = {0};
   sqlite3_stmt* stmt = NULL;
+  size_t packet_size;
   uint8_t count = 0;
 
   if ((peer == NULL) || (db == NULL)) {
@@ -456,11 +457,14 @@ static void SendMushroomSpeciesCatalog(ENetPeer* peer, sqlite3* db) {
     return;
   }
 
-  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_MUSHROOM_SPECIES_CATALOG, sizeof(packet));
+  packet_size = offsetof(ShroomMushroomSpeciesCatalogPacket, species) +
+                (size_t)count * sizeof(packet.species[0]);
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_MUSHROOM_SPECIES_CATALOG,
+                         (uint16_t)packet_size);
   packet.species_count = count;
   enet_peer_send(
       peer, SHROOM_ENET_CHANNEL_CONTROL,
-      CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_MUSHROOM_SPECIES_CATALOG));
+      CreateProtocolPacket(&packet, packet_size, SHROOM_PACKET_MUSHROOM_SPECIES_CATALOG));
 }
 
 static uint16_t CountLobbyRealPlayers(const ENetHost* host, uint32_t lobby_id) {
@@ -555,10 +559,10 @@ static ShroomLobby* FindLobbyById(ShroomLobby* lobbies, uint32_t lobby_id) {
 
 static void SendLobbyList(ENetPeer* peer, ShroomLobby* lobbies, const ENetHost* host) {
   ShroomLobbyListPacket packet = {0};
+  size_t packet_size;
   uint8_t count = 0;
   size_t i;
 
-  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_LIST, sizeof(packet));
   for (i = 0; i < SHROOM_MAX_LOBBIES && count < SHROOM_MAX_LOBBIES; ++i) {
     ShroomLobby* lobby = &lobbies[i];
     uint16_t real_count;
@@ -580,9 +584,12 @@ static void SendLobbyList(ENetPeer* peer, ShroomLobby* lobbies, const ENetHost* 
     snprintf(packet.lobbies[count].name, sizeof(packet.lobbies[count].name), "%s", lobby->name);
     ++count;
   }
+  packet_size = offsetof(ShroomLobbyListPacket, lobbies) +
+                (size_t)count * sizeof(packet.lobbies[0]);
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_LIST, (uint16_t)packet_size);
   packet.lobby_count = count;
   enet_peer_send(peer, SHROOM_ENET_CHANNEL_CONTROL,
-                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_LOBBY_LIST));
+                 CreateProtocolPacket(&packet, packet_size, SHROOM_PACKET_LOBBY_LIST));
 }
 
 static void SendLobbyJoined(ENetPeer* peer, const ServerSession* session,
