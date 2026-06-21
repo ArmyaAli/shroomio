@@ -165,6 +165,8 @@ A full LaTeX specification covering game mechanics, tuning constants, and protoc
 make spec    # -> dist/latex/shroomio-specification.pdf
 ```
 
+The cartoony fungal visual direction is documented in [docs/Cartoony-Art-Style.md](docs/Cartoony-Art-Style.md), including palette, shape language, UI component rules, animation guidance, and asset naming conventions.
+
 ## CI
 
 Pull requests are validated on GitHub Actions with:
