@@ -1937,12 +1937,12 @@ static void DrawPlayers(const Game* game, Rectangle view_bounds) {
           const Vector2 left = {-dir.y * head_half_width, dir.x * head_half_width};
           const Vector2 right = {dir.y * head_half_width, -dir.x * head_half_width};
           const Color glow = Fade((Color){55, 195, 255, 255}, 0.25f + (progress * 0.18f));
-          const Color fill = Fade(arc_color, 0.84f + (progress * 0.12f));
+          const Color arrow_fill = Fade(arc_color, 0.84f + (progress * 0.12f));
 
           DrawLineEx(start, base, shaft_width + 8.0f, glow);
-          DrawLineEx(start, base, shaft_width, fill);
+          DrawLineEx(start, base, shaft_width, arrow_fill);
           DrawTriangle(tip, (Vector2){base.x + left.x, base.y + left.y},
-                       (Vector2){base.x + right.x, base.y + right.y}, fill);
+                       (Vector2){base.x + right.x, base.y + right.y}, arrow_fill);
           DrawTriangleLines(tip, (Vector2){base.x + left.x, base.y + left.y},
                             (Vector2){base.x + right.x, base.y + right.y}, Fade(RAYWHITE, 0.76f));
         }
