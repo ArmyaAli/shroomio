@@ -125,13 +125,22 @@ static bool g_client_sfx_loaded[CLIENT_SFX_COUNT];
 static Sound g_client_music_loop;
 static bool g_client_music_loaded;
 
-static Sound GenerateToneSound(float start_hz, float end_hz, float seconds, float decay) {
+static float NextNoiseSample(uint32_t* state) {
+  *state = (*state * 1664525u) + 1013904223u;
+  return ((float)((*state >> 8u) & 0xFFFFu) / 32767.5f) - 1.0f;
+}
+
+static Sound GenerateOrganicSfx(float start_hz, float end_hz, float seconds, float attack_seconds,
+                                float release_seconds, float tone_gain, float noise_gain,
+                                float thump_gain, uint32_t seed) {
   const unsigned int sample_rate = 32000u;
   const unsigned int frame_count = (unsigned int)(seconds * (float)sample_rate);
   int16_t* samples = malloc(frame_count * sizeof(int16_t));
   Wave wave = {0};
   Sound sound = {0};
+  uint32_t noise_state = seed != 0u ? seed : 1u;
   float previous_sample = 0.0f;
+  float previous_noise = 0.0f;
 
   if ((samples == NULL) || (frame_count == 0u)) {
     free(samples);
@@ -141,18 +150,23 @@ static Sound GenerateToneSound(float start_hz, float end_hz, float seconds, floa
   for (unsigned int index = 0u; index < frame_count; ++index) {
     const float t = (float)index / (float)sample_rate;
     const float progress = (float)index / (float)frame_count;
-    const float hz = start_hz + ((end_hz - start_hz) * progress);
-    const float attack = SmoothStep01(progress / 0.08f);
-    const float release = SmoothStep01((1.0f - progress) / 0.22f);
-    const float sustain = 1.0f - (progress * (0.24f + decay * 0.08f));
-    const float envelope = attack * release * Clamp(sustain, 0.24f, 1.0f);
+    const float hz = start_hz + ((end_hz - start_hz) * SmoothStep01(progress));
+    const float attack = SmoothStep01(t / fmaxf(attack_seconds, 0.001f));
+    const float release = SmoothStep01((seconds - t) / fmaxf(release_seconds, 0.001f));
+    const float envelope = attack * release;
+    const float noise = (previous_noise * 0.82f) + (NextNoiseSample(&noise_state) * 0.18f);
     const float fundamental = sinf(2.0f * PI * hz * t);
-    const float overtone = sinf(2.0f * PI * hz * 1.5f * t) * 0.22f;
-    const float wobble = 0.86f + (0.14f * sinf(2.0f * PI * 11.0f * t));
-    const float raw_sample = (fundamental + overtone) * envelope * wobble;
-    const float filtered_sample = (previous_sample * 0.35f) + (raw_sample * 0.65f);
+    const float overtone = sinf(2.0f * PI * hz * 2.0f * t) * 0.12f;
+    const float warm_body = sinf(2.0f * PI * fmaxf(42.0f, start_hz * 0.42f) * t) *
+                            expf(-progress * 8.0f) * thump_gain;
+    const float wobble = 0.92f + (0.08f * sinf(2.0f * PI * 5.0f * t));
+    const float raw_sample = ((fundamental + overtone) * tone_gain * wobble +
+                              (noise * noise_gain) + warm_body) *
+                             envelope;
+    const float filtered_sample = (previous_sample * 0.58f) + (tanhf(raw_sample) * 0.42f);
+    previous_noise = noise;
     previous_sample = filtered_sample;
-    samples[index] = (int16_t)(Clamp(filtered_sample, -1.0f, 1.0f) * 9000.0f);
+    samples[index] = (int16_t)(Clamp(filtered_sample, -1.0f, 1.0f) * 11500.0f);
   }
 
   wave.frameCount = frame_count;
@@ -206,31 +220,40 @@ static void EnsureClientSfxLoaded(ClientSfx sfx) {
 
   switch (sfx) {
   case CLIENT_SFX_SPORE:
-    g_client_sfx[sfx] = GenerateToneSound(520.0f, 820.0f, 0.16f, 2.0f);
+    g_client_sfx[sfx] = GenerateOrganicSfx(560.0f, 940.0f, 0.13f, 0.006f, 0.09f, 0.36f, 0.035f,
+                                           0.02f, 0x51A1u);
     break;
   case CLIENT_SFX_CONSUME:
-    g_client_sfx[sfx] = GenerateToneSound(220.0f, 92.0f, 0.30f, 1.45f);
+    g_client_sfx[sfx] = GenerateOrganicSfx(190.0f, 86.0f, 0.36f, 0.008f, 0.28f, 0.30f, 0.055f,
+                                           0.34f, 0xC08Eu);
     break;
   case CLIENT_SFX_DEATH:
-    g_client_sfx[sfx] = GenerateToneSound(240.0f, 48.0f, 0.44f, 1.15f);
+    g_client_sfx[sfx] = GenerateOrganicSfx(210.0f, 54.0f, 0.48f, 0.012f, 0.38f, 0.26f, 0.050f,
+                                           0.30f, 0xDEADu);
     break;
   case CLIENT_SFX_ZONE:
-    g_client_sfx[sfx] = GenerateToneSound(330.0f, 620.0f, 0.30f, 1.25f);
+    g_client_sfx[sfx] = GenerateOrganicSfx(300.0f, 560.0f, 0.34f, 0.020f, 0.24f, 0.28f, 0.030f,
+                                           0.04f, 0x20A1u);
     break;
   case CLIENT_SFX_WARNING:
-    g_client_sfx[sfx] = GenerateToneSound(260.0f, 170.0f, 0.22f, 1.0f);
+    g_client_sfx[sfx] = GenerateOrganicSfx(360.0f, 220.0f, 0.24f, 0.006f, 0.17f, 0.30f, 0.025f,
+                                           0.10f, 0xA11Eu);
     break;
   case CLIENT_SFX_POWERUP:
-    g_client_sfx[sfx] = GenerateToneSound(430.0f, 980.0f, 0.24f, 1.35f);
+    g_client_sfx[sfx] = GenerateOrganicSfx(440.0f, 880.0f, 0.24f, 0.008f, 0.16f, 0.34f, 0.020f,
+                                           0.05f, 0xB005u);
     break;
   case CLIENT_SFX_SPLIT:
-    g_client_sfx[sfx] = GenerateToneSound(180.0f, 420.0f, 0.28f, 1.05f);
+    g_client_sfx[sfx] = GenerateOrganicSfx(160.0f, 360.0f, 0.26f, 0.004f, 0.20f, 0.24f, 0.075f,
+                                           0.18f, 0x5117u);
     break;
   case CLIENT_SFX_UI_CLICK:
-    g_client_sfx[sfx] = GenerateToneSound(680.0f, 760.0f, 0.08f, 2.4f);
+    g_client_sfx[sfx] = GenerateOrganicSfx(620.0f, 720.0f, 0.07f, 0.002f, 0.045f, 0.22f, 0.010f,
+                                           0.00f, 0xC11Cu);
     break;
   case CLIENT_SFX_UI_ERROR:
-    g_client_sfx[sfx] = GenerateToneSound(210.0f, 130.0f, 0.18f, 1.8f);
+    g_client_sfx[sfx] = GenerateOrganicSfx(180.0f, 120.0f, 0.18f, 0.004f, 0.13f, 0.28f, 0.030f,
+                                           0.12f, 0xE220u);
     break;
   case CLIENT_SFX_COUNT:
   default:
