@@ -71,6 +71,12 @@ make run
 
 The client attempts to connect to `127.0.0.1:7777`. After successful handshake, the server controls the simulation authoritatively.
 
+## Profiling and benchmarking
+
+- `docs/Profiling-Instrumentation.md` documents opt-in runtime timing logs.
+- `docs/Benchmarking.md` documents `make benchmark` and CSV benchmark artifacts.
+- `docs/Profiling-Runbook.md` documents CPU, memory, and network profiling workflows.
+
 ### Docker Deployment
 
 ```bash
