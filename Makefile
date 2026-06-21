@@ -196,6 +196,7 @@ MACOS_IMGUI_OBJECTS := $(MACOS_BUILD_DIR)/client/imgui_impl_raylib.o \
 #Client source files
 CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/main.c \
+	$(CLIENT_SRC_DIR)/audio.c \
 	$(CLIENT_SRC_DIR)/client_settings.c \
 	$(CLIENT_SRC_DIR)/game.c \
 	$(CLIENT_SRC_DIR)/layout.c \
@@ -233,6 +234,7 @@ SHARED_HEADERS := \
 	$(SHARED_SRC_DIR)/protocol.h \
 	$(SHARED_SRC_DIR)/lifecycle.h \
 	$(SHARED_SRC_DIR)/connection.h \
+	$(CLIENT_SRC_DIR)/audio.h \
 	$(CLIENT_SRC_DIR)/layout.h \
 	$(SERVER_SRC_DIR)/database.h \
 	$(SERVER_SRC_DIR)/auth.h
@@ -252,6 +254,7 @@ IMGUI_CORE_SOURCES := imgui imgui_draw imgui_tables imgui_widgets
 IMGUI_TEST_ENGINE_SOURCE_NAMES := imgui_capture_tool imgui_te_context imgui_te_coroutine \
 	imgui_te_engine imgui_te_exporters imgui_te_perftool imgui_te_ui imgui_te_utils
 IMGUI_TEST_CLIENT_SOURCES := \
+	$(CLIENT_SRC_DIR)/audio.c \
 	$(CLIENT_SRC_DIR)/client_settings.c \
 	$(CLIENT_SRC_DIR)/game.c \
 	$(CLIENT_SRC_DIR)/layout.c \

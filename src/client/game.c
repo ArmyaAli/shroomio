@@ -3,10 +3,10 @@
 #include <math.h>
 #include <stddef.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
+#include "audio.h"
 #include "imgui_wrapper.h"
 #include "raymath.h"
 #include "shared/config.h"
@@ -107,259 +107,15 @@ static float ClampPanelPosition(float value, float panel_size, float screen_size
   return Clamp(value, margin, screen_size - panel_size - margin);
 }
 
-typedef enum ClientSfx {
-  CLIENT_SFX_SPORE = 0,
-  CLIENT_SFX_CONSUME,
-  CLIENT_SFX_DEATH,
-  CLIENT_SFX_ZONE,
-  CLIENT_SFX_WARNING,
-  CLIENT_SFX_POWERUP,
-  CLIENT_SFX_SPLIT,
-  CLIENT_SFX_UI_CLICK,
-  CLIENT_SFX_UI_ERROR,
-  CLIENT_SFX_COUNT,
-} ClientSfx;
-
-static Sound g_client_sfx[CLIENT_SFX_COUNT];
-static bool g_client_sfx_loaded[CLIENT_SFX_COUNT];
-static Sound g_client_music_loop;
-static bool g_client_music_loaded;
-
-static float NextNoiseSample(uint32_t* state) {
-  *state = (*state * 1664525u) + 1013904223u;
-  return ((float)((*state >> 8u) & 0xFFFFu) / 32767.5f) - 1.0f;
-}
-
-static Sound GenerateOrganicSfx(float start_hz, float end_hz, float seconds, float attack_seconds,
-                                float release_seconds, float tone_gain, float noise_gain,
-                                float thump_gain, uint32_t seed) {
-  const unsigned int sample_rate = 32000u;
-  const unsigned int frame_count = (unsigned int)(seconds * (float)sample_rate);
-  int16_t* samples = malloc(frame_count * sizeof(int16_t));
-  Wave wave = {0};
-  Sound sound = {0};
-  uint32_t noise_state = seed != 0u ? seed : 1u;
-  float previous_sample = 0.0f;
-  float previous_noise = 0.0f;
-
-  if ((samples == NULL) || (frame_count == 0u)) {
-    free(samples);
-    return sound;
-  }
-
-  for (unsigned int index = 0u; index < frame_count; ++index) {
-    const float t = (float)index / (float)sample_rate;
-    const float progress = (float)index / (float)frame_count;
-    const float hz = start_hz + ((end_hz - start_hz) * SmoothStep01(progress));
-    const float attack = SmoothStep01(t / fmaxf(attack_seconds, 0.001f));
-    const float release = SmoothStep01((seconds - t) / fmaxf(release_seconds, 0.001f));
-    const float envelope = attack * release;
-    const float noise = (previous_noise * 0.82f) + (NextNoiseSample(&noise_state) * 0.18f);
-    const float fundamental = sinf(2.0f * PI * hz * t);
-    const float overtone = sinf(2.0f * PI * hz * 2.0f * t) * 0.12f;
-    const float warm_body =
-        sinf(2.0f * PI * fmaxf(42.0f, start_hz * 0.42f) * t) * expf(-progress * 8.0f) * thump_gain;
-    const float wobble = 0.92f + (0.08f * sinf(2.0f * PI * 5.0f * t));
-    const float raw_sample =
-        ((fundamental + overtone) * tone_gain * wobble + (noise * noise_gain) + warm_body) *
-        envelope;
-    const float filtered_sample = (previous_sample * 0.58f) + (tanhf(raw_sample) * 0.42f);
-    previous_noise = noise;
-    previous_sample = filtered_sample;
-    samples[index] = (int16_t)(Clamp(filtered_sample, -1.0f, 1.0f) * 11500.0f);
-  }
-
-  wave.frameCount = frame_count;
-  wave.sampleRate = sample_rate;
-  wave.sampleSize = 16u;
-  wave.channels = 1u;
-  wave.data = samples;
-  sound = LoadSoundFromWave(wave);
-  free(samples);
-  return sound;
-}
-
-static Sound GenerateAmbientLoopSound(void) {
-  const unsigned int sample_rate = 32000u;
-  const float seconds = 3.2f;
-  const unsigned int frame_count = (unsigned int)(seconds * (float)sample_rate);
-  int16_t* samples = malloc(frame_count * sizeof(int16_t));
-  Wave wave = {0};
-  Sound sound = {0};
-
-  if (samples == NULL) {
-    free(samples);
-    return sound;
-  }
-
-  for (unsigned int index = 0u; index < frame_count; ++index) {
-    const float t = (float)index / (float)sample_rate;
-    const float loop_phase = (float)index / (float)frame_count;
-    const float fade = sinf(PI * loop_phase);
-    const float drone = sinf(2.0f * PI * 92.0f * t) * 0.34f;
-    const float overtone = sinf(2.0f * PI * 184.0f * t + sinf(2.0f * PI * 0.31f * t)) * 0.18f;
-    const float shimmer = sinf(2.0f * PI * 276.0f * t) * sinf(2.0f * PI * 0.17f * t) * 0.08f;
-    const float sample = (drone + overtone + shimmer) * (0.52f + (0.48f * fade));
-    samples[index] = (int16_t)(Clamp(sample, -1.0f, 1.0f) * 5200.0f);
-  }
-
-  wave.frameCount = frame_count;
-  wave.sampleRate = sample_rate;
-  wave.sampleSize = 16u;
-  wave.channels = 1u;
-  wave.data = samples;
-  sound = LoadSoundFromWave(wave);
-  free(samples);
-  return sound;
-}
-
-static void EnsureClientSfxLoaded(ClientSfx sfx) {
-  if ((sfx < 0) || (sfx >= CLIENT_SFX_COUNT) || g_client_sfx_loaded[sfx] || !IsAudioDeviceReady()) {
-    return;
-  }
-
-  switch (sfx) {
-  case CLIENT_SFX_SPORE:
-    g_client_sfx[sfx] =
-        GenerateOrganicSfx(560.0f, 940.0f, 0.13f, 0.006f, 0.09f, 0.36f, 0.035f, 0.02f, 0x51A1u);
-    break;
-  case CLIENT_SFX_CONSUME:
-    g_client_sfx[sfx] =
-        GenerateOrganicSfx(190.0f, 86.0f, 0.36f, 0.008f, 0.28f, 0.30f, 0.055f, 0.34f, 0xC08Eu);
-    break;
-  case CLIENT_SFX_DEATH:
-    g_client_sfx[sfx] =
-        GenerateOrganicSfx(210.0f, 54.0f, 0.48f, 0.012f, 0.38f, 0.26f, 0.050f, 0.30f, 0xDEADu);
-    break;
-  case CLIENT_SFX_ZONE:
-    g_client_sfx[sfx] =
-        GenerateOrganicSfx(300.0f, 560.0f, 0.34f, 0.020f, 0.24f, 0.28f, 0.030f, 0.04f, 0x20A1u);
-    break;
-  case CLIENT_SFX_WARNING:
-    g_client_sfx[sfx] =
-        GenerateOrganicSfx(360.0f, 220.0f, 0.24f, 0.006f, 0.17f, 0.30f, 0.025f, 0.10f, 0xA11Eu);
-    break;
-  case CLIENT_SFX_POWERUP:
-    g_client_sfx[sfx] =
-        GenerateOrganicSfx(440.0f, 880.0f, 0.24f, 0.008f, 0.16f, 0.34f, 0.020f, 0.05f, 0xB005u);
-    break;
-  case CLIENT_SFX_SPLIT:
-    g_client_sfx[sfx] =
-        GenerateOrganicSfx(160.0f, 360.0f, 0.26f, 0.004f, 0.20f, 0.24f, 0.075f, 0.18f, 0x5117u);
-    break;
-  case CLIENT_SFX_UI_CLICK:
-    g_client_sfx[sfx] =
-        GenerateOrganicSfx(620.0f, 720.0f, 0.07f, 0.002f, 0.045f, 0.22f, 0.010f, 0.00f, 0xC11Cu);
-    break;
-  case CLIENT_SFX_UI_ERROR:
-    g_client_sfx[sfx] =
-        GenerateOrganicSfx(180.0f, 120.0f, 0.18f, 0.004f, 0.13f, 0.28f, 0.030f, 0.12f, 0xE220u);
-    break;
-  case CLIENT_SFX_COUNT:
-  default:
-    return;
-  }
-  g_client_sfx_loaded[sfx] = true;
-}
-
-static void EnsureAllClientSfxLoaded(void) {
-  for (int index = 0; index < CLIENT_SFX_COUNT; ++index) {
-    EnsureClientSfxLoaded((ClientSfx)index);
-  }
-}
-
-static void EnsureClientMusicLoaded(void) {
-  if (g_client_music_loaded || !IsAudioDeviceReady()) {
-    return;
-  }
-  g_client_music_loop = GenerateAmbientLoopSound();
-  g_client_music_loaded = true;
-}
-
-static void UpdateClientMusic(const Game* game) {
-  float volume;
-
-  EnsureClientMusicLoaded();
-  if (!g_client_music_loaded) {
-    return;
-  }
-
-  volume = ((float)game->settings.music_volume_percent / 100.0f) * 0.34f;
-  SetSoundVolume(g_client_music_loop, volume);
-  SetSoundPan(g_client_music_loop, 0.5f);
-  if ((volume > 0.0f) && !IsSoundPlaying(g_client_music_loop)) {
-    PlaySound(g_client_music_loop);
-  }
-  if ((volume <= 0.0f) && IsSoundPlaying(g_client_music_loop)) {
-    StopSound(g_client_music_loop);
-  }
-}
-
-static void UnloadClientSfx(void) {
-  if (!IsAudioDeviceReady()) {
-    return;
-  }
-  for (int index = 0; index < CLIENT_SFX_COUNT; ++index) {
-    if (g_client_sfx_loaded[index]) {
-      UnloadSound(g_client_sfx[index]);
-    }
-  }
-  memset(g_client_sfx, 0, sizeof(g_client_sfx));
-  memset(g_client_sfx_loaded, 0, sizeof(g_client_sfx_loaded));
-  if (g_client_music_loaded) {
-    UnloadSound(g_client_music_loop);
-  }
-  memset(&g_client_music_loop, 0, sizeof(g_client_music_loop));
-  g_client_music_loaded = false;
-}
-
-static void PlayClientSfx(const Game* game, ClientSfx sfx, float importance) {
-  float volume;
-  int active_sounds = 0;
-
-  if ((sfx < 0) || (sfx >= CLIENT_SFX_COUNT)) {
-    return;
-  }
-
-  EnsureClientSfxLoaded(sfx);
-  if (!g_client_sfx_loaded[sfx]) {
-    return;
-  }
-  if (IsSoundPlaying(g_client_sfx[sfx]) && (sfx == CLIENT_SFX_SPORE || sfx == CLIENT_SFX_WARNING)) {
-    return;
-  }
-
-  if ((sfx == CLIENT_SFX_DEATH) || (sfx == CLIENT_SFX_CONSUME)) {
-    for (int index = 0; index < CLIENT_SFX_COUNT; ++index) {
-      if ((index != (int)sfx) && g_client_sfx_loaded[index] &&
-          IsSoundPlaying(g_client_sfx[index])) {
-        StopSound(g_client_sfx[index]);
-      }
-    }
-  }
-
-  for (int index = 0; index < CLIENT_SFX_COUNT; ++index) {
-    if (g_client_sfx_loaded[index] && IsSoundPlaying(g_client_sfx[index])) {
-      active_sounds += 1;
-    }
-  }
-
-  volume = ((float)game->settings.effects_volume_percent / 100.0f) * Clamp(importance, 0.0f, 1.0f);
-  volume *= 0.84f / (1.0f + ((float)active_sounds * 0.24f));
-  SetSoundVolume(g_client_sfx[sfx], volume);
-  SetSoundPan(g_client_sfx[sfx], 0.5f);
-  PlaySound(g_client_sfx[sfx]);
-}
-
 void GamePlayUiClickSound(const Game* game) {
   if (game != NULL) {
-    PlayClientSfx(game, CLIENT_SFX_UI_CLICK, 0.46f);
+    ShroomClientAudioPlaySfx(&game->settings, SHROOM_CLIENT_SFX_UI_CLICK, 0.46f);
   }
 }
 
 void GamePlayUiErrorSound(const Game* game) {
   if (game != NULL) {
-    PlayClientSfx(game, CLIENT_SFX_UI_ERROR, 0.58f);
+    ShroomClientAudioPlaySfx(&game->settings, SHROOM_CLIENT_SFX_UI_ERROR, 0.58f);
   }
 }
 
@@ -708,7 +464,7 @@ static void EmitGameplayEventParticles(Game* game) {
         if (ShroomDistanceSqr(game->local_player->position,
                               game->previous_powerup_positions[index]) <
             (pickup_radius * pickup_radius)) {
-          PlayClientSfx(game, CLIENT_SFX_POWERUP, 0.66f);
+          ShroomClientAudioPlaySfx(&game->settings, SHROOM_CLIENT_SFX_POWERUP, 0.66f);
         }
       }
     }
@@ -730,7 +486,7 @@ static void EmitGameplayEventParticles(Game* game) {
                        game->previous_local_rank > 0 ? game->previous_local_rank : 0);
     game->screen_flash_color = (Color){180, 32, 42, 255};
     game->screen_flash_timer = 0.34f;
-    PlayClientSfx(game, CLIENT_SFX_DEATH, 0.92f);
+    ShroomClientAudioPlaySfx(&game->settings, SHROOM_CLIENT_SFX_DEATH, 0.92f);
     local_death_reported = true;
   }
 
@@ -769,7 +525,7 @@ static void EmitGameplayEventParticles(Game* game) {
       AddCombatNotification(game, title, detail, (Color){112, 224, 128, 255}, 3.0f);
       game->screen_flash_color = (Color){104, 220, 122, 255};
       game->screen_flash_timer = 0.24f;
-      PlayClientSfx(game, CLIENT_SFX_CONSUME, 0.86f);
+      ShroomClientAudioPlaySfx(&game->settings, SHROOM_CLIENT_SFX_CONSUME, 0.86f);
       local_kill_reported = true;
     }
 
@@ -789,7 +545,7 @@ static void EmitGameplayEventParticles(Game* game) {
     if (had_same_entity && game->previous_player_alive[index] &&
         (player->mass > previous_mass + 0.5f) && (local_player_id != 0u) &&
         (player->player_id == local_player_id) && !local_kill_reported) {
-      PlayClientSfx(game, CLIENT_SFX_SPORE, 0.42f);
+      ShroomClientAudioPlaySfx(&game->settings, SHROOM_CLIENT_SFX_SPORE, 0.42f);
     }
     if ((player->piece_index > 0u) &&
         (!game->previous_player_alive[index] || !had_same_entity || (previous_mass <= 0.0f))) {
@@ -2113,7 +1869,7 @@ static void UpdateStatusBanners(Game* game, float delta_time) {
                        0.64f);
     AddCombatNotification(game, TextFormat("Entered %s zone", GetZoneLabel(zone)),
                           GetZoneSummary(zone), GetZoneColor(zone), 2.4f);
-    PlayClientSfx(game, CLIENT_SFX_ZONE, 0.62f);
+    ShroomClientAudioPlaySfx(&game->settings, SHROOM_CLIENT_SFX_ZONE, 0.62f);
     game->current_zone = zone;
     game->zone_callout_timer = kStatusBannerDuration;
   } else if (game->zone_callout_timer > 0.0f) {
@@ -2231,7 +1987,7 @@ static void UpdateCombatFeedback(Game* game) {
           game, "Close call",
           TextFormat("%s is big enough to consume you", GetPlayerDisplayName(game, player)),
           (Color){245, 84, 84, 255}, 2.0f);
-      PlayClientSfx(game, CLIENT_SFX_WARNING, 0.74f);
+      ShroomClientAudioPlaySfx(&game->settings, SHROOM_CLIENT_SFX_WARNING, 0.74f);
       game->combat_feedback_cooldown = 4.0f;
       break;
     }
@@ -2240,7 +1996,7 @@ static void UpdateCombatFeedback(Game* game) {
           game, "Danger nearby",
           TextFormat("Avoid %s until you grow", GetPlayerDisplayName(game, player)),
           (Color){245, 184, 84, 255}, 2.0f);
-      PlayClientSfx(game, CLIENT_SFX_WARNING, 0.54f);
+      ShroomClientAudioPlaySfx(&game->settings, SHROOM_CLIENT_SFX_WARNING, 0.54f);
       game->combat_feedback_cooldown = 4.0f;
       break;
     }
@@ -2955,7 +2711,7 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
     game->show_results = false;
     ShroomWorldInit(&game->world);
     CaptureParticleBaselines(game);
-    EnsureAllClientSfxLoaded();
+    ShroomClientAudioEnsureAllSfxLoaded();
     /* local_player is NULL until first snapshot from server. */
     return;
   }
@@ -3005,7 +2761,7 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
   game->zone_callout_timer = kStatusBannerDuration;
   game->diagnostics_overlay_open = game->settings.diagnostics_enabled;
   CaptureParticleBaselines(game);
-  EnsureAllClientSfxLoaded();
+  ShroomClientAudioEnsureAllSfxLoaded();
 }
 
 void GameHandleResize(Game* game, int screen_width, int screen_height) {
@@ -3035,7 +2791,7 @@ void GameUpdate(Game* game, float delta_time) {
   const uint32_t previous_input_sequence = game->net.last_input_sequence;
 
   GameHandleResize(game, GetScreenWidth(), GetScreenHeight());
-  UpdateClientMusic(game);
+  ShroomClientAudioUpdateMusic(&game->settings);
 
   if (IsOverlayBlockingGameplay(game) || game->chat_open) {
     input_direction = (ShroomVec2){0};
@@ -3109,7 +2865,7 @@ void GameUpdate(Game* game, float delta_time) {
   if (IsOnlineMode(game->active_mode)) {
     if (game->split_requested && (game->local_player != NULL) && game->local_player->alive &&
         (game->local_player->mass >= SHROOM_SPLIT_MIN_MASS) && !game->local_player->has_split) {
-      PlayClientSfx(game, CLIENT_SFX_SPLIT, 0.64f);
+      ShroomClientAudioPlaySfx(&game->settings, SHROOM_CLIENT_SFX_SPLIT, 0.64f);
     }
     ClientNetUpdate(&game->net, input_direction, game->split_requested, split_aim_direction,
                     game->focused_piece_entity_id, delta_time);
@@ -3175,7 +2931,7 @@ void GameUpdate(Game* game, float delta_time) {
       ShroomPlayerSetInput(ctrl, input_direction);
       if (game->split_requested && (ctrl != NULL)) {
         if (ShroomWorldSplitPlayerToward(&game->world, ctrl, split_aim_direction)) {
-          PlayClientSfx(game, CLIENT_SFX_SPLIT, 0.64f);
+          ShroomClientAudioPlaySfx(&game->settings, SHROOM_CLIENT_SFX_SPLIT, 0.64f);
         }
       }
       game->split_requested = false;
@@ -3261,5 +3017,5 @@ void GameShutdown(Game* game) {
   if (IsOnlineMode(game->active_mode)) {
     ClientNetShutdown(&game->net);
   }
-  UnloadClientSfx();
+  ShroomClientAudioShutdown();
 }
