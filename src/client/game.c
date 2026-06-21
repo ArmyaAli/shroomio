@@ -1913,26 +1913,38 @@ static void DrawPlayers(const Game* game, Rectangle view_bounds) {
         DrawCircleLines((int)position.x, (int)position.y, player->radius + 11.0f,
                         Fade(RED, decay_pulse));
       }
-      /* Hold-to-split: charge arc + launch direction arrow. */
+      /* Hold-to-split: charge arc + large low-latency launch direction arrow. */
       if (is_focused && (game->split_hold_timer > 0.0f)) {
-        const float progress = game->split_hold_timer / SHROOM_SPLIT_HOLD_SECONDS;
-        const Color arc_color = (progress >= 1.0f) ? RAYWHITE : SKYBLUE;
+        const float progress =
+            Clamp(game->split_hold_timer / SHROOM_SPLIT_HOLD_SECONDS, 0.0f, 1.0f);
+        const float pulse = 0.72f + (0.28f * sinf((float)GetTime() * 18.0f));
+        const Color arc_color = (progress >= 1.0f) ? RAYWHITE : (Color){92, 220, 255, 255};
 
         DrawRing(position, player->radius + 14.0f, player->radius + 18.0f, -90.0f,
                  -90.0f + (progress * 360.0f), 36, Fade(arc_color, 0.85f));
 
-        /* Arrow showing the launch direction (mouse direction). */
-        if (ShroomVec2LengthSqr(player->input_direction) > 0.01f) {
-          const float arrow_len = player->radius + 28.0f + (progress * 24.0f);
-          const Vector2 dir = {player->input_direction.x, player->input_direction.y};
+        if (ShroomVec2LengthSqr(game->split_aim_visual_direction) > 0.01f) {
+          const float arrow_len = player->radius + 70.0f + (progress * 54.0f) + (pulse * 10.0f);
+          const float shaft_width = 8.0f + (progress * 4.0f);
+          const float head_len = 38.0f + (progress * 10.0f);
+          const float head_half_width = 24.0f + (progress * 8.0f);
+          const Vector2 dir = {game->split_aim_visual_direction.x,
+                               game->split_aim_visual_direction.y};
+          const Vector2 start = {position.x + dir.x * (player->radius + 18.0f),
+                                 position.y + dir.y * (player->radius + 18.0f)};
           const Vector2 tip = {position.x + dir.x * arrow_len, position.y + dir.y * arrow_len};
-          const Vector2 left = {-dir.y * 9.0f, dir.x * 9.0f};
-          const Vector2 right = {dir.y * 9.0f, -dir.x * 9.0f};
-          const Vector2 base = {tip.x - dir.x * 14.0f, tip.y - dir.y * 14.0f};
+          const Vector2 base = {tip.x - dir.x * head_len, tip.y - dir.y * head_len};
+          const Vector2 left = {-dir.y * head_half_width, dir.x * head_half_width};
+          const Vector2 right = {dir.y * head_half_width, -dir.x * head_half_width};
+          const Color glow = Fade((Color){55, 195, 255, 255}, 0.25f + (progress * 0.18f));
+          const Color fill = Fade(arc_color, 0.84f + (progress * 0.12f));
 
-          DrawLineEx(position, base, 2.5f, Fade(arc_color, 0.75f));
+          DrawLineEx(start, base, shaft_width + 8.0f, glow);
+          DrawLineEx(start, base, shaft_width, fill);
           DrawTriangle(tip, (Vector2){base.x + left.x, base.y + left.y},
-                       (Vector2){base.x + right.x, base.y + right.y}, Fade(arc_color, 0.80f));
+                       (Vector2){base.x + right.x, base.y + right.y}, fill);
+          DrawTriangleLines(tip, (Vector2){base.x + left.x, base.y + left.y},
+                            (Vector2){base.x + right.x, base.y + right.y}, Fade(RAYWHITE, 0.76f));
         }
       }
     }
@@ -2823,25 +2835,31 @@ static void DrawProximityMap(const Game* game) {
            Fade((Color){232, 245, 255, 255}, 0.82f));
 }
 
-static ShroomVec2 GetMovementInput(const Game* game) {
-  const Vector2 mouse_screen = GetMousePosition();
-  const Vector2 mouse_world = GetScreenToWorld2D(mouse_screen, game->camera);
-  /* Use the focused piece as the movement origin so that after Tab-switching
-   * to a split fragment the mouse direction is correct for that piece. */
+static const ShroomPlayerState* GetInputReferencePlayer(const Game* game) {
   const ShroomPlayerState* input_ref = game->local_player;
-  Vector2 player_world = {0.0f, 0.0f};
-  Vector2 movement;
 
   if (game->focused_piece_entity_id != 0) {
     size_t pi;
     for (pi = 0; pi < game->world.player_count; ++pi) {
       const ShroomPlayerState* p = &game->world.players[pi];
       if (p->alive && (p->entity_id == game->focused_piece_entity_id)) {
-        input_ref = p;
-        break;
+        return p;
       }
     }
   }
+
+  return input_ref;
+}
+
+static ShroomVec2 GetMovementInput(const Game* game) {
+  const Vector2 mouse_screen = GetMousePosition();
+  const Vector2 mouse_world = GetScreenToWorld2D(mouse_screen, game->camera);
+  /* Use the focused piece as the movement origin so that after Tab-switching
+   * to a split fragment the mouse direction is correct for that piece. */
+  const ShroomPlayerState* input_ref = GetInputReferencePlayer(game);
+  Vector2 player_world = {0.0f, 0.0f};
+  Vector2 movement;
+
   if (input_ref != NULL) {
     player_world = (Vector2){input_ref->position.x, input_ref->position.y};
   }
@@ -2871,6 +2889,34 @@ static ShroomVec2 GetMovementInput(const Game* game) {
 
   movement = Vector2Normalize(movement);
   return (ShroomVec2){movement.x, movement.y};
+}
+
+static ShroomVec2 GetSplitAimInput(const Game* game, ShroomVec2 fallback_direction) {
+  const Vector2 mouse_screen = GetMousePosition();
+  const Vector2 mouse_world = GetScreenToWorld2D(mouse_screen, game->camera);
+  const ShroomPlayerState* input_ref = GetInputReferencePlayer(game);
+  Vector2 player_world = {0.0f, 0.0f};
+  Vector2 aim;
+
+  if (input_ref != NULL) {
+    player_world = (Vector2){input_ref->position.x, input_ref->position.y};
+  }
+
+  aim = Vector2Subtract(mouse_world, player_world);
+  if (game->settings.invert_mouse) {
+    aim = Vector2Scale(aim, -1.0f);
+  }
+
+  if (Vector2LengthSqr(aim) > 16.0f) {
+    aim = Vector2Normalize(aim);
+    return (ShroomVec2){aim.x, aim.y};
+  }
+
+  if (ShroomVec2LengthSqr(fallback_direction) > 0.0001f) {
+    const float length = sqrtf(ShroomVec2LengthSqr(fallback_direction));
+    return (ShroomVec2){fallback_direction.x / length, fallback_direction.y / length};
+  }
+  return (ShroomVec2){1.0f, 0.0f};
 }
 
 void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode mode) {
@@ -2985,6 +3031,7 @@ void GameHandleResize(Game* game, int screen_width, int screen_height) {
 
 void GameUpdate(Game* game, float delta_time) {
   ShroomVec2 input_direction;
+  ShroomVec2 split_aim_direction;
   const uint32_t previous_input_sequence = game->net.last_input_sequence;
 
   GameHandleResize(game, GetScreenWidth(), GetScreenHeight());
@@ -2994,6 +3041,22 @@ void GameUpdate(Game* game, float delta_time) {
     input_direction = (ShroomVec2){0};
   } else {
     input_direction = GetMovementInput(game);
+  }
+  split_aim_direction = GetSplitAimInput(game, input_direction);
+  game->split_aim_direction = split_aim_direction;
+  if (ShroomVec2LengthSqr(game->split_aim_visual_direction) <= 0.0001f) {
+    game->split_aim_visual_direction = split_aim_direction;
+  } else {
+    const float blend = Clamp(delta_time * 26.0f, 0.0f, 1.0f);
+    Vector2 visual = {game->split_aim_visual_direction.x, game->split_aim_visual_direction.y};
+    const Vector2 target = {split_aim_direction.x, split_aim_direction.y};
+    visual = Vector2Lerp(visual, target, blend);
+    if (Vector2LengthSqr(visual) > 0.0001f) {
+      visual = Vector2Normalize(visual);
+      game->split_aim_visual_direction = (ShroomVec2){visual.x, visual.y};
+    } else {
+      game->split_aim_visual_direction = split_aim_direction;
+    }
   }
 
   /* Scroll-wheel zoom — guarded so inspect overlay and chat scrolling are unaffected. */
@@ -3048,7 +3111,7 @@ void GameUpdate(Game* game, float delta_time) {
         (game->local_player->mass >= SHROOM_SPLIT_MIN_MASS) && !game->local_player->has_split) {
       PlayClientSfx(game, CLIENT_SFX_SPLIT, 0.64f);
     }
-    ClientNetUpdate(&game->net, input_direction, game->split_requested,
+    ClientNetUpdate(&game->net, input_direction, game->split_requested, split_aim_direction,
                     game->focused_piece_entity_id, delta_time);
     game->split_requested = false;
   }
@@ -3111,7 +3174,7 @@ void GameUpdate(Game* game, float delta_time) {
 
       ShroomPlayerSetInput(ctrl, input_direction);
       if (game->split_requested && (ctrl != NULL)) {
-        if (ShroomWorldSplitPlayer(&game->world, ctrl)) {
+        if (ShroomWorldSplitPlayerToward(&game->world, ctrl, split_aim_direction)) {
           PlayClientSfx(game, CLIENT_SFX_SPLIT, 0.64f);
         }
       }

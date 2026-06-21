@@ -955,7 +955,9 @@ static void HandleInputPacket(ServerSession* session, const ENetPacket* enet_pac
   }
 
   if (packet->split_requested && (world != NULL)) {
-    ShroomWorldSplitPlayer(world, target_piece);
+    ShroomWorldSplitPlayerToward(
+        world, target_piece,
+        NormalizeInput((ShroomVec2){packet->split_direction_x, packet->split_direction_y}));
   }
 }
 

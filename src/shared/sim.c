@@ -797,7 +797,8 @@ static ShroomPlayerState* ShroomFindPrimaryPiece(ShroomWorldState* world,
   return NULL;
 }
 
-bool ShroomWorldSplitPlayer(ShroomWorldState* world, ShroomPlayerState* player) {
+bool ShroomWorldSplitPlayerToward(ShroomWorldState* world, ShroomPlayerState* player,
+                                  ShroomVec2 aim_direction) {
   ShroomPlayerState* new_piece;
   float half_mass;
   ShroomVec2 launch_dir;
@@ -835,7 +836,10 @@ bool ShroomWorldSplitPlayer(ShroomWorldState* world, ShroomPlayerState* player) 
   }
 
   half_mass = player->mass / 2.0f;
-  launch_dir = ShroomNormalizeOrZero(player->input_direction);
+  launch_dir = ShroomNormalizeOrZero(aim_direction);
+  if (ShroomVec2LengthSqr(launch_dir) < 0.0001f) {
+    launch_dir = ShroomNormalizeOrZero(player->input_direction);
+  }
   if (ShroomVec2LengthSqr(launch_dir) < 0.0001f) {
     launch_dir = (ShroomVec2){1.0f, 0.0f};
   }
@@ -844,7 +848,7 @@ bool ShroomWorldSplitPlayer(ShroomWorldState* world, ShroomPlayerState* player) 
       .player_id = player->player_id,
       .entity_id = world->next_entity_id++,
       .position = player->position,
-      .input_direction = player->input_direction,
+      .input_direction = launch_dir,
       .mass = half_mass,
       .radius = ShroomMassToRadius(half_mass),
       .alive = true,
@@ -866,6 +870,11 @@ bool ShroomWorldSplitPlayer(ShroomWorldState* world, ShroomPlayerState* player) 
   player->spawn_protection_timer = SHROOM_SPLIT_PROTECTION_SECONDS;
 
   return true;
+}
+
+bool ShroomWorldSplitPlayer(ShroomWorldState* world, ShroomPlayerState* player) {
+  return ShroomWorldSplitPlayerToward(world, player,
+                                      player != NULL ? player->input_direction : (ShroomVec2){0});
 }
 
 static bool ShroomCanMergePieces(const ShroomPlayerState* primary, const ShroomPlayerState* piece) {
