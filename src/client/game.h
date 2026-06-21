@@ -61,7 +61,8 @@ typedef struct Game {
   uint32_t pending_input_count;
   uint32_t tracked_input_sequence;
   uint32_t particle_cursor;
-  uint32_t notification_cursor;
+  uint32_t notification_head;
+  uint32_t notification_count;
   ShroomVec2 render_positions[SHROOM_MAX_PLAYERS];
   ShroomVec2 previous_local_position;
   GameplayParticle particles[SHROOM_CLIENT_PARTICLE_CAPACITY];
