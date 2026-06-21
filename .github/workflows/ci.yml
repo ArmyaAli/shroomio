@@ -125,6 +125,55 @@ jobs:
       - name: Build server
         run: make server-linux
 
+  valgrind:
+    name: Valgrind
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            curl \
+            libasound2-dev \
+            libgl1-mesa-dev \
+            libsqlite3-dev \
+            libx11-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libxinerama-dev \
+            libxrandr-dev \
+            make \
+            ninja-build \
+            pkg-config \
+            unzip \
+            valgrind \
+            zip
+
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            vcpkg_installed
+            vcpkg/downloads
+            ~/.cache/vcpkg/archives
+          key: ${{ runner.os }}-valgrind-vcpkg-${{ hashFiles('vcpkg.json', '.gitmodules', 'vcpkg/ports/raylib/vcpkg.json', 'vcpkg/ports/imgui/vcpkg.json', 'vcpkg/ports/enet/vcpkg.json') }}
+
+      - name: Bootstrap vcpkg
+        run: make vcpkg-bootstrap
+
+      - name: Install Linux vcpkg dependencies
+        run: make vcpkg-install-linux
+
+      - name: Run Valgrind memory checks
+        run: make valgrind-test
+
   build-windows:
     name: Build Windows
     runs-on: ubuntu-latest
@@ -196,6 +245,7 @@ jobs:
     needs:
       - quality
       - build-linux
+      - valgrind
       - build-windows
       - build-macos
     steps:
