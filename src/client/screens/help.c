@@ -5,6 +5,8 @@
 #include "imgui_wrapper.h"
 #include "raylib.h"
 
+#include <stdio.h>
+
 static bool HelpInit(ShroomScreenManager* manager) {
   (void)manager;
   return true;
