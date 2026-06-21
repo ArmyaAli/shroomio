@@ -1,4 +1,5 @@
 #include "client/game.h"
+#include "client/layout.h"
 #include "client/screen.h"
 #include "client/screens/screen_background.h"
 #include "imgui_wrapper.h"
@@ -13,8 +14,6 @@ static bool ResultsInit(ShroomScreenManager* manager) {
 
 static void ResultsDraw(ShroomScreenManager* manager) {
   Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
-  const int screen_width = GetScreenWidth();
-  const int screen_height = GetScreenHeight();
 
   if (game == NULL) {
     return;
@@ -22,14 +21,10 @@ static void ResultsDraw(ShroomScreenManager* manager) {
 
   ShroomScreenDrawFungalBackground(game->settings.menu_animations_enabled);
 
-  ShroomImGui_SetNextWindowPos((screen_width - 500.0f) * 0.5f, (screen_height - 400.0f) * 0.5f,
-                               SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowSize(500.0f, 400.0f, SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowBgAlpha(0.88f);
-  if (!ShroomImGui_Begin("Match Results", NULL,
-                         SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
-                             SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
-                             SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
+  if (!ShroomLayoutBeginCenteredPanel("Match Results", 500.0f, 400.0f, 0.88f,
+                                      SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
+                                          SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
+                                          SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
     ShroomImGui_End();
     return;
   }
@@ -38,9 +33,7 @@ static void ResultsDraw(ShroomScreenManager* manager) {
   const int minutes = (int)session_duration / 60;
   const int seconds = (int)session_duration % 60;
 
-  ShroomImGui_Text("Session Summary");
-  ShroomImGui_Separator();
-  ShroomImGui_Spacing();
+  ShroomLayoutHeading("Session Summary");
 
   char duration_text[64];
   snprintf(duration_text, sizeof(duration_text), "Duration: %d:%02d", minutes, seconds);

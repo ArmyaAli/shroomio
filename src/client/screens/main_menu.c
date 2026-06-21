@@ -1,4 +1,5 @@
 #include "game.h"
+#include "layout.h"
 #include "screen.h"
 #include "screen_background.h"
 
@@ -17,22 +18,15 @@ static void MainMenuUpdate(ShroomScreenManager* manager, float delta_time) {
 
 static void MainMenuDraw(ShroomScreenManager* manager) {
   Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
-  const int screen_width = GetScreenWidth();
-  const int screen_height = GetScreenHeight();
   const float panel_width = 340.0f;
   const float panel_height = 470.0f;
 
   ShroomScreenDrawFungalBackground((game == NULL) || game->settings.menu_animations_enabled);
 
-  ShroomImGui_SetNextWindowPos((screen_width - (int)panel_width) * 0.5f,
-                               (screen_height - (int)panel_height) * 0.5f,
-                               SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowSize(panel_width, panel_height, SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowBgAlpha(0.85f);
-  if (!ShroomImGui_Begin("Main Menu", NULL,
-                         SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
-                             SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
-                             SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
+  if (!ShroomLayoutBeginCenteredPanel("Main Menu", panel_width, panel_height, 0.85f,
+                                      SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
+                                          SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
+                                          SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
     ShroomImGui_End();
     return;
   }
@@ -42,7 +36,7 @@ static void MainMenuDraw(ShroomScreenManager* manager) {
       "Grow by collecting spores, out-position bigger threats, and take over the arena.");
   ShroomImGui_Spacing();
 
-  if (ShroomImGui_Button("Play Online", -1.0f, 38.0f)) {
+  if (ShroomLayoutButtonFullWidth("Play Online", 38.0f)) {
     GamePlayUiClickSound(game);
     if (game != NULL) {
       ClientNetInit(&game->net, game->selected_server_host, game->selected_server_port);
@@ -50,30 +44,30 @@ static void MainMenuDraw(ShroomScreenManager* manager) {
     }
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_LOBBY);
   }
-  if (ShroomImGui_Button("Custom Server", -1.0f, 38.0f)) {
+  if (ShroomLayoutButtonFullWidth("Custom Server", 38.0f)) {
     GamePlayUiClickSound(game);
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
   }
-  if (ShroomImGui_Button("Offline Practice", -1.0f, 38.0f)) {
+  if (ShroomLayoutButtonFullWidth("Offline Practice", 38.0f)) {
     GamePlayUiClickSound(game);
     if (game != NULL) {
       game->selected_mode = SHROOM_SESSION_MODE_OFFLINE_PRACTICE;
     }
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
   }
-  if (ShroomImGui_Button("Settings", -1.0f, 38.0f)) {
+  if (ShroomLayoutButtonFullWidth("Settings", 38.0f)) {
     GamePlayUiClickSound(game);
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SETTINGS);
   }
-  if (ShroomImGui_Button("Help", -1.0f, 38.0f)) {
+  if (ShroomLayoutButtonFullWidth("Help", 38.0f)) {
     GamePlayUiClickSound(game);
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_HELP);
   }
-  if (ShroomImGui_Button("Credits", -1.0f, 38.0f)) {
+  if (ShroomLayoutButtonFullWidth("Credits", 38.0f)) {
     GamePlayUiClickSound(game);
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_CREDITS);
   }
-  if (ShroomImGui_Button("Exit", -1.0f, 38.0f)) {
+  if (ShroomLayoutButtonFullWidth("Exit", 38.0f)) {
     GamePlayUiClickSound(game);
     ShroomScreenManagerRequestExit(manager);
   }
