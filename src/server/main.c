@@ -14,6 +14,7 @@
 
 #include "shared/lifecycle.h"
 #include "shared/protocol.h"
+#include "shared/profiler.h"
 #include "shared/sim.h"
 #include "auth.h"
 #include "database.h"
@@ -63,6 +64,16 @@ typedef struct ServerConfig {
   uint16_t port;
   bool smoke_test;
 } ServerConfig;
+
+typedef struct ServerProfileStats {
+  ShroomProfileWindow tick;
+  ShroomProfileWindow enet_events;
+  ShroomProfileWindow simulation;
+  ShroomProfileWindow broadcast;
+  uint64_t last_log_ms;
+} ServerProfileStats;
+
+static ServerProfileStats g_server_profile;
 
 static bool ParsePort(const char* text, uint16_t* port) {
   char* end = NULL;
@@ -231,6 +242,30 @@ static uint64_t GetTimeNanos(void) {
 }
 
 static uint64_t GetTimeMillis(void) { return GetTimeNanos() / 1000000ull; }
+
+static void ServerProfileMaybeLog(uint64_t now_ms) {
+  if (!ShroomProfileEnabled()) {
+    return;
+  }
+  if ((g_server_profile.last_log_ms != 0ull) &&
+      ((now_ms - g_server_profile.last_log_ms) < 5000ull)) {
+    return;
+  }
+
+  g_server_profile.last_log_ms = now_ms;
+  LOG_INFO(
+      "profile,server,tick_avg_ms=%.3f,tick_peak_ms=%.3f,enet_avg_ms=%.3f,"
+      "enet_peak_ms=%.3f,simulation_avg_ms=%.3f,simulation_peak_ms=%.3f,"
+      "broadcast_avg_ms=%.3f,broadcast_peak_ms=%.3f",
+      ShroomProfileAverageMs(&g_server_profile.tick), g_server_profile.tick.peak_ms,
+      ShroomProfileAverageMs(&g_server_profile.enet_events), g_server_profile.enet_events.peak_ms,
+      ShroomProfileAverageMs(&g_server_profile.simulation), g_server_profile.simulation.peak_ms,
+      ShroomProfileAverageMs(&g_server_profile.broadcast), g_server_profile.broadcast.peak_ms);
+  ShroomProfileResetPeak(&g_server_profile.tick);
+  ShroomProfileResetPeak(&g_server_profile.enet_events);
+  ShroomProfileResetPeak(&g_server_profile.simulation);
+  ShroomProfileResetPeak(&g_server_profile.broadcast);
+}
 
 static void SleepUntil(uint64_t target_time_nanos) {
   uint64_t now = GetTimeNanos();
@@ -1322,6 +1357,9 @@ int main(int argc, char** argv) {
          !ShroomLifecycleIsShutdownRequested(&g_lifecycle)) {
     ENetEvent event;
     const uint64_t now_ms = GetTimeMillis();
+    const bool profile_enabled = ShroomProfileEnabled();
+    const uint64_t tick_start_nanos = profile_enabled ? GetTimeNanos() : 0ull;
+    uint64_t phase_start_nanos = tick_start_nanos;
 
     while (enet_host_service(host, &event, 0) > 0) {
       switch (event.type) {
@@ -1349,6 +1387,10 @@ int main(int argc, char** argv) {
         break;
       }
     }
+    if (profile_enabled) {
+      ShroomProfileRecord(&g_server_profile.enet_events,
+                          ShroomProfileNanosToMs(GetTimeNanos() - phase_start_nanos));
+    }
 
     /* Tick and broadcast per-lobby. */
     {
@@ -1359,6 +1401,8 @@ int main(int argc, char** argv) {
         size_t pi;
         uint16_t real_count;
         uint16_t spec_count;
+        double simulation_ms = 0.0;
+        double broadcast_ms = 0.0;
 
         if (!lobby->active) {
           continue;
@@ -1386,7 +1430,11 @@ int main(int argc, char** argv) {
 
         AdjustLobbyBots(lobby, host, &next_player_id, now_ms);
 
+        phase_start_nanos = profile_enabled ? GetTimeNanos() : 0ull;
         ShroomWorldStep(&lobby->world, 1.0f / SHROOM_SERVER_TICK_RATE);
+        if (profile_enabled) {
+          simulation_ms = ShroomProfileNanosToMs(GetTimeNanos() - phase_start_nanos);
+        }
 
         /* Reset ai_controlled for sessions whose focused piece merged or was consumed. */
         {
@@ -1400,6 +1448,7 @@ int main(int argc, char** argv) {
           }
         }
 
+        phase_start_nanos = profile_enabled ? GetTimeNanos() : 0ull;
         if ((snapshot_interval_ticks > 0) && ((lobby->world.tick % snapshot_interval_ticks) == 0)) {
           for (pi = 0; pi < host->peerCount; ++pi) {
             ServerSession* s = (ServerSession*)host->peers[pi].data;
@@ -1427,6 +1476,11 @@ int main(int argc, char** argv) {
           }
           enet_host_flush(host);
         }
+        if (profile_enabled) {
+          broadcast_ms = ShroomProfileNanosToMs(GetTimeNanos() - phase_start_nanos);
+          ShroomProfileRecord(&g_server_profile.simulation, simulation_ms);
+          ShroomProfileRecord(&g_server_profile.broadcast, broadcast_ms);
+        }
       }
     }
 
@@ -1445,6 +1499,12 @@ int main(int argc, char** argv) {
                    bots, spec);
         }
       }
+    }
+
+    if (profile_enabled) {
+      ShroomProfileRecord(&g_server_profile.tick,
+                          ShroomProfileNanosToMs(GetTimeNanos() - tick_start_nanos));
+      ServerProfileMaybeLog(now_ms);
     }
 
     next_tick_time += tick_interval_nanos;

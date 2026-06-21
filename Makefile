@@ -232,6 +232,7 @@ SHARED_HEADERS := \
 	$(SHARED_SRC_DIR)/world.h \
 	$(SHARED_SRC_DIR)/sim.h \
 	$(SHARED_SRC_DIR)/protocol.h \
+	$(SHARED_SRC_DIR)/profiler.h \
 	$(SHARED_SRC_DIR)/lifecycle.h \
 	$(SHARED_SRC_DIR)/connection.h \
 	$(CLIENT_SRC_DIR)/audio.h \
