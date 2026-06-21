@@ -105,8 +105,8 @@ static void GameplayHandleInput(ShroomScreenManager* manager) {
     }
   }
 
-  if ((IsKeyPressed(KEY_T) || IsKeyPressed(KEY_ENTER)) && is_online && game->net.welcome_received &&
-      !game->menu_overlay_open && !game->leaderboard_overlay_open &&
+  if ((IsKeyPressed(game->settings.key_chat_open) || IsKeyPressed(KEY_ENTER)) && is_online &&
+      game->net.welcome_received && !game->menu_overlay_open && !game->leaderboard_overlay_open &&
       !game->leave_confirmation_open) {
     game->chat_inactive_timer = 0.0f;
     if (game->chat_minimized) {
@@ -180,12 +180,12 @@ static void GameplayHandleInput(ShroomScreenManager* manager) {
     ClientSettingsSave(&game->settings);
   }
 
-  if (IsKeyPressed(KEY_F2)) {
+  if (IsKeyPressed(game->settings.key_hud_toggle)) {
     game->settings.hud_density = (game->settings.hud_density + 1) % 3;
     ClientSettingsSave(&game->settings);
   }
 
-  if (IsKeyPressed(KEY_ESCAPE)) {
+  if (IsKeyPressed(game->settings.key_pause_menu)) {
     if (game->leaderboard_overlay_open) {
       game->leaderboard_overlay_open = false;
     } else if (game->inspect_overlay_open) {
