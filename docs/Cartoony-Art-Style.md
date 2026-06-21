@@ -62,6 +62,7 @@ Contrast rules:
 
 ## Asset Rules
 
+- The tracked asset scaffold and current source motifs are documented in `assets/README.md`.
 - Place source-ready art in `assets/` by type: `assets/sprites/`, `assets/audio/`, `assets/ui/`, and `assets/marketing/`.
 - Name files by purpose and state, for example `button_cap_idle.png`, `button_cap_pressed.png`, `powerup_speed_icon.png`.
 - Prefer power-of-two texture atlases for gameplay/UI sprites when multiple related sprites are loaded together.

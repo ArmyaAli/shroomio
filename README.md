@@ -45,6 +45,8 @@ docs/            development guides and runbooks
 
 The `shared/` module has zero dependencies on raylib, ENet, client, or server code. Client and server never depend on each other.
 
+The tracked asset scaffold and naming conventions are documented in [assets/README.md](assets/README.md).
+
 ## Prerequisites
 
 **Linux / WSL:**
