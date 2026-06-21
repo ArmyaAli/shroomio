@@ -702,10 +702,13 @@ static void EmitGameplayEventParticles(Game* game) {
         (game->previous_powerup_entity_ids[index] == powerup->entity_id)) {
       SpawnParticleBurst(game, game->previous_powerup_positions[index],
                          GetPowerupColor(powerup->type), 18, 118.0f, 6.0f, 0.62f);
-      if ((game->local_player != NULL) &&
-          (ShroomDistanceSqr(game->local_player->position,
-                             game->previous_powerup_positions[index]) < 6400.0f)) {
-        PlayClientSfx(game, CLIENT_SFX_POWERUP, 0.66f);
+      if (game->local_player != NULL) {
+        const float pickup_radius = game->local_player->radius + SHROOM_POWERUP_RADIUS + 48.0f;
+        if (ShroomDistanceSqr(game->local_player->position,
+                              game->previous_powerup_positions[index]) <
+            (pickup_radius * pickup_radius)) {
+          PlayClientSfx(game, CLIENT_SFX_POWERUP, 0.66f);
+        }
       }
     }
   }
@@ -780,24 +783,22 @@ static void EmitGameplayEventParticles(Game* game) {
           !local_kill_reported) {
         AddCombatNotification(game, TextFormat("+%.0f mass", player->mass - previous_mass),
                               "Spores absorbed into the colony", (Color){255, 228, 112, 255}, 1.8f);
-        PlayClientSfx(game, CLIENT_SFX_SPORE, 0.42f);
       }
+    }
+    if (had_same_entity && game->previous_player_alive[index] &&
+        (player->mass > previous_mass + 0.5f) && (local_player_id != 0u) &&
+        (player->player_id == local_player_id) && !local_kill_reported) {
+      PlayClientSfx(game, CLIENT_SFX_SPORE, 0.42f);
     }
     if ((player->piece_index > 0u) &&
         (!game->previous_player_alive[index] || !had_same_entity || (previous_mass <= 0.0f))) {
       SpawnParticleBurst(game, player->position, (Color){255, 215, 116, 255}, 10, 130.0f, 4.6f,
                          0.58f);
-      if ((local_player_id != 0u) && (player->player_id == local_player_id)) {
-        PlayClientSfx(game, CLIENT_SFX_SPLIT, 0.64f);
-      }
     }
     if (had_same_entity && game->previous_player_alive[index] &&
         (player->mass < previous_mass * 0.72f) && (previous_mass >= SHROOM_SPLIT_MIN_MASS)) {
       SpawnParticleBurst(game, player->position, (Color){255, 215, 116, 255}, 9, 112.0f, 4.4f,
                          0.52f);
-      if ((local_player_id != 0u) && (player->player_id == local_player_id)) {
-        PlayClientSfx(game, CLIENT_SFX_SPLIT, 0.64f);
-      }
     }
   }
 
@@ -3033,6 +3034,10 @@ void GameUpdate(Game* game, float delta_time) {
   }
 
   if (IsOnlineMode(game->active_mode)) {
+    if (game->split_requested && (game->local_player != NULL) && game->local_player->alive &&
+        (game->local_player->mass >= SHROOM_SPLIT_MIN_MASS) && !game->local_player->has_split) {
+      PlayClientSfx(game, CLIENT_SFX_SPLIT, 0.64f);
+    }
     ClientNetUpdate(&game->net, input_direction, game->split_requested,
                     game->focused_piece_entity_id, delta_time);
     game->split_requested = false;
@@ -3096,7 +3101,9 @@ void GameUpdate(Game* game, float delta_time) {
 
       ShroomPlayerSetInput(ctrl, input_direction);
       if (game->split_requested && (ctrl != NULL)) {
-        ShroomWorldSplitPlayer(&game->world, ctrl);
+        if (ShroomWorldSplitPlayer(&game->world, ctrl)) {
+          PlayClientSfx(game, CLIENT_SFX_SPLIT, 0.64f);
+        }
       }
       game->split_requested = false;
       ShroomWorldStep(&game->world, delta_time);
