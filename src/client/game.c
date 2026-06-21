@@ -173,7 +173,7 @@ static Sound GenerateAmbientLoopSound(void) {
   Wave wave = {0};
   Sound sound = {0};
 
-  if ((samples == NULL) || (frame_count == 0u)) {
+  if (samples == NULL) {
     free(samples);
     return sound;
   }
