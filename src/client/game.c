@@ -2633,18 +2633,20 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
   }
 
   if (density == CLIENT_HUD_COMPACT) {
-    DrawFungalHudPanel((Rectangle){18.0f, 18.0f, 220.0f, 90.0f}, GetZoneColor(zone));
+    DrawFungalHudPanel((Rectangle){18.0f, 18.0f, 220.0f, 110.0f}, GetZoneColor(zone));
     ShroomImGui_SetNextWindowPos(18.0f, 18.0f, SHROOM_IMGUI_COND_ALWAYS);
-    ShroomImGui_SetNextWindowSize(220.0f, 90.0f, SHROOM_IMGUI_COND_ALWAYS);
+    ShroomImGui_SetNextWindowSize(220.0f, 110.0f, SHROOM_IMGUI_COND_ALWAYS);
     ShroomImGui_SetNextWindowBgAlpha(0.30f);
     if (ShroomImGui_Begin("HUD Compact", NULL,
                           SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
                               SHROOM_IMGUI_WINDOW_NO_MOVE | SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
                               SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS |
                               SHROOM_IMGUI_WINDOW_NO_SCROLLBAR)) {
-      ShroomImGui_Text(TextFormat("Cap Mass %.0f  Rank %d/%d", game->local_player->mass,
+      ShroomImGui_Text(TextFormat("Cap Mass %.0f", game->local_player->mass));
+      ShroomImGui_Text(TextFormat("Rank %d/%d",
                                   local_rank > 0 ? local_rank : (int)leaderboard_count,
                                   (int)leaderboard_count));
+      ShroomImGui_Spacing();
       ShroomImGui_TextColored(ToImGuiColor(GetZoneColor(zone)), GetZoneLabel(zone));
       if (game->local_piece_count > 1) {
         ShroomImGui_TextColored(ToImGuiColor(YELLOW),
@@ -2655,9 +2657,9 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
     return;
   }
 
-  DrawFungalHudPanel((Rectangle){18.0f, 18.0f, 280.0f, 120.0f}, GetZoneColor(zone));
+  DrawFungalHudPanel((Rectangle){18.0f, 18.0f, 280.0f, 168.0f}, GetZoneColor(zone));
   ShroomImGui_SetNextWindowPos(18.0f, 18.0f, SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowSize(280.0f, 120.0f, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowSize(280.0f, 168.0f, SHROOM_IMGUI_COND_ALWAYS);
   ShroomImGui_SetNextWindowBgAlpha(0.30f);
   if (ShroomImGui_Begin("HUD Left", NULL,
                         SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
@@ -2670,6 +2672,7 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
                                 (int)leaderboard_count));
     ShroomImGui_TextColored(ToImGuiColor(GetZoneColor(zone)),
                             TextFormat("Zone %s", GetZoneLabel(zone)));
+    ShroomImGui_Spacing();
     if (IsDecayMassActive(&game->world, game->local_player)) {
       const float decay_threshold = zone == SHROOM_ZONE_CENTER ? (SHROOM_DEFAULT_PLAYER_MASS * 2.0f)
                                     : zone == SHROOM_ZONE_MID  ? SHROOM_DECAY_MASS_THRESHOLD
@@ -2682,6 +2685,10 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
       ShroomImGui_TextColored(ToImGuiColor(YELLOW),
                               TextFormat("Pieces %d", game->local_piece_count));
     }
+    if ((game->local_player->speed_powerup_timer > 0.0f) ||
+        (game->local_player->shield_powerup_timer > 0.0f)) {
+      ShroomImGui_Spacing();
+    }
     if (game->local_player->speed_powerup_timer > 0.0f) {
       ShroomImGui_TextColored(ToImGuiColor(SKYBLUE), "Speed Burst");
     }
@@ -2691,10 +2698,10 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
   }
   ShroomImGui_End();
 
-  DrawFungalHudPanel((Rectangle){game->screen_width - 180.0f, 18.0f, 162.0f, 80.0f},
+  DrawFungalHudPanel((Rectangle){game->screen_width - 180.0f, 18.0f, 162.0f, 98.0f},
                      (Color){130, 210, 150, 255});
   ShroomImGui_SetNextWindowPos(game->screen_width - 180.0f, 18.0f, SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowSize(162.0f, 80.0f, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowSize(162.0f, 98.0f, SHROOM_IMGUI_COND_ALWAYS);
   ShroomImGui_SetNextWindowBgAlpha(0.30f);
   if (ShroomImGui_Begin("HUD Right", NULL,
                         SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
@@ -2715,6 +2722,7 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
       ShroomImGui_TextColored(ToImGuiColor(GetLatencyColor(display_rtt)),
                               TextFormat("Ping %ums", display_rtt));
     }
+    ShroomImGui_Spacing();
     ShroomImGui_Text(TextFormat("Players %d", (int)game->world.player_count));
   }
   ShroomImGui_End();
