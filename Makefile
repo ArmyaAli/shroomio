@@ -217,6 +217,7 @@ CLIENT_SOURCES := \
 SERVER_SOURCES := \
 	$(SERVER_SRC_DIR)/main.c \
 	$(SERVER_SRC_DIR)/logger.c \
+	$(SERVER_SRC_DIR)/database.c \
 	$(SERVER_SRC_DIR)/auth.c \
 	$(SHARED_SRC_DIR)/sim.c \
 	$(SHARED_SRC_DIR)/lifecycle.c \
@@ -231,6 +232,7 @@ SHARED_HEADERS := \
 	$(SHARED_SRC_DIR)/protocol.h \
 	$(SHARED_SRC_DIR)/lifecycle.h \
 	$(SHARED_SRC_DIR)/connection.h \
+	$(SERVER_SRC_DIR)/database.h \
 	$(SERVER_SRC_DIR)/auth.h
 
 #Object files
