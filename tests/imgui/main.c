@@ -22,6 +22,7 @@ static void RegisterScreens(ShroomScreenManager *manager) {
   ShroomScreenRegisterServerBrowser(manager);
   ShroomScreenRegisterLobbyBrowser(manager);
   ShroomScreenRegisterGame(manager);
+  ShroomScreenRegisterResults(manager);
 }
 
 static void ResetPersistentFiles(void) {

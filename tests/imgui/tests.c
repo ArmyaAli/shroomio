@@ -57,6 +57,15 @@ static void SetupOnlineGame(void) {
            "Connected");
 }
 
+static void SetupResultsScreen(float peak_mass, float final_mass, int final_rank) {
+  ShroomImGuiTestAppReset(false);
+  g_imgui_test_app.game.peak_mass = peak_mass;
+  g_imgui_test_app.game.final_mass = final_mass;
+  g_imgui_test_app.game.final_rank = final_rank;
+  g_imgui_test_app.game.session_start_time = 0.0;
+  ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_RESULTS);
+}
+
 /* -------------------------------------------------------------------------
  * Test functions — plain C, no lambdas.
  * ---------------------------------------------------------------------- */
@@ -104,6 +113,70 @@ static void Test_HelpAndCreditsBackNavigation(ImGuiTestContext* ctx) {
   ShroomTeCtx_ItemClick(ctx, "Back");
   IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
               SHROOM_SCREEN_MAIN_MENU);
+}
+
+static void Test_MainMenuExposesPrimaryActions(ImGuiTestContext* ctx) {
+  ShroomImGuiTestAppReset(true);
+  ShroomTeCtx_SetRef(ctx, "Main Menu");
+  ShroomTeCtx_Yield(ctx, 2);
+
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Main Menu"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Play Online"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Custom Server"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Offline Practice"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Settings"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Help"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Credits"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Exit"));
+}
+
+static void Test_OfflinePracticeEntryInitializesGame(ImGuiTestContext* ctx) {
+  ShroomImGuiTestAppReset(true);
+
+  ShroomTeCtx_SetRef(ctx, "Main Menu");
+  ShroomTeCtx_ItemClick(ctx, "Offline Practice");
+  ShroomTeCtx_Yield(ctx, 2);
+
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_GAME);
+  IM_CHECK_EQ(g_imgui_test_app.game.selected_mode, SHROOM_SESSION_MODE_OFFLINE_PRACTICE);
+  IM_CHECK_EQ(g_imgui_test_app.game.active_mode, SHROOM_SESSION_MODE_OFFLINE_PRACTICE);
+  IM_CHECK(g_imgui_test_app.game.local_player != NULL);
+}
+
+static void Test_SettingsExposesSpecControlsAndAppliesBoundaryValues(ImGuiTestContext* ctx) {
+  ShroomImGuiTestAppReset(true);
+
+  ShroomTeCtx_SetRef(ctx, "Main Menu");
+  ShroomTeCtx_ItemClick(ctx, "Settings");
+  ShroomTeCtx_SetRef(ctx, "Settings");
+  ShroomTeCtx_Yield(ctx, 2);
+
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "UI Scale"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Preferred Region"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Palette"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Master Volume"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Music Volume"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Effects Volume"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Invert Mouse"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Show Diagnostics On Launch"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Show Ping In HUD"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Particle Quality"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Animated Menu Backgrounds"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Death Cutscene"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Mushroom Species"));
+
+  ShroomTeCtx_ItemInputValueInt(ctx, "UI Scale", 160);
+  ShroomTeCtx_ItemInputValueInt(ctx, "Master Volume", 0);
+  ShroomTeCtx_ItemInputValueInt(ctx, "Music Volume", 100);
+  ShroomTeCtx_ItemInputValueInt(ctx, "Effects Volume", 0);
+  ShroomTeCtx_ItemClick(ctx, "Save");
+  ShroomTeCtx_Yield(ctx, 2);
+
+  IM_CHECK_EQ(g_imgui_test_app.game.settings.ui_scale_percent, 160);
+  IM_CHECK_EQ(g_imgui_test_app.game.settings.master_volume_percent, 0);
+  IM_CHECK_EQ(g_imgui_test_app.game.settings.music_volume_percent, 100);
+  IM_CHECK_EQ(g_imgui_test_app.game.settings.effects_volume_percent, 0);
 }
 
 static void Test_SettingsPersistence(ImGuiTestContext* ctx) {
@@ -191,6 +264,85 @@ static void Test_ServerBrowserRecentJoinPersists(ImGuiTestContext* ctx) {
   IM_CHECK_EQ(g_imgui_test_app.game.selected_server_port, 7788);
 }
 
+static void Test_ServerBrowserInvalidHostAndHostPortParsing(ImGuiTestContext* ctx) {
+  ShroomImGuiTestAppReset(true);
+
+  ShroomTeCtx_SetRef(ctx, "Main Menu");
+  ShroomTeCtx_ItemClick(ctx, "Custom Server");
+  ShroomTeCtx_SetRef(ctx, "Server Browser");
+  ShroomTeCtx_Yield(ctx, 2);
+
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Refresh"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Sort Name"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Sort Players"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Sort Ping"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Join Selected"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Join Host"));
+
+  ShroomTeCtx_ItemInputValueStr(ctx, "Host", "bad host!");
+  ShroomTeCtx_ItemInputValueStr(ctx, "Port", "7777");
+  ShroomTeCtx_ItemClick(ctx, "Join Host");
+  IM_CHECK_STR_EQ(ShroomTestGetServerBrowserValidationMessage(), "Invalid hostname or IP address.");
+
+  ShroomTeCtx_ItemInputValueStr(ctx, "Host", "recent.shroomio.test:7789");
+  ShroomTeCtx_ItemClick(ctx, "Join Host");
+  ShroomTeCtx_Yield(ctx, 2);
+
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_LOBBY);
+  IM_CHECK_STR_EQ(g_imgui_test_app.game.selected_server_host, "recent.shroomio.test");
+  IM_CHECK_EQ(g_imgui_test_app.game.selected_server_port, 7789);
+}
+
+static void Test_LobbyConnectionModalStates(ImGuiTestContext* ctx) {
+  ShroomImGuiTestAppReset(false);
+  ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_LOBBY);
+  g_imgui_test_app.game.net.status = CLIENT_NET_CONNECTING;
+  g_imgui_test_app.game.net.handshake_received = false;
+  snprintf(g_imgui_test_app.game.net.status_text, sizeof(g_imgui_test_app.game.net.status_text),
+           "Connecting to test server");
+
+  ShroomTeCtx_SetRef(ctx, "Connection Status");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Connection Status"));
+
+  g_imgui_test_app.game.net.status = CLIENT_NET_ERROR;
+  snprintf(g_imgui_test_app.game.net.status_text, sizeof(g_imgui_test_app.game.net.status_text),
+           "No route to host");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Retry"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Back"));
+
+  ShroomTeCtx_ItemClick(ctx, "Back");
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_SERVER_BROWSER);
+}
+
+static void Test_LobbyEmptyAndFullStatesRender(ImGuiTestContext* ctx) {
+  SetupLobbyBrowser();
+  g_imgui_test_app.game.net.lobby_count = 0;
+
+  ShroomTeCtx_SetRef(ctx, "Lobby Browser");
+  ShroomTeCtx_Yield(ctx, 3);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Lobby Browser"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Refresh"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Create"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Back"));
+
+  g_imgui_test_app.game.net.lobby_count = 1;
+  memset(&g_imgui_test_app.game.net.lobby_list[0], 0,
+         sizeof(g_imgui_test_app.game.net.lobby_list[0]));
+  g_imgui_test_app.game.net.lobby_list[0].lobby_id = 77u;
+  snprintf(g_imgui_test_app.game.net.lobby_list[0].name,
+           sizeof(g_imgui_test_app.game.net.lobby_list[0].name), "Full Lobby");
+  g_imgui_test_app.game.net.lobby_list[0].player_count = 32u;
+  g_imgui_test_app.game.net.lobby_list[0].max_players = 32u;
+  ShroomTeCtx_Yield(ctx, 3);
+
+  IM_CHECK(!ShroomTeCtx_ItemExists(ctx, "Join##77"));
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Lobby Browser"));
+}
+
 static void Test_GameplayOverlayStateToggles(ImGuiTestContext* ctx) {
   SetupOnlineGame();
 
@@ -214,6 +366,117 @@ static void Test_GameplayOverlayStateToggles(ImGuiTestContext* ctx) {
   g_imgui_test_app.game.diagnostics_overlay_open = true;
   ShroomTeCtx_Yield(ctx, 2);
   IM_CHECK_EQ(g_imgui_test_app.game.diagnostics_overlay_open, true);
+}
+
+static void Test_GameplayMenuOverlayActions(ImGuiTestContext* ctx) {
+  SetupOnlineGame();
+  g_imgui_test_app.game.menu_overlay_open = true;
+  g_imgui_test_app.game.net.rtt_ms = 12345u;
+  g_imgui_test_app.game.net.rtt_average_ms = 12000u;
+
+  ShroomTeCtx_SetRef(ctx, "Match Menu");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Match Menu"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Resume"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Show Leaderboard"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Retry Connection"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Return To Main Menu"));
+
+  ShroomTeCtx_ItemClick(ctx, "Show Leaderboard");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(!g_imgui_test_app.game.menu_overlay_open);
+  IM_CHECK(g_imgui_test_app.game.leaderboard_overlay_open);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Leaderboard"));
+
+  ShroomTeCtx_SetRef(ctx, "Leaderboard");
+  ShroomTeCtx_ItemClick(ctx, "Close");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(!g_imgui_test_app.game.leaderboard_overlay_open);
+
+  g_imgui_test_app.game.menu_overlay_open = true;
+  ShroomTeCtx_SetRef(ctx, "Match Menu");
+  ShroomTeCtx_ItemClick(ctx, "Return To Main Menu");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(!g_imgui_test_app.game.menu_overlay_open);
+  IM_CHECK(g_imgui_test_app.game.leave_confirmation_open);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Leave Match?"));
+}
+
+static void Test_GameplayLeaveConfirmationStayAndLeave(ImGuiTestContext* ctx) {
+  SetupOnlineGame();
+  g_imgui_test_app.game.leave_confirmation_open = true;
+
+  ShroomTeCtx_SetRef(ctx, "Leave Match?");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Leave Match"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Stay"));
+
+  ShroomTeCtx_ItemClick(ctx, "Stay");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(!g_imgui_test_app.game.leave_confirmation_open);
+  IM_CHECK(g_imgui_test_app.game.menu_overlay_open);
+
+  g_imgui_test_app.game.menu_overlay_open = false;
+  g_imgui_test_app.game.leave_confirmation_open = true;
+  ShroomTeCtx_SetRef(ctx, "Leave Match?");
+  ShroomTeCtx_ItemClick(ctx, "Leave Match");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_RESULTS);
+  IM_CHECK(!g_imgui_test_app.game.leave_confirmation_open);
+}
+
+static void Test_GameplayDiagnosticsAndConnectionOverlays(ImGuiTestContext* ctx) {
+  SetupOnlineGame();
+  g_imgui_test_app.game.diagnostics_overlay_open = true;
+  g_imgui_test_app.game.net.rtt_ms = 15000u;
+  g_imgui_test_app.game.net.rtt_average_ms = 14000u;
+
+  ShroomTeCtx_SetRef(ctx, "Diagnostics");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Diagnostics"));
+
+  g_imgui_test_app.game.net.welcome_received = false;
+  g_imgui_test_app.game.net.status = CLIENT_NET_ERROR;
+  snprintf(g_imgui_test_app.game.net.status_text, sizeof(g_imgui_test_app.game.net.status_text),
+           "timeout");
+  ShroomTeCtx_SetRef(ctx, "Connection Status");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Connection Status"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Retry"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Back To Menu"));
+}
+
+static void Test_GameplayOfflineMenuReturnRequestsResults(ImGuiTestContext* ctx) {
+  SetupOfflineGame();
+  g_imgui_test_app.game.menu_overlay_open = true;
+  g_imgui_test_app.game.return_to_menu_requested = true;
+
+  ShroomTeCtx_Yield(ctx, 2);
+
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_RESULTS);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Match Results"));
+}
+
+static void Test_ResultsNavigationActions(ImGuiTestContext* ctx) {
+  SetupResultsScreen(420.0f, 300.0f, 3);
+  ShroomTeCtx_SetRef(ctx, "Match Results");
+  ShroomTeCtx_Yield(ctx, 2);
+
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Match Results"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Play Again"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Main Menu"));
+
+  ShroomTeCtx_ItemClick(ctx, "Main Menu");
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_MAIN_MENU);
+
+  SetupResultsScreen(420.0f, 300.0f, 3);
+  ShroomTeCtx_SetRef(ctx, "Match Results");
+  ShroomTeCtx_ItemClick(ctx, "Play Again");
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_SERVER_BROWSER);
 }
 
 /* chat: Chat dock is active in online mode. */
@@ -347,13 +610,35 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
   ShroomTeEngine_RegisterTest(engine, "screens", "main_menu_navigation", Test_MainMenuNavigation);
   ShroomTeEngine_RegisterTest(engine, "screens", "help_and_credits_back_navigation",
                               Test_HelpAndCreditsBackNavigation);
+  ShroomTeEngine_RegisterTest(engine, "screens", "main_menu_exposes_primary_actions",
+                              Test_MainMenuExposesPrimaryActions);
+  ShroomTeEngine_RegisterTest(engine, "screens", "offline_practice_entry_initializes_game",
+                              Test_OfflinePracticeEntryInitializesGame);
+  ShroomTeEngine_RegisterTest(engine, "screens", "settings_exposes_controls_and_applies_bounds",
+                              Test_SettingsExposesSpecControlsAndAppliesBoundaryValues);
   ShroomTeEngine_RegisterTest(engine, "screens", "settings_persistence", Test_SettingsPersistence);
   ShroomTeEngine_RegisterTest(engine, "screens", "server_browser_join_and_validation",
                               Test_ServerBrowserJoinAndValidation);
   ShroomTeEngine_RegisterTest(engine, "screens", "server_browser_recent_join_persists",
                               Test_ServerBrowserRecentJoinPersists);
+  ShroomTeEngine_RegisterTest(engine, "screens", "server_browser_invalid_host_and_host_port",
+                              Test_ServerBrowserInvalidHostAndHostPortParsing);
+  ShroomTeEngine_RegisterTest(engine, "screens", "lobby_connection_modal_states",
+                              Test_LobbyConnectionModalStates);
+  ShroomTeEngine_RegisterTest(engine, "screens", "lobby_empty_and_full_states_render",
+                              Test_LobbyEmptyAndFullStatesRender);
   ShroomTeEngine_RegisterTest(engine, "screens", "gameplay_overlay_state_toggles",
                               Test_GameplayOverlayStateToggles);
+  ShroomTeEngine_RegisterTest(engine, "screens", "gameplay_menu_overlay_actions",
+                              Test_GameplayMenuOverlayActions);
+  ShroomTeEngine_RegisterTest(engine, "screens", "gameplay_leave_confirmation_stay_and_leave",
+                              Test_GameplayLeaveConfirmationStayAndLeave);
+  ShroomTeEngine_RegisterTest(engine, "screens", "gameplay_diagnostics_and_connection_overlays",
+                              Test_GameplayDiagnosticsAndConnectionOverlays);
+  ShroomTeEngine_RegisterTest(engine, "screens", "gameplay_offline_menu_return_requests_results",
+                              Test_GameplayOfflineMenuReturnRequestsResults);
+  ShroomTeEngine_RegisterTest(engine, "screens", "results_navigation_actions",
+                              Test_ResultsNavigationActions);
   ShroomTeEngine_RegisterTest(engine, "chat", "dock_visible_in_online_mode",
                               Test_ChatDockVisibleOnline);
   ShroomTeEngine_RegisterTest(engine, "chat", "dock_hidden_in_offline_mode",
