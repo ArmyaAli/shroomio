@@ -21,6 +21,7 @@ static void RegisterScreens(ShroomScreenManager *manager) {
   ShroomScreenRegisterCredits(manager);
   ShroomScreenRegisterServerBrowser(manager);
   ShroomScreenRegisterLobbyBrowser(manager);
+  ShroomScreenRegisterLobbyRoster(manager);
   ShroomScreenRegisterGame(manager);
   ShroomScreenRegisterResults(manager);
 }
@@ -89,6 +90,11 @@ int main(void) {
   SetExitKey(KEY_NULL);
   SetTargetFPS(60);
 
+  /* InitAudioDevice mirrors src/client/main.c — without it, the test
+   * harness was skipping every audio code path. That hid a Play Online
+   * click segfault that lived in the SFX lazy-load path. */
+  InitAudioDevice();
+
   ShroomImGui_Init();
   ShroomImGuiTestAppReset(true);
 
@@ -126,6 +132,9 @@ int main(void) {
 
   ShroomScreenManagerShutdown(&g_imgui_test_app.screen_manager);
   ShroomImGui_Shutdown();
+  if (IsAudioDeviceReady()) {
+    CloseAudioDevice();
+  }
   CloseWindow();
   ShroomTeEngine_Destroy(engine);
   return exit_code;

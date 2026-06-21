@@ -201,11 +201,13 @@ void ShroomScreenDrawFungalBackground(bool animate) {
     const MenuBackgroundMushroom* mushroom = &g_mushrooms[index];
     const float time = animate ? (float)GetTime() : 0.0f;
     const float phase = (float)index * 0.73f;
+    /* Restore the gentle pre-d95936a amplitudes; the inflated drift/bob
+     * (0.12 / 0.045) made the mushrooms visibly spin around their stems. */
     const float drift =
-        animate ? sinf(time * (0.75f + (float)index * 0.06f) + phase) * 0.12f : 0.0f;
+        animate ? sinf(time * (0.28f + (float)index * 0.035f) + phase) * 0.045f : 0.0f;
     const float bob =
-        animate ? sinf(time * (1.10f + (float)index * 0.07f) + phase * 0.6f) * 0.045f : 0.0f;
-    const float sway = animate ? time * (1.8f + (float)index * 0.12f) + phase : 0.0f;
+        animate ? sinf(time * (0.42f + (float)index * 0.04f) + phase * 0.6f) * 0.018f : 0.0f;
+    const float sway = animate ? time * (0.55f + (float)index * 0.06f) + phase : 0.0f;
     DrawFungalMushroom(WrappedUnit(mushroom->x_ratio + drift) * (float)screen_width,
                        (mushroom->y_ratio + bob) * (float)screen_height, mushroom->scale, sway,
                        mushroom->type);

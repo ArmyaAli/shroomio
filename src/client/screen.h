@@ -71,6 +71,9 @@ const char* ShroomTestGetServerBrowserValidationMessage(void);
 int ShroomTestGetServerBrowserSelectedIndex(void);
 const char* ShroomTestGetServerBrowserSelectedHost(void);
 int ShroomTestGetServerBrowserRecentCount(void);
+
+struct Game;
+bool ShroomTestMainMenuAnimationsEnabled(const struct Game* game);
 #endif
 
 #endif

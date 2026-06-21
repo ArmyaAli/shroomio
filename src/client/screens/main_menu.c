@@ -7,9 +7,16 @@
 #include "raylib.h"
 
 static bool MainMenuAnimationsEnabled(const Game* game) {
-  (void)game;
-  return true;
+  return (game == NULL) || game->settings.menu_animations_enabled;
 }
+
+#ifdef TEST_MODE
+/* Exposed for the imgui test harness so the #334 regression (hard-coded
+ * return true;) is caught directly instead of relying on visual inspection. */
+bool ShroomTestMainMenuAnimationsEnabled(const Game* game) {
+  return MainMenuAnimationsEnabled(game);
+}
+#endif
 
 static bool MainMenuInit(ShroomScreenManager* manager) {
   (void)manager;
