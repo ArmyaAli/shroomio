@@ -7,7 +7,8 @@
 #include "raylib.h"
 
 static bool MainMenuAnimationsEnabled(const Game* game) {
-  return (game == NULL) || game->settings.menu_animations_enabled;
+  (void)game;
+  return true;
 }
 
 static bool MainMenuInit(ShroomScreenManager* manager) {
