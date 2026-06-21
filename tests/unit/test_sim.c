@@ -2,6 +2,7 @@
 #include "../src/shared/sim.h"
 
 #include <math.h>
+#include <stdlib.h>
 #include <time.h>
 
 static ShroomWorldState world;
@@ -957,8 +958,8 @@ void test_center_zone_max_players_stress_remains_bounded(void) {
     player->position = (ShroomVec2){center.x + offset_x, center.y + offset_y};
     player->mass = SHROOM_DEFAULT_PLAYER_MASS * 2.0f;
     player->radius = ShroomMassToRadius(player->mass);
-    player->input_direction = (ShroomVec2){(index % 2u) == 0u ? 1.0f : -1.0f,
-                                           (index % 3u) == 0u ? 1.0f : -1.0f};
+    player->input_direction =
+        (ShroomVec2){(index % 2u) == 0u ? 1.0f : -1.0f, (index % 3u) == 0u ? 1.0f : -1.0f};
     player->is_bot = false;
     player->ai_controlled = false;
   }
@@ -973,7 +974,9 @@ void test_center_zone_max_players_stress_remains_bounded(void) {
 
   TEST_ASSERT_EQUAL_size_t(SHROOM_MAX_PLAYERS, world.player_count);
   TEST_ASSERT_EQUAL_UINT64((uint64_t)steps, world.tick);
-  TEST_ASSERT_TRUE(elapsed_seconds < 5.0);
+  if (getenv("SHROOM_VALGRIND") == NULL) {
+    TEST_ASSERT_TRUE(elapsed_seconds < 5.0);
+  }
 
   for (size_t index = 0; index < world.player_count; ++index) {
     const ShroomPlayerState* player = &world.players[index];

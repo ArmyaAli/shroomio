@@ -307,6 +307,7 @@ help:
 	@echo "  make test           Run unit tests + ImGui tests"
 	@echo "  make imgui-test     Run ImGui screen tests"
 	@echo "  make test-coverage  Run tests with coverage report"
+	@echo "  make valgrind-test  Run unit tests and server smoke test under Valgrind"
 	@echo "  make lint           Run all linters (format-check + cppcheck)"
 	@echo "  make format-check   Check code formatting (clang-format)"
 	@echo "  make format         Auto-format code (clang-format -i)"
@@ -557,7 +558,7 @@ $(UNITY_DIR):
 # =============================================================================
 # 8. Test Targets
 # =============================================================================
-.PHONY: test unit-test imgui-test valgrind-test valgrind-unit-test valgrind-imgui-test test-coverage test-clean
+.PHONY: test unit-test imgui-test valgrind-test valgrind-unit-test valgrind-server-smoke valgrind-imgui-test test-coverage test-clean
 
 test: unit-test imgui-test
 
@@ -592,7 +593,7 @@ VALGRIND ?= valgrind
 VALGRIND_FLAGS ?= --leak-check=full --show-leak-kinds=definite,indirect --errors-for-leak-kinds=definite,indirect --error-exitcode=99 --track-origins=yes
 VALGRIND_IMGUI_FLAGS ?= --leak-check=full --show-leak-kinds=definite,indirect --errors-for-leak-kinds=none --error-exitcode=99 --track-origins=yes
 
-valgrind-test: valgrind-unit-test
+valgrind-test: valgrind-unit-test valgrind-server-smoke
 
 valgrind-unit-test: $(TEST_BINS)
 	@command -v $(VALGRIND) >/dev/null 2>&1 || (printf '%s\n' 'valgrind is not installed. Rebuild the devcontainer with make devcontainer-build && make devcontainer-up.' && exit 1)
@@ -602,7 +603,7 @@ valgrind-unit-test: $(TEST_BINS)
 		total=$$((total + 1)); \
 		echo ""; \
 		echo "=== Valgrind $$(basename $$test) ==="; \
-		if $(VALGRIND) $(VALGRIND_FLAGS) $$test; then \
+		if SHROOM_VALGRIND=1 $(VALGRIND) $(VALGRIND_FLAGS) $$test; then \
 			echo "✓ $$(basename $$test) passed under Valgrind"; \
 		else \
 			echo "✗ $$(basename $$test) failed under Valgrind"; \
@@ -613,6 +614,13 @@ valgrind-unit-test: $(TEST_BINS)
 	echo "=== Valgrind Test Summary ==="; \
 	echo "Total: $$total, Passed: $$((total - failed)), Failed: $$failed"; \
 	if [ $$failed -gt 0 ]; then exit 1; fi
+
+valgrind-server-smoke: $(SERVER_LINUX_BIN)
+	@command -v $(VALGRIND) >/dev/null 2>&1 || (printf '%s\n' 'valgrind is not installed. Rebuild the devcontainer with make devcontainer-build && make devcontainer-up.' && exit 1)
+	@echo "Running server startup/shutdown smoke test under Valgrind..."
+	@rm -f /tmp/shroomio-valgrind-server.db /tmp/shroomio-valgrind-server.db-journal
+	@$(VALGRIND) $(VALGRIND_FLAGS) ./$(SERVER_LINUX_BIN) --smoke-test --bind 127.0.0.1 --port 37777 --database /tmp/shroomio-valgrind-server.db
+	@rm -f /tmp/shroomio-valgrind-server.db /tmp/shroomio-valgrind-server.db-journal
 
 valgrind-imgui-test: $(IMGUI_TEST_BIN)
 	@command -v $(VALGRIND) >/dev/null 2>&1 || (printf '%s\n' 'valgrind is not installed. Rebuild the devcontainer with make devcontainer-build && make devcontainer-up.' && exit 1)

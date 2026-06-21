@@ -242,6 +242,7 @@ typedef struct ServerConfig {
   char database_path[256];
   enet_uint32 bind_address;
   uint16_t port;
+  bool smoke_test;
 } ServerConfig;
 
 static bool ParsePort(const char* text, uint16_t* port) {
@@ -279,6 +280,7 @@ static void PrintUsage(const char* program_name) {
   printf("  --bind ADDRESS    Local bind IP address, default 0.0.0.0\n");
   printf("  --port PORT       UDP listen port, default %u\n", SHROOM_SERVER_PORT);
   printf("  --database PATH   SQLite database path, default shroomio.db\n");
+  printf("  --smoke-test      Start, initialize subsystems, then shut down cleanly\n");
   printf("  --help            Show this help text\n");
   printf("\n");
   printf("Environment overrides:\n");
@@ -363,6 +365,8 @@ static bool LoadServerConfig(ServerConfig* config, int argc, char** argv) {
       }
       ++i;
       CopyConfigString(config->database_path, sizeof(config->database_path), argv[i]);
+    } else if (strcmp(argv[i], "--smoke-test") == 0) {
+      config->smoke_test = true;
     } else {
       fprintf(stderr, "Unknown option: %s\n", argv[i]);
       PrintUsage(argv[0]);
@@ -1416,6 +1420,9 @@ int main(int argc, char** argv) {
 
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_START);
   LOG_INFO("shroomio server listening on %s:%u/udp", config.bind_host, config.port);
+  if (config.smoke_test) {
+    ShroomLifecycleRequestShutdown(&g_lifecycle);
+  }
   next_tick_time = GetTimeNanos();
 
   while (ShroomLifecycleIsRunning(&g_lifecycle) &&
