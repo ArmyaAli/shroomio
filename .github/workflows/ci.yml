@@ -308,20 +308,33 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Confirm CI gates passed
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          DOCS_ONLY: ${{ needs.changes.outputs.docs-only }}
+          DOCS_RESULT: ${{ needs.docs.result }}
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          BUILD_LINUX_RESULT: ${{ needs.build-linux.result }}
+          VALGRIND_RESULT: ${{ needs.valgrind.result }}
+          BUILD_WINDOWS_RESULT: ${{ needs.build-windows.result }}
+          BUILD_MACOS_RESULT: ${{ needs.build-macos.result }}
         run: |
-          result="${{ needs.changes.result }}"
-          docs_only="${{ needs.changes.outputs.docs-only }}"
-          echo "Changes job: $result"
-          echo "Docs-only: $docs_only"
-          if [ "$docs_only" = "true" ]; then
-            if [ "${{ needs.docs.result }}" != "success" ]; then
-              echo "::error::Docs gate failed: ${{ needs.docs.result }}"
+          echo "Changes job: $CHANGES_RESULT"
+          echo "Docs-only: $DOCS_ONLY"
+          if [ "$DOCS_ONLY" = "true" ]; then
+            if [ "$DOCS_RESULT" != "success" ]; then
+              echo "::error::Docs gate failed: $DOCS_RESULT"
               exit 1
             fi
           else
-            for job in quality build-linux valgrind build-windows build-macos; do
-              if [ "${{ needs.$job.result }}" != "success" ]; then
-                echo "::error::Required job $job failed: ${{ needs.$job.result }}"
+            for entry in "quality:$QUALITY_RESULT" \
+                         "build-linux:$BUILD_LINUX_RESULT" \
+                         "valgrind:$VALGRIND_RESULT" \
+                         "build-windows:$BUILD_WINDOWS_RESULT" \
+                         "build-macos:$BUILD_MACOS_RESULT"; do
+              job="${entry%%:*}"
+              result="${entry##*:}"
+              if [ "$result" != "success" ]; then
+                echo "::error::Required job $job failed: $result"
                 exit 1
               fi
             done
