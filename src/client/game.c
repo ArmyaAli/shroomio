@@ -400,17 +400,23 @@ static void SpawnParticleBurst(Game* game, ShroomVec2 origin, Color color, int h
 
 static void AddCombatNotification(Game* game, const char* title, const char* detail, Color color,
                                   float duration) {
-  CombatNotification* notification =
-      &game->notifications[game->notification_cursor % SHROOM_CLIENT_NOTIFICATION_CAPACITY];
+  if (game->notification_count >= SHROOM_CLIENT_NOTIFICATION_CAPACITY) {
+    game->notification_head = (game->notification_head + 1u) % SHROOM_CLIENT_NOTIFICATION_CAPACITY;
+    game->notification_count -= 1u;
+  }
+  {
+    const uint32_t slot =
+        (game->notification_head + game->notification_count) % SHROOM_CLIENT_NOTIFICATION_CAPACITY;
+    CombatNotification* notification = &game->notifications[slot];
 
-  snprintf(notification->title, sizeof(notification->title), "%s", title);
-  snprintf(notification->detail, sizeof(notification->detail), "%s", detail);
-  notification->color = color;
-  notification->age = 0.0f;
-  notification->duration = fmaxf(duration, 3.1f);
-  notification->active = true;
-  game->notification_cursor =
-      (game->notification_cursor + 1u) % SHROOM_CLIENT_NOTIFICATION_CAPACITY;
+    snprintf(notification->title, sizeof(notification->title), "%s", title);
+    snprintf(notification->detail, sizeof(notification->detail), "%s", detail);
+    notification->color = color;
+    notification->age = 0.0f;
+    notification->duration = fmaxf(duration, 4.0f);
+    notification->active = true;
+    game->notification_count += 1u;
+  }
 }
 
 static void StartDeathCutscene(Game* game, const char* killer_name, float final_mass,
@@ -485,14 +491,14 @@ static const ShroomPlayerState* FindCurrentLocalPrimary(const Game* game,
 }
 
 static void UpdateCombatNotifications(Game* game, float delta_time) {
-  for (size_t index = 0; index < SHROOM_CLIENT_NOTIFICATION_CAPACITY; ++index) {
-    CombatNotification* notification = &game->notifications[index];
-    if (!notification->active) {
-      continue;
-    }
+  if (game->notification_count > 0u) {
+    CombatNotification* notification = &game->notifications[game->notification_head];
     notification->age += delta_time;
     if (notification->age >= notification->duration) {
       notification->active = false;
+      game->notification_head =
+          (game->notification_head + 1u) % SHROOM_CLIENT_NOTIFICATION_CAPACITY;
+      game->notification_count -= 1u;
     }
   }
 
@@ -505,53 +511,48 @@ static void UpdateCombatNotifications(Game* game, float delta_time) {
 }
 
 static void DrawCombatNotifications(const Game* game) {
-  int visible_index = 0;
+  const CombatNotification* notification;
+  float alpha;
+  float y;
+  Rectangle panel;
 
   if (game->screen_flash_timer > 0.0f) {
-    const float alpha = fminf(game->screen_flash_timer / 0.34f, 1.0f) * 0.24f;
+    const float flash_alpha = fminf(game->screen_flash_timer / 0.34f, 1.0f) * 0.24f;
     DrawRectangle(0, 0, game->screen_width, game->screen_height,
-                  Fade(game->screen_flash_color, alpha));
+                  Fade(game->screen_flash_color, flash_alpha));
   }
 
-  for (size_t offset = 0; offset < SHROOM_CLIENT_NOTIFICATION_CAPACITY; ++offset) {
-    const size_t index =
-        (game->notification_cursor + SHROOM_CLIENT_NOTIFICATION_CAPACITY - 1u - offset) %
-        SHROOM_CLIENT_NOTIFICATION_CAPACITY;
-    const CombatNotification* notification = &game->notifications[index];
-    float alpha;
-    float y;
-    Rectangle panel;
-
-    if (!notification->active) {
-      continue;
-    }
-
-    alpha = 1.0f;
-    if (notification->age < 0.24f) {
-      alpha = SmoothStep01(notification->age / 0.24f);
-    } else if (notification->duration - notification->age < 0.70f) {
-      alpha = SmoothStep01(fmaxf(0.0f, (notification->duration - notification->age) / 0.70f));
-    }
-
-    y = 108.0f + (float)visible_index * 74.0f;
-    if (notification->age < 0.24f) {
-      y -= (1.0f - SmoothStep01(notification->age / 0.24f)) * 18.0f;
-    } else if (notification->duration - notification->age < 0.70f) {
-      y += (1.0f - alpha) * 12.0f;
-    }
-    panel = (Rectangle){ClampPanelPosition((game->screen_width - 440.0f) * 0.5f, 440.0f,
-                                           (float)game->screen_width, 12.0f),
-                        y, 440.0f, 58.0f};
-    DrawRectangleRounded(panel, 0.22f, 8, Fade((Color){18, 21, 18, 255}, 0.78f * alpha));
-    DrawRectangleRoundedLines(panel, 0.22f, 8, Fade(notification->color, 0.82f * alpha));
-    DrawCircleV((Vector2){panel.x + 24.0f, panel.y + 29.0f}, 9.0f,
-                Fade(notification->color, 0.86f * alpha));
-    DrawText(notification->title, (int)(panel.x + 46.0f), (int)(panel.y + 10.0f), 18,
-             Fade(RAYWHITE, alpha));
-    DrawText(notification->detail, (int)(panel.x + 46.0f), (int)(panel.y + 34.0f), 13,
-             Fade((Color){226, 232, 210, 255}, 0.86f * alpha));
-    ++visible_index;
+  if (game->notification_count == 0u) {
+    return;
   }
+
+  notification = &game->notifications[game->notification_head];
+
+  alpha = 1.0f;
+  if (notification->age < 0.24f) {
+    alpha = SmoothStep01(notification->age / 0.24f);
+  } else if (notification->duration - notification->age < 0.90f) {
+    alpha = SmoothStep01(fmaxf(0.0f, (notification->duration - notification->age) / 0.90f));
+  }
+
+  y = 24.0f;
+  if (notification->age < 0.24f) {
+    y -= (1.0f - SmoothStep01(notification->age / 0.24f)) * 18.0f;
+  } else if (notification->duration - notification->age < 0.90f) {
+    y += (1.0f - alpha) * 12.0f;
+  }
+
+  panel = (Rectangle){ClampPanelPosition((game->screen_width - 440.0f) * 0.5f, 440.0f,
+                                         (float)game->screen_width, 12.0f),
+                      y, 440.0f, 58.0f};
+  DrawRectangleRounded(panel, 0.22f, 8, Fade((Color){18, 21, 18, 255}, 0.78f * alpha));
+  DrawRectangleRoundedLines(panel, 0.22f, 8, Fade(notification->color, 0.82f * alpha));
+  DrawCircleV((Vector2){panel.x + 24.0f, panel.y + 29.0f}, 9.0f,
+              Fade(notification->color, 0.86f * alpha));
+  DrawText(notification->title, (int)(panel.x + 46.0f), (int)(panel.y + 10.0f), 18,
+           Fade(RAYWHITE, alpha));
+  DrawText(notification->detail, (int)(panel.x + 46.0f), (int)(panel.y + 34.0f), 13,
+           Fade((Color){226, 232, 210, 255}, 0.86f * alpha));
 }
 
 static bool IsDeathCutsceneOpen(const Game* game) {
