@@ -79,11 +79,9 @@ static void LobbyBrowserUpdate(ShroomScreenManager* manager, float delta_time) {
     }
   }
 
-  /* Joined — go to the game screen. */
+  /* Joined — stage at the lobby roster panel before gameplay. */
   if (game->net.welcome_received || game->net.spectating) {
-    game->selected_mode = SHROOM_SESSION_MODE_LOBBY_PLAY;
-    game->active_mode = SHROOM_SESSION_MODE_LOBBY_PLAY;
-    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
+    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_LOBBY_ROSTER);
   }
 }
 
