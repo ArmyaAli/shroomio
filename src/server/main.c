@@ -60,9 +60,13 @@ static ShroomLifecycle g_lifecycle;
 typedef struct ServerConfig {
   char bind_host[64];
   char database_path[256];
+  char benchmark_output_path[256];
   enet_uint32 bind_address;
   uint16_t port;
   bool smoke_test;
+  bool benchmark;
+  uint32_t benchmark_ticks;
+  uint32_t benchmark_bots;
 } ServerConfig;
 
 typedef struct ServerProfileStats {
@@ -92,6 +96,23 @@ static bool ParsePort(const char* text, uint16_t* port) {
   return true;
 }
 
+static bool ParseUint32(const char* text, uint32_t* out_value) {
+  char* end = NULL;
+  unsigned long value;
+
+  if ((text == NULL) || (text[0] == '\0')) {
+    return false;
+  }
+
+  value = strtoul(text, &end, 10);
+  if ((end == text) || (*end != '\0') || (value > UINT32_MAX)) {
+    return false;
+  }
+
+  *out_value = (uint32_t)value;
+  return true;
+}
+
 static void CopyConfigString(char* destination, size_t destination_size, const char* source) {
   if ((destination == NULL) || (destination_size == 0u)) {
     return;
@@ -111,6 +132,10 @@ static void PrintUsage(const char* program_name) {
   printf("  --port PORT       UDP listen port, default %u\n", SHROOM_SERVER_PORT);
   printf("  --database PATH   SQLite database path, default shroomio.db\n");
   printf("  --smoke-test      Start, initialize subsystems, then shut down cleanly\n");
+  printf("  --benchmark       Run deterministic server simulation benchmark and exit\n");
+  printf("  --benchmark-ticks N    Benchmark tick count, default 600\n");
+  printf("  --benchmark-bots N     Benchmark bot/player count, default 8\n");
+  printf("  --benchmark-output PATH  CSV output path, default stdout\n");
   printf("  --help            Show this help text\n");
   printf("\n");
   printf("Environment overrides:\n");
@@ -151,7 +176,8 @@ static bool LoadServerConfig(ServerConfig* config, int argc, char** argv) {
   const char* env_port = getenv("SHROOM_SERVER_PORT");
   const char* env_database = getenv("SHROOM_SERVER_DB_PATH");
 
-  *config = (ServerConfig){.port = (uint16_t)SHROOM_SERVER_PORT};
+  *config = (ServerConfig){
+      .port = (uint16_t)SHROOM_SERVER_PORT, .benchmark_ticks = 600u, .benchmark_bots = 8u};
   CopyConfigString(config->bind_host, sizeof(config->bind_host), "0.0.0.0");
   CopyConfigString(config->database_path, sizeof(config->database_path), "shroomio.db");
 
@@ -197,6 +223,37 @@ static bool LoadServerConfig(ServerConfig* config, int argc, char** argv) {
       CopyConfigString(config->database_path, sizeof(config->database_path), argv[i]);
     } else if (strcmp(argv[i], "--smoke-test") == 0) {
       config->smoke_test = true;
+    } else if (strcmp(argv[i], "--benchmark") == 0) {
+      config->benchmark = true;
+    } else if (strcmp(argv[i], "--benchmark-ticks") == 0) {
+      if ((i + 1) >= argc) {
+        fprintf(stderr, "Missing value for --benchmark-ticks\n");
+        return false;
+      }
+      ++i;
+      if (!ParseUint32(argv[i], &config->benchmark_ticks) || (config->benchmark_ticks == 0u)) {
+        fprintf(stderr, "Invalid --benchmark-ticks: %s\n", argv[i]);
+        return false;
+      }
+    } else if (strcmp(argv[i], "--benchmark-bots") == 0) {
+      if ((i + 1) >= argc) {
+        fprintf(stderr, "Missing value for --benchmark-bots\n");
+        return false;
+      }
+      ++i;
+      if (!ParseUint32(argv[i], &config->benchmark_bots) ||
+          (config->benchmark_bots > SHROOM_MAX_PLAYERS)) {
+        fprintf(stderr, "Invalid --benchmark-bots: %s\n", argv[i]);
+        return false;
+      }
+    } else if (strcmp(argv[i], "--benchmark-output") == 0) {
+      if ((i + 1) >= argc) {
+        fprintf(stderr, "Missing value for --benchmark-output\n");
+        return false;
+      }
+      ++i;
+      CopyConfigString(config->benchmark_output_path, sizeof(config->benchmark_output_path),
+                       argv[i]);
     } else {
       fprintf(stderr, "Unknown option: %s\n", argv[i]);
       PrintUsage(argv[0]);
@@ -285,6 +342,80 @@ static void SleepUntil(uint64_t target_time_nanos) {
   sleep_time.tv_nsec = (long)(delta % 1000000000ull);
   nanosleep(&sleep_time, 0);
 #endif
+}
+
+static int RunServerBenchmark(const ServerConfig* config) {
+  ShroomWorldState world;
+  FILE* out = stdout;
+  const uint64_t snapshot_interval_ticks =
+      (uint64_t)(SHROOM_SERVER_TICK_RATE / (float)SHROOM_SNAPSHOT_RATE);
+  const uint64_t spore_interval_ticks =
+      (uint64_t)(SHROOM_SERVER_TICK_RATE / (float)SHROOM_SPORE_STATE_RATE);
+  double sim_sum_ms = 0.0;
+  double sim_peak_ms = 0.0;
+  uint64_t estimated_snapshot_bytes = 0ull;
+  uint64_t estimated_packet_count = 0ull;
+  uint64_t started_nanos;
+  uint64_t elapsed_nanos;
+
+  ShroomWorldInitWithSeed(&world, 42u + config->benchmark_bots);
+  for (uint32_t player = 0u; player < config->benchmark_bots; ++player) {
+    ShroomPlayerState* spawned = ShroomWorldSpawnPlayer(&world, player + 1u, true);
+    if (spawned != NULL) {
+      spawned->input_direction = NormalizeInput(
+          (ShroomVec2){(player % 3u) == 0u ? 1.0f : -0.35f, (player % 5u) == 0u ? 0.65f : -0.2f});
+    }
+  }
+
+  started_nanos = GetTimeNanos();
+  for (uint32_t tick = 0u; tick < config->benchmark_ticks; ++tick) {
+    const uint64_t sim_start_nanos = GetTimeNanos();
+    ShroomWorldStep(&world, 1.0f / SHROOM_SERVER_TICK_RATE);
+    const double sim_ms = ShroomProfileNanosToMs(GetTimeNanos() - sim_start_nanos);
+
+    sim_sum_ms += sim_ms;
+    if (sim_ms > sim_peak_ms) {
+      sim_peak_ms = sim_ms;
+    }
+
+    if ((snapshot_interval_ticks > 0u) && ((world.tick % snapshot_interval_ticks) == 0u)) {
+      estimated_packet_count += config->benchmark_bots;
+      estimated_snapshot_bytes +=
+          (uint64_t)config->benchmark_bots *
+          (uint64_t)(offsetof(ShroomSnapshotPacket, players) +
+                     ((size_t)world.player_count * sizeof(ShroomSnapshotPlayerState)));
+    }
+    if ((spore_interval_ticks > 0u) && ((world.tick % spore_interval_ticks) == 0u)) {
+      estimated_packet_count += (uint64_t)config->benchmark_bots * 2ull;
+      estimated_snapshot_bytes +=
+          (uint64_t)config->benchmark_bots *
+          (uint64_t)((sizeof(ShroomPacketHeader) + sizeof(uint64_t) + (2u * sizeof(uint16_t)) +
+                      ((size_t)world.spore_count * sizeof(ShroomSnapshotSporeState))) +
+                     sizeof(ShroomPowerupStatePacket));
+    }
+  }
+  elapsed_nanos = GetTimeNanos() - started_nanos;
+
+  if (config->benchmark_output_path[0] != '\0') {
+    out = fopen(config->benchmark_output_path, "w");
+    if (out == NULL) {
+      fprintf(stderr, "Failed to open benchmark output: %s\n", config->benchmark_output_path);
+      return 1;
+    }
+  }
+
+  fprintf(out, "scenario,players,ticks,elapsed_ms,avg_tick_ms,worst_tick_ms,estimated_packets,"
+               "estimated_bytes,rtt_ms,cpu_time_ms,memory_kb\n");
+  fprintf(out, "server_bots,%u,%u,%.3f,%.3f,%.3f,%llu,%llu,0,%.3f,0\n", config->benchmark_bots,
+          config->benchmark_ticks, ShroomProfileNanosToMs(elapsed_nanos),
+          sim_sum_ms / (double)config->benchmark_ticks, sim_peak_ms,
+          (unsigned long long)estimated_packet_count, (unsigned long long)estimated_snapshot_bytes,
+          ShroomProfileNanosToMs(elapsed_nanos));
+
+  if (out != stdout) {
+    fclose(out);
+  }
+  return 0;
 }
 
 static ENetPacket* CreatePacket(const void* data, size_t size, enet_uint32 flags) {
@@ -1295,6 +1426,10 @@ int main(int argc, char** argv) {
   if (!LoadServerConfig(&config, argc, argv)) {
     ShroomLifecycleSetError(&g_lifecycle, 1, "Invalid server configuration");
     return 1;
+  }
+
+  if (config.benchmark) {
+    return RunServerBenchmark(&config);
   }
 
   if (sqlite3_open(config.database_path, &db) != SQLITE_OK) {
