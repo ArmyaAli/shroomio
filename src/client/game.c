@@ -157,12 +157,12 @@ static Sound GenerateOrganicSfx(float start_hz, float end_hz, float seconds, flo
     const float noise = (previous_noise * 0.82f) + (NextNoiseSample(&noise_state) * 0.18f);
     const float fundamental = sinf(2.0f * PI * hz * t);
     const float overtone = sinf(2.0f * PI * hz * 2.0f * t) * 0.12f;
-    const float warm_body = sinf(2.0f * PI * fmaxf(42.0f, start_hz * 0.42f) * t) *
-                            expf(-progress * 8.0f) * thump_gain;
+    const float warm_body =
+        sinf(2.0f * PI * fmaxf(42.0f, start_hz * 0.42f) * t) * expf(-progress * 8.0f) * thump_gain;
     const float wobble = 0.92f + (0.08f * sinf(2.0f * PI * 5.0f * t));
-    const float raw_sample = ((fundamental + overtone) * tone_gain * wobble +
-                              (noise * noise_gain) + warm_body) *
-                             envelope;
+    const float raw_sample =
+        ((fundamental + overtone) * tone_gain * wobble + (noise * noise_gain) + warm_body) *
+        envelope;
     const float filtered_sample = (previous_sample * 0.58f) + (tanhf(raw_sample) * 0.42f);
     previous_noise = noise;
     previous_sample = filtered_sample;
@@ -220,40 +220,40 @@ static void EnsureClientSfxLoaded(ClientSfx sfx) {
 
   switch (sfx) {
   case CLIENT_SFX_SPORE:
-    g_client_sfx[sfx] = GenerateOrganicSfx(560.0f, 940.0f, 0.13f, 0.006f, 0.09f, 0.36f, 0.035f,
-                                           0.02f, 0x51A1u);
+    g_client_sfx[sfx] =
+        GenerateOrganicSfx(560.0f, 940.0f, 0.13f, 0.006f, 0.09f, 0.36f, 0.035f, 0.02f, 0x51A1u);
     break;
   case CLIENT_SFX_CONSUME:
-    g_client_sfx[sfx] = GenerateOrganicSfx(190.0f, 86.0f, 0.36f, 0.008f, 0.28f, 0.30f, 0.055f,
-                                           0.34f, 0xC08Eu);
+    g_client_sfx[sfx] =
+        GenerateOrganicSfx(190.0f, 86.0f, 0.36f, 0.008f, 0.28f, 0.30f, 0.055f, 0.34f, 0xC08Eu);
     break;
   case CLIENT_SFX_DEATH:
-    g_client_sfx[sfx] = GenerateOrganicSfx(210.0f, 54.0f, 0.48f, 0.012f, 0.38f, 0.26f, 0.050f,
-                                           0.30f, 0xDEADu);
+    g_client_sfx[sfx] =
+        GenerateOrganicSfx(210.0f, 54.0f, 0.48f, 0.012f, 0.38f, 0.26f, 0.050f, 0.30f, 0xDEADu);
     break;
   case CLIENT_SFX_ZONE:
-    g_client_sfx[sfx] = GenerateOrganicSfx(300.0f, 560.0f, 0.34f, 0.020f, 0.24f, 0.28f, 0.030f,
-                                           0.04f, 0x20A1u);
+    g_client_sfx[sfx] =
+        GenerateOrganicSfx(300.0f, 560.0f, 0.34f, 0.020f, 0.24f, 0.28f, 0.030f, 0.04f, 0x20A1u);
     break;
   case CLIENT_SFX_WARNING:
-    g_client_sfx[sfx] = GenerateOrganicSfx(360.0f, 220.0f, 0.24f, 0.006f, 0.17f, 0.30f, 0.025f,
-                                           0.10f, 0xA11Eu);
+    g_client_sfx[sfx] =
+        GenerateOrganicSfx(360.0f, 220.0f, 0.24f, 0.006f, 0.17f, 0.30f, 0.025f, 0.10f, 0xA11Eu);
     break;
   case CLIENT_SFX_POWERUP:
-    g_client_sfx[sfx] = GenerateOrganicSfx(440.0f, 880.0f, 0.24f, 0.008f, 0.16f, 0.34f, 0.020f,
-                                           0.05f, 0xB005u);
+    g_client_sfx[sfx] =
+        GenerateOrganicSfx(440.0f, 880.0f, 0.24f, 0.008f, 0.16f, 0.34f, 0.020f, 0.05f, 0xB005u);
     break;
   case CLIENT_SFX_SPLIT:
-    g_client_sfx[sfx] = GenerateOrganicSfx(160.0f, 360.0f, 0.26f, 0.004f, 0.20f, 0.24f, 0.075f,
-                                           0.18f, 0x5117u);
+    g_client_sfx[sfx] =
+        GenerateOrganicSfx(160.0f, 360.0f, 0.26f, 0.004f, 0.20f, 0.24f, 0.075f, 0.18f, 0x5117u);
     break;
   case CLIENT_SFX_UI_CLICK:
-    g_client_sfx[sfx] = GenerateOrganicSfx(620.0f, 720.0f, 0.07f, 0.002f, 0.045f, 0.22f, 0.010f,
-                                           0.00f, 0xC11Cu);
+    g_client_sfx[sfx] =
+        GenerateOrganicSfx(620.0f, 720.0f, 0.07f, 0.002f, 0.045f, 0.22f, 0.010f, 0.00f, 0xC11Cu);
     break;
   case CLIENT_SFX_UI_ERROR:
-    g_client_sfx[sfx] = GenerateOrganicSfx(180.0f, 120.0f, 0.18f, 0.004f, 0.13f, 0.28f, 0.030f,
-                                           0.12f, 0xE220u);
+    g_client_sfx[sfx] =
+        GenerateOrganicSfx(180.0f, 120.0f, 0.18f, 0.004f, 0.13f, 0.28f, 0.030f, 0.12f, 0xE220u);
     break;
   case CLIENT_SFX_COUNT:
   default:
