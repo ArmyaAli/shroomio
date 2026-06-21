@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="128" viewBox="0 0 512 128" role="img" aria-labelledby="title desc">
+  <title id="title">shroomio fungal icon source sheet</title>
+  <desc id="desc">Editable vector motifs for mushroom caps, spores, powerups, and warning UI states.</desc>
+  <defs>
+    <radialGradient id="capRed" cx="50%" cy="30%" r="70%">
+      <stop offset="0" stop-color="#f55454" />
+      <stop offset="1" stop-color="#6e1c34" />
+    </radialGradient>
+    <radialGradient id="sporeGold" cx="50%" cy="45%" r="60%">
+      <stop offset="0" stop-color="#fff3a0" />
+      <stop offset="1" stop-color="#ffe470" />
+    </radialGradient>
+    <radialGradient id="mossGlow" cx="50%" cy="45%" r="70%">
+      <stop offset="0" stop-color="#70e080" />
+      <stop offset="1" stop-color="#2d5f2a" />
+    </radialGradient>
+  </defs>
+
+  <rect width="512" height="128" rx="18" fill="#12121a" />
+
+  <g id="player-cap" transform="translate(24 16)">
+    <ellipse cx="40" cy="38" rx="40" ry="30" fill="url(#capRed)" stroke="#3e2a21" stroke-width="5" />
+    <rect x="24" y="44" width="32" height="46" rx="14" fill="#e0b880" stroke="#3e2a21" stroke-width="5" />
+    <ellipse cx="22" cy="30" rx="7" ry="5" fill="#f7e7cc" opacity="0.9" />
+    <ellipse cx="44" cy="18" rx="9" ry="6" fill="#f7e7cc" opacity="0.85" />
+    <ellipse cx="62" cy="34" rx="6" ry="5" fill="#f7e7cc" opacity="0.8" />
+  </g>
+
+  <g id="spore" transform="translate(140 24)">
+    <circle cx="40" cy="40" r="30" fill="url(#sporeGold)" stroke="#7a5621" stroke-width="5" />
+    <circle cx="30" cy="28" r="7" fill="#fff8dc" opacity="0.8" />
+    <circle cx="54" cy="48" r="4" fill="#fff8dc" opacity="0.55" />
+    <circle cx="40" cy="40" r="42" fill="none" stroke="#ffe470" stroke-width="3" opacity="0.3" />
+  </g>
+
+  <g id="powerup" transform="translate(256 18)">
+    <path d="M40 0 C64 8 80 26 80 50 C80 74 62 92 40 98 C18 92 0 74 0 50 C0 26 16 8 40 0 Z" fill="url(#mossGlow)" stroke="#3e2a21" stroke-width="5" />
+    <path d="M24 50 C34 28 46 28 56 50 C48 46 32 46 24 50 Z" fill="#ffe470" stroke="#3e2a21" stroke-width="3" />
+    <rect x="34" y="48" width="12" height="26" rx="6" fill="#e0b880" stroke="#3e2a21" stroke-width="3" />
+  </g>
+
+  <g id="warning" transform="translate(384 18)">
+    <path d="M40 2 L78 94 H2 Z" fill="#f55454" stroke="#3e2a21" stroke-width="6" stroke-linejoin="round" />
+    <rect x="35" y="28" width="10" height="34" rx="5" fill="#fff3a0" />
+    <circle cx="40" cy="76" r="6" fill="#fff3a0" />
+  </g>
+</svg>
