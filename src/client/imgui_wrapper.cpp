@@ -103,17 +103,53 @@ void ShroomImGui_SetUiScale(float scale) { ImGui::GetIO().FontGlobalScale = scal
 
 void ShroomImGui_ApplyTheme(bool high_contrast) {
   ImGuiStyle& style = ImGui::GetStyle();
+  ImVec4* colors;
 
   ImGui::StyleColorsDark();
-  style.FrameRounding = 6.0f;
-  style.WindowRounding = 10.0f;
-  style.GrabRounding = 6.0f;
+  style.WindowPadding = ImVec2(16.0f, 14.0f);
+  style.FramePadding = ImVec2(10.0f, 7.0f);
+  style.ItemSpacing = ImVec2(10.0f, 8.0f);
+  style.WindowRounding = 14.0f;
+  style.ChildRounding = 12.0f;
+  style.FrameRounding = 11.0f;
+  style.PopupRounding = 12.0f;
+  style.GrabRounding = 10.0f;
+  style.ScrollbarRounding = 10.0f;
+  style.WindowBorderSize = 1.0f;
+  style.FrameBorderSize = 1.0f;
+
+  colors = style.Colors;
+  colors[ImGuiCol_Text] = ImVec4(0.96f, 0.92f, 0.82f, 1.0f);
+  colors[ImGuiCol_TextDisabled] = ImVec4(0.58f, 0.52f, 0.44f, 1.0f);
+  colors[ImGuiCol_WindowBg] = ImVec4(0.10f, 0.08f, 0.07f, 0.94f);
+  colors[ImGuiCol_ChildBg] = ImVec4(0.12f, 0.10f, 0.08f, 0.90f);
+  colors[ImGuiCol_PopupBg] = ImVec4(0.12f, 0.09f, 0.07f, 0.96f);
+  colors[ImGuiCol_Border] = ImVec4(0.62f, 0.42f, 0.23f, 0.58f);
+  colors[ImGuiCol_FrameBg] = ImVec4(0.24f, 0.16f, 0.12f, 0.92f);
+  colors[ImGuiCol_FrameBgHovered] = ImVec4(0.42f, 0.28f, 0.17f, 0.96f);
+  colors[ImGuiCol_FrameBgActive] = ImVec4(0.56f, 0.39f, 0.20f, 1.0f);
+  colors[ImGuiCol_TitleBg] = ImVec4(0.18f, 0.12f, 0.10f, 1.0f);
+  colors[ImGuiCol_TitleBgActive] = ImVec4(0.32f, 0.20f, 0.13f, 1.0f);
+  colors[ImGuiCol_Button] = ImVec4(0.49f, 0.29f, 0.18f, 0.96f);
+  colors[ImGuiCol_ButtonHovered] = ImVec4(0.72f, 0.45f, 0.22f, 1.0f);
+  colors[ImGuiCol_ButtonActive] = ImVec4(0.86f, 0.64f, 0.29f, 1.0f);
+  colors[ImGuiCol_Header] = ImVec4(0.30f, 0.45f, 0.25f, 0.86f);
+  colors[ImGuiCol_HeaderHovered] = ImVec4(0.43f, 0.63f, 0.34f, 0.96f);
+  colors[ImGuiCol_HeaderActive] = ImVec4(0.55f, 0.78f, 0.42f, 1.0f);
+  colors[ImGuiCol_CheckMark] = ImVec4(1.0f, 0.89f, 0.44f, 1.0f);
+  colors[ImGuiCol_SliderGrab] = ImVec4(1.0f, 0.78f, 0.32f, 1.0f);
+  colors[ImGuiCol_SliderGrabActive] = ImVec4(0.74f, 0.42f, 0.78f, 1.0f);
+  colors[ImGuiCol_Separator] = ImVec4(0.62f, 0.42f, 0.23f, 0.52f);
+  colors[ImGuiCol_Tab] = ImVec4(0.22f, 0.16f, 0.12f, 1.0f);
+  colors[ImGuiCol_TabHovered] = ImVec4(0.46f, 0.31f, 0.19f, 1.0f);
+  colors[ImGuiCol_TabActive] = ImVec4(0.34f, 0.24f, 0.15f, 1.0f);
+  colors[ImGuiCol_TableHeaderBg] = ImVec4(0.22f, 0.29f, 0.16f, 1.0f);
+  colors[ImGuiCol_TableRowBgAlt] = ImVec4(0.20f, 0.14f, 0.10f, 0.35f);
 
   if (!high_contrast) {
     return;
   }
 
-  ImVec4* colors = style.Colors;
   colors[ImGuiCol_WindowBg] = ImVec4(0.03f, 0.03f, 0.06f, 0.96f);
   colors[ImGuiCol_ChildBg] = ImVec4(0.07f, 0.07f, 0.10f, 0.92f);
   colors[ImGuiCol_FrameBg] = ImVec4(0.10f, 0.10f, 0.16f, 1.0f);
