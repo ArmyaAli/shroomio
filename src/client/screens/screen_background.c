@@ -199,8 +199,17 @@ void ShroomScreenDrawFungalBackground(bool animate) {
 
   for (int index = 0; index < SHROOM_MENU_BACKGROUND_MUSHROOM_COUNT; ++index) {
     const MenuBackgroundMushroom* mushroom = &g_mushrooms[index];
-    DrawFungalMushroom(mushroom->x_ratio * (float)screen_width,
-                       mushroom->y_ratio * (float)screen_height, mushroom->scale,
+    const float drift =
+        animate
+            ? sinf(g_global_time * (0.28f + (float)index * 0.035f) + mushroom->sway_phase) * 0.045f
+            : 0.0f;
+    const float bob =
+        animate
+            ? sinf(g_global_time * (0.42f + (float)index * 0.04f) + mushroom->sway_phase * 0.7f) *
+                  0.018f
+            : 0.0f;
+    DrawFungalMushroom(WrappedUnit(mushroom->x_ratio + drift) * (float)screen_width,
+                       (mushroom->y_ratio + bob) * (float)screen_height, mushroom->scale,
                        animate ? mushroom->sway_phase : 0.0f, mushroom->type);
   }
 

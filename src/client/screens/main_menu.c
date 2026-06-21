@@ -6,25 +6,8 @@
 #include "imgui_wrapper.h"
 #include "raylib.h"
 
-#include <math.h>
-
 static bool MainMenuAnimationsEnabled(const Game* game) {
   return (game == NULL) || game->settings.menu_animations_enabled;
-}
-
-static void MainMenuDrawAnimatedTitle(void) {
-  const float time = (float)GetTime();
-  const float glow = 0.72f + 0.28f * sinf(time * 2.0f);
-  const int spore_index = (int)(time * 9.0f) % 18;
-  char spore_trail[24];
-
-  for (int index = 0; index < 18; ++index) {
-    spore_trail[index] = index == spore_index ? '*' : '.';
-  }
-  spore_trail[18] = '\0';
-
-  ShroomImGui_TextColored((ShroomImGuiColor){0.78f, 1.0f, 0.56f, 1.0f}, "SHROOMIO");
-  ShroomImGui_TextColored((ShroomImGuiColor){0.60f, 0.95f, 0.72f, glow}, spore_trail);
 }
 
 static bool MainMenuInit(ShroomScreenManager* manager) {
@@ -54,7 +37,7 @@ static void MainMenuDraw(ShroomScreenManager* manager) {
     return;
   }
 
-  MainMenuDrawAnimatedTitle();
+  ShroomImGui_Text("SHROOMIO");
   ShroomImGui_TextWrapped(
       "Grow by collecting spores, out-position bigger threats, and take over the arena.");
   ShroomImGui_Spacing();
