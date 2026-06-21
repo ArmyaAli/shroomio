@@ -4,6 +4,8 @@
 #include "client/screen.h"
 #include "client/screens/screen_background.h"
 
+#include <math.h>
+
 #include "raylib.h"
 
 /* Placeholder roster state — the server does not yet broadcast per-lobby
