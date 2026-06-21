@@ -1,5 +1,6 @@
 #include "net.h"
 
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -181,8 +182,9 @@ static void HandlePong(ClientNetState* net, const ENetPacket* enet_packet) {
 static void HandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet) {
   const ShroomSnapshotPacket* packet = (const ShroomSnapshotPacket*)enet_packet->data;
   uint16_t player_count;
+  const size_t min_size = offsetof(ShroomSnapshotPacket, players);
 
-  if (enet_packet->dataLength < sizeof(*packet)) {
+  if (enet_packet->dataLength < min_size) {
     return;
   }
 
@@ -191,6 +193,9 @@ static void HandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet) {
   player_count = packet->player_count;
   if (player_count > SHROOM_MAX_SNAPSHOT_PLAYERS) {
     player_count = SHROOM_MAX_SNAPSHOT_PLAYERS;
+  }
+  if (enet_packet->dataLength < min_size + (size_t)player_count * sizeof(packet->players[0])) {
+    return;
   }
   net->snapshot_player_count = player_count;
   if (player_count > 0) {
@@ -459,6 +464,10 @@ bool ClientNetTestCompletePendingPing(ClientNetState* net, uint32_t nonce, uint3
 
 void ClientNetTestClearStalePendingPing(ClientNetState* net, uint32_t now_ms) {
   ClearStalePendingPing(net, now_ms);
+}
+
+void ClientNetTestHandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet) {
+  HandleSnapshot(net, enet_packet);
 }
 #endif
 
