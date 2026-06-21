@@ -143,6 +143,128 @@ void test_mass_helpers_respect_expected_scaling_and_bounds(void) {
   TEST_ASSERT_TRUE(ShroomMassToSpeed(SHROOM_DECAY_MASS_THRESHOLD * 1.5f) < SHROOM_MIN_PLAYER_SPEED);
 }
 
+void test_consume_predicate_respects_mass_zone_and_protection_boundaries(void) {
+  ShroomPlayerState* attacker;
+  ShroomPlayerState* victim;
+
+  ResetWorldForPlayers();
+
+  attacker = ShroomWorldSpawnPlayer(&world, 1, false);
+  victim = ShroomWorldSpawnPlayer(&world, 2, false);
+  TEST_ASSERT_NOT_NULL(attacker);
+  TEST_ASSERT_NOT_NULL(victim);
+
+  attacker->position = (ShroomVec2){300.0f, 300.0f};
+  victim->position = attacker->position;
+  victim->mass = 100.0f;
+  victim->radius = ShroomMassToRadius(victim->mass);
+
+  attacker->mass = (victim->mass * SHROOM_CONSUME_MASS_ADVANTAGE) - 0.1f;
+  attacker->radius = ShroomMassToRadius(attacker->mass);
+  TEST_ASSERT_FALSE(ShroomPlayerCanConsume(&world, attacker, victim));
+
+  victim->position = (ShroomVec2){world.width * 0.5f, world.height * 0.5f};
+  attacker->position = victim->position;
+  attacker->mass = victim->mass * SHROOM_CENTER_CONSUME_ADVANTAGE;
+  attacker->radius = ShroomMassToRadius(attacker->mass);
+  TEST_ASSERT_TRUE(ShroomPlayerCanConsume(&world, attacker, victim));
+
+  victim->shield_powerup_timer = 1.0f;
+  TEST_ASSERT_TRUE(ShroomPlayerHasConsumeProtection(victim));
+  TEST_ASSERT_FALSE(ShroomPlayerCanConsume(&world, attacker, victim));
+
+  victim->shield_powerup_timer = 0.0f;
+  victim->spawn_protection_timer = 1.0f;
+  TEST_ASSERT_TRUE(ShroomPlayerHasConsumeProtection(victim));
+  TEST_ASSERT_FALSE(ShroomPlayerCanConsume(&world, attacker, victim));
+}
+
+void test_decay_predicate_respects_zone_threshold_boundaries(void) {
+  ShroomPlayerState* player;
+
+  ResetWorldForPlayers();
+
+  player = ShroomWorldSpawnPlayer(&world, 1, false);
+  TEST_ASSERT_NOT_NULL(player);
+
+  player->position = (ShroomVec2){300.0f, 300.0f};
+  player->mass = SHROOM_DECAY_MASS_THRESHOLD + 100.0f;
+  TEST_ASSERT_FALSE(ShroomPlayerCanDecay(&world, player));
+
+  player->position = (ShroomVec2){world.width * 0.5f, world.height * 0.5f};
+  player->mass = (SHROOM_DEFAULT_PLAYER_MASS * 2.0f) + 0.1f;
+  TEST_ASSERT_TRUE(ShroomPlayerCanDecay(&world, player));
+
+  player->position =
+      (ShroomVec2){(world.width * 0.5f) + SHROOM_ZONE_CENTER_RADIUS + 20.0f, world.height * 0.5f};
+  player->mass = SHROOM_DECAY_MASS_THRESHOLD;
+  TEST_ASSERT_FALSE(ShroomPlayerCanDecay(&world, player));
+  player->mass = SHROOM_DECAY_MASS_THRESHOLD + 0.1f;
+  TEST_ASSERT_TRUE(ShroomPlayerCanDecay(&world, player));
+}
+
+void test_split_predicate_respects_mass_life_and_piece_boundaries(void) {
+  ShroomPlayerState* player;
+  int split_count;
+
+  ResetWorldForPlayers();
+
+  player = ShroomWorldSpawnPlayer(&world, 1, false);
+  TEST_ASSERT_NOT_NULL(player);
+
+  player->mass = SHROOM_SPLIT_MIN_MASS - 0.1f;
+  TEST_ASSERT_FALSE(ShroomPlayerCanSplit(&world, player));
+
+  player->mass = SHROOM_SPLIT_MIN_MASS;
+  TEST_ASSERT_TRUE(ShroomPlayerCanSplit(&world, player));
+
+  player->has_split = true;
+  TEST_ASSERT_FALSE(ShroomPlayerCanSplit(&world, player));
+
+  player->is_bot = true;
+  TEST_ASSERT_TRUE(ShroomPlayerCanSplit(&world, player));
+
+  player->has_split = false;
+  player->is_bot = false;
+  player->mass = SHROOM_SPLIT_MIN_MASS * 8.0f;
+  player->radius = ShroomMassToRadius(player->mass);
+  for (split_count = 1; split_count < SHROOM_MAX_SPLIT_PIECES; ++split_count) {
+    TEST_ASSERT_TRUE(ShroomWorldSplitPlayer(&world, player));
+    player->has_split = false;
+  }
+  TEST_ASSERT_FALSE(ShroomPlayerCanSplit(&world, player));
+}
+
+void test_merge_predicate_respects_cooldown_proximity_and_identity(void) {
+  ShroomPlayerState* player;
+  ShroomPlayerState* piece;
+
+  ResetWorldForPlayers();
+
+  player = ShroomWorldSpawnPlayer(&world, 1, false);
+  TEST_ASSERT_NOT_NULL(player);
+  player->mass = SHROOM_SPLIT_MIN_MASS;
+  player->radius = ShroomMassToRadius(player->mass);
+  TEST_ASSERT_TRUE(ShroomWorldSplitPlayer(&world, player));
+  piece = FindSplitPiece(player->player_id);
+  TEST_ASSERT_NOT_NULL(piece);
+
+  player->position = (ShroomVec2){1000.0f, 1000.0f};
+  piece->position = player->position;
+  TEST_ASSERT_FALSE(ShroomPlayersCanMerge(player, piece));
+
+  player->merge_timer = 0.0f;
+  piece->merge_timer = 0.0f;
+  piece->position = (ShroomVec2){3000.0f, 3000.0f};
+  TEST_ASSERT_FALSE(ShroomPlayersCanMerge(player, piece));
+
+  piece->position = player->position;
+  TEST_ASSERT_TRUE(ShroomPlayersCanMerge(player, piece));
+
+  piece->player_id = 2;
+  TEST_ASSERT_FALSE(ShroomPlayersCanMerge(player, piece));
+}
+
 void test_spawn_player_prefers_safe_outer_spawn(void) {
   ShroomPlayerState* first;
   ShroomPlayerState* second;
@@ -1023,6 +1145,10 @@ int main(void) {
   RUN_TEST(test_world_init_populates_powerups_across_supported_types);
   RUN_TEST(test_zone_classification_matches_center_mid_and_outer);
   RUN_TEST(test_mass_helpers_respect_expected_scaling_and_bounds);
+  RUN_TEST(test_consume_predicate_respects_mass_zone_and_protection_boundaries);
+  RUN_TEST(test_decay_predicate_respects_zone_threshold_boundaries);
+  RUN_TEST(test_split_predicate_respects_mass_life_and_piece_boundaries);
+  RUN_TEST(test_merge_predicate_respects_cooldown_proximity_and_identity);
   RUN_TEST(test_spawn_player_prefers_safe_outer_spawn);
   RUN_TEST(test_world_step_moves_player_and_increments_tick);
   RUN_TEST(test_world_step_clamps_player_to_world_bounds);
