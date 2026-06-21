@@ -5,15 +5,39 @@
 
 #include <stdio.h>
 
+#ifndef _WIN32
+#include <execinfo.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <unistd.h>
+#endif
+
 #include "raylib.h"
 
 static ShroomLifecycle g_lifecycle;
 static ShroomScreenManager g_screen_manager;
 static Game g_game;
 
+#ifndef _WIN32
+static void HandleCrashSignal(int signal_number) {
+  void* frames[64];
+  const int frame_count = backtrace(frames, 64);
+
+  fprintf(stderr, "\nshroomio caught signal %d on screen %s\n", signal_number,
+          ShroomScreenManagerGetCurrentScreenName(&g_screen_manager));
+  backtrace_symbols_fd(frames, frame_count, STDERR_FILENO);
+  _Exit(128 + signal_number);
+}
+#endif
+
 int main(void) {
   const int screen_width = 1280;
   const int screen_height = 720;
+
+#ifndef _WIN32
+  signal(SIGSEGV, HandleCrashSignal);
+  signal(SIGABRT, HandleCrashSignal);
+#endif
 
   ShroomLifecycleInit(&g_lifecycle);
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_INIT);

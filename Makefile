@@ -608,6 +608,7 @@ imgui-test: $(IMGUI_TEST_BIN)
 VALGRIND ?= valgrind
 VALGRIND_FLAGS ?= --leak-check=full --show-leak-kinds=definite,indirect --errors-for-leak-kinds=definite,indirect --error-exitcode=99 --track-origins=yes
 VALGRIND_IMGUI_FLAGS ?= --leak-check=full --show-leak-kinds=definite,indirect --errors-for-leak-kinds=none --error-exitcode=99 --track-origins=yes
+VALGRIND_IMGUI_TEST_FILTERS ?=
 
 valgrind-test: valgrind-unit-test valgrind-server-smoke
 
@@ -641,10 +642,29 @@ valgrind-server-smoke: $(SERVER_LINUX_BIN)
 valgrind-imgui-test: $(IMGUI_TEST_BIN)
 	@command -v $(VALGRIND) >/dev/null 2>&1 || (printf '%s\n' 'valgrind is not installed. Rebuild the devcontainer with make devcontainer-build && make devcontainer-up.' && exit 1)
 	@echo "Running ImGui tests under Valgrind..."
-	@if command -v xvfb-run >/dev/null 2>&1; then \
-		SHROOM_VALGRIND_IMGUI=1 SHROOM_IMGUI_TEST_FILTER=history_renders_incoming_messages xvfb-run -a $(VALGRIND) $(VALGRIND_IMGUI_FLAGS) ./$(IMGUI_TEST_BIN); \
+	@if [ -z "$(strip $(VALGRIND_IMGUI_TEST_FILTERS))" ]; then \
+		if command -v xvfb-run >/dev/null 2>&1; then \
+			SHROOM_VALGRIND_IMGUI=1 xvfb-run -a $(VALGRIND) $(VALGRIND_IMGUI_FLAGS) ./$(IMGUI_TEST_BIN); \
+		else \
+			SHROOM_VALGRIND_IMGUI=1 $(VALGRIND) $(VALGRIND_IMGUI_FLAGS) ./$(IMGUI_TEST_BIN); \
+		fi; \
 	else \
-		SHROOM_VALGRIND_IMGUI=1 SHROOM_IMGUI_TEST_FILTER=history_renders_incoming_messages $(VALGRIND) $(VALGRIND_IMGUI_FLAGS) ./$(IMGUI_TEST_BIN); \
+		failed=0; total=0; \
+		for filter in $(VALGRIND_IMGUI_TEST_FILTERS); do \
+			total=$$((total + 1)); \
+			echo ""; \
+			echo "=== Valgrind ImGui $$filter ==="; \
+			if command -v xvfb-run >/dev/null 2>&1; then \
+				SHROOM_VALGRIND_IMGUI=1 SHROOM_IMGUI_TEST_FILTER=$$filter xvfb-run -a $(VALGRIND) $(VALGRIND_IMGUI_FLAGS) ./$(IMGUI_TEST_BIN); \
+			else \
+				SHROOM_VALGRIND_IMGUI=1 SHROOM_IMGUI_TEST_FILTER=$$filter $(VALGRIND) $(VALGRIND_IMGUI_FLAGS) ./$(IMGUI_TEST_BIN); \
+			fi; \
+			if [ $$? -ne 0 ]; then failed=$$((failed + 1)); fi; \
+		done; \
+		echo ""; \
+		echo "=== Valgrind ImGui Summary ==="; \
+		echo "Total: $$total, Passed: $$((total - failed)), Failed: $$failed"; \
+		if [ $$failed -gt 0 ]; then exit 1; fi; \
 	fi
 
 # Test with coverage (requires gcovr)
@@ -722,9 +742,9 @@ $(TEST_BUILD_DIR)/test_sim: $(UNIT_TESTS_DIR)/test_sim.c $(UNITY_SRC) $(SHARED_S
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
-$(TEST_BUILD_DIR)/test_auth: $(UNIT_TESTS_DIR)/test_auth.c $(UNITY_SRC) $(SERVER_SRC_DIR)/auth.c $(SERVER_SRC_DIR)/logger.c | $(UNITY_DIR)
+$(TEST_BUILD_DIR)/test_auth: $(UNIT_TESTS_DIR)/test_auth.c $(UNITY_SRC) $(SERVER_SRC_DIR)/auth.c $(SERVER_SRC_DIR)/logger.c | $(UNITY_DIR) $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
-	$(LINUX_CC) $(TEST_CFLAGS) -I$(SERVER_SRC_DIR) $^ -o $@ $(TEST_LIBS) -lsqlite3
+	$(LINUX_CC) $(TEST_CFLAGS) -I$(SERVER_SRC_DIR) -I$(VCPKG_LINUX_INCLUDE_DIR) $^ -o $@ $(TEST_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lsqlite3
 
 $(TEST_BUILD_DIR)/%: $(UNIT_TESTS_DIR)/%.c $(UNITY_SRC) | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)

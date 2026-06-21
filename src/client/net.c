@@ -137,15 +137,19 @@ static void HandleWelcome(ClientNetState* net, const ENetPacket* enet_packet) {
 
 static void HandleLobbyList(ClientNetState* net, const ENetPacket* enet_packet) {
   const ShroomLobbyListPacket* packet = (const ShroomLobbyListPacket*)enet_packet->data;
+  const size_t min_size = offsetof(ShroomLobbyListPacket, lobbies);
   uint8_t count;
 
-  if (enet_packet->dataLength < sizeof(*packet)) {
+  if (enet_packet->dataLength < min_size) {
     return;
   }
 
   count = packet->lobby_count;
   if (count > SHROOM_MAX_LOBBIES) {
     count = SHROOM_MAX_LOBBIES;
+  }
+  if (enet_packet->dataLength < min_size + (size_t)count * sizeof(packet->lobbies[0])) {
+    return;
   }
   net->lobby_count = count;
   if (count > 0) {
@@ -286,15 +290,19 @@ static void HandlePowerupState(ClientNetState* net, const ENetPacket* enet_packe
 static void HandleMushroomSpeciesCatalog(ClientNetState* net, const ENetPacket* enet_packet) {
   const ShroomMushroomSpeciesCatalogPacket* packet =
       (const ShroomMushroomSpeciesCatalogPacket*)enet_packet->data;
+  const size_t min_size = offsetof(ShroomMushroomSpeciesCatalogPacket, species);
   uint8_t species_count;
 
-  if (enet_packet->dataLength < sizeof(*packet)) {
+  if (enet_packet->dataLength < min_size) {
     return;
   }
 
   species_count = packet->species_count;
   if (species_count > SHROOM_MAX_MUSHROOM_SPECIES) {
     species_count = SHROOM_MAX_MUSHROOM_SPECIES;
+  }
+  if (enet_packet->dataLength < min_size + (size_t)species_count * sizeof(packet->species[0])) {
+    return;
   }
 
   net->mushroom_species_count = species_count;
@@ -472,6 +480,14 @@ void ClientNetTestClearStalePendingPing(ClientNetState* net, uint32_t now_ms) {
 
 void ClientNetTestHandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet) {
   HandleSnapshot(net, enet_packet);
+}
+
+void ClientNetTestHandleLobbyList(ClientNetState* net, const ENetPacket* enet_packet) {
+  HandleLobbyList(net, enet_packet);
+}
+
+void ClientNetTestHandleMushroomSpeciesCatalog(ClientNetState* net, const ENetPacket* enet_packet) {
+  HandleMushroomSpeciesCatalog(net, enet_packet);
 }
 #endif
 

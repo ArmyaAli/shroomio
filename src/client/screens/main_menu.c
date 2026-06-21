@@ -6,10 +6,28 @@
 #include "imgui_wrapper.h"
 #include "raylib.h"
 
+typedef enum MainMenuAction {
+  MAIN_MENU_ACTION_NONE = 0,
+  MAIN_MENU_ACTION_PLAY_ONLINE,
+  MAIN_MENU_ACTION_CUSTOM_SERVER,
+  MAIN_MENU_ACTION_OFFLINE_PRACTICE,
+  MAIN_MENU_ACTION_SETTINGS,
+  MAIN_MENU_ACTION_HELP,
+  MAIN_MENU_ACTION_CREDITS,
+  MAIN_MENU_ACTION_EXIT,
+} MainMenuAction;
+
 static bool MainMenuAnimationsEnabled(const Game* game) {
-  (void)game;
-  return true;
+  return (game == NULL) || game->settings.menu_animations_enabled;
 }
+
+#ifdef TEST_MODE
+/* Exposed for the imgui test harness so the #334 regression (hard-coded
+ * return true;) is caught directly instead of relying on visual inspection. */
+bool ShroomTestMainMenuAnimationsEnabled(const Game* game) {
+  return MainMenuAnimationsEnabled(game);
+}
+#endif
 
 static bool MainMenuInit(ShroomScreenManager* manager) {
   (void)manager;
@@ -27,6 +45,7 @@ static void MainMenuDraw(ShroomScreenManager* manager) {
   const bool animate = MainMenuAnimationsEnabled(game);
   const float panel_width = 340.0f;
   const float panel_height = 470.0f;
+  MainMenuAction action = MAIN_MENU_ACTION_NONE;
 
   ShroomScreenDrawFungalBackground(animate);
 
@@ -44,42 +63,75 @@ static void MainMenuDraw(ShroomScreenManager* manager) {
   ShroomImGui_Spacing();
 
   if (ShroomLayoutButtonFullWidth("Play Online", 38.0f)) {
-    GamePlayUiClickSound(game);
-    if (game != NULL) {
-      ClientNetInit(&game->net, game->selected_server_host, game->selected_server_port);
-      game->auto_join_lobby = true;
-    }
-    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_LOBBY);
+    action = MAIN_MENU_ACTION_PLAY_ONLINE;
   }
   if (ShroomLayoutButtonFullWidth("Custom Server", 38.0f)) {
-    GamePlayUiClickSound(game);
-    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
+    action = MAIN_MENU_ACTION_CUSTOM_SERVER;
   }
   if (ShroomLayoutButtonFullWidth("Offline Practice", 38.0f)) {
-    GamePlayUiClickSound(game);
+    action = MAIN_MENU_ACTION_OFFLINE_PRACTICE;
+  }
+  if (ShroomLayoutButtonFullWidth("Settings", 38.0f)) {
+    action = MAIN_MENU_ACTION_SETTINGS;
+  }
+  if (ShroomLayoutButtonFullWidth("Help", 38.0f)) {
+    action = MAIN_MENU_ACTION_HELP;
+  }
+  if (ShroomLayoutButtonFullWidth("Credits", 38.0f)) {
+    action = MAIN_MENU_ACTION_CREDITS;
+  }
+  if (ShroomLayoutButtonFullWidth("Exit", 38.0f)) {
+    action = MAIN_MENU_ACTION_EXIT;
+  }
+
+  ShroomImGui_End();
+
+  if (action == MAIN_MENU_ACTION_NONE) {
+    return;
+  }
+
+  GamePlayUiClickSound(game);
+  switch (action) {
+  case MAIN_MENU_ACTION_PLAY_ONLINE:
+    TraceLog(LOG_INFO, "MENU: Play Online selected host=%s port=%u",
+             game != NULL ? game->selected_server_host : "<null>",
+             game != NULL ? (unsigned int)game->selected_server_port : 0u);
+    if (game != NULL) {
+      TraceLog(LOG_INFO, "MENU: Play Online ClientNetInit begin");
+      ClientNetInit(&game->net, game->selected_server_host, game->selected_server_port);
+      TraceLog(LOG_INFO, "MENU: Play Online ClientNetInit end status=%d host=%p peer=%p",
+               (int)game->net.status, (void*)game->net.host, (void*)game->net.peer);
+      game->auto_join_lobby = true;
+    }
+    TraceLog(LOG_INFO, "MENU: Play Online transition to lobby");
+    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_LOBBY);
+    TraceLog(LOG_INFO, "MENU: Play Online transition complete");
+    break;
+  case MAIN_MENU_ACTION_CUSTOM_SERVER:
+    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
+    break;
+  case MAIN_MENU_ACTION_OFFLINE_PRACTICE:
     if (game != NULL) {
       game->selected_mode = SHROOM_SESSION_MODE_OFFLINE_PRACTICE;
     }
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
-  }
-  if (ShroomLayoutButtonFullWidth("Settings", 38.0f)) {
-    GamePlayUiClickSound(game);
+    break;
+  case MAIN_MENU_ACTION_SETTINGS:
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SETTINGS);
-  }
-  if (ShroomLayoutButtonFullWidth("Help", 38.0f)) {
-    GamePlayUiClickSound(game);
+    break;
+  case MAIN_MENU_ACTION_HELP:
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_HELP);
-  }
-  if (ShroomLayoutButtonFullWidth("Credits", 38.0f)) {
-    GamePlayUiClickSound(game);
+    break;
+  case MAIN_MENU_ACTION_CREDITS:
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_CREDITS);
-  }
-  if (ShroomLayoutButtonFullWidth("Exit", 38.0f)) {
-    GamePlayUiClickSound(game);
+    break;
+  case MAIN_MENU_ACTION_EXIT:
     ShroomScreenManagerRequestExit(manager);
+    break;
+  case MAIN_MENU_ACTION_NONE:
+  default:
+    break;
   }
-
-  ShroomImGui_End();
 }
 
 static void MainMenuHandleInput(ShroomScreenManager* manager) {

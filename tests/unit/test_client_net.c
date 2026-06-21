@@ -1,6 +1,7 @@
 #include "unity.h"
 
 #include <stddef.h>
+#include <string.h>
 
 #include "client/net.h"
 
@@ -96,6 +97,80 @@ static void test_client_net_ignores_truncated_snapshot_players(void) {
   TEST_ASSERT_EQUAL_UINT16(9u, net.snapshot_player_count);
 }
 
+static void test_client_net_accepts_trimmed_lobby_list_packet(void) {
+  ClientNetState net = {0};
+  ShroomLobbyListPacket list = {0};
+  ENetPacket packet = {0};
+  const size_t packet_size = offsetof(ShroomLobbyListPacket, lobbies) + sizeof(ShroomLobbyEntry);
+
+  list.lobby_count = 1u;
+  list.lobbies[0].lobby_id = 77u;
+  list.lobbies[0].player_count = 3u;
+  list.lobbies[0].max_players = 16u;
+  strncpy(list.lobbies[0].name, "Loopback", sizeof(list.lobbies[0].name) - 1u);
+  packet.data = (enet_uint8*)&list;
+  packet.dataLength = packet_size;
+
+  ClientNetTestHandleLobbyList(&net, &packet);
+
+  TEST_ASSERT_EQUAL_UINT8(1u, net.lobby_count);
+  TEST_ASSERT_EQUAL_UINT32(77u, net.lobby_list[0].lobby_id);
+  TEST_ASSERT_EQUAL_STRING("Loopback", net.lobby_list[0].name);
+}
+
+static void test_client_net_ignores_truncated_lobby_list_entries(void) {
+  ClientNetState net = {0};
+  ShroomLobbyListPacket list = {0};
+  ENetPacket packet = {0};
+
+  net.lobby_count = 2u;
+  list.lobby_count = 1u;
+  packet.data = (enet_uint8*)&list;
+  packet.dataLength = offsetof(ShroomLobbyListPacket, lobbies);
+
+  ClientNetTestHandleLobbyList(&net, &packet);
+
+  TEST_ASSERT_EQUAL_UINT8(2u, net.lobby_count);
+}
+
+static void test_client_net_accepts_trimmed_mushroom_species_catalog_packet(void) {
+  ClientNetState net = {0};
+  ShroomMushroomSpeciesCatalogPacket catalog = {0};
+  ENetPacket packet = {0};
+  const size_t packet_size = offsetof(ShroomMushroomSpeciesCatalogPacket, species) +
+                             sizeof(ShroomMushroomSpeciesEntry);
+
+  catalog.species_count = 1u;
+  catalog.species[0].species_id = 5u;
+  catalog.species[0].pattern_id = 2u;
+  strncpy(catalog.species[0].name, "Amanita", sizeof(catalog.species[0].name) - 1u);
+  packet.data = (enet_uint8*)&catalog;
+  packet.dataLength = packet_size;
+
+  ClientNetTestHandleMushroomSpeciesCatalog(&net, &packet);
+
+  TEST_ASSERT_TRUE(net.mushroom_species_catalog_received);
+  TEST_ASSERT_EQUAL_UINT8(1u, net.mushroom_species_count);
+  TEST_ASSERT_EQUAL_UINT8(5u, net.mushroom_species[0].species_id);
+  TEST_ASSERT_EQUAL_STRING("Amanita", net.mushroom_species[0].name);
+}
+
+static void test_client_net_ignores_truncated_mushroom_species_entries(void) {
+  ClientNetState net = {0};
+  ShroomMushroomSpeciesCatalogPacket catalog = {0};
+  ENetPacket packet = {0};
+
+  net.mushroom_species_count = 3u;
+  catalog.species_count = 1u;
+  packet.data = (enet_uint8*)&catalog;
+  packet.dataLength = offsetof(ShroomMushroomSpeciesCatalogPacket, species);
+
+  ClientNetTestHandleMushroomSpeciesCatalog(&net, &packet);
+
+  TEST_ASSERT_FALSE(net.mushroom_species_catalog_received);
+  TEST_ASSERT_EQUAL_UINT8(3u, net.mushroom_species_count);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_client_net_records_fresh_pong);
@@ -103,5 +178,9 @@ int main(void) {
   RUN_TEST(test_client_net_clears_timed_out_pending_ping);
   RUN_TEST(test_client_net_accepts_trimmed_snapshot_packet);
   RUN_TEST(test_client_net_ignores_truncated_snapshot_players);
+  RUN_TEST(test_client_net_accepts_trimmed_lobby_list_packet);
+  RUN_TEST(test_client_net_ignores_truncated_lobby_list_entries);
+  RUN_TEST(test_client_net_accepts_trimmed_mushroom_species_catalog_packet);
+  RUN_TEST(test_client_net_ignores_truncated_mushroom_species_entries);
   return UNITY_END();
 }
