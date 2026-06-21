@@ -1818,23 +1818,24 @@ static void DrawPlayers(const Game* game, Rectangle view_bounds) {
     const ShroomPlayerState* player = &game->world.players[index];
     const ShroomVec2 render_position = game->render_positions[index];
     const Vector2 position = {render_position.x, render_position.y};
-    const ClientMushroomSpecies species = GetPlayerSpecies(game, player);
-    const Color fallback_fill = GetPlayerFillColor(game, player);
-    const Color fill = game->settings.palette_preset == CLIENT_PALETTE_HIGH_CONTRAST
-                           ? fallback_fill
-                           : GetSpeciesCapColor(game, species, fallback_fill);
-    const PlayerThreatState threat_state = GetThreatState(&game->world, game->local_player, player);
-    const Color threat_outline = GetThreatOutlineColor(threat_state);
-    const float decay_pulse =
-        0.45f + (0.35f * (0.5f + (0.5f * sinf(game->inspect_prompt_timer * 5.0f))));
+    const bool is_local = IsLocalPlayerPiece(game, player);
+    const bool is_focused = is_local && IsFocusedPiece(game, player);
 
     if (!player->alive || !CircleIntersectsRect(position, player->radius + 80.0f, view_bounds)) {
       continue;
     }
 
     {
-      const bool is_local = IsLocalPlayerPiece(game, player);
-      const bool is_focused = is_local && IsFocusedPiece(game, player);
+      const ClientMushroomSpecies species = GetPlayerSpecies(game, player);
+      const Color fallback_fill = GetPlayerFillColor(game, player);
+      const Color fill = game->settings.palette_preset == CLIENT_PALETTE_HIGH_CONTRAST
+                             ? fallback_fill
+                             : GetSpeciesCapColor(game, species, fallback_fill);
+      const PlayerThreatState threat_state =
+          GetThreatState(&game->world, game->local_player, player);
+      const Color threat_outline = GetThreatOutlineColor(threat_state);
+      const float decay_pulse =
+          0.45f + (0.35f * (0.5f + (0.5f * sinf(game->inspect_prompt_timer * 5.0f))));
 
       // Strong shadow underneath for depth
       DrawCircleV(position, player->radius + 5.0f, Fade((Color){20, 15, 10, 255}, 0.7f));
