@@ -1108,11 +1108,95 @@ static void HandleLobbyCreate(ENetPeer* peer, const ServerSession* session, Shro
   SendLobbyCreated(peer, lobby);
 }
 
+typedef struct ServerPacketContext {
+  ENetHost* host;
+  ENetPeer* peer;
+  ServerSession* session;
+  ShroomLobby* lobbies;
+  ShroomAuthContext* auth_ctx;
+  const ENetPacket* enet_packet;
+  uint32_t* next_player_id;
+  uint32_t* next_lobby_id;
+  uint64_t now_ms;
+} ServerPacketContext;
+
+typedef void (*ServerPacketHandler)(ServerPacketContext* context);
+
+typedef struct ServerPacketDispatchEntry {
+  ShroomPacketType type;
+  ServerPacketHandler handler;
+} ServerPacketDispatchEntry;
+
+static void DispatchHelloPacket(ServerPacketContext* context) {
+  HandleHelloPacket(context->peer, context->session,
+                    context->auth_ctx != NULL ? context->auth_ctx->db : NULL, context->enet_packet);
+}
+
+static void DispatchInputPacket(ServerPacketContext* context) {
+  ShroomLobby* input_lobby = FindLobbyById(context->lobbies, context->session->lobby_id);
+  HandleInputPacket(context->session, context->enet_packet,
+                    input_lobby != NULL ? &input_lobby->world : NULL);
+}
+
+static void DispatchAuthRequestPacket(ServerPacketContext* context) {
+  HandleAuthRequestPacket(context->peer, context->session, context->auth_ctx, context->enet_packet);
+}
+
+static void DispatchPingPacket(ServerPacketContext* context) {
+  SendPong(context->peer, ((const ShroomPingPacket*)context->enet_packet->data)->nonce);
+}
+
+static void DispatchChatPacket(ServerPacketContext* context) {
+  HandleChatPacket(context->host, context->session, context->enet_packet, context->now_ms);
+}
+
+static void DispatchLobbyListQuery(ServerPacketContext* context) {
+  HandleLobbyListQuery(context->peer, context->session, context->lobbies, context->host);
+}
+
+static void DispatchLobbyJoin(ServerPacketContext* context) {
+  HandleLobbyJoin(context->peer, context->session, context->lobbies, context->enet_packet,
+                  context->next_player_id);
+}
+
+static void DispatchLobbyLeave(ServerPacketContext* context) { HandleLobbyLeave(context->session); }
+
+static void DispatchLobbyCreate(ServerPacketContext* context) {
+  HandleLobbyCreate(context->peer, context->session, context->lobbies, context->enet_packet,
+                    context->next_player_id, context->next_lobby_id);
+}
+
+static const ServerPacketDispatchEntry kServerPacketDispatch[] = {
+    {SHROOM_PACKET_HELLO, DispatchHelloPacket},
+    {SHROOM_PACKET_INPUT, DispatchInputPacket},
+    {SHROOM_PACKET_AUTH_REQUEST, DispatchAuthRequestPacket},
+    {SHROOM_PACKET_PING, DispatchPingPacket},
+    {SHROOM_PACKET_CHAT, DispatchChatPacket},
+    {SHROOM_PACKET_LOBBY_LIST_QUERY, DispatchLobbyListQuery},
+    {SHROOM_PACKET_LOBBY_JOIN, DispatchLobbyJoin},
+    {SHROOM_PACKET_LOBBY_LEAVE, DispatchLobbyLeave},
+    {SHROOM_PACKET_LOBBY_CREATE, DispatchLobbyCreate},
+};
+
+static const ServerPacketDispatchEntry* FindServerPacketDispatchEntry(ShroomPacketType type) {
+  for (size_t index = 0; index < sizeof(kServerPacketDispatch) / sizeof(kServerPacketDispatch[0]);
+       ++index) {
+    if (kServerPacketDispatch[index].type == type) {
+      return &kServerPacketDispatch[index];
+    }
+  }
+  return NULL;
+}
+
 static void HandlePacket(ENetHost* host, ENetPeer* peer, ServerSession* session,
                          ShroomLobby* lobbies, ShroomAuthContext* auth_ctx,
                          const ENetPacket* enet_packet, uint8_t channel_id,
                          uint32_t* next_player_id, uint32_t* next_lobby_id, uint64_t now_ms) {
   const ShroomPacketHeader* header;
+  const ServerPacketDispatchEntry* entry;
+  ShroomPacketType packet_type;
+  size_t minimum_size;
+  ServerPacketContext context;
 
   if ((enet_packet == 0) || (enet_packet->dataLength < sizeof(ShroomPacketHeader))) {
     return;
@@ -1123,41 +1207,29 @@ static void HandlePacket(ENetHost* host, ENetPeer* peer, ServerSession* session,
     return;
   }
 
-  switch ((ShroomPacketType)header->type) {
-  case SHROOM_PACKET_HELLO:
-    HandleHelloPacket(peer, session, auth_ctx != NULL ? auth_ctx->db : NULL, enet_packet);
-    break;
-  case SHROOM_PACKET_INPUT: {
-    ShroomLobby* input_lobby = FindLobbyById(lobbies, session->lobby_id);
-    HandleInputPacket(session, enet_packet, input_lobby != NULL ? &input_lobby->world : NULL);
-    break;
+  packet_type = (ShroomPacketType)header->type;
+  minimum_size = ShroomPacketTypeMinimumSize(packet_type);
+  if ((minimum_size == 0u) || (enet_packet->dataLength < minimum_size)) {
+    return;
   }
-  case SHROOM_PACKET_AUTH_REQUEST:
-    HandleAuthRequestPacket(peer, session, auth_ctx, enet_packet);
-    break;
-  case SHROOM_PACKET_PING:
-    if (enet_packet->dataLength >= sizeof(ShroomPingPacket)) {
-      SendPong(peer, ((const ShroomPingPacket*)enet_packet->data)->nonce);
-    }
-    break;
-  case SHROOM_PACKET_CHAT:
-    HandleChatPacket(host, session, enet_packet, now_ms);
-    break;
-  case SHROOM_PACKET_LOBBY_LIST_QUERY:
-    HandleLobbyListQuery(peer, session, lobbies, host);
-    break;
-  case SHROOM_PACKET_LOBBY_JOIN:
-    HandleLobbyJoin(peer, session, lobbies, enet_packet, next_player_id);
-    break;
-  case SHROOM_PACKET_LOBBY_LEAVE:
-    HandleLobbyLeave(session);
-    break;
-  case SHROOM_PACKET_LOBBY_CREATE:
-    HandleLobbyCreate(peer, session, lobbies, enet_packet, next_player_id, next_lobby_id);
-    break;
-  default:
-    break;
+
+  entry = FindServerPacketDispatchEntry(packet_type);
+  if (entry == NULL) {
+    return;
   }
+
+  context = (ServerPacketContext){
+      .host = host,
+      .peer = peer,
+      .session = session,
+      .lobbies = lobbies,
+      .auth_ctx = auth_ctx,
+      .enet_packet = enet_packet,
+      .next_player_id = next_player_id,
+      .next_lobby_id = next_lobby_id,
+      .now_ms = now_ms,
+  };
+  entry->handler(&context);
 }
 
 int main(int argc, char** argv) {
