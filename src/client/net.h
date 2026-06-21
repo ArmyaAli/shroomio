@@ -17,6 +17,7 @@ typedef struct ChatMessage {
 } ChatMessage;
 
 #define SHROOM_CLIENT_PING_INTERVAL_SECONDS 1.0f
+#define SHROOM_CLIENT_PING_TIMEOUT_MS 2000u
 #define SHROOM_CLIENT_RTT_SAMPLE_COUNT 10u
 #define SHROOM_CLIENT_CHAT_HISTORY_COUNT 50u
 typedef enum ClientNetStatus {
@@ -82,5 +83,10 @@ void ClientNetSendLobbyListQuery(ClientNetState* net);
 void ClientNetSendLobbyJoin(ClientNetState* net, uint32_t lobby_id, bool spectate);
 void ClientNetSendLobbyLeave(ClientNetState* net);
 void ClientNetSendLobbyCreate(ClientNetState* net, const char* name, uint16_t max_players);
+
+#ifdef TEST_MODE
+bool ClientNetTestCompletePendingPing(ClientNetState* net, uint32_t nonce, uint32_t now_ms);
+void ClientNetTestClearStalePendingPing(ClientNetState* net, uint32_t now_ms);
+#endif
 
 #endif
