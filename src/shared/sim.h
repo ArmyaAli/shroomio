@@ -11,6 +11,12 @@ ShroomPlayerState* ShroomWorldSpawnPlayer(ShroomWorldState* world, ShroomPlayerI
                                           bool is_bot);
 
 void ShroomPlayerSetInput(ShroomPlayerState* player, ShroomVec2 input_direction);
+bool ShroomPlayerHasConsumeProtection(const ShroomPlayerState* player);
+bool ShroomPlayerCanConsume(const ShroomWorldState* world, const ShroomPlayerState* attacker,
+                            const ShroomPlayerState* target);
+bool ShroomPlayerCanDecay(const ShroomWorldState* world, const ShroomPlayerState* player);
+bool ShroomPlayerCanSplit(const ShroomWorldState* world, const ShroomPlayerState* player);
+bool ShroomPlayersCanMerge(const ShroomPlayerState* primary, const ShroomPlayerState* piece);
 bool ShroomWorldSplitPlayer(ShroomWorldState* world, ShroomPlayerState* player);
 bool ShroomWorldSplitPlayerToward(ShroomWorldState* world, ShroomPlayerState* player,
                                   ShroomVec2 aim_direction);

@@ -463,13 +463,37 @@ static void ShroomCollectSpores(ShroomWorldState* world) {
   }
 }
 
-static bool ShroomCanConsume(const ShroomWorldState* world, const ShroomPlayerState* attacker,
-                             const ShroomPlayerState* target) {
-  float overlap_radius = attacker->radius * 0.88f;
-  const float required_advantage = ShroomGetConsumeMassAdvantageAtPosition(world, target->position);
+static float ShroomDecayMassThresholdAtPosition(const ShroomWorldState* world,
+                                                ShroomVec2 position) {
+  const ShroomZone zone = ShroomGetZoneAtPosition(world, position);
+
+  if (zone == SHROOM_ZONE_CENTER) {
+    return SHROOM_DEFAULT_PLAYER_MASS * 2.0f;
+  }
+  if (zone == SHROOM_ZONE_MID) {
+    return SHROOM_DECAY_MASS_THRESHOLD;
+  }
+  return SHROOM_MAX_PLAYER_MASS;
+}
+
+bool ShroomPlayerHasConsumeProtection(const ShroomPlayerState* player) {
+  return (player != NULL) &&
+         ((player->shield_powerup_timer > 0.0f) || (player->spawn_protection_timer > 0.0f));
+}
+
+bool ShroomPlayerCanConsume(const ShroomWorldState* world, const ShroomPlayerState* attacker,
+                            const ShroomPlayerState* target) {
+  float overlap_radius;
+  float required_advantage;
   const float boundary_margin = 100.0f;
   bool near_boundary = false;
 
+  if ((world == NULL) || (attacker == NULL) || (target == NULL)) {
+    return false;
+  }
+
+  overlap_radius = attacker->radius * 0.88f;
+  required_advantage = ShroomGetConsumeMassAdvantageAtPosition(world, target->position);
   if (!attacker->alive || !target->alive) {
     return false;
   }
@@ -477,10 +501,7 @@ static bool ShroomCanConsume(const ShroomWorldState* world, const ShroomPlayerSt
   if (attacker->player_id == target->player_id) {
     return false;
   }
-  if (target->shield_powerup_timer > 0.0f) {
-    return false;
-  }
-  if (target->spawn_protection_timer > 0.0f) {
+  if (ShroomPlayerHasConsumeProtection(target)) {
     return false;
   }
   if (attacker->mass < (target->mass * required_advantage)) {
@@ -508,6 +529,14 @@ static bool ShroomCanConsume(const ShroomWorldState* world, const ShroomPlayerSt
          (overlap_radius * overlap_radius);
 }
 
+bool ShroomPlayerCanDecay(const ShroomWorldState* world, const ShroomPlayerState* player) {
+  if ((world == NULL) || (player == NULL) || !player->alive) {
+    return false;
+  }
+
+  return player->mass > ShroomDecayMassThresholdAtPosition(world, player->position);
+}
+
 static void ShroomResolveConsumes(ShroomWorldState* world) {
   size_t attacker_index;
   bool consumed[SHROOM_MAX_PLAYERS] = {0};
@@ -528,7 +557,7 @@ static void ShroomResolveConsumes(ShroomWorldState* world) {
         continue;
       }
 
-      if (ShroomCanConsume(world, attacker, target)) {
+      if (ShroomPlayerCanConsume(world, attacker, target)) {
         consumed[target_index] = true;
         consumed_by[target_index] = attacker_index;
       }
@@ -609,12 +638,9 @@ static void ShroomApplyMassRules(ShroomWorldState* world, float delta_time) {
 
     player->mass = ShroomClamp(player->mass, 0.0f, SHROOM_MAX_PLAYER_MASS);
     {
-      const ShroomZone zone = ShroomGetZoneAtPosition(world, player->position);
-      const float decay_threshold = zone == SHROOM_ZONE_CENTER ? (SHROOM_DEFAULT_PLAYER_MASS * 2.0f)
-                                    : zone == SHROOM_ZONE_MID  ? SHROOM_DECAY_MASS_THRESHOLD
-                                                               : SHROOM_MAX_PLAYER_MASS;
+      const float decay_threshold = ShroomDecayMassThresholdAtPosition(world, player->position);
 
-      if (player->mass <= decay_threshold) {
+      if (!ShroomPlayerCanDecay(world, player)) {
         player->radius = ShroomMassToRadius(player->mass);
         continue;
       }
@@ -785,6 +811,19 @@ static int ShroomCountPlayerPieces(const ShroomWorldState* world, ShroomPlayerId
   return count;
 }
 
+bool ShroomPlayerCanSplit(const ShroomWorldState* world, const ShroomPlayerState* player) {
+  if ((world == NULL) || (player == NULL) || !player->alive) {
+    return false;
+  }
+  if (player->mass < SHROOM_SPLIT_MIN_MASS) {
+    return false;
+  }
+  if (!player->is_bot && player->has_split) {
+    return false;
+  }
+  return ShroomCountPlayerPieces(world, player->player_id) < SHROOM_MAX_SPLIT_PIECES;
+}
+
 static ShroomPlayerState* ShroomFindPrimaryPiece(ShroomWorldState* world,
                                                  ShroomPlayerId player_id) {
   size_t i;
@@ -805,20 +844,10 @@ bool ShroomWorldSplitPlayerToward(ShroomWorldState* world, ShroomPlayerState* pl
   int piece_count;
   size_t i;
 
-  if ((world == NULL) || (player == NULL) || !player->alive) {
-    return false;
-  }
-  if (player->mass < SHROOM_SPLIT_MIN_MASS) {
-    return false;
-  }
-  /* One voluntary split per life for real players. */
-  if (!player->is_bot && player->has_split) {
+  if (!ShroomPlayerCanSplit(world, player)) {
     return false;
   }
   piece_count = ShroomCountPlayerPieces(world, player->player_id);
-  if (piece_count >= SHROOM_MAX_SPLIT_PIECES) {
-    return false;
-  }
 
   /* Find a free slot (zeroed-out merged/fragment slot) or extend the array. */
   new_piece = NULL;
@@ -877,9 +906,21 @@ bool ShroomWorldSplitPlayer(ShroomWorldState* world, ShroomPlayerState* player) 
                                       player != NULL ? player->input_direction : (ShroomVec2){0});
 }
 
-static bool ShroomCanMergePieces(const ShroomPlayerState* primary, const ShroomPlayerState* piece) {
-  const float merge_radius = primary->radius + piece->radius;
+bool ShroomPlayersCanMerge(const ShroomPlayerState* primary, const ShroomPlayerState* piece) {
+  float merge_radius;
 
+  if ((primary == NULL) || (piece == NULL) || !primary->alive || !piece->alive) {
+    return false;
+  }
+  if ((primary->player_id != piece->player_id) || (primary->piece_index != 0) ||
+      (piece->piece_index == 0)) {
+    return false;
+  }
+  if ((primary->merge_timer > 0.0f) || (piece->merge_timer > 0.0f)) {
+    return false;
+  }
+
+  merge_radius = primary->radius + piece->radius;
   return ShroomDistanceSqr(primary->position, piece->position) <= (merge_radius * merge_radius);
 }
 
@@ -892,14 +933,8 @@ static void ShroomResolveMerges(ShroomWorldState* world) {
     if (!piece->alive || (piece->piece_index == 0)) {
       continue;
     }
-    if (piece->merge_timer > 0.0f) {
-      continue;
-    }
     primary = ShroomFindPrimaryPiece(world, piece->player_id);
-    if ((primary == NULL) || !primary->alive || (primary->merge_timer > 0.0f)) {
-      continue;
-    }
-    if (!ShroomCanMergePieces(primary, piece)) {
+    if (!ShroomPlayersCanMerge(primary, piece)) {
       continue;
     }
     primary->mass = ShroomClamp(primary->mass + piece->mass, 0.0f, SHROOM_MAX_PLAYER_MASS);
@@ -917,13 +952,10 @@ static void ShroomApplyForcedSplits(ShroomWorldState* world) {
     ShroomPlayerState* player = &world->players[i];
 
     /* Autosplit applies to bots only; players choose when to split. */
-    if (!player->alive || !player->is_bot) {
+    if (!player->is_bot) {
       continue;
     }
-    if (player->mass < SHROOM_SPLIT_MASS_THRESHOLD) {
-      continue;
-    }
-    if (ShroomCountPlayerPieces(world, player->player_id) >= SHROOM_MAX_SPLIT_PIECES) {
+    if (!ShroomPlayerCanSplit(world, player) || (player->mass < SHROOM_SPLIT_MASS_THRESHOLD)) {
       continue;
     }
     ShroomWorldSplitPlayer(world, player);
