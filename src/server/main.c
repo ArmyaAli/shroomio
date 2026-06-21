@@ -1402,7 +1402,6 @@ int main(int argc, char** argv) {
         uint16_t real_count;
         uint16_t spec_count;
         double simulation_ms = 0.0;
-        double broadcast_ms = 0.0;
 
         if (!lobby->active) {
           continue;
@@ -1477,7 +1476,7 @@ int main(int argc, char** argv) {
           enet_host_flush(host);
         }
         if (profile_enabled) {
-          broadcast_ms = ShroomProfileNanosToMs(GetTimeNanos() - phase_start_nanos);
+          const double broadcast_ms = ShroomProfileNanosToMs(GetTimeNanos() - phase_start_nanos);
           ShroomProfileRecord(&g_server_profile.simulation, simulation_ms);
           ShroomProfileRecord(&g_server_profile.broadcast, broadcast_ms);
         }
