@@ -37,6 +37,7 @@ typedef struct ShroomPlayerState {
   bool has_split;            /* one voluntary split per life; reset on respawn */
   ShroomVec2 split_velocity; /* impulse applied on split, decays to zero */
   float merge_timer;         /* seconds until this piece may merge back; 0 = ready */
+  float spawn_protection_timer;
   float speed_powerup_timer;
   float shield_powerup_timer;
   uint8_t piece_index; /* 0 = primary; 1-3 = split fragment */

@@ -529,6 +529,10 @@ void test_consuming_primary_clears_old_split_fragments_after_respawn(void) {
   TEST_ASSERT_TRUE(ShroomWorldSplitPlayer(&world, victim));
   fragment = FindSplitPiece(victim->player_id);
   TEST_ASSERT_NOT_NULL(fragment);
+  victim->merge_timer = 0.0f;
+  fragment->merge_timer = 0.0f;
+  victim->spawn_protection_timer = 0.0f;
+  fragment->spawn_protection_timer = 0.0f;
 
   attacker->mass = victim->mass * SHROOM_CONSUME_MASS_ADVANTAGE;
   attacker->radius = ShroomMassToRadius(attacker->mass);
@@ -692,8 +696,9 @@ void test_corner_consume_works_near_boundaries(void) {
   /* Position both players in the bottom-right corner */
   attacker->mass = 140.0f;
   attacker->radius = ShroomMassToRadius(attacker->mass);
-  attacker->position = (ShroomVec2){world.width - attacker->radius, world.height - attacker->radius};
-  
+  attacker->position =
+      (ShroomVec2){world.width - attacker->radius, world.height - attacker->radius};
+
   victim->mass = 100.0f;
   victim->radius = ShroomMassToRadius(victim->mass);
   victim->position = (ShroomVec2){world.width - victim->radius, world.height - victim->radius};
@@ -722,7 +727,7 @@ void test_edge_consume_works_when_target_pinned_against_wall(void) {
   victim->mass = 100.0f;
   victim->radius = ShroomMassToRadius(victim->mass);
   victim->position = (ShroomVec2){world.width - victim->radius, 3000.0f};
-  
+
   /* Attacker approaches from the left, overlapping into the wall */
   attacker->mass = 140.0f;
   attacker->radius = ShroomMassToRadius(attacker->mass);
@@ -752,7 +757,7 @@ void test_corner_consume_works_with_movement_clamping(void) {
   victim->mass = 100.0f;
   victim->radius = ShroomMassToRadius(victim->mass);
   victim->position = (ShroomVec2){world.width - 100.0f, world.height - 100.0f};
-  
+
   /* Attacker starts further away and moves toward victim */
   attacker->mass = 140.0f;
   attacker->radius = ShroomMassToRadius(attacker->mass);
@@ -768,6 +773,164 @@ void test_corner_consume_works_with_movement_clamping(void) {
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 140.0f + expected_gain, attacker->mass);
   TEST_ASSERT_TRUE(victim->alive);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_DEFAULT_PLAYER_MASS, victim->mass);
+}
+
+void test_split_piece_survives_immediately_after_creation(void) {
+  ShroomPlayerState* player;
+  ShroomPlayerState* piece;
+  ShroomPlayerState* other_player;
+
+  ResetWorldForPlayers();
+
+  player = ShroomWorldSpawnPlayer(&world, 1, false);
+  other_player = ShroomWorldSpawnPlayer(&world, 2, false);
+  TEST_ASSERT_NOT_NULL(player);
+  TEST_ASSERT_NOT_NULL(other_player);
+
+  /* Set up player with enough mass to split */
+  player->mass = SHROOM_SPLIT_MIN_MASS;
+  player->radius = ShroomMassToRadius(player->mass);
+  player->input_direction = (ShroomVec2){1.0f, 0.0f};
+  player->position = (ShroomVec2){3000.0f, 3000.0f};
+
+  /* Other player is nearby but smaller */
+  other_player->mass = SHROOM_DEFAULT_PLAYER_MASS;
+  other_player->radius = ShroomMassToRadius(other_player->mass);
+  other_player->position = (ShroomVec2){3100.0f, 3000.0f};
+
+  /* Split the player */
+  TEST_ASSERT_TRUE(ShroomWorldSplitPlayer(&world, player));
+  piece = FindSplitPiece(player->player_id);
+  TEST_ASSERT_NOT_NULL(piece);
+  TEST_ASSERT_EQUAL_size_t(2, CountAlivePieces(player->player_id));
+
+  /* Step the world once - split piece should still be alive */
+  ShroomWorldStep(&world, 0.016f);
+
+  /* Both pieces should still be alive after one step */
+  TEST_ASSERT_TRUE(player->alive);
+  TEST_ASSERT_TRUE(piece->alive);
+  TEST_ASSERT_EQUAL_size_t(2, CountAlivePieces(player->player_id));
+}
+
+void test_split_piece_not_consumed_by_nearby_larger_player(void) {
+  ShroomPlayerState* player;
+  ShroomPlayerState* piece;
+  ShroomPlayerState* larger_player;
+  const float starting_mass = SHROOM_SPLIT_MIN_MASS;
+
+  ResetWorldForPlayers();
+
+  player = ShroomWorldSpawnPlayer(&world, 1, false);
+  larger_player = ShroomWorldSpawnPlayer(&world, 2, false);
+  TEST_ASSERT_NOT_NULL(player);
+  TEST_ASSERT_NOT_NULL(larger_player);
+
+  /* Set up player with enough mass to split */
+  player->mass = starting_mass;
+  player->radius = ShroomMassToRadius(player->mass);
+  player->input_direction = (ShroomVec2){1.0f, 0.0f};
+  player->position = (ShroomVec2){3000.0f, 3000.0f};
+
+  /* Larger player is nearby and could consume the split piece */
+  larger_player->mass = starting_mass * 1.5f;
+  larger_player->radius = ShroomMassToRadius(larger_player->mass);
+  larger_player->position = (ShroomVec2){3050.0f, 3000.0f};
+
+  /* Split the player */
+  TEST_ASSERT_TRUE(ShroomWorldSplitPlayer(&world, player));
+  piece = FindSplitPiece(player->player_id);
+  TEST_ASSERT_NOT_NULL(piece);
+
+  /* Step the world - the split piece should survive even though larger player is nearby */
+  ShroomWorldStep(&world, 0.016f);
+
+  /* Split piece should still be alive */
+  TEST_ASSERT_TRUE(piece->alive);
+  TEST_ASSERT_EQUAL_size_t(2, CountAlivePieces(player->player_id));
+}
+
+void test_split_spawn_protection_blocks_larger_player_consumption(void) {
+  ShroomPlayerState* player;
+  ShroomPlayerState* piece;
+  ShroomPlayerState* larger_player;
+  const float starting_mass = SHROOM_SPLIT_MIN_MASS;
+
+  ResetWorldForPlayers();
+
+  player = ShroomWorldSpawnPlayer(&world, 1, false);
+  larger_player = ShroomWorldSpawnPlayer(&world, 2, false);
+  TEST_ASSERT_NOT_NULL(player);
+  TEST_ASSERT_NOT_NULL(larger_player);
+
+  /* Set up player with enough mass to split */
+  player->mass = starting_mass;
+  player->radius = ShroomMassToRadius(player->mass);
+  player->input_direction = (ShroomVec2){1.0f, 0.0f};
+  player->position = (ShroomVec2){3000.0f, 3000.0f};
+
+  /* Larger player is nearby and could consume the split piece */
+  larger_player->mass = starting_mass * 1.5f;
+  larger_player->radius = ShroomMassToRadius(larger_player->mass);
+  larger_player->position = (ShroomVec2){3050.0f, 3000.0f};
+
+  /* Split the player */
+  TEST_ASSERT_TRUE(ShroomWorldSplitPlayer(&world, player));
+  piece = FindSplitPiece(player->player_id);
+  TEST_ASSERT_NOT_NULL(piece);
+
+  /* Check state immediately after split. */
+  TEST_ASSERT_TRUE(piece->alive);
+  TEST_ASSERT_EQUAL_UINT32(player->player_id, piece->player_id);
+  TEST_ASSERT_EQUAL_UINT8(1, piece->piece_index);
+  TEST_ASSERT_FLOAT_WITHIN(0.1f, starting_mass / 2.0f, piece->mass);
+  TEST_ASSERT_FLOAT_WITHIN(0.1f, starting_mass / 2.0f, player->mass);
+  TEST_ASSERT_TRUE(piece->merge_timer > 0.0f);
+  TEST_ASSERT_TRUE(piece->spawn_protection_timer > 0.0f);
+  TEST_ASSERT_TRUE(player->spawn_protection_timer > 0.0f);
+
+  /* Step the world: spawn protection should block nearby larger-player consumption. */
+  ShroomWorldStep(&world, 0.016f);
+
+  /* Split piece should still be alive. */
+  TEST_ASSERT_TRUE(piece->alive);
+  TEST_ASSERT_EQUAL_size_t(2, CountAlivePieces(player->player_id));
+  TEST_ASSERT_TRUE(player->alive);
+  TEST_ASSERT_EQUAL_UINT32(player->player_id, piece->player_id);
+}
+
+void test_split_spawn_protection_expires_before_merge_timer(void) {
+  ShroomPlayerState* player;
+  ShroomPlayerState* piece;
+  ShroomPlayerState* larger_player;
+  const float starting_mass = SHROOM_SPLIT_MIN_MASS;
+
+  ResetWorldForPlayers();
+
+  player = ShroomWorldSpawnPlayer(&world, 1, false);
+  larger_player = ShroomWorldSpawnPlayer(&world, 2, false);
+  TEST_ASSERT_NOT_NULL(player);
+  TEST_ASSERT_NOT_NULL(larger_player);
+
+  player->mass = starting_mass;
+  player->radius = ShroomMassToRadius(player->mass);
+  player->input_direction = (ShroomVec2){1.0f, 0.0f};
+  player->position = (ShroomVec2){3000.0f, 3000.0f};
+
+  larger_player->mass = starting_mass * 1.5f;
+  larger_player->radius = ShroomMassToRadius(larger_player->mass);
+  larger_player->position = (ShroomVec2){3600.0f, 3000.0f};
+
+  TEST_ASSERT_TRUE(ShroomWorldSplitPlayer(&world, player));
+  piece = FindSplitPiece(player->player_id);
+  TEST_ASSERT_NOT_NULL(piece);
+
+  ShroomWorldStep(&world, SHROOM_SPLIT_PROTECTION_SECONDS + 0.05f);
+
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, player->spawn_protection_timer);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, piece->spawn_protection_timer);
+  TEST_ASSERT_TRUE(player->merge_timer > 0.0f);
+  TEST_ASSERT_TRUE(piece->merge_timer > 0.0f);
 }
 
 int main(void) {
@@ -804,5 +967,9 @@ int main(void) {
   RUN_TEST(test_corner_consume_works_near_boundaries);
   RUN_TEST(test_edge_consume_works_when_target_pinned_against_wall);
   RUN_TEST(test_corner_consume_works_with_movement_clamping);
+  RUN_TEST(test_split_piece_survives_immediately_after_creation);
+  RUN_TEST(test_split_piece_not_consumed_by_nearby_larger_player);
+  RUN_TEST(test_split_spawn_protection_blocks_larger_player_consumption);
+  RUN_TEST(test_split_spawn_protection_expires_before_merge_timer);
   return UNITY_END();
 }

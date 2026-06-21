@@ -149,6 +149,7 @@ static void ShroomRespawnPlayer(ShroomWorldState* world, ShroomPlayerState* play
   player->has_split = false;
   player->split_velocity = (ShroomVec2){0};
   player->merge_timer = 0.0f;
+  player->spawn_protection_timer = 0.0f;
   player->speed_powerup_timer = 0.0f;
   player->shield_powerup_timer = 0.0f;
   player->piece_index = 0;
@@ -477,6 +478,9 @@ static bool ShroomCanConsume(const ShroomWorldState* world, const ShroomPlayerSt
     return false;
   }
   if (target->shield_powerup_timer > 0.0f) {
+    return false;
+  }
+  if (target->spawn_protection_timer > 0.0f) {
     return false;
   }
   if (attacker->mass < (target->mass * required_advantage)) {
@@ -847,6 +851,7 @@ bool ShroomWorldSplitPlayer(ShroomWorldState* world, ShroomPlayerState* player) 
       .is_bot = player->is_bot,
       .ai_controlled = true,
       .merge_timer = SHROOM_SPLIT_MERGE_SECONDS,
+      .spawn_protection_timer = SHROOM_SPLIT_PROTECTION_SECONDS,
       .piece_index = (uint8_t)piece_count,
       .split_velocity = ShroomVec2Scale(launch_dir, SHROOM_SPLIT_IMPULSE_SPEED),
   };
@@ -858,6 +863,7 @@ bool ShroomWorldSplitPlayer(ShroomWorldState* world, ShroomPlayerState* player) 
   if (player->merge_timer <= 0.0f) {
     player->merge_timer = SHROOM_SPLIT_MERGE_SECONDS;
   }
+  player->spawn_protection_timer = SHROOM_SPLIT_PROTECTION_SECONDS;
 
   return true;
 }
@@ -979,6 +985,12 @@ void ShroomWorldStep(ShroomWorldState* world, float delta_time) {
       player->merge_timer -= delta_time;
       if (player->merge_timer < 0.0f) {
         player->merge_timer = 0.0f;
+      }
+    }
+    if (player->spawn_protection_timer > 0.0f) {
+      player->spawn_protection_timer -= delta_time;
+      if (player->spawn_protection_timer < 0.0f) {
+        player->spawn_protection_timer = 0.0f;
       }
     }
   }

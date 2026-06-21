@@ -95,6 +95,18 @@ static float RandomRange(float min_value, float max_value) {
   return min_value + ((max_value - min_value) * t);
 }
 
+static float SmoothStep01(float value) {
+  const float t = Clamp(value, 0.0f, 1.0f);
+  return t * t * (3.0f - (2.0f * t));
+}
+
+static float ClampPanelPosition(float value, float panel_size, float screen_size, float margin) {
+  if (screen_size <= panel_size + margin * 2.0f) {
+    return margin;
+  }
+  return Clamp(value, margin, screen_size - panel_size - margin);
+}
+
 typedef enum ClientSfx {
   CLIENT_SFX_SPORE = 0,
   CLIENT_SFX_CONSUME,
@@ -105,16 +117,18 @@ typedef enum ClientSfx {
 } ClientSfx;
 
 static Sound g_client_sfx[CLIENT_SFX_COUNT];
-static bool g_client_sfx_loaded = false;
+static bool g_client_sfx_loaded[CLIENT_SFX_COUNT];
 
 static Sound GenerateToneSound(float start_hz, float end_hz, float seconds, float decay) {
-  const unsigned int sample_rate = 22050u;
+  const unsigned int sample_rate = 32000u;
   const unsigned int frame_count = (unsigned int)(seconds * (float)sample_rate);
   int16_t* samples = malloc(frame_count * sizeof(int16_t));
   Wave wave = {0};
   Sound sound = {0};
+  float previous_sample = 0.0f;
 
-  if (samples == NULL) {
+  if ((samples == NULL) || (frame_count == 0u)) {
+    free(samples);
     return sound;
   }
 
@@ -122,9 +136,17 @@ static Sound GenerateToneSound(float start_hz, float end_hz, float seconds, floa
     const float t = (float)index / (float)sample_rate;
     const float progress = (float)index / (float)frame_count;
     const float hz = start_hz + ((end_hz - start_hz) * progress);
-    const float envelope = powf(1.0f - progress, decay);
-    const float wobble = 0.72f + (0.28f * sinf(2.0f * PI * 18.0f * t));
-    samples[index] = (int16_t)(sinf(2.0f * PI * hz * t) * envelope * wobble * 12000.0f);
+    const float attack = SmoothStep01(progress / 0.08f);
+    const float release = SmoothStep01((1.0f - progress) / 0.22f);
+    const float sustain = 1.0f - (progress * (0.24f + decay * 0.08f));
+    const float envelope = attack * release * Clamp(sustain, 0.24f, 1.0f);
+    const float fundamental = sinf(2.0f * PI * hz * t);
+    const float overtone = sinf(2.0f * PI * hz * 1.5f * t) * 0.22f;
+    const float wobble = 0.86f + (0.14f * sinf(2.0f * PI * 11.0f * t));
+    const float raw_sample = (fundamental + overtone) * envelope * wobble;
+    const float filtered_sample = (previous_sample * 0.35f) + (raw_sample * 0.65f);
+    previous_sample = filtered_sample;
+    samples[index] = (int16_t)(Clamp(filtered_sample, -1.0f, 1.0f) * 9000.0f);
   }
 
   wave.frameCount = frame_count;
@@ -137,42 +159,86 @@ static Sound GenerateToneSound(float start_hz, float end_hz, float seconds, floa
   return sound;
 }
 
-static void EnsureClientSfxLoaded(void) {
-  if (g_client_sfx_loaded || !IsAudioDeviceReady()) {
+static void EnsureClientSfxLoaded(ClientSfx sfx) {
+  if ((sfx < 0) || (sfx >= CLIENT_SFX_COUNT) || g_client_sfx_loaded[sfx] || !IsAudioDeviceReady()) {
     return;
   }
 
-  g_client_sfx[CLIENT_SFX_SPORE] = GenerateToneSound(520.0f, 940.0f, 0.10f, 2.2f);
-  g_client_sfx[CLIENT_SFX_CONSUME] = GenerateToneSound(180.0f, 84.0f, 0.24f, 1.7f);
-  g_client_sfx[CLIENT_SFX_DEATH] = GenerateToneSound(220.0f, 48.0f, 0.42f, 1.2f);
-  g_client_sfx[CLIENT_SFX_ZONE] = GenerateToneSound(360.0f, 620.0f, 0.26f, 1.4f);
-  g_client_sfx[CLIENT_SFX_WARNING] = GenerateToneSound(260.0f, 180.0f, 0.18f, 0.9f);
-  g_client_sfx_loaded = true;
+  switch (sfx) {
+  case CLIENT_SFX_SPORE:
+    g_client_sfx[sfx] = GenerateToneSound(520.0f, 820.0f, 0.16f, 2.0f);
+    break;
+  case CLIENT_SFX_CONSUME:
+    g_client_sfx[sfx] = GenerateToneSound(220.0f, 92.0f, 0.30f, 1.45f);
+    break;
+  case CLIENT_SFX_DEATH:
+    g_client_sfx[sfx] = GenerateToneSound(240.0f, 48.0f, 0.44f, 1.15f);
+    break;
+  case CLIENT_SFX_ZONE:
+    g_client_sfx[sfx] = GenerateToneSound(330.0f, 620.0f, 0.30f, 1.25f);
+    break;
+  case CLIENT_SFX_WARNING:
+    g_client_sfx[sfx] = GenerateToneSound(260.0f, 170.0f, 0.22f, 1.0f);
+    break;
+  case CLIENT_SFX_COUNT:
+  default:
+    return;
+  }
+  g_client_sfx_loaded[sfx] = true;
+}
+
+static void EnsureAllClientSfxLoaded(void) {
+  for (int index = 0; index < CLIENT_SFX_COUNT; ++index) {
+    EnsureClientSfxLoaded((ClientSfx)index);
+  }
 }
 
 static void UnloadClientSfx(void) {
-  if (!g_client_sfx_loaded || !IsAudioDeviceReady()) {
+  if (!IsAudioDeviceReady()) {
     return;
   }
   for (int index = 0; index < CLIENT_SFX_COUNT; ++index) {
-    UnloadSound(g_client_sfx[index]);
+    if (g_client_sfx_loaded[index]) {
+      UnloadSound(g_client_sfx[index]);
+    }
   }
   memset(g_client_sfx, 0, sizeof(g_client_sfx));
-  g_client_sfx_loaded = false;
+  memset(g_client_sfx_loaded, 0, sizeof(g_client_sfx_loaded));
 }
 
 static void PlayClientSfx(const Game* game, ClientSfx sfx, float importance) {
   float volume;
+  int active_sounds = 0;
 
-  EnsureClientSfxLoaded();
-  if (!g_client_sfx_loaded || (sfx < 0) || (sfx >= CLIENT_SFX_COUNT)) {
+  if ((sfx < 0) || (sfx >= CLIENT_SFX_COUNT)) {
+    return;
+  }
+
+  EnsureClientSfxLoaded(sfx);
+  if (!g_client_sfx_loaded[sfx]) {
     return;
   }
   if (IsSoundPlaying(g_client_sfx[sfx]) && (sfx == CLIENT_SFX_SPORE || sfx == CLIENT_SFX_WARNING)) {
     return;
   }
 
+  if ((sfx == CLIENT_SFX_DEATH) || (sfx == CLIENT_SFX_CONSUME)) {
+    for (int index = 0; index < CLIENT_SFX_COUNT; ++index) {
+      if ((index != (int)sfx) && g_client_sfx_loaded[index] &&
+          IsSoundPlaying(g_client_sfx[index])) {
+        StopSound(g_client_sfx[index]);
+      }
+    }
+  }
+
+  for (int index = 0; index < CLIENT_SFX_COUNT; ++index) {
+    if (g_client_sfx_loaded[index] && IsSoundPlaying(g_client_sfx[index])) {
+      active_sounds += 1;
+    }
+  }
+
   volume = ((float)game->settings.effects_volume_percent / 100.0f) * Clamp(importance, 0.0f, 1.0f);
+  volume *= 0.84f / (1.0f + ((float)active_sounds * 0.24f));
   SetSoundVolume(g_client_sfx[sfx], volume);
   SetSoundPan(g_client_sfx[sfx], 0.5f);
   PlaySound(g_client_sfx[sfx]);
@@ -222,7 +288,7 @@ static void AddCombatNotification(Game* game, const char* title, const char* det
   snprintf(notification->detail, sizeof(notification->detail), "%s", detail);
   notification->color = color;
   notification->age = 0.0f;
-  notification->duration = duration;
+  notification->duration = fmaxf(duration, 3.1f);
   notification->active = true;
   game->notification_cursor =
       (game->notification_cursor + 1u) % SHROOM_CLIENT_NOTIFICATION_CAPACITY;
@@ -267,6 +333,38 @@ static const ShroomPlayerState* FindLargestMassGainer(const Game* game, float* m
   return best_player;
 }
 
+static size_t FindPreviousLocalPrimaryIndex(const Game* game, ShroomPlayerId local_player_id) {
+  if (local_player_id == 0u) {
+    return SHROOM_MAX_PLAYERS;
+  }
+
+  for (size_t index = 0; index < SHROOM_MAX_PLAYERS; ++index) {
+    if (game->previous_player_alive[index] &&
+        (game->previous_player_ids[index] == local_player_id) &&
+        (game->previous_player_piece_indices[index] == 0u)) {
+      return index;
+    }
+  }
+
+  return SHROOM_MAX_PLAYERS;
+}
+
+static const ShroomPlayerState* FindCurrentLocalPrimary(const Game* game,
+                                                        ShroomPlayerId local_player_id) {
+  if (local_player_id == 0u) {
+    return NULL;
+  }
+
+  for (size_t index = 0; index < game->world.player_count; ++index) {
+    const ShroomPlayerState* player = &game->world.players[index];
+    if (player->alive && (player->player_id == local_player_id) && (player->piece_index == 0u)) {
+      return player;
+    }
+  }
+
+  return NULL;
+}
+
 static void UpdateCombatNotifications(Game* game, float delta_time) {
   for (size_t index = 0; index < SHROOM_CLIENT_NOTIFICATION_CAPACITY; ++index) {
     CombatNotification* notification = &game->notifications[index];
@@ -296,7 +394,10 @@ static void DrawCombatNotifications(const Game* game) {
                   Fade(game->screen_flash_color, alpha));
   }
 
-  for (size_t index = 0; index < SHROOM_CLIENT_NOTIFICATION_CAPACITY; ++index) {
+  for (size_t offset = 0; offset < SHROOM_CLIENT_NOTIFICATION_CAPACITY; ++offset) {
+    const size_t index =
+        (game->notification_cursor + SHROOM_CLIENT_NOTIFICATION_CAPACITY - 1u - offset) %
+        SHROOM_CLIENT_NOTIFICATION_CAPACITY;
     const CombatNotification* notification = &game->notifications[index];
     float alpha;
     float y;
@@ -307,14 +408,21 @@ static void DrawCombatNotifications(const Game* game) {
     }
 
     alpha = 1.0f;
-    if (notification->age < 0.18f) {
-      alpha = notification->age / 0.18f;
-    } else if (notification->duration - notification->age < 0.55f) {
-      alpha = fmaxf(0.0f, (notification->duration - notification->age) / 0.55f);
+    if (notification->age < 0.24f) {
+      alpha = SmoothStep01(notification->age / 0.24f);
+    } else if (notification->duration - notification->age < 0.70f) {
+      alpha = SmoothStep01(fmaxf(0.0f, (notification->duration - notification->age) / 0.70f));
     }
 
     y = 108.0f + (float)visible_index * 74.0f;
-    panel = (Rectangle){(game->screen_width - 440.0f) * 0.5f, y, 440.0f, 58.0f};
+    if (notification->age < 0.24f) {
+      y -= (1.0f - SmoothStep01(notification->age / 0.24f)) * 18.0f;
+    } else if (notification->duration - notification->age < 0.70f) {
+      y += (1.0f - alpha) * 12.0f;
+    }
+    panel = (Rectangle){ClampPanelPosition((game->screen_width - 440.0f) * 0.5f, 440.0f,
+                                           (float)game->screen_width, 12.0f),
+                        y, 440.0f, 58.0f};
     DrawRectangleRounded(panel, 0.22f, 8, Fade((Color){18, 21, 18, 255}, 0.78f * alpha));
     DrawRectangleRoundedLines(panel, 0.22f, 8, Fade(notification->color, 0.82f * alpha));
     DrawCircleV((Vector2){panel.x + 24.0f, panel.y + 29.0f}, 9.0f,
@@ -445,7 +553,15 @@ static void EmitGameplayEventParticles(Game* game) {
       game->local_player != NULL ? game->local_player->player_id : 0u;
   float largest_gain = 0.0f;
   const ShroomPlayerState* largest_gainer = FindLargestMassGainer(game, &largest_gain);
+  const size_t previous_local_primary_index = FindPreviousLocalPrimaryIndex(game, local_player_id);
+  const ShroomPlayerState* current_local_primary = FindCurrentLocalPrimary(game, local_player_id);
+  const bool local_primary_consumed =
+      (previous_local_primary_index < SHROOM_MAX_PLAYERS) && !IsDeathCutsceneOpen(game) &&
+      ((current_local_primary == NULL) ||
+       (current_local_primary->entity_id !=
+        game->previous_player_entity_ids[previous_local_primary_index]));
   bool local_kill_reported = false;
+  bool local_death_reported = false;
 
   if (!game->particle_baseline_ready) {
     CaptureParticleBaselines(game);
@@ -457,7 +573,7 @@ static void EmitGameplayEventParticles(Game* game) {
     if ((game->previous_spore_entity_ids[index] == spore->entity_id) && spore->active &&
         (ShroomDistanceSqr(game->previous_spore_positions[index], spore->position) > 4096.0f)) {
       SpawnParticleBurst(game, game->previous_spore_positions[index], (Color){255, 228, 112, 255},
-                         10, 78.0f, 4.5f, 0.48f);
+                         5, 70.0f, 4.0f, 0.42f);
     }
   }
 
@@ -473,6 +589,26 @@ static void EmitGameplayEventParticles(Game* game) {
         PlayClientSfx(game, CLIENT_SFX_ZONE, 0.66f);
       }
     }
+  }
+
+  if (local_primary_consumed) {
+    const float previous_mass = game->previous_player_masses[previous_local_primary_index];
+    const char* killer_name =
+        largest_gainer != NULL ? GetPlayerDisplayName(game, largest_gainer) : "a larger colony";
+
+    SpawnParticleBurst(game, game->previous_player_positions[previous_local_primary_index],
+                       (Color){150, 45, 42, 255}, 16, 132.0f, 6.5f, 0.68f);
+    AddCombatNotification(game, "You were consumed",
+                          TextFormat("Final mass %.0f  Rank %d  Survived %.0fs", previous_mass,
+                                     game->previous_local_rank > 0 ? game->previous_local_rank : 0,
+                                     fmaxf(0.0f, (float)GetTime() - game->session_start_time)),
+                          (Color){245, 84, 84, 255}, 3.6f);
+    StartDeathCutscene(game, killer_name, previous_mass,
+                       game->previous_local_rank > 0 ? game->previous_local_rank : 0);
+    game->screen_flash_color = (Color){180, 32, 42, 255};
+    game->screen_flash_timer = 0.34f;
+    PlayClientSfx(game, CLIENT_SFX_DEATH, 0.92f);
+    local_death_reported = true;
   }
 
   for (index = 0; index < game->world.player_count; ++index) {
@@ -496,27 +632,12 @@ static void EmitGameplayEventParticles(Game* game) {
                          28, 150.0f, 7.0f, 0.76f);
       SpawnParticleBurst(game, player->position, (Color){122, 220, 118, 255}, 14, 82.0f, 5.0f,
                          0.58f);
-      if (was_local_player) {
-        const char* killer_name =
-            largest_gainer != NULL ? GetPlayerDisplayName(game, largest_gainer) : "a larger colony";
-        AddCombatNotification(
-            game, "You were consumed",
-            TextFormat("Final mass %.0f  Rank %d  Survived %.0fs", previous_mass,
-                       game->previous_local_rank > 0 ? game->previous_local_rank : 0,
-                       fmaxf(0.0f, (float)GetTime() - game->session_start_time)),
-            (Color){245, 84, 84, 255}, 3.6f);
-        StartDeathCutscene(game, killer_name, previous_mass,
-                           game->previous_local_rank > 0 ? game->previous_local_rank : 0);
-        game->screen_flash_color = (Color){180, 32, 42, 255};
-        game->screen_flash_timer = 0.34f;
-        PlayClientSfx(game, CLIENT_SFX_DEATH, 0.92f);
-      }
     } else if (game->previous_player_alive[index] && !player->alive) {
       SpawnParticleBurst(game, game->previous_player_positions[index], (Color){190, 62, 64, 255},
                          24, 132.0f, 7.0f, 0.72f);
     }
 
-    if (local_consumed_player && !local_kill_reported) {
+    if (local_consumed_player && !local_kill_reported && !local_death_reported) {
       char title[96];
       char detail[128];
       snprintf(title, sizeof(title), "You consumed %s", GetPlayerDisplayName(game, player));
@@ -545,7 +666,7 @@ static void EmitGameplayEventParticles(Game* game) {
     }
     if ((player->piece_index > 0u) &&
         (!game->previous_player_alive[index] || !had_same_entity || (previous_mass <= 0.0f))) {
-      SpawnParticleBurst(game, player->position, (Color){255, 215, 116, 255}, 18, 146.0f, 5.0f,
+      SpawnParticleBurst(game, player->position, (Color){255, 215, 116, 255}, 10, 130.0f, 4.6f,
                          0.58f);
       if ((local_player_id != 0u) && (player->player_id == local_player_id)) {
         PlayClientSfx(game, CLIENT_SFX_ZONE, 0.64f);
@@ -553,7 +674,7 @@ static void EmitGameplayEventParticles(Game* game) {
     }
     if (had_same_entity && game->previous_player_alive[index] &&
         (player->mass < previous_mass * 0.72f) && (previous_mass >= SHROOM_SPLIT_MIN_MASS)) {
-      SpawnParticleBurst(game, player->position, (Color){255, 215, 116, 255}, 16, 124.0f, 4.8f,
+      SpawnParticleBurst(game, player->position, (Color){255, 215, 116, 255}, 9, 112.0f, 4.4f,
                          0.52f);
       if ((local_player_id != 0u) && (player->player_id == local_player_id)) {
         PlayClientSfx(game, CLIENT_SFX_ZONE, 0.64f);
@@ -1854,7 +1975,7 @@ static void UpdateStatusBanners(Game* game, float delta_time) {
       sqrtf(ShroomDistanceSqr(game->local_player->position, game->previous_local_position));
 
   if (zone != game->current_zone) {
-    SpawnParticleBurst(game, game->local_player->position, GetZoneColor(zone), 22, 96.0f, 5.5f,
+    SpawnParticleBurst(game, game->local_player->position, GetZoneColor(zone), 12, 86.0f, 5.0f,
                        0.64f);
     AddCombatNotification(game, TextFormat("Entered %s zone", GetZoneLabel(zone)),
                           GetZoneSummary(zone), GetZoneColor(zone), 2.4f);
@@ -2658,6 +2779,7 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
     game->show_results = false;
     ShroomWorldInit(&game->world);
     CaptureParticleBaselines(game);
+    EnsureAllClientSfxLoaded();
     /* local_player is NULL until first snapshot from server. */
     return;
   }
@@ -2707,11 +2829,35 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
   game->zone_callout_timer = kStatusBannerDuration;
   game->diagnostics_overlay_open = game->settings.diagnostics_enabled;
   CaptureParticleBaselines(game);
+  EnsureAllClientSfxLoaded();
+}
+
+void GameHandleResize(Game* game, int screen_width, int screen_height) {
+  if (game == NULL) {
+    return;
+  }
+
+  if (screen_width < 640) {
+    screen_width = 640;
+  }
+  if (screen_height < 360) {
+    screen_height = 360;
+  }
+
+  if ((game->screen_width == screen_width) && (game->screen_height == screen_height)) {
+    return;
+  }
+
+  game->screen_width = screen_width;
+  game->screen_height = screen_height;
+  game->camera.offset = (Vector2){(float)screen_width * 0.5f, (float)screen_height * 0.5f};
 }
 
 void GameUpdate(Game* game, float delta_time) {
   ShroomVec2 input_direction;
   const uint32_t previous_input_sequence = game->net.last_input_sequence;
+
+  GameHandleResize(game, GetScreenWidth(), GetScreenHeight());
 
   if (IsOverlayBlockingGameplay(game) || game->chat_open) {
     input_direction = (ShroomVec2){0};
