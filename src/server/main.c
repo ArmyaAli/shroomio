@@ -584,8 +584,8 @@ static void SendLobbyList(ENetPeer* peer, ShroomLobby* lobbies, const ENetHost* 
     snprintf(packet.lobbies[count].name, sizeof(packet.lobbies[count].name), "%s", lobby->name);
     ++count;
   }
-  packet_size = offsetof(ShroomLobbyListPacket, lobbies) +
-                (size_t)count * sizeof(packet.lobbies[0]);
+  packet_size =
+      offsetof(ShroomLobbyListPacket, lobbies) + (size_t)count * sizeof(packet.lobbies[0]);
   ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_LIST, (uint16_t)packet_size);
   packet.lobby_count = count;
   enet_peer_send(peer, SHROOM_ENET_CHANNEL_CONTROL,

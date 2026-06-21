@@ -93,7 +93,8 @@ static void MainMenuDraw(ShroomScreenManager* manager) {
   GamePlayUiClickSound(game);
   switch (action) {
   case MAIN_MENU_ACTION_PLAY_ONLINE:
-    TraceLog(LOG_INFO, "MENU: Play Online selected host=%s port=%u", game != NULL ? game->selected_server_host : "<null>",
+    TraceLog(LOG_INFO, "MENU: Play Online selected host=%s port=%u",
+             game != NULL ? game->selected_server_host : "<null>",
              game != NULL ? (unsigned int)game->selected_server_port : 0u);
     if (game != NULL) {
       TraceLog(LOG_INFO, "MENU: Play Online ClientNetInit begin");
