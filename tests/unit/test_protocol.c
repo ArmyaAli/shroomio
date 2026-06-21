@@ -200,6 +200,42 @@ void test_packet_reliability_mapping(void) {
   TEST_ASSERT_FALSE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_POWERUP_STATE));
 }
 
+void test_packet_minimum_size_mapping(void) {
+  TEST_ASSERT_EQUAL(sizeof(ShroomHelloPacket), ShroomPacketTypeMinimumSize(SHROOM_PACKET_HELLO));
+  TEST_ASSERT_EQUAL(sizeof(ShroomWelcomePacket),
+                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_WELCOME));
+  TEST_ASSERT_EQUAL(sizeof(ShroomInputPacket), ShroomPacketTypeMinimumSize(SHROOM_PACKET_INPUT));
+  TEST_ASSERT_EQUAL(offsetof(ShroomSnapshotPacket, players),
+                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_SNAPSHOT));
+  TEST_ASSERT_EQUAL(sizeof(ShroomPingPacket), ShroomPacketTypeMinimumSize(SHROOM_PACKET_PING));
+  TEST_ASSERT_EQUAL(sizeof(ShroomPongPacket), ShroomPacketTypeMinimumSize(SHROOM_PACKET_PONG));
+  TEST_ASSERT_EQUAL(offsetof(ShroomSporeStatePacket, spores),
+                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_SPORE_STATE));
+  TEST_ASSERT_EQUAL(sizeof(ShroomAuthRequestPacket),
+                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_AUTH_REQUEST));
+  TEST_ASSERT_EQUAL(sizeof(ShroomAuthResponsePacket),
+                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_AUTH_RESPONSE));
+  TEST_ASSERT_EQUAL(sizeof(ShroomChatPacket), ShroomPacketTypeMinimumSize(SHROOM_PACKET_CHAT));
+  TEST_ASSERT_EQUAL(sizeof(ShroomPacketHeader),
+                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_LOBBY_LIST_QUERY));
+  TEST_ASSERT_EQUAL(offsetof(ShroomLobbyListPacket, lobbies),
+                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_LOBBY_LIST));
+  TEST_ASSERT_EQUAL(sizeof(ShroomLobbyJoinPacket),
+                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_LOBBY_JOIN));
+  TEST_ASSERT_EQUAL(sizeof(ShroomLobbyJoinedPacket),
+                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_LOBBY_JOINED));
+  TEST_ASSERT_EQUAL(sizeof(ShroomLobbyLeavePacket),
+                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_LOBBY_LEAVE));
+  TEST_ASSERT_EQUAL(sizeof(ShroomLobbyCreatePacket),
+                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_LOBBY_CREATE));
+  TEST_ASSERT_EQUAL(sizeof(ShroomLobbyCreatedPacket),
+                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_LOBBY_CREATED));
+  TEST_ASSERT_EQUAL(offsetof(ShroomPowerupStatePacket, powerups),
+                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_POWERUP_STATE));
+  TEST_ASSERT_EQUAL(offsetof(ShroomMushroomSpeciesCatalogPacket, species),
+                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_MUSHROOM_SPECIES_CATALOG));
+}
+
 void test_packet_header_initializes_channel_metadata(void) {
   ShroomPacketHeader header = {0};
 
@@ -366,6 +402,7 @@ int main(void) {
   RUN_TEST(test_protocol_constants);
   RUN_TEST(test_packet_channel_mapping);
   RUN_TEST(test_packet_reliability_mapping);
+  RUN_TEST(test_packet_minimum_size_mapping);
   RUN_TEST(test_packet_header_initializes_channel_metadata);
   RUN_TEST(test_packet_header_validates_expected_channel);
   RUN_TEST(test_hello_packet_initialization);
