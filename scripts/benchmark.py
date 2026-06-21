@@ -65,12 +65,11 @@ def main() -> int:
             str(args.ticks),
             "--benchmark-bots",
             str(players),
-            "--benchmark-output",
-            str(scenario_path),
         ]
         started = time.perf_counter()
-        subprocess.run(command, check=True)
+        result = subprocess.run(command, check=True, text=True, capture_output=True)
         elapsed_ms = (time.perf_counter() - started) * 1000.0
+        scenario_path.write_text(result.stdout, encoding="utf-8")
         row = read_single_row(scenario_path)
         row["harness_elapsed_ms"] = f"{elapsed_ms:.3f}"
         row["max_rss_kb"] = str(resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss)

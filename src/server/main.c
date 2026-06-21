@@ -60,7 +60,6 @@ static ShroomLifecycle g_lifecycle;
 typedef struct ServerConfig {
   char bind_host[64];
   char database_path[256];
-  char benchmark_output_path[256];
   enet_uint32 bind_address;
   uint16_t port;
   bool smoke_test;
@@ -135,7 +134,6 @@ static void PrintUsage(const char* program_name) {
   printf("  --benchmark       Run deterministic server simulation benchmark and exit\n");
   printf("  --benchmark-ticks N    Benchmark tick count, default 600\n");
   printf("  --benchmark-bots N     Benchmark bot/player count, default 8\n");
-  printf("  --benchmark-output PATH  CSV output path, default stdout\n");
   printf("  --help            Show this help text\n");
   printf("\n");
   printf("Environment overrides:\n");
@@ -246,14 +244,6 @@ static bool LoadServerConfig(ServerConfig* config, int argc, char** argv) {
         fprintf(stderr, "Invalid --benchmark-bots: %s\n", argv[i]);
         return false;
       }
-    } else if (strcmp(argv[i], "--benchmark-output") == 0) {
-      if ((i + 1) >= argc) {
-        fprintf(stderr, "Missing value for --benchmark-output\n");
-        return false;
-      }
-      ++i;
-      CopyConfigString(config->benchmark_output_path, sizeof(config->benchmark_output_path),
-                       argv[i]);
     } else {
       fprintf(stderr, "Unknown option: %s\n", argv[i]);
       PrintUsage(argv[0]);
@@ -346,7 +336,6 @@ static void SleepUntil(uint64_t target_time_nanos) {
 
 static int RunServerBenchmark(const ServerConfig* config) {
   ShroomWorldState world;
-  FILE* out = stdout;
   const uint64_t snapshot_interval_ticks =
       (uint64_t)(SHROOM_SERVER_TICK_RATE / (float)SHROOM_SNAPSHOT_RATE);
   const uint64_t spore_interval_ticks =
@@ -396,25 +385,13 @@ static int RunServerBenchmark(const ServerConfig* config) {
   }
   elapsed_nanos = GetTimeNanos() - started_nanos;
 
-  if (config->benchmark_output_path[0] != '\0') {
-    out = fopen(config->benchmark_output_path, "w");
-    if (out == NULL) {
-      fprintf(stderr, "Failed to open benchmark output: %s\n", config->benchmark_output_path);
-      return 1;
-    }
-  }
-
-  fprintf(out, "scenario,players,ticks,elapsed_ms,avg_tick_ms,worst_tick_ms,estimated_packets,"
-               "estimated_bytes,rtt_ms,cpu_time_ms,memory_kb\n");
-  fprintf(out, "server_bots,%u,%u,%.3f,%.3f,%.3f,%llu,%llu,0,%.3f,0\n", config->benchmark_bots,
-          config->benchmark_ticks, ShroomProfileNanosToMs(elapsed_nanos),
-          sim_sum_ms / (double)config->benchmark_ticks, sim_peak_ms,
-          (unsigned long long)estimated_packet_count, (unsigned long long)estimated_snapshot_bytes,
-          ShroomProfileNanosToMs(elapsed_nanos));
-
-  if (out != stdout) {
-    fclose(out);
-  }
+  printf("scenario,players,ticks,elapsed_ms,avg_tick_ms,worst_tick_ms,estimated_packets,"
+         "estimated_bytes,rtt_ms,cpu_time_ms,memory_kb\n");
+  printf("server_bots,%u,%u,%.3f,%.3f,%.3f,%llu,%llu,0,%.3f,0\n", config->benchmark_bots,
+         config->benchmark_ticks, ShroomProfileNanosToMs(elapsed_nanos),
+         sim_sum_ms / (double)config->benchmark_ticks, sim_peak_ms,
+         (unsigned long long)estimated_packet_count, (unsigned long long)estimated_snapshot_bytes,
+         ShroomProfileNanosToMs(elapsed_nanos));
   return 0;
 }
 
