@@ -291,6 +291,7 @@ IMGUI_TEST_ENGINE_OBJECTS := $(addprefix $(TEST_BUILD_DIR)/imgui/engine/,$(addsu
 # =============================================================================
 .PHONY: all client-linux client-windows client-macos server-linux server-windows server-macos servers-all
 .PHONY: linux windows macos server run run-server run-windows help
+.PHONY: benchmark
 
 all: client-linux
 
@@ -310,6 +311,7 @@ help:
 	@echo "  make linux/windows/macos/server  Compatibility aliases"
 	@echo "  make run            Build and run the Linux client"
 	@echo "  make run-server     Build and run the Linux server"
+	@echo "  make benchmark      Run repeatable local server benchmark scenarios"
 	@echo "  make run-windows    Build and run the Windows client (via WSL)"
 	@echo ""
 	@echo "Quality targets:"
@@ -385,6 +387,9 @@ run: $(CLIENT_LINUX_BIN)
 
 run-server: $(SERVER_LINUX_BIN)
 	./$(SERVER_LINUX_BIN)
+
+benchmark: $(SERVER_LINUX_BIN)
+	python3 scripts/benchmark.py --server ./$(SERVER_LINUX_BIN)
 
 run-windows: $(CLIENT_WINDOWS_BIN)
 	./$(CLIENT_WINDOWS_BIN)
