@@ -70,6 +70,7 @@ static void ResultsDraw(ShroomScreenManager* manager) {
 
   ShroomImGui_SetNextItemWidth(button_width);
   if (ShroomImGui_Button("Play Again", button_width, button_height)) {
+    GamePlayUiClickSound(game);
     game->show_results = false;
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
   }
@@ -77,6 +78,7 @@ static void ResultsDraw(ShroomScreenManager* manager) {
   ShroomImGui_SameLine();
   ShroomImGui_SetNextItemWidth(button_width);
   if (ShroomImGui_Button("Main Menu", button_width, button_height)) {
+    GamePlayUiClickSound(game);
     game->show_results = false;
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_MAIN_MENU);
   }

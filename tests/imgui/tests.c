@@ -177,6 +177,14 @@ static void Test_SettingsExposesSpecControlsAndAppliesBoundaryValues(ImGuiTestCo
   IM_CHECK_EQ(g_imgui_test_app.game.settings.master_volume_percent, 0);
   IM_CHECK_EQ(g_imgui_test_app.game.settings.music_volume_percent, 100);
   IM_CHECK_EQ(g_imgui_test_app.game.settings.effects_volume_percent, 0);
+
+  ShroomTeCtx_ItemInputValueInt(ctx, "Music Volume", 0);
+  ShroomTeCtx_ItemInputValueInt(ctx, "Effects Volume", 100);
+  ShroomTeCtx_ItemClick(ctx, "Save");
+  ShroomTeCtx_Yield(ctx, 2);
+
+  IM_CHECK_EQ(g_imgui_test_app.game.settings.music_volume_percent, 0);
+  IM_CHECK_EQ(g_imgui_test_app.game.settings.effects_volume_percent, 100);
 }
 
 static void Test_SettingsPersistence(ImGuiTestContext* ctx) {
