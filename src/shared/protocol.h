@@ -248,6 +248,8 @@ typedef struct ShroomLobbyJoinedPacket {
   char lobby_name[SHROOM_LOBBY_MAX_NAME_LENGTH];
   uint16_t server_tick_rate;
   uint16_t snapshot_rate;
+  uint16_t max_players;
+  uint16_t reserved16;
   float world_width;
   float world_height;
 } ShroomLobbyJoinedPacket;
