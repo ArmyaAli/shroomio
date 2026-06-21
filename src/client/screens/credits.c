@@ -1,4 +1,5 @@
 #include "game.h"
+#include "layout.h"
 #include "screen.h"
 #include "screen_background.h"
 
@@ -12,27 +13,20 @@ static bool CreditsInit(ShroomScreenManager* manager) {
 
 static void CreditsDraw(ShroomScreenManager* manager) {
   Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
-  const int screen_width = GetScreenWidth();
-  const int screen_height = GetScreenHeight();
 
   ShroomScreenDrawFungalBackground((game == NULL) || game->settings.menu_animations_enabled);
 
-  ShroomImGui_SetNextWindowPos((screen_width - 460) * 0.5f, (screen_height - 300) * 0.5f,
-                               SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowSize(460.0f, 300.0f, SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowBgAlpha(0.88f);
-  if (!ShroomImGui_Begin("Credits", NULL,
-                         SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
-                             SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
-                             SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
+  if (!ShroomLayoutBeginCenteredPanel("Credits", 460.0f, 300.0f, 0.88f,
+                                      SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
+                                          SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
+                                          SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
     ShroomImGui_End();
     return;
   }
 
-  ShroomImGui_Text("shroomio");
+  ShroomLayoutHeading("shroomio");
   ShroomImGui_TextWrapped("A multiplayer arena prototype focused on readable movement, fast "
                           "iteration, and eventually a full Dear ImGui-driven client UI.");
-  ShroomImGui_Separator();
   ShroomImGui_Text("Built with raylib, Dear ImGui, ENet, and SQLite.");
   ShroomImGui_TextWrapped("Thanks to the upstream open-source projects that make this kind of "
                           "iteration speed possible.");
