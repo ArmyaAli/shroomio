@@ -1,5 +1,7 @@
 #include "client_settings.h"
 
+#include "raylib.h"
+
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
@@ -28,6 +30,10 @@ void ClientSettingsSetDefaults(ClientSettings* settings) {
       .hud_density = CLIENT_HUD_FULL,
       .particle_quality = CLIENT_PARTICLES_MEDIUM,
       .mushroom_species = CLIENT_MUSHROOM_AMANITA,
+      .key_chat_open = KEY_T,
+      .key_hud_toggle = KEY_F2,
+      .key_pause_menu = KEY_ESCAPE,
+      .key_push_to_talk = KEY_V,
   };
 }
 
@@ -68,6 +74,24 @@ void ClientSettingsValidate(ClientSettings* settings) {
   if ((settings->mushroom_species < CLIENT_MUSHROOM_AMANITA) ||
       (settings->mushroom_species >= CLIENT_MUSHROOM_COUNT)) {
     settings->mushroom_species = CLIENT_MUSHROOM_AMANITA;
+  }
+  /* Rebindable keys must be a valid raylib key (> KEY_NULL) and not one of
+   * the reserved modal keys (Enter, Tab) — those are bound by UI contexts. */
+  if (settings->key_chat_open <= KEY_NULL || settings->key_chat_open == KEY_ENTER ||
+      settings->key_chat_open == KEY_TAB) {
+    settings->key_chat_open = KEY_T;
+  }
+  if (settings->key_hud_toggle <= KEY_NULL || settings->key_hud_toggle == KEY_ENTER ||
+      settings->key_hud_toggle == KEY_TAB) {
+    settings->key_hud_toggle = KEY_F2;
+  }
+  if (settings->key_pause_menu <= KEY_NULL || settings->key_pause_menu == KEY_ENTER ||
+      settings->key_pause_menu == KEY_TAB) {
+    settings->key_pause_menu = KEY_ESCAPE;
+  }
+  if (settings->key_push_to_talk <= KEY_NULL || settings->key_push_to_talk == KEY_ENTER ||
+      settings->key_push_to_talk == KEY_TAB) {
+    settings->key_push_to_talk = KEY_V;
   }
 }
 
@@ -124,6 +148,14 @@ bool ClientSettingsLoad(ClientSettings* settings) {
       settings->mushroom_species = (ClientMushroomSpecies)value;
     } else if (strcmp(key, "camera_zoom_x100") == 0) {
       settings->camera_zoom = (float)value / 100.0f;
+    } else if (strcmp(key, "key_chat_open") == 0) {
+      settings->key_chat_open = value;
+    } else if (strcmp(key, "key_hud_toggle") == 0) {
+      settings->key_hud_toggle = value;
+    } else if (strcmp(key, "key_pause_menu") == 0) {
+      settings->key_pause_menu = value;
+    } else if (strcmp(key, "key_push_to_talk") == 0) {
+      settings->key_push_to_talk = value;
     }
   }
 
@@ -166,6 +198,10 @@ bool ClientSettingsSave(const ClientSettings* settings) {
   fprintf(file, "particle_quality=%d\n", (int)settings->particle_quality);
   fprintf(file, "mushroom_species=%d\n", (int)settings->mushroom_species);
   fprintf(file, "camera_zoom_x100=%d\n", (int)(settings->camera_zoom * 100.0f));
+  fprintf(file, "key_chat_open=%d\n", settings->key_chat_open);
+  fprintf(file, "key_hud_toggle=%d\n", settings->key_hud_toggle);
+  fprintf(file, "key_pause_menu=%d\n", settings->key_pause_menu);
+  fprintf(file, "key_push_to_talk=%d\n", settings->key_push_to_talk);
 
   fclose(file);
   return true;
@@ -203,4 +239,119 @@ const char* ClientSettingsHudDensityLabel(ClientHudDensity density) {
   default:
     return "Full";
   }
+}
+
+const char* ClientSettingsKeyLabel(int key) {
+  /* Cover the small set of keys we actually expect; fall back to a
+   * readable numeric label for anything else the user picks. */
+  switch (key) {
+  case KEY_NULL:
+    return "Unbound";
+  case KEY_ESCAPE:
+    return "Esc";
+  case KEY_ENTER:
+    return "Enter";
+  case KEY_TAB:
+    return "Tab";
+  case KEY_SPACE:
+    return "Space";
+  case KEY_BACKSPACE:
+    return "Backspace";
+  case KEY_INSERT:
+    return "Insert";
+  case KEY_DELETE:
+    return "Delete";
+  case KEY_HOME:
+    return "Home";
+  case KEY_END:
+    return "End";
+  case KEY_PAGE_UP:
+    return "Page Up";
+  case KEY_PAGE_DOWN:
+    return "Page Down";
+  case KEY_LEFT:
+    return "Left";
+  case KEY_RIGHT:
+    return "Right";
+  case KEY_UP:
+    return "Up";
+  case KEY_DOWN:
+    return "Down";
+  case KEY_F1:
+    return "F1";
+  case KEY_F2:
+    return "F2";
+  case KEY_F3:
+    return "F3";
+  case KEY_F4:
+    return "F4";
+  case KEY_F5:
+    return "F5";
+  case KEY_F6:
+    return "F6";
+  case KEY_F7:
+    return "F7";
+  case KEY_F8:
+    return "F8";
+  case KEY_F9:
+    return "F9";
+  case KEY_F10:
+    return "F10";
+  case KEY_F11:
+    return "F11";
+  case KEY_F12:
+    return "F12";
+  case KEY_LEFT_SHIFT:
+    return "Left Shift";
+  case KEY_LEFT_CONTROL:
+    return "Left Ctrl";
+  case KEY_LEFT_ALT:
+    return "Left Alt";
+  case KEY_LEFT_SUPER:
+    return "Left Super";
+  case KEY_RIGHT_SHIFT:
+    return "Right Shift";
+  case KEY_RIGHT_CONTROL:
+    return "Right Ctrl";
+  case KEY_RIGHT_ALT:
+    return "Right Alt";
+  case KEY_RIGHT_SUPER:
+    return "Right Super";
+  default:
+    break;
+  }
+
+  static char fallback_buf[4][16];
+  static int fallback_idx = 0;
+  char* buf = fallback_buf[fallback_idx];
+  fallback_idx = (fallback_idx + 1) % 4;
+  if (key >= 32 && key <= 126) {
+    snprintf(buf, 16, "%c", (char)key);
+  } else {
+    snprintf(buf, 16, "Key %d", key);
+  }
+  return buf;
+}
+
+const char* ClientSettingsKeySlotLabel(int slot_index) {
+  switch (slot_index) {
+  case 0:
+    return "Chat Open";
+  case 1:
+    return "HUD Toggle";
+  case 2:
+    return "Pause / Menu";
+  case 3:
+    return "Push To Talk (reserved)";
+  default:
+    return "Unknown";
+  }
+}
+
+bool ClientSettingsKeyIsBound(const ClientSettings* settings, int key) {
+  if (settings == NULL || key <= KEY_NULL) {
+    return false;
+  }
+  return settings->key_chat_open == key || settings->key_hud_toggle == key ||
+         settings->key_pause_menu == key || settings->key_push_to_talk == key;
 }

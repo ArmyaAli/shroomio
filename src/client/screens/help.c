@@ -40,8 +40,20 @@ static void HelpDraw(ShroomScreenManager* manager) {
   ShroomImGui_TextWrapped("The center zone is the riskiest but has the biggest swing potential.");
   ShroomImGui_Separator();
   ShroomImGui_Text("Overlay Shortcuts");
-  ShroomImGui_TextWrapped(
-      "Tab opens the leaderboard, Esc opens the match menu, and F3 toggles diagnostics.");
+  {
+    char shortcut_buf[192];
+    /* Reflect the current keybindings so the help text matches the player's
+     * saved config rather than hardcoded defaults. */
+    snprintf(
+        shortcut_buf, sizeof(shortcut_buf),
+        "Tab opens the leaderboard, %s opens the match menu, %s toggles diagnostics, %s cycles "
+        "HUD density. %s opens chat (or Enter). %s is reserved for push-to-talk.",
+        ClientSettingsKeyLabel(game->settings.key_pause_menu), ClientSettingsKeyLabel(KEY_F3),
+        ClientSettingsKeyLabel(game->settings.key_hud_toggle),
+        ClientSettingsKeyLabel(game->settings.key_chat_open),
+        ClientSettingsKeyLabel(game->settings.key_push_to_talk));
+    ShroomImGui_TextWrapped(shortcut_buf);
+  }
   ShroomImGui_Spacing();
 
   if (ShroomImGui_Button("Back", 140.0f, 36.0f)) {

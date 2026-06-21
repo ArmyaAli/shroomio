@@ -51,6 +51,13 @@ typedef struct ClientSettings {
   ClientHudDensity hud_density;
   ClientParticleQuality particle_quality;
   ClientMushroomSpecies mushroom_species;
+  /* Rebindable hotkeys (raylib KeyboardKey ints). Push-to-talk is a
+   * reserved slot — no behavior yet, but the binding persists and shows
+   * in the keybinding UI so future voice work can read it directly. */
+  int key_chat_open;
+  int key_hud_toggle;
+  int key_pause_menu;
+  int key_push_to_talk;
 } ClientSettings;
 
 void ClientSettingsSetDefaults(ClientSettings* settings);
@@ -60,5 +67,8 @@ bool ClientSettingsSave(const ClientSettings* settings);
 const char* ClientSettingsPreferredRegionLabel(int region_index);
 const char* ClientSettingsPaletteLabel(ClientPalettePreset preset);
 const char* ClientSettingsHudDensityLabel(ClientHudDensity density);
+const char* ClientSettingsKeyLabel(int key);
+const char* ClientSettingsKeySlotLabel(int slot_index);
+bool ClientSettingsKeyIsBound(const ClientSettings* settings, int key);
 
 #endif
