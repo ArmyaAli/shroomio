@@ -1,5 +1,6 @@
 #include <signal.h>
 #include <sqlite3.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -724,8 +725,13 @@ static void SendSnapshot(ENetPeer* peer, const ServerSession* session,
 
   packet.player_count = player_count;
 
-  enet_peer_send(peer, SHROOM_ENET_CHANNEL_SNAPSHOT,
-                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_SNAPSHOT));
+  {
+    const size_t trimmed_size = offsetof(ShroomSnapshotPacket, players) +
+                                (size_t)player_count * sizeof(ShroomSnapshotPlayerState);
+    packet.header.size = (uint16_t)trimmed_size;
+    enet_peer_send(peer, SHROOM_ENET_CHANNEL_SNAPSHOT,
+                   CreateProtocolPacket(&packet, trimmed_size, SHROOM_PACKET_SNAPSHOT));
+  }
 }
 
 static void SendSporeState(ENetPeer* peer, const ShroomWorldState* world) {
@@ -1451,10 +1457,32 @@ int main(int argc, char** argv) {
       for (li = 0; li < SHROOM_MAX_LOBBIES; ++li) {
         ShroomLobby* lobby = &lobbies[li];
         size_t pi;
+        uint16_t real_count;
+        uint16_t spec_count;
 
         if (!lobby->active) {
           continue;
         }
+
+        real_count = CountLobbyRealPlayers(host, lobby->lobby_id);
+        spec_count = CountLobbySpectators(host, lobby->lobby_id);
+
+        /* Keep empty lobbies discoverable, but do not spend tick budget simulating
+         * offscreen bots until someone is actually watching or playing there. */
+        if ((real_count + spec_count) == 0u) {
+          if (lobby->is_dynamic) {
+            if (lobby->empty_since_ms == 0) {
+              lobby->empty_since_ms = now_ms;
+            } else if ((now_ms - lobby->empty_since_ms) >=
+                       (SHROOM_LOBBY_DYNAMIC_EMPTY_TIMEOUT_S * 1000ull)) {
+              LOG_INFO("lobby expired: id=%u name=%.31s", lobby->lobby_id, lobby->name);
+              lobby->active = false;
+            }
+          }
+          continue;
+        }
+
+        lobby->empty_since_ms = 0;
 
         AdjustLobbyBots(lobby, host, &next_player_id, now_ms);
 
@@ -1498,24 +1526,6 @@ int main(int argc, char** argv) {
             SendPowerupState(&host->peers[pi], &lobby->world);
           }
           enet_host_flush(host);
-        }
-
-        /* Clean up empty dynamic lobbies. */
-        if (lobby->is_dynamic) {
-          uint16_t real_count = CountLobbyRealPlayers(host, lobby->lobby_id);
-          uint16_t spec_count = CountLobbySpectators(host, lobby->lobby_id);
-
-          if ((real_count + spec_count) == 0) {
-            if (lobby->empty_since_ms == 0) {
-              lobby->empty_since_ms = now_ms;
-            } else if ((now_ms - lobby->empty_since_ms) >=
-                       (SHROOM_LOBBY_DYNAMIC_EMPTY_TIMEOUT_S * 1000ull)) {
-              LOG_INFO("lobby expired: id=%u name=%.31s", lobby->lobby_id, lobby->name);
-              lobby->active = false;
-            }
-          } else {
-            lobby->empty_since_ms = 0;
-          }
         }
       }
     }

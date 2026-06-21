@@ -87,6 +87,7 @@ void ClientNetSendLobbyCreate(ClientNetState* net, const char* name, uint16_t ma
 #ifdef TEST_MODE
 bool ClientNetTestCompletePendingPing(ClientNetState* net, uint32_t nonce, uint32_t now_ms);
 void ClientNetTestClearStalePendingPing(ClientNetState* net, uint32_t now_ms);
+void ClientNetTestHandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet);
 #endif
 
 #endif

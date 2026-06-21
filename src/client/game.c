@@ -2585,10 +2585,10 @@ static void DrawChatDock(Game* game) {
     ShroomImGui_Text("Enter sends   Esc closes");
   } else {
     if (game->net.chat_unread_count > 0u) {
-      ShroomImGui_TextColored(ToImGuiColor(ORANGE),
-                              TextFormat("%u unread  T to type", game->net.chat_unread_count));
+      ShroomImGui_TextColored(ToImGuiColor(ORANGE), TextFormat("%u unread  Enter/T to type",
+                                                               game->net.chat_unread_count));
     } else {
-      ShroomImGui_Text("T to type");
+      ShroomImGui_Text("Enter/T to type");
     }
   }
 

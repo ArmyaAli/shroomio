@@ -105,8 +105,9 @@ static void GameplayHandleInput(ShroomScreenManager* manager) {
     }
   }
 
-  if (IsKeyPressed(KEY_T) && is_online && game->net.welcome_received && !game->menu_overlay_open &&
-      !game->leaderboard_overlay_open && !game->leave_confirmation_open) {
+  if ((IsKeyPressed(KEY_T) || IsKeyPressed(KEY_ENTER)) && is_online && game->net.welcome_received &&
+      !game->menu_overlay_open && !game->leaderboard_overlay_open &&
+      !game->leave_confirmation_open) {
     game->chat_inactive_timer = 0.0f;
     if (game->chat_minimized) {
       game->chat_minimized = false;
