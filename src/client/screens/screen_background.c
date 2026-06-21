@@ -39,10 +39,12 @@ static void DrawFungalMushroom(float x, float y, float scale, float sway, int ty
 }
 
 void ShroomScreenDrawFungalBackground(bool animate) {
+  static double previous_time = 0.0;
   static float animation_time = 0.0f;
   const int screen_width = GetScreenWidth();
   const int screen_height = GetScreenHeight();
-  const float frame_time = fminf(fmaxf(GetFrameTime(), 0.0f), 0.05f);
+  const double current_time = GetTime();
+  float frame_time = 0.0f;
   const float time = animate ? animation_time : 0.0f;
   const float pulse = animate ? (0.5f + 0.5f * sinf(time * 0.5f)) : 0.0f;
   const Color gradient_top =
@@ -51,8 +53,12 @@ void ShroomScreenDrawFungalBackground(bool animate) {
       (Color){50, (uint8_t)(30 + pulse * 18.0f), (uint8_t)(70 + pulse * 20.0f), 255};
 
   if (animate) {
+    if (previous_time > 0.0) {
+      frame_time = fminf(fmaxf((float)(current_time - previous_time), 0.0f), 0.05f);
+    }
     animation_time += frame_time;
   }
+  previous_time = current_time;
 
   for (int y = 0; y < screen_height; y++) {
     const float t = screen_height > 0 ? (float)y / (float)screen_height : 0.0f;
