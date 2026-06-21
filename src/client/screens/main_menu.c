@@ -8,12 +8,14 @@
 
 static bool MainMenuInit(ShroomScreenManager* manager) {
   (void)manager;
+  ShroomScreenResetFungalBackground();
   return true;
 }
 
 static void MainMenuUpdate(ShroomScreenManager* manager, float delta_time) {
-  (void)manager;
-  (void)delta_time;
+  Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
+  ShroomScreenUpdateFungalBackground(delta_time,
+                                     (game == NULL) || game->settings.menu_animations_enabled);
 }
 
 static void MainMenuDraw(ShroomScreenManager* manager) {
