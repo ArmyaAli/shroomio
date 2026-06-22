@@ -8,6 +8,8 @@
 #define SHROOM_MENU_BACKGROUND_SPORE_COUNT 50
 #define SHROOM_MENU_BACKGROUND_MUSHROOM_COUNT 8
 #define SHROOM_MENU_BACKGROUND_PARTICLE_COUNT 100
+#define SHROOM_MENU_BACKGROUND_MUSHROOM_DRIFT_RATIO 0.08f
+#define SHROOM_MENU_BACKGROUND_MUSHROOM_BOB_RATIO 0.03f
 
 typedef struct MenuBackgroundSpore {
   float x_ratio;
@@ -190,11 +192,13 @@ static FungalMushroomPose GetMushroomPose(int mushroom_index, bool animate, int 
                                        : mushroom_index);
   const MenuBackgroundMushroom* mushroom = &g_mushrooms[clamped_index];
   const float phase = (float)clamped_index * 0.73f;
-  const float drift =
-      animate ? sinf(g_global_time * (0.28f + (float)clamped_index * 0.035f) + phase) * 0.045f
-              : 0.0f;
+  const float drift = animate
+                          ? sinf(g_global_time * (0.45f + (float)clamped_index * 0.05f) + phase) *
+                                SHROOM_MENU_BACKGROUND_MUSHROOM_DRIFT_RATIO
+                          : 0.0f;
   const float bob =
-      animate ? sinf(g_global_time * (0.42f + (float)clamped_index * 0.04f) + phase * 0.6f) * 0.018f
+      animate ? sinf(g_global_time * (0.75f + (float)clamped_index * 0.06f) + phase * 0.6f) *
+                    SHROOM_MENU_BACKGROUND_MUSHROOM_BOB_RATIO
               : 0.0f;
   const float sway = animate ? mushroom->sway_phase : 0.0f;
 

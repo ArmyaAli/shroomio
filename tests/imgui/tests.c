@@ -8,6 +8,11 @@
 #include <stdio.h>
 #include <string.h>
 
+static float MaxAbs3(float a, float b, float c) {
+  const float max_ab = fmaxf(fabsf(a), fabsf(b));
+  return fmaxf(max_ab, fabsf(c));
+}
+
 /* Inject N fake lobby entries into the game's net state as the server would. */
 static void InjectFakeLobbies(int count) {
   int i;
@@ -718,14 +723,14 @@ static void Test_MainMenuBackgroundAnimationAdvances(ImGuiTestContext* ctx) {
   const ShroomFungalBackgroundDebugState before =
       ShroomScreenGetFungalBackgroundDebugState(0, true, 1280, 720);
 
-  ShroomTeCtx_Yield(ctx, 20);
+  ShroomTeCtx_Yield(ctx, 45);
 
   const ShroomFungalBackgroundDebugState after =
       ShroomScreenGetFungalBackgroundDebugState(0, true, 1280, 720);
   IM_CHECK(ShroomTeImGui_WindowIsActive("Main Menu"));
   IM_CHECK(after.global_time > before.global_time);
-  IM_CHECK(after.mushroom_x != before.mushroom_x || after.mushroom_y != before.mushroom_y ||
-           after.mushroom_sway != before.mushroom_sway);
+  IM_CHECK(MaxAbs3(after.mushroom_x - before.mushroom_x, after.mushroom_y - before.mushroom_y,
+                   after.mushroom_sway - before.mushroom_sway) > 20.0f);
 
   g_imgui_test_app.game.settings.menu_animations_enabled = false;
   ShroomTeCtx_Yield(ctx, 2);

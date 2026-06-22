@@ -4,6 +4,13 @@
 
 #include "raylib.h"
 
+#include <math.h>
+
+static float MaxAbs3(float a, float b, float c) {
+  const float max_ab = fmaxf(fabsf(a), fabsf(b));
+  return fmaxf(max_ab, fabsf(c));
+}
+
 int GetScreenWidth(void) { return 1280; }
 int GetScreenHeight(void) { return 720; }
 double GetTime(void) { return 0.0; }
@@ -48,21 +55,26 @@ void test_fungal_background_animates_mushroom_pose_when_enabled(void) {
   const ShroomFungalBackgroundDebugState before =
       ShroomScreenGetFungalBackgroundDebugState(0, true, 1280, 720);
 
-  ShroomScreenUpdateFungalBackground(0.05f, true);
+  for (int frame = 0; frame < 10; ++frame) {
+    ShroomScreenUpdateFungalBackground(0.05f, true);
+  }
 
   const ShroomFungalBackgroundDebugState after =
       ShroomScreenGetFungalBackgroundDebugState(0, true, 1280, 720);
 
-  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 0.05f, after.global_time);
-  TEST_ASSERT_TRUE(after.mushroom_x != before.mushroom_x || after.mushroom_y != before.mushroom_y ||
-                   after.mushroom_sway != before.mushroom_sway);
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 0.5f, after.global_time);
+  TEST_ASSERT_GREATER_THAN_FLOAT(20.0f, MaxAbs3(after.mushroom_x - before.mushroom_x,
+                                                after.mushroom_y - before.mushroom_y,
+                                                after.mushroom_sway - before.mushroom_sway));
 }
 
 void test_fungal_background_stays_still_when_animation_disabled(void) {
   const ShroomFungalBackgroundDebugState before =
       ShroomScreenGetFungalBackgroundDebugState(0, false, 1280, 720);
 
-  ShroomScreenUpdateFungalBackground(0.05f, false);
+  for (int frame = 0; frame < 10; ++frame) {
+    ShroomScreenUpdateFungalBackground(0.05f, false);
+  }
 
   const ShroomFungalBackgroundDebugState after =
       ShroomScreenGetFungalBackgroundDebugState(0, false, 1280, 720);
