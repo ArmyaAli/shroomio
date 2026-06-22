@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     docker.io \
     gdb \
+    gcovr \
     gh \
     latexmk \
     libasound2-dev \
