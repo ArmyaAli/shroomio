@@ -7,6 +7,7 @@
 #include <time.h>
 
 #include "audio.h"
+#include "cursor.h"
 #include "imgui_wrapper.h"
 #include "raymath.h"
 #include "shared/config.h"
@@ -31,6 +32,7 @@ static Color GetPowerupColor(ShroomPowerupType type);
 static Color GetZoneColor(ShroomZone zone);
 static const char* GetZoneSummary(ShroomZone zone);
 static const char* GetZoneLabel(ShroomZone zone);
+static bool IsDeathCutsceneOpen(const Game* game);
 
 static bool IsOnlineMode(GameSessionMode mode) {
   return mode == SHROOM_SESSION_MODE_QUICK_PLAY || mode == SHROOM_SESSION_MODE_LOBBY_PLAY;
@@ -896,6 +898,37 @@ static PlayerThreatState GetThreatState(const ShroomWorldState* world,
   }
 
   return PLAYER_THREAT_NONE;
+}
+
+static ShroomCursorMode GetGameplayCursorMode(const Game* game) {
+  Vector2 mouse_world;
+
+  if ((game == NULL) || game->menu_overlay_open || game->leave_confirmation_open ||
+      game->leaderboard_overlay_open || game->chat_open) {
+    return SHROOM_CURSOR_DEFAULT;
+  }
+  if ((game->local_player == NULL) || !game->local_player->alive || IsDeathCutsceneOpen(game)) {
+    return SHROOM_CURSOR_DISABLED;
+  }
+
+  mouse_world = GetScreenToWorld2D(GetMousePosition(), game->camera);
+  for (size_t index = 0; index < game->world.player_count; ++index) {
+    const ShroomPlayerState* player = &game->world.players[index];
+    const ShroomVec2 cursor_world = {mouse_world.x, mouse_world.y};
+    const float hover_radius = player->radius + 10.0f;
+
+    if (!player->alive || (player == game->local_player)) {
+      continue;
+    }
+    if (ShroomDistanceSqr(cursor_world, player->position) > (hover_radius * hover_radius)) {
+      continue;
+    }
+    if (GetThreatState(&game->world, game->local_player, player) == PLAYER_THREAT_PREY) {
+      return SHROOM_CURSOR_CONSUME;
+    }
+  }
+
+  return SHROOM_CURSOR_GAMEPLAY;
 }
 
 static Color GetThreatOutlineColor(PlayerThreatState state) {
@@ -3248,6 +3281,7 @@ void GameDraw(Game* game) {
   const uint64_t draw_start_nanos = profile_enabled ? ClientProfileNowNanos() : 0ull;
 
   BuildLeaderboard(game, leaderboard, &leaderboard_count);
+  ShroomCursorSetMode(GetGameplayCursorMode(game));
   local_rank = GetLocalPlayerRank(game, leaderboard, leaderboard_count);
   shown_count = leaderboard_count < 8 ? leaderboard_count : 8;
 

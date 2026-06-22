@@ -1,4 +1,5 @@
 #include "game.h"
+#include "cursor.h"
 #include "imgui_wrapper.h"
 #include "screen.h"
 #include "shared/lifecycle.h"
@@ -47,6 +48,7 @@ int main(void) {
   InitAudioDevice();
   SetExitKey(KEY_NULL);
   SetTargetFPS(60);
+  ShroomCursorInit();
 
   ShroomImGui_Init();
   ClientSettingsLoad(&g_game.settings);
@@ -82,10 +84,12 @@ int main(void) {
     ShroomImGui_ApplyTheme(g_game.settings.palette_preset == CLIENT_PALETTE_HIGH_CONTRAST);
     ShroomImGui_SetUiScale((float)g_game.settings.ui_scale_percent / 100.0f);
     ShroomImGui_NewFrame();
+    ShroomCursorBeginFrame();
 
     BeginDrawing();
     ShroomScreenManagerDraw(&g_screen_manager);
     ShroomImGui_Render();
+    ShroomCursorDraw();
     EndDrawing();
   }
 
@@ -95,6 +99,7 @@ int main(void) {
   if (IsAudioDeviceReady()) {
     CloseAudioDevice();
   }
+  ShroomCursorShutdown();
   CloseWindow();
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_SHUTDOWN);
   return 0;
