@@ -47,13 +47,13 @@ The shroomio server is a headless C binary that runs the game simulation authori
 
 ### Release Assets
 
-GitHub Releases include downloadable client bundles and dedicated server bundles. Operators who do not want to build from source should download the matching dedicated server asset for their host:
+GitHub Releases include one downloadable bundle per platform with both client and server binaries. Operators who do not want to build from source should download the matching platform asset for their host:
 
-| Host | Dedicated server asset |
+| Host | Release asset |
 |---|---|
-| Linux x64 | `shroomio_server-<version>-linux-x64.tar.gz` |
-| Windows x64 | `shroomio_server-<version>-windows-x64.zip` |
-| macOS x64 | `shroomio_server-<version>-macos-x64.tar.gz` |
+| Linux x64 | `shroomio-<version>-linux-x64.tar.gz` |
+| Windows x64 | `shroomio-<version>-windows-x64.zip` |
+| macOS x64 | `shroomio-<version>-macos-x64.tar.gz` |
 
 Each release also includes `SHA256SUMS-v<version>.txt` for verifying downloaded assets.
 Release archives preserve a platform-first layout, such as `linux/client/shroomio` and

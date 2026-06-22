@@ -687,6 +687,9 @@ test-coverage:
 			test_screen) \
 				$(LINUX_CC) $(TEST_CFLAGS) -fprofile-arcs -ftest-coverage \
 					$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/screen.c -o $$test_bin $(TEST_LIBS) -lgcov ;; \
+			test_screen_background) \
+				$(LINUX_CC) $(TEST_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) -fprofile-arcs -ftest-coverage \
+					$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/screens/screen_background.c -o $$test_bin $(TEST_LIBS) -lgcov ;; \
 			test_connection) \
 				$(LINUX_CC) $(TEST_CFLAGS) -fprofile-arcs -ftest-coverage \
 					$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/connection.c -o $$test_bin $(TEST_LIBS) -lgcov ;; \
@@ -729,6 +732,10 @@ $(TEST_BUILD_DIR)/test_lifecycle: $(UNIT_TESTS_DIR)/test_lifecycle.c $(UNITY_SRC
 $(TEST_BUILD_DIR)/test_screen: $(UNIT_TESTS_DIR)/test_screen.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/screen.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_screen_background: $(UNIT_TESTS_DIR)/test_screen_background.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/screens/screen_background.c | $(UNITY_DIR) $(VCPKG_LINUX_STAMP)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) $^ -o $@ $(TEST_LIBS)
 
 $(TEST_BUILD_DIR)/test_connection: $(UNIT_TESTS_DIR)/test_connection.c $(UNITY_SRC) $(SHARED_SRC_DIR)/connection.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)

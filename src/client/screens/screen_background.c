@@ -38,6 +38,13 @@ typedef struct MenuBackgroundParticle {
   Color color;
 } MenuBackgroundParticle;
 
+typedef struct FungalMushroomPose {
+  float global_time;
+  float mushroom_x;
+  float mushroom_y;
+  float mushroom_sway;
+} FungalMushroomPose;
+
 static MenuBackgroundSpore g_spores[SHROOM_MENU_BACKGROUND_SPORE_COUNT];
 static MenuBackgroundMushroom g_mushrooms[SHROOM_MENU_BACKGROUND_MUSHROOM_COUNT];
 static MenuBackgroundParticle g_particles[SHROOM_MENU_BACKGROUND_PARTICLE_COUNT];
@@ -174,6 +181,50 @@ static void DrawFungalMushroom(float x, float y, float scale, float sway, int ty
               5.0f * scale, (Color){255, 255, 255, 100});
 }
 
+static FungalMushroomPose GetMushroomPose(int mushroom_index, bool animate, int screen_width,
+                                          int screen_height) {
+  const int clamped_index = mushroom_index < 0
+                                ? 0
+                                : (mushroom_index >= SHROOM_MENU_BACKGROUND_MUSHROOM_COUNT
+                                       ? SHROOM_MENU_BACKGROUND_MUSHROOM_COUNT - 1
+                                       : mushroom_index);
+  const MenuBackgroundMushroom* mushroom = &g_mushrooms[clamped_index];
+  const float phase = (float)clamped_index * 0.73f;
+  const float drift =
+      animate ? sinf(g_global_time * (0.28f + (float)clamped_index * 0.035f) + phase) * 0.045f
+              : 0.0f;
+  const float bob =
+      animate ? sinf(g_global_time * (0.42f + (float)clamped_index * 0.04f) + phase * 0.6f) * 0.018f
+              : 0.0f;
+  const float sway = animate ? mushroom->sway_phase : 0.0f;
+
+  return (FungalMushroomPose){
+      .global_time = g_global_time,
+      .mushroom_x = WrappedUnit(mushroom->x_ratio + drift) * (float)screen_width,
+      .mushroom_y = (mushroom->y_ratio + bob) * (float)screen_height,
+      .mushroom_sway = sway,
+  };
+}
+
+#ifdef TEST_MODE
+ShroomFungalBackgroundDebugState ShroomScreenGetFungalBackgroundDebugState(int mushroom_index,
+                                                                           bool animate,
+                                                                           int screen_width,
+                                                                           int screen_height) {
+  if (!g_background_initialized) {
+    ShroomScreenResetFungalBackground();
+  }
+  const FungalMushroomPose pose =
+      GetMushroomPose(mushroom_index, animate, screen_width, screen_height);
+  return (ShroomFungalBackgroundDebugState){
+      .global_time = pose.global_time,
+      .mushroom_x = pose.mushroom_x,
+      .mushroom_y = pose.mushroom_y,
+      .mushroom_sway = pose.mushroom_sway,
+  };
+}
+#endif
+
 void ShroomScreenDrawFungalBackground(bool animate) {
   const int screen_width = GetScreenWidth();
   const int screen_height = GetScreenHeight();
@@ -199,17 +250,8 @@ void ShroomScreenDrawFungalBackground(bool animate) {
 
   for (int index = 0; index < SHROOM_MENU_BACKGROUND_MUSHROOM_COUNT; ++index) {
     const MenuBackgroundMushroom* mushroom = &g_mushrooms[index];
-    const float time = animate ? (float)GetTime() : 0.0f;
-    const float phase = (float)index * 0.73f;
-    /* Restore the gentle pre-d95936a amplitudes; the inflated drift/bob
-     * (0.12 / 0.045) made the mushrooms visibly spin around their stems. */
-    const float drift =
-        animate ? sinf(time * (0.28f + (float)index * 0.035f) + phase) * 0.045f : 0.0f;
-    const float bob =
-        animate ? sinf(time * (0.42f + (float)index * 0.04f) + phase * 0.6f) * 0.018f : 0.0f;
-    const float sway = animate ? time * (0.55f + (float)index * 0.06f) + phase : 0.0f;
-    DrawFungalMushroom(WrappedUnit(mushroom->x_ratio + drift) * (float)screen_width,
-                       (mushroom->y_ratio + bob) * (float)screen_height, mushroom->scale, sway,
+    const FungalMushroomPose pose = GetMushroomPose(index, animate, screen_width, screen_height);
+    DrawFungalMushroom(pose.mushroom_x, pose.mushroom_y, mushroom->scale, pose.mushroom_sway,
                        mushroom->type);
   }
 

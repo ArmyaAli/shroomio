@@ -1,6 +1,7 @@
 #include "app.h"
 #include "imgui_te_wrapper.h"
 
+#include "client/screens/screen_background.h"
 #include "shared/protocol.h"
 
 #include <math.h>
@@ -707,6 +708,38 @@ static void Test_MainMenuRespectsAnimationsToggle(ImGuiTestContext* ctx) {
   IM_CHECK_EQ(ShroomTestMainMenuAnimationsEnabled(NULL), true);
 }
 
+/* menu: the main menu update loop must advance the visible mushroom pose when
+ * animations are enabled. Regression for #340, where the background could look
+ * completely static because draw-time and update-time animation diverged. */
+static void Test_MainMenuBackgroundAnimationAdvances(ImGuiTestContext* ctx) {
+  ShroomImGuiTestAppReset(true);
+  g_imgui_test_app.game.settings.menu_animations_enabled = true;
+  ShroomTeCtx_Yield(ctx, 2);
+  const ShroomFungalBackgroundDebugState before =
+      ShroomScreenGetFungalBackgroundDebugState(0, true, 1280, 720);
+
+  ShroomTeCtx_Yield(ctx, 20);
+
+  const ShroomFungalBackgroundDebugState after =
+      ShroomScreenGetFungalBackgroundDebugState(0, true, 1280, 720);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Main Menu"));
+  IM_CHECK(after.global_time > before.global_time);
+  IM_CHECK(after.mushroom_x != before.mushroom_x || after.mushroom_y != before.mushroom_y ||
+           after.mushroom_sway != before.mushroom_sway);
+
+  g_imgui_test_app.game.settings.menu_animations_enabled = false;
+  ShroomTeCtx_Yield(ctx, 2);
+  const ShroomFungalBackgroundDebugState disabled_before =
+      ShroomScreenGetFungalBackgroundDebugState(0, false, 1280, 720);
+  ShroomTeCtx_Yield(ctx, 20);
+  const ShroomFungalBackgroundDebugState disabled_after =
+      ShroomScreenGetFungalBackgroundDebugState(0, false, 1280, 720);
+  IM_CHECK_EQ(disabled_after.global_time, disabled_before.global_time);
+  IM_CHECK_EQ(disabled_after.mushroom_x, disabled_before.mushroom_x);
+  IM_CHECK_EQ(disabled_after.mushroom_y, disabled_before.mushroom_y);
+  IM_CHECK_EQ(disabled_after.mushroom_sway, disabled_before.mushroom_sway);
+}
+
 /* chat: Opening chat focuses the input and WantCaptureKeyboard prevents
  * stray key presses from closing the dock mid-session. */
 static void Test_ChatInputFocusAndKeyboardCapture(ImGuiTestContext* ctx) {
@@ -789,6 +822,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_LobbyBackReturnsToServerBrowser);
   ShroomTeEngine_RegisterTest(engine, "menu", "respects_animations_toggle",
                               Test_MainMenuRespectsAnimationsToggle);
+  ShroomTeEngine_RegisterTest(engine, "menu", "background_animation_advances",
+                              Test_MainMenuBackgroundAnimationAdvances);
   ShroomTeEngine_RegisterTest(engine, "chat", "input_focus_and_keyboard_capture",
                               Test_ChatInputFocusAndKeyboardCapture);
 }
