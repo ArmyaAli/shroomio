@@ -65,7 +65,7 @@ static void ResultsDraw(ShroomScreenManager* manager) {
   if (ShroomImGui_Button("Play Again", button_width, button_height)) {
     GamePlayUiClickSound(game);
     game->show_results = false;
-    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
+    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
   }
 
   ShroomImGui_SameLine();
