@@ -2673,7 +2673,7 @@ static void DrawProximityMap(const Game* game) {
   if (game->local_player == NULL) {
     return;
   }
-  const Vector2 center = {98.0f, game->screen_height - 142.0f};
+  const Vector2 center = {98.0f, game->screen_height - 172.0f};
   const float inner_radius = kProximityMapRadius - 10.0f;
   const float pulse_phase = 0.5f + (0.5f * sinf(game->inspect_prompt_timer * 3.6f));
   const float pulse = 0.68f + (0.32f * pulse_phase);
@@ -2682,7 +2682,7 @@ static void DrawProximityMap(const Game* game) {
 
   DrawFungalHudPanel(
       (Rectangle){center.x - kProximityMapRadius - 12.0f, center.y - kProximityMapRadius - 14.0f,
-                  (kProximityMapRadius + 12.0f) * 2.0f, (kProximityMapRadius + 34.0f) * 2.0f},
+                  (kProximityMapRadius + 12.0f) * 2.0f, (kProximityMapRadius + 54.0f) * 2.0f},
       (Color){112, 196, 120, 255});
   DrawCircleV(center, kProximityMapRadius, Fade((Color){28, 42, 34, 255}, 0.88f));
   DrawCircleV(center, kProximityMapRadius - 4.0f, Fade((Color){52, 86, 62, 255}, 0.18f));
@@ -2751,16 +2751,36 @@ static void DrawProximityMap(const Game* game) {
 
   DrawCircleV(center, 5.5f, RAYWHITE);
   DrawCircleLinesV(center, 8.0f, Fade((Color){150, 228, 255, 255}, 0.88f));
-  DrawText("MYCELIUM", (int)(center.x - 30.0f), (int)(center.y + kProximityMapRadius + 10.0f), 12,
-           Fade((Color){226, 245, 188, 255}, 0.90f));
-  DrawCircleV((Vector2){center.x - 22.0f, center.y + kProximityMapRadius + 28.0f}, 3.0f,
-              Fade(RED, 0.92f));
-  DrawText("Threat", (int)(center.x - 14.0f), (int)(center.y + kProximityMapRadius + 22.0f), 10,
-           Fade((Color){255, 236, 236, 255}, 0.82f));
-  DrawCircleV((Vector2){center.x + 24.0f, center.y + kProximityMapRadius + 28.0f}, 3.0f,
-              Fade(SKYBLUE, 0.94f));
-  DrawText("Prey", (int)(center.x + 32.0f), (int)(center.y + kProximityMapRadius + 22.0f), 10,
-           Fade((Color){232, 245, 255, 255}, 0.82f));
+  {
+    const char* header = "MYCELIUM";
+    const int header_size = 14;
+    const int header_width = MeasureText(header, header_size);
+    const float header_y = center.y + kProximityMapRadius + 14.0f;
+    const char* threat_label = "Threat";
+    const char* prey_label = "Prey";
+    const int row_size = 12;
+    const float row_y = center.y + kProximityMapRadius + 40.0f;
+    const float swatch_radius = 4.0f;
+    const float col_gap = 8.0f;
+    const int threat_w = MeasureText(threat_label, row_size);
+    const int prey_w = MeasureText(prey_label, row_size);
+    const float threat_entry_w = swatch_radius * 2.0f + col_gap + (float)threat_w;
+    const float prey_entry_w = swatch_radius * 2.0f + col_gap + (float)prey_w;
+    const float pair_w = threat_entry_w + 16.0f + prey_entry_w;
+    const float threat_x = center.x - pair_w * 0.5f;
+    const float prey_x = center.x - pair_w * 0.5f + threat_entry_w + 16.0f;
+
+    DrawText(header, (int)(center.x - (float)header_width * 0.5f), (int)header_y, header_size,
+             Fade((Color){226, 245, 188, 255}, 0.94f));
+    DrawCircleV((Vector2){threat_x + swatch_radius, row_y + (float)row_size * 0.5f}, swatch_radius,
+                Fade(RED, 0.94f));
+    DrawText(threat_label, (int)(threat_x + swatch_radius * 2.0f + col_gap), (int)row_y, row_size,
+             Fade((Color){255, 236, 236, 255}, 0.90f));
+    DrawCircleV((Vector2){prey_x + swatch_radius, row_y + (float)row_size * 0.5f}, swatch_radius,
+                Fade(SKYBLUE, 0.96f));
+    DrawText(prey_label, (int)(prey_x + swatch_radius * 2.0f + col_gap), (int)row_y, row_size,
+             Fade((Color){232, 245, 255, 255}, 0.90f));
+  }
 }
 
 static const ShroomPlayerState* GetInputReferencePlayer(const Game* game) {
