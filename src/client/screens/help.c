@@ -12,6 +12,66 @@ static bool HelpInit(ShroomScreenManager* manager) {
   return true;
 }
 
+static bool CanDemoColonyConsume(float attacker_mass, float target_mass) {
+  return attacker_mass >= target_mass * 1.15f;
+}
+
+static void DrawGrowthRulesDemo(void) {
+  static int selected_colony = 1;
+  const char* colony_names[3] = {"Sprout", "Cluster", "Bloom"};
+  const float colony_masses[3] = {86.0f, 112.0f, 148.0f};
+  const ShroomImGuiColor success_color = {0.52f, 0.90f, 0.48f, 1.0f};
+  const ShroomImGuiColor muted_color = {0.72f, 0.76f, 0.70f, 1.0f};
+  const int selected = selected_colony;
+  int danger_index = -1;
+  char detail_buf[192];
+
+  ShroomImGui_Text("Growth Rules Demo");
+  ShroomImGui_TextWrapped("Click a colony to compare mass. A colony can consume another when it is "
+                          "at least 15% heavier.");
+  if (ShroomImGui_Button("Sprout 86", 112.0f, 32.0f)) {
+    selected_colony = 0;
+  }
+  ShroomImGui_SameLine();
+  if (ShroomImGui_Button("Cluster 112", 120.0f, 32.0f)) {
+    selected_colony = 1;
+  }
+  ShroomImGui_SameLine();
+  if (ShroomImGui_Button("Bloom 148", 112.0f, 32.0f)) {
+    selected_colony = 2;
+  }
+
+  snprintf(detail_buf, sizeof(detail_buf), "Selected: %s mass %.0f", colony_names[selected],
+           colony_masses[selected]);
+  ShroomImGui_TextWrapped(detail_buf);
+
+  for (int index = 0; index < 3; ++index) {
+    if (index == selected) {
+      continue;
+    }
+    snprintf(
+        detail_buf, sizeof(detail_buf), "%s vs %s: %s", colony_names[selected], colony_names[index],
+        CanDemoColonyConsume(colony_masses[selected], colony_masses[index]) ? "can consume"
+                                                                            : "cannot consume yet");
+    ShroomImGui_TextColored(CanDemoColonyConsume(colony_masses[selected], colony_masses[index])
+                                ? success_color
+                                : muted_color,
+                            detail_buf);
+    if ((danger_index < 0) && CanDemoColonyConsume(colony_masses[index], colony_masses[selected])) {
+      danger_index = index;
+    }
+  }
+
+  if (danger_index >= 0) {
+    snprintf(detail_buf, sizeof(detail_buf), "Danger: %s can consume %s now.",
+             colony_names[danger_index], colony_names[selected]);
+  } else {
+    snprintf(detail_buf, sizeof(detail_buf),
+             "Safe for now: no demo colony is 15%% heavier than %s.", colony_names[selected]);
+  }
+  ShroomImGui_TextDisabled(detail_buf);
+}
+
 static void HelpDraw(ShroomScreenManager* manager) {
   Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
   const int screen_width = GetScreenWidth();
@@ -40,6 +100,8 @@ static void HelpDraw(ShroomScreenManager* manager) {
   ShroomImGui_TextWrapped("Consume players who are at least 15% smaller than you.");
   ShroomImGui_TextWrapped("Avoid heavier players and watch the off-screen indicators for danger.");
   ShroomImGui_TextWrapped("The center zone is the riskiest but has the biggest swing potential.");
+  ShroomImGui_Separator();
+  DrawGrowthRulesDemo();
   ShroomImGui_Separator();
   ShroomImGui_Text("Overlay Shortcuts");
   {
