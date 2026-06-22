@@ -42,8 +42,6 @@ SERVER_SRC_DIR  := $(SRC_DIR)/server
 SHARED_SRC_DIR  := $(SRC_DIR)/shared
 BUILD_DIR       := build
 DIST_DIR        := dist
-DIST_CLIENT_DIR := $(DIST_DIR)/client
-DIST_SERVER_DIR := $(DIST_DIR)/server
 TESTS_DIR       := tests
 UNIT_TESTS_DIR  := $(TESTS_DIR)/unit
 IMGUI_TESTS_DIR := $(TESTS_DIR)/imgui
@@ -54,12 +52,12 @@ MACOS_BUILD_DIR   := $(BUILD_DIR)/macos
 TEST_BUILD_DIR    := $(BUILD_DIR)/tests
 
 #Output binaries
-CLIENT_LINUX_BIN := $(DIST_CLIENT_DIR)/linux/$(PROJECT)
-CLIENT_WINDOWS_BIN := $(DIST_CLIENT_DIR)/windows/$(PROJECT).exe
-CLIENT_MACOS_BIN := $(DIST_CLIENT_DIR)/macos/$(PROJECT)
-SERVER_LINUX_BIN := $(DIST_SERVER_DIR)/linux/$(PROJECT)-server
-SERVER_WINDOWS_BIN := $(DIST_SERVER_DIR)/windows/$(PROJECT)-server.exe
-SERVER_MACOS_BIN := $(DIST_SERVER_DIR)/macos/$(PROJECT)-server
+CLIENT_LINUX_BIN := $(DIST_DIR)/linux/client/$(PROJECT)
+CLIENT_WINDOWS_BIN := $(DIST_DIR)/windows/client/$(PROJECT).exe
+CLIENT_MACOS_BIN := $(DIST_DIR)/macos/client/$(PROJECT)
+SERVER_LINUX_BIN := $(DIST_DIR)/linux/server/$(PROJECT)-server
+SERVER_WINDOWS_BIN := $(DIST_DIR)/windows/server/$(PROJECT)-server.exe
+SERVER_MACOS_BIN := $(DIST_DIR)/macos/server/$(PROJECT)-server
 
 #== == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==   \
     == == == == == == =

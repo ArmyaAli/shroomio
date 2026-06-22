@@ -116,4 +116,4 @@ make client-windows
 latexmk -pdf -output-directory=. design/shroomio-specification.tex
 ```
 
-Built binaries land under `dist/client/<platform>/` and `dist/server/<platform>/`; the spec PDF is written at the repo root.
+Built binaries land under `dist/<platform>/client/` and `dist/<platform>/server/`; the spec PDF is written at the repo root.
