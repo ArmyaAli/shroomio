@@ -56,6 +56,8 @@ GitHub Releases include downloadable client bundles and dedicated server bundles
 | macOS x64 | `shroomio_server-<version>-macos-x64.tar.gz` |
 
 Each release also includes `SHA256SUMS-v<version>.txt` for verifying downloaded assets.
+Release archives preserve a platform-first layout, such as `linux/client/shroomio` and
+`linux/server/shroomio-server`.
 
 ### Runtime Configuration
 
