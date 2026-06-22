@@ -542,16 +542,28 @@ static void CaptureParticleBaselines(Game* game) {
 static void EmitGameplayEventParticles(Game* game) {
   size_t index;
   const ShroomPlayerId local_player_id =
-      game->local_player != NULL ? game->local_player->player_id : 0u;
+      IsOnlineMode(game->active_mode)
+          ? game->net.player_id
+          : (game->local_player != NULL ? game->local_player->player_id : 0u);
   float largest_gain = 0.0f;
   const ShroomPlayerState* largest_gainer = FindLargestMassGainer(game, &largest_gain);
   const size_t previous_local_primary_index = FindPreviousLocalPrimaryIndex(game, local_player_id);
   const ShroomPlayerState* current_local_primary = FindCurrentLocalPrimary(game, local_player_id);
+  const bool had_previous_local_primary = previous_local_primary_index < SHROOM_MAX_PLAYERS;
+  const bool local_primary_missing = had_previous_local_primary && (current_local_primary == NULL);
+  const bool local_primary_entity_changed =
+      had_previous_local_primary && (current_local_primary != NULL) &&
+      (current_local_primary->entity_id !=
+       game->previous_player_entity_ids[previous_local_primary_index]);
+  const bool local_primary_respawned =
+      had_previous_local_primary && (current_local_primary != NULL) &&
+      (current_local_primary->mass <= SHROOM_DEFAULT_PLAYER_MASS * 1.05f) &&
+      (ShroomDistanceSqr(current_local_primary->position,
+                         game->previous_player_positions[previous_local_primary_index]) > 2500.0f);
   const bool local_primary_consumed =
-      (previous_local_primary_index < SHROOM_MAX_PLAYERS) && !IsDeathCutsceneOpen(game) &&
-      ((current_local_primary == NULL) ||
-       (current_local_primary->entity_id !=
-        game->previous_player_entity_ids[previous_local_primary_index]));
+      had_previous_local_primary && game->previous_player_alive[previous_local_primary_index] &&
+      !IsDeathCutsceneOpen(game) &&
+      (local_primary_missing || local_primary_entity_changed || local_primary_respawned);
   bool local_kill_reported = false;
   bool local_death_reported = false;
 
@@ -591,6 +603,9 @@ static void EmitGameplayEventParticles(Game* game) {
     const char* killer_name =
         largest_gainer != NULL ? GetPlayerDisplayName(game, largest_gainer) : "a larger colony";
 
+    const ShroomVec2 death_pos = game->previous_player_positions[previous_local_primary_index];
+    game->death_camera_hold_timer = 0.6f;
+    game->death_camera_hold_pos = (Vector2){death_pos.x, death_pos.y};
     QueueGameplayParticleBurst(game, game->previous_player_positions[previous_local_primary_index],
                                (Color){150, 45, 42, 255}, 16, 132.0f, 6.5f, 0.68f);
     QueueGameplayNotification(
@@ -1248,6 +1263,7 @@ static void ApplyNetworkSnapshot(Game* game) {
   game->world.player_count = game->net.snapshot_player_count;
   game->world.spore_count = game->net.spore_count;
   game->world.powerup_count = game->net.powerup_count;
+  game->local_player = NULL;
 
   for (index = 0; index < game->net.snapshot_player_count; ++index) {
     const ShroomSnapshotPlayerState* snapshot_player = &game->net.snapshot_players[index];
@@ -3163,7 +3179,11 @@ void GameUpdate(Game* game, float delta_time) {
   UpdateDeathCutscene(game, delta_time);
   UpdateInspectOverlay(game, delta_time);
   UpdateChatState(game, delta_time);
-  if (game->local_player != NULL) {
+  if (game->death_camera_hold_timer > 0.0f) {
+    game->death_camera_hold_timer = fmaxf(0.0f, game->death_camera_hold_timer - delta_time);
+    game->camera.target = game->death_camera_hold_pos;
+    game->piece_focus_changed = false;
+  } else if (game->local_player != NULL) {
     const ShroomPlayerState* cam_target = game->local_player;
     if (game->focused_piece_entity_id != 0) {
       size_t pi;
