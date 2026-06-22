@@ -126,8 +126,7 @@ jobs:
           mkdir -p release-assets release-stage/linux/client release-stage/linux/server
           cp dist/linux/client/shroomio release-stage/linux/client/
           cp dist/linux/server/shroomio-server release-stage/linux/server/
-          tar -czf release-assets/shroomio_client-${VERSION}-linux-x64.tar.gz -C release-stage linux
-          tar -czf release-assets/shroomio_server-${VERSION}-linux-x64.tar.gz -C release-stage linux/server
+          tar -czf release-assets/shroomio-${VERSION}-linux-x64.tar.gz -C release-stage linux
 
       - name: Upload Linux asset
         uses: actions/upload-artifact@v4
@@ -180,8 +179,7 @@ jobs:
           mkdir -p release-assets release-stage/windows/client release-stage/windows/server
           cp dist/windows/client/shroomio.exe release-stage/windows/client/
           cp dist/windows/server/shroomio-server.exe release-stage/windows/server/
-          (cd release-stage && zip -r ../release-assets/shroomio_client-${VERSION}-windows-x64.zip windows)
-          (cd release-stage && zip -r ../release-assets/shroomio_server-${VERSION}-windows-x64.zip windows/server)
+          (cd release-stage && zip -r ../release-assets/shroomio-${VERSION}-windows-x64.zip windows)
 
       - name: Upload Windows asset
         uses: actions/upload-artifact@v4
@@ -223,8 +221,7 @@ jobs:
           mkdir -p release-assets release-stage/macos/client release-stage/macos/server
           cp dist/macos/client/shroomio release-stage/macos/client/
           cp dist/macos/server/shroomio-server release-stage/macos/server/
-          tar -czf release-assets/shroomio_client-${VERSION}-macos-x64.tar.gz -C release-stage macos
-          tar -czf release-assets/shroomio_server-${VERSION}-macos-x64.tar.gz -C release-stage macos/server
+          tar -czf release-assets/shroomio-${VERSION}-macos-x64.tar.gz -C release-stage macos
 
       - name: Upload macOS asset
         uses: actions/upload-artifact@v4
