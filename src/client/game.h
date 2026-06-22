@@ -153,6 +153,8 @@ typedef struct Game {
   char death_cutscene_killer_name[SHROOM_MAX_NAME_LENGTH];
   float zone_callout_timer;
   float respawn_banner_timer;
+  float death_camera_hold_timer; /* holds camera at death position so death FX are visible */
+  Vector2 death_camera_hold_pos; /* world position to hold the camera at during death */
   int screen_width;
   int screen_height;
   int selected_inspect_index;
