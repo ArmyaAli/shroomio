@@ -61,6 +61,7 @@ static void SetupOnlineGame(void) {
 
 static void SetupResultsScreen(float peak_mass, float final_mass, int final_rank) {
   ShroomImGuiTestAppReset(false);
+  g_imgui_test_app.game.selected_mode = SHROOM_SESSION_MODE_OFFLINE_PRACTICE;
   g_imgui_test_app.game.peak_mass = peak_mass;
   g_imgui_test_app.game.final_mass = final_mass;
   g_imgui_test_app.game.final_rank = final_rank;
@@ -511,7 +512,9 @@ static void Test_ResultsNavigationActions(ImGuiTestContext* ctx) {
   ShroomTeCtx_SetRef(ctx, "Match Results");
   ShroomTeCtx_ItemClick(ctx, "Play Again");
   IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
-              SHROOM_SCREEN_SERVER_BROWSER);
+              SHROOM_SCREEN_GAME);
+  IM_CHECK_EQ(g_imgui_test_app.game.active_mode, SHROOM_SESSION_MODE_OFFLINE_PRACTICE);
+  IM_CHECK(g_imgui_test_app.game.local_player != NULL);
 }
 
 /* chat: Chat dock is active in online mode. */
