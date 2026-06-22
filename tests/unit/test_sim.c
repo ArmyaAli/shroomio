@@ -830,6 +830,54 @@ void test_bot_flees_nearby_threat_even_with_available_prey(void) {
   TEST_ASSERT_TRUE(bot->input_direction.x < 0.0f);
 }
 
+void test_bot_pursues_nearby_spore_within_search_radius(void) {
+  ShroomPlayerState* bot;
+
+  ResetWorldForPlayers();
+
+  bot = ShroomWorldSpawnPlayer(&world, 1, true);
+  TEST_ASSERT_NOT_NULL(bot);
+
+  bot->mass = SHROOM_DEFAULT_PLAYER_MASS;
+  bot->radius = ShroomMassToRadius(bot->mass);
+  bot->position = (ShroomVec2){3000.0f, 3000.0f};
+  world.spore_count = 1;
+  world.spores[0] = (ShroomSporeState){
+      .entity_id = 1, .position = {3120.0f, 3000.0f}, .value = SHROOM_SPORE_VALUE, .active = true};
+
+  ShroomWorldStep(&world, 0.0f);
+
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, bot->input_direction.x);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, bot->input_direction.y);
+}
+
+void test_bot_ignores_spore_beyond_search_radius(void) {
+  /* A spore outside SHROOM_BOT_SPORE_SEARCH_RADIUS lives in a grid cell that the bot scan never
+   * visits, so the bot should fall back to the "move toward world center" branch. With the bot
+   * already at the center, the resulting input direction should be zero. */
+  ShroomPlayerState* bot;
+  const ShroomVec2 center = (ShroomVec2){SHROOM_WORLD_WIDTH * 0.5f, SHROOM_WORLD_HEIGHT * 0.5f};
+
+  ResetWorldForPlayers();
+
+  bot = ShroomWorldSpawnPlayer(&world, 1, true);
+  TEST_ASSERT_NOT_NULL(bot);
+
+  bot->mass = SHROOM_DEFAULT_PLAYER_MASS;
+  bot->radius = ShroomMassToRadius(bot->mass);
+  bot->position = center;
+  world.spore_count = 1;
+  world.spores[0] = (ShroomSporeState){.entity_id = 1,
+                                       .position = {center.x + 1500.0f, center.y},
+                                       .value = SHROOM_SPORE_VALUE,
+                                       .active = true};
+
+  ShroomWorldStep(&world, 0.0f);
+
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, bot->input_direction.x);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, bot->input_direction.y);
+}
+
 void test_corner_consume_works_near_boundaries(void) {
   ShroomPlayerState* attacker;
   ShroomPlayerState* victim;
@@ -1172,6 +1220,8 @@ int main(void) {
   RUN_TEST(test_small_bot_prefers_safer_spore_over_slightly_closer_center_spore);
   RUN_TEST(test_large_bot_prefers_center_pressure_spore_choice);
   RUN_TEST(test_bot_flees_nearby_threat_even_with_available_prey);
+  RUN_TEST(test_bot_pursues_nearby_spore_within_search_radius);
+  RUN_TEST(test_bot_ignores_spore_beyond_search_radius);
   RUN_TEST(test_corner_consume_works_near_boundaries);
   RUN_TEST(test_edge_consume_works_when_target_pinned_against_wall);
   RUN_TEST(test_corner_consume_works_with_movement_clamping);
