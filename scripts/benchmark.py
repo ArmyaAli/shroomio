@@ -35,7 +35,9 @@ def read_single_row(path: Path) -> dict[str, str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--server", default="dist/shroomio-server", help="server binary to execute")
+    parser.add_argument(
+        "--server", default="dist/server/linux/shroomio-server", help="server binary to execute"
+    )
     parser.add_argument("--out-dir", default="build/benchmarks", help="artifact output directory")
     parser.add_argument("--ticks", type=int, default=600, help="ticks per scenario")
     parser.add_argument(

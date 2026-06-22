@@ -23,7 +23,7 @@ If Docker access fails after a rebuild, reopen the workspace in the container so
 ### Linux Client
 
 ```bash
-make client-linux # Builds dist/shroomio
+make client-linux # Builds dist/client/linux/shroomio
 make run         # Builds and launches the client
 make imgui-test  # Builds and runs the ImGui UI test harness
 ```
@@ -31,14 +31,14 @@ make imgui-test  # Builds and runs the ImGui UI test harness
 ### Linux Headless Server
 
 ```bash
-make server-linux # Builds dist/shroomio-server
+make server-linux # Builds dist/server/linux/shroomio-server
 make run-server  # Builds and launches the server
 ```
 
 ### Windows Client (cross-compile from Linux)
 
 ```bash
-make client-windows # Builds dist/shroomio.exe
+make client-windows # Builds dist/client/windows/shroomio.exe
 ```
 
 Requires `mingw-w64` installed. Produces a fully static `.exe`.
@@ -114,7 +114,7 @@ make devcontainer-gh ARGS="issue list --limit 20"
 ├── build/                  # Intermediate build artifacts (object files)
 ├── design/
 │   └── shroomio-specification.tex  # LaTeX software specification
-├── dist/                   # Output binaries
+├── dist/                   # Output binaries grouped as client/<platform>/ and server/<platform>/
 ├── src/
 │   ├── client/
 │   │   ├── main.c          # Entry point, window creation, render loop
@@ -189,12 +189,12 @@ Manual testing workflow:
 1. **Offline**: `make run` — verify rendering, input, spore collection, consumption, respawn, leaderboard.
 2. **Server**: `make run-server` then `make run` — verify handshake, snapshots, bot behavior.
 3. **Docker**: `make docker-run-server` then connect a client.
-4. **Windows**: `make client-windows` — copy `dist/shroomio.exe` to a Windows machine and run.
+4. **Windows**: `make client-windows` — copy `dist/client/windows/shroomio.exe` to a Windows machine and run.
 
 ## Debugging Tips
 
 - The server prints peer connect/disconnect events to stdout.
 - The client displays connection status in the HUD (top-left, green/orange).
 - Snapshot tick is visible in the HUD to confirm data flow.
-- Use `gdb` for native debugging: `gdb ./dist/shroomio`.
+- Use `gdb` for native debugging: `gdb ./dist/client/linux/shroomio`.
 - The client can run offline even if the server is unreachable — it falls back to local simulation.

@@ -38,7 +38,7 @@ tests/
   unit/          unit tests (Unity framework)
   unity/         Unity test framework source
 assets/          sprites, audio, maps, shaders
-dist/            built binaries
+dist/            built binaries grouped by product and platform
 design/          LaTeX game specification
 docs/            development guides and runbooks
 ```
@@ -67,9 +67,9 @@ sudo apt install mingw-w64
 ## Building
 
 ```bash
-make client-linux    # Linux client    -> dist/shroomio
-make server-linux    # Linux server    -> dist/shroomio-server
-make client-windows  # Windows client  -> dist/shroomio.exe  (requires mingw-w64)
+make client-linux    # Linux client    -> dist/client/linux/shroomio
+make server-linux    # Linux server    -> dist/server/linux/shroomio-server
+make client-windows  # Windows client  -> dist/client/windows/shroomio.exe  (requires mingw-w64)
 ```
 
 Run directly:
@@ -132,8 +132,8 @@ See [docs/Production-Runbook.md](docs/Production-Runbook.md) for full deployment
 Runtime configuration is available through CLI flags or environment variables:
 
 ```bash
-./dist/shroomio-server --bind 0.0.0.0 --port 7777 --database ./shroomio.db
-SHROOM_SERVER_PORT=9000 SHROOM_SERVER_DB_PATH=/data/shroomio.db ./dist/shroomio-server
+./dist/server/linux/shroomio-server --bind 0.0.0.0 --port 7777 --database ./shroomio.db
+SHROOM_SERVER_PORT=9000 SHROOM_SERVER_DB_PATH=/data/shroomio.db ./dist/server/linux/shroomio-server
 ```
 
 ## Dev Container

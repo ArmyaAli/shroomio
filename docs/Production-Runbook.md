@@ -13,7 +13,7 @@ cd shroomio
 make server-linux
 
 # 2. Run (UDP 7777)
-./dist/shroomio-server
+./dist/server/linux/shroomio-server
 
 # 3. Open UDP port 7777 in your firewall/router
 # 4. Players connect via: <your-public-ip>:7777
@@ -70,8 +70,8 @@ The server is self-hostable without recompiling. CLI flags override environment 
 Examples:
 
 ```bash
-./dist/shroomio-server --bind 0.0.0.0 --port 7777 --database ./shroomio.db
-SHROOM_SERVER_PORT=9000 ./dist/shroomio-server
+./dist/server/linux/shroomio-server --bind 0.0.0.0 --port 7777 --database ./shroomio.db
+SHROOM_SERVER_PORT=9000 ./dist/server/linux/shroomio-server
 ```
 
 ### Docker (Recommended)
@@ -129,10 +129,10 @@ cd shroomio
 make server-linux
 
 # Run
-./dist/shroomio-server
+./dist/server/linux/shroomio-server
 
 # Run on a custom UDP port
-./dist/shroomio-server --port 9000 --database /var/lib/shroomio/shroomio.db
+./dist/server/linux/shroomio-server --port 9000 --database /var/lib/shroomio/shroomio.db
 ```
 
 ## Hosting Requirements
@@ -200,7 +200,7 @@ ss -uln | grep 7777
 
 # Send a test connection from a client:
 # use Server Browser -> direct connect -> <server-ip-or-domain>:7777
-./dist/shroomio
+./dist/client/linux/shroomio
 ```
 
 No built-in HTTP health endpoint exists. For monitoring, use:
@@ -219,7 +219,7 @@ journalctl -u shroomio-server -f
 
 # Bare metal
 # Server outputs to stdout; redirect to file if needed:
-./dist/shroomio-server >> /var/log/shroomio-server.log 2>&1
+./dist/server/linux/shroomio-server >> /var/log/shroomio-server.log 2>&1
 ```
 
 The server logs:
@@ -238,7 +238,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/opt/shroomio/dist/shroomio-server --bind 0.0.0.0 --port 7777 --database /opt/shroomio/shroomio.db
+ExecStart=/opt/shroomio/dist/server/linux/shroomio-server --bind 0.0.0.0 --port 7777 --database /opt/shroomio/shroomio.db
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
@@ -310,9 +310,9 @@ exit 0
 
 ### Server crashes on startup
 
-1. Check that `dist/shroomio-server` exists: `ls -la dist/`.
+1. Check that `dist/server/linux/shroomio-server` exists: `ls -la dist/server/linux/`.
 2. Ensure port 7777 is not already in use: `ss -uln | grep 7777`.
-3. Check system library availability: `ldd dist/shroomio-server`.
+3. Check system library availability: `ldd dist/server/linux/shroomio-server`.
 
 ### High latency or jitter
 
