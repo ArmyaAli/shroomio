@@ -330,12 +330,22 @@ static const ShroomPlayerState* FindLargestMassGainer(const Game* game, float* m
 
   for (size_t index = 0; index < game->world.player_count; ++index) {
     const ShroomPlayerState* player = &game->world.players[index];
-    const float gain = player->mass - game->previous_player_masses[index];
+    float previous_mass = 0.0f;
+    bool had_same_entity = false;
 
-    if (!player->alive || !game->previous_player_alive[index] ||
-        (game->previous_player_entity_ids[index] != player->entity_id)) {
+    for (size_t previous_index = 0; previous_index < SHROOM_MAX_PLAYERS; ++previous_index) {
+      if (game->previous_player_alive[previous_index] &&
+          (game->previous_player_entity_ids[previous_index] == player->entity_id)) {
+        previous_mass = game->previous_player_masses[previous_index];
+        had_same_entity = true;
+        break;
+      }
+    }
+
+    if (!player->alive || !had_same_entity) {
       continue;
     }
+    const float gain = player->mass - previous_mass;
     if (gain > best_gain) {
       best_gain = gain;
       best_player = player;
@@ -346,6 +356,20 @@ static const ShroomPlayerState* FindLargestMassGainer(const Game* game, float* m
     *mass_gain = best_gain;
   }
   return best_player;
+}
+
+static const ShroomPlayerState* FindCurrentPlayerByEntityId(const Game* game,
+                                                            ShroomEntityId entity_id) {
+  if (entity_id == 0u) {
+    return NULL;
+  }
+  for (size_t index = 0; index < game->world.player_count; ++index) {
+    const ShroomPlayerState* player = &game->world.players[index];
+    if (player->entity_id == entity_id) {
+      return player;
+    }
+  }
+  return NULL;
 }
 
 static size_t FindPreviousLocalPrimaryIndex(const Game* game, ShroomPlayerId local_player_id) {
@@ -591,6 +615,8 @@ static void CaptureParticleBaselines(Game* game) {
     const ShroomPlayerState* player = &game->world.players[index];
     game->previous_player_entity_ids[index] = player->entity_id;
     game->previous_player_ids[index] = player->player_id;
+    snprintf(game->previous_player_names[index], sizeof(game->previous_player_names[index]), "%s",
+             player->name[0] != '\0' ? player->name : "Unknown");
     game->previous_player_positions[index] = player->position;
     game->previous_player_masses[index] = player->mass;
     game->previous_player_alive[index] = player->alive;
@@ -690,6 +716,37 @@ static void EmitGameplayEventParticles(Game* game) {
     local_death_reported = true;
   }
 
+  if ((largest_gainer != NULL) && !local_death_reported) {
+    for (index = 0; index < SHROOM_MAX_PLAYERS; ++index) {
+      const ShroomPlayerState* current_player;
+      char feed_text[128];
+
+      if (!game->previous_player_alive[index] ||
+          (game->previous_player_piece_indices[index] != 0u) ||
+          (game->previous_player_ids[index] == 0u) ||
+          (game->previous_player_ids[index] == local_player_id) ||
+          (game->previous_player_ids[index] == largest_gainer->player_id)) {
+        continue;
+      }
+
+      current_player = FindCurrentPlayerByEntityId(game, game->previous_player_entity_ids[index]);
+      if ((current_player != NULL) && current_player->alive) {
+        continue;
+      }
+
+      if ((local_player_id != 0u) && (largest_gainer->player_id == local_player_id)) {
+        snprintf(feed_text, sizeof(feed_text), "You consumed %s",
+                 game->previous_player_names[index]);
+        AddKillFeedEntry(game, feed_text, (Color){112, 224, 128, 255});
+        local_kill_reported = true;
+      } else {
+        snprintf(feed_text, sizeof(feed_text), "%s consumed %s",
+                 GetPlayerDisplayName(game, largest_gainer), game->previous_player_names[index]);
+        AddKillFeedEntry(game, feed_text, (Color){210, 220, 210, 255});
+      }
+    }
+  }
+
   for (index = 0; index < game->world.player_count; ++index) {
     const ShroomPlayerState* player = &game->world.players[index];
     const bool had_same_entity = game->previous_player_entity_ids[index] == player->entity_id;
@@ -707,13 +764,6 @@ static void EmitGameplayEventParticles(Game* game) {
 
     if (game->previous_player_alive[index] && had_same_player && !had_same_entity &&
         was_primary_piece) {
-      if ((largest_gainer != NULL) && !was_local_player && !local_death_reported &&
-          (largest_gainer->player_id != local_player_id)) {
-        char feed_text[128];
-        snprintf(feed_text, sizeof(feed_text), "%s consumed %s",
-                 GetPlayerDisplayName(game, largest_gainer), GetPlayerDisplayName(game, player));
-        AddKillFeedEntry(game, feed_text, (Color){210, 220, 210, 255});
-      }
       QueueGameplayParticleBurst(game, game->previous_player_positions[index],
                                  (Color){150, 45, 42, 255}, 28, 150.0f, 7.0f, 0.76f);
       QueueGameplayParticleBurst(game, player->position, (Color){122, 220, 118, 255}, 14, 82.0f,

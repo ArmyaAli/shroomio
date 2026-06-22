@@ -116,6 +116,7 @@ typedef struct Game {
   ShroomVec2 previous_player_positions[SHROOM_MAX_PLAYERS];
   ShroomEntityId previous_player_entity_ids[SHROOM_MAX_PLAYERS];
   ShroomPlayerId previous_player_ids[SHROOM_MAX_PLAYERS];
+  char previous_player_names[SHROOM_MAX_PLAYERS][SHROOM_MAX_NAME_LENGTH];
   float previous_player_masses[SHROOM_MAX_PLAYERS];
   bool previous_player_alive[SHROOM_MAX_PLAYERS];
   uint8_t previous_player_piece_indices[SHROOM_MAX_PLAYERS];
