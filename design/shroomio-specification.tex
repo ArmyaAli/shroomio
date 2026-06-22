@@ -539,9 +539,9 @@ ShroomSnapshotPlayerState {
 }
 \end{verbatim}
 
-Broadcast at the snapshot rate (15~Hz). Contains up to 32 player entries. Clients overwrite their local player array from this payload.
+Broadcast at the snapshot rate (15~Hz). Contains player entries for visible players. Clients overwrite their local player array from this payload.
 
-\noindent\textbf{Known limitation}: spores are not included in snapshot packets. Online players do not see or interact with spores through the network layer. Spore replication is milestone 1 in the engineering roadmap (\S\ref{sec:roadmap}).
+Spores and powerups are replicated through separate server-to-client world-state packets (\texttt{SHROOM\_PACKET\_SPORE\_STATE} and \texttt{SHROOM\_PACKET\_POWERUP\_STATE}). The server remains authoritative for collection and powerup effects; clients apply these packets to render the online world state between player snapshots.
 
 \subsubsection{Ping / Pong (type = 5, 6)}
 
@@ -737,7 +737,7 @@ Primary movement: mouse-to-world vector (screen to world using \texttt{GetScreen
 
 \begin{itemize}
   \item \textbf{Offline mode}: the client runs the shared simulation (\texttt{ShroomWorldStep}) locally. No network connection required. Full spore economy and bot AI run client-side.
-  \item \textbf{Online mode}: after a successful Welcome handshake, the client stops running \texttt{ShroomWorldStep} locally and instead applies snapshots from the server (\texttt{ApplyNetworkSnapshot}). Spore state is zeroed in this mode.
+  \item \textbf{Online mode}: after a successful Welcome handshake, the client stops running \texttt{ShroomWorldStep} locally and instead applies player snapshots, spore-state packets, and powerup-state packets from the server.
 \end{itemize}
 
 \subsection{Network Client Lifecycle}
@@ -1275,7 +1275,7 @@ The implementation is compact (12 source files, approximately 1~400 lines of C),
 \hline
 \textbf{ID} & \textbf{Gap} & \textbf{Severity} & \textbf{Mitigation} \\
 \hline
-G1 & Spores not replicated in snapshots; online players cannot collect spores & High & Issue \#24: add spore replication to snapshot protocol \\
+G1 & Online spores and powerups are replicated through separate packets rather than the base snapshot payload; future work may still optimize interest management and bandwidth & Medium & Track performance and protocol evolution as online populations grow \\
 \hline
 G2 & Snapshot max 32 players vs simulation max 256; invisible players in full matches & High & Issue \#25: expand snapshot capacity or add interest management \\
 \hline
@@ -1344,12 +1344,12 @@ The roadmap is organized by priority and dependency order. Each milestone corres
 
 \subsection{Phase 5: Online Spore Economy (G1)}
 
-Add spore state to server snapshots so online matches include the full growth loop.
+Online matches now replicate spore and powerup state through dedicated packets. Remaining work is focused on scale, bandwidth control, and client smoothing for dense arenas.
 
 \begin{itemize}
-  \item Extend \texttt{ShroomSnapshotPacket} or add a new \texttt{ShroomWorldStatePacket} type that includes spore data.
-  \item Update \texttt{ApplyNetworkSnapshot} to populate \texttt{world.spores} from network data.
-  \item Ensure spore collection is resolved authoritatively on the server and the client applies server spore state.
+  \item Keep spore collection and powerup effects authoritative on the server.
+  \item Optimize spore and powerup replication for high-density worlds.
+  \item Add smoothing or interpolation where packet cadence is visible to players.
   \item Files affected: \texttt{protocol.h}, \texttt{server/main.c}, \texttt{client/net.c}, \texttt{client/game.c}.
 \end{itemize}
 

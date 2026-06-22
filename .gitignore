@@ -1,6 +1,7 @@
 build/
 dist/
 vendor/
+coverage/
 
 *.aux
 *.fdb_latexmk

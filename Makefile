@@ -50,6 +50,7 @@ LINUX_BUILD_DIR   := $(BUILD_DIR)/linux
 WINDOWS_BUILD_DIR := $(BUILD_DIR)/windows
 MACOS_BUILD_DIR   := $(BUILD_DIR)/macos
 TEST_BUILD_DIR    := $(BUILD_DIR)/tests
+COVERAGE_DIR      := coverage
 
 #Output binaries
 CLIENT_LINUX_BIN := $(DIST_DIR)/linux/client/$(PROJECT)
@@ -669,18 +670,22 @@ valgrind-imgui-test: $(IMGUI_TEST_BIN)
 
 # Test with coverage (requires gcovr)
 test-coverage:
+	@command -v gcovr >/dev/null 2>&1 || (printf '%s\n' 'gcovr is not installed. Rebuild the devcontainer with make devcontainer-build && make devcontainer-up.' && exit 1)
 	@echo "Building tests with coverage instrumentation..."
-	@$(MKDIR_P) $(TEST_BUILD_DIR)
+	@$(MKDIR_P) $(TEST_BUILD_DIR) $(COVERAGE_DIR)
 	@for src in $(TEST_SRCS); do \
 		test_name=$$(basename $$src .c); \
 		echo "Compiling $$test_name..."; \
 	done
-	@failed=0; total=0; \
+	@set -e; failed=0; total=0; \
 	for src in $(TEST_SRCS); do \
 		test_name=$$(basename $$src .c); \
 		test_bin=$(TEST_BUILD_DIR)/$$test_name; \
 		total=$$((total + 1)); \
 		case $$test_name in \
+			test_auth) \
+				$(LINUX_CC) $(TEST_CFLAGS) -I$(SERVER_SRC_DIR) -I$(VCPKG_LINUX_INCLUDE_DIR) -fprofile-arcs -ftest-coverage \
+					$$src $(UNITY_SRC) $(SERVER_SRC_DIR)/auth.c $(SERVER_SRC_DIR)/logger.c -o $$test_bin $(TEST_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lsqlite3 -lgcov ;; \
 			test_lifecycle) \
 				$(LINUX_CC) $(TEST_CFLAGS) -fprofile-arcs -ftest-coverage \
 					$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/lifecycle.c -o $$test_bin $(TEST_LIBS) -lgcov ;; \
@@ -718,11 +723,11 @@ test-coverage:
 	if [ $$failed -gt 0 ]; then exit 1; fi
 	@echo ""
 	@echo "Generating coverage report..."
-	@gcovr -r . --html --html-details -o coverage.html
-	@echo "Coverage report generated: coverage.html"
+	@gcovr -r . --html --html-details -o $(COVERAGE_DIR)/index.html
+	@echo "Coverage report generated: $(COVERAGE_DIR)/index.html"
 
 test-clean:
-	$(RM_RF) $(TEST_BUILD_DIR) coverage.html *.gcda *.gcno
+	$(RM_RF) $(TEST_BUILD_DIR) $(COVERAGE_DIR) *.gcda *.gcno
 
 # Specific test targets with explicit dependencies
 $(TEST_BUILD_DIR)/test_lifecycle: $(UNIT_TESTS_DIR)/test_lifecycle.c $(UNITY_SRC) $(SHARED_SRC_DIR)/lifecycle.c | $(UNITY_DIR)
