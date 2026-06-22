@@ -124,8 +124,8 @@ jobs:
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
           mkdir -p release-assets release-stage/linux/client release-stage/linux/server
-          cp dist/client/linux/shroomio release-stage/linux/client/
-          cp dist/server/linux/shroomio-server release-stage/linux/server/
+          cp dist/linux/client/shroomio release-stage/linux/client/
+          cp dist/linux/server/shroomio-server release-stage/linux/server/
           tar -czf release-assets/shroomio_client-${VERSION}-linux-x64.tar.gz -C release-stage linux
           tar -czf release-assets/shroomio_server-${VERSION}-linux-x64.tar.gz -C release-stage linux/server
 
@@ -178,8 +178,8 @@ jobs:
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
           mkdir -p release-assets release-stage/windows/client release-stage/windows/server
-          cp dist/client/windows/shroomio.exe release-stage/windows/client/
-          cp dist/server/windows/shroomio-server.exe release-stage/windows/server/
+          cp dist/windows/client/shroomio.exe release-stage/windows/client/
+          cp dist/windows/server/shroomio-server.exe release-stage/windows/server/
           (cd release-stage && zip -r ../release-assets/shroomio_client-${VERSION}-windows-x64.zip windows)
           (cd release-stage && zip -r ../release-assets/shroomio_server-${VERSION}-windows-x64.zip windows/server)
 
@@ -221,8 +221,8 @@ jobs:
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
           mkdir -p release-assets release-stage/macos/client release-stage/macos/server
-          cp dist/client/macos/shroomio release-stage/macos/client/
-          cp dist/server/macos/shroomio-server release-stage/macos/server/
+          cp dist/macos/client/shroomio release-stage/macos/client/
+          cp dist/macos/server/shroomio-server release-stage/macos/server/
           tar -czf release-assets/shroomio_client-${VERSION}-macos-x64.tar.gz -C release-stage macos
           tar -czf release-assets/shroomio_server-${VERSION}-macos-x64.tar.gz -C release-stage macos/server
 
