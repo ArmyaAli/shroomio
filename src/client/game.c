@@ -179,7 +179,21 @@ static void AddCombatNotification(Game* game, const char* title, const char* det
   }
 }
 
-static void AddKillFeedEntry(Game* game, const char* text, Color color) {
+static uint64_t MakeKillFeedEventKey(ShroomEntityId killer_entity_id,
+                                     ShroomEntityId victim_entity_id) {
+  return ((uint64_t)killer_entity_id << 32u) | (uint64_t)victim_entity_id;
+}
+
+static void AddKillFeedEntry(Game* game, const char* text, Color color, uint64_t event_key) {
+  if (event_key != 0ull) {
+    for (uint32_t offset = 0u; offset < game->kill_feed_count; ++offset) {
+      const uint32_t slot = (game->kill_feed_head + offset) % 8u;
+      if (game->kill_feed[slot].active && (game->kill_feed[slot].event_key == event_key)) {
+        return;
+      }
+    }
+  }
+
   if (game->kill_feed_count >= 8u) {
     game->kill_feed_head = (game->kill_feed_head + 1u) % 8u;
     game->kill_feed_count -= 1u;
@@ -189,6 +203,7 @@ static void AddKillFeedEntry(Game* game, const char* text, Color color) {
     KillFeedEntry* entry = &game->kill_feed[slot];
 
     snprintf(entry->text, sizeof(entry->text), "%s", text);
+    entry->event_key = event_key;
     entry->color = color;
     entry->age = 0.0f;
     entry->duration = 4.8f;
@@ -358,6 +373,23 @@ static const ShroomPlayerState* FindLargestMassGainer(const Game* game, float* m
   return best_player;
 }
 
+static bool FindPreviousPlayerMassByEntityId(const Game* game, ShroomEntityId entity_id,
+                                             float* previous_mass) {
+  if (entity_id == 0u) {
+    return false;
+  }
+  for (size_t index = 0; index < SHROOM_MAX_PLAYERS; ++index) {
+    if (game->previous_player_alive[index] &&
+        (game->previous_player_entity_ids[index] == entity_id)) {
+      if (previous_mass != NULL) {
+        *previous_mass = game->previous_player_masses[index];
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
 static const ShroomPlayerState* FindCurrentPlayerByEntityId(const Game* game,
                                                             ShroomEntityId entity_id) {
   if (entity_id == 0u) {
@@ -370,6 +402,57 @@ static const ShroomPlayerState* FindCurrentPlayerByEntityId(const Game* game,
     }
   }
   return NULL;
+}
+
+static const ShroomPlayerState* InferConsumeKiller(const Game* game, size_t previous_victim_index,
+                                                   float* killer_gain) {
+  const float victim_mass = game->previous_player_masses[previous_victim_index];
+  const ShroomVec2 victim_pos = game->previous_player_positions[previous_victim_index];
+  const float expected_gain = victim_mass * SHROOM_CONSUME_MASS_GAIN_FACTOR;
+  const ShroomPlayerId victim_player_id = game->previous_player_ids[previous_victim_index];
+  const ShroomPlayerState* best_player = NULL;
+  float best_gain = 0.0f;
+  float best_distance_sqr = 0.0f;
+
+  if (victim_mass <= 0.0f) {
+    return NULL;
+  }
+
+  for (size_t index = 0; index < game->world.player_count; ++index) {
+    const ShroomPlayerState* player = &game->world.players[index];
+    float previous_mass = 0.0f;
+    float gain;
+    float proximity_radius;
+    float distance_sqr;
+
+    if (!player->alive || (player->player_id == victim_player_id) ||
+        !FindPreviousPlayerMassByEntityId(game, player->entity_id, &previous_mass)) {
+      continue;
+    }
+
+    gain = player->mass - previous_mass;
+    if (gain < fmaxf(8.0f, expected_gain * 0.45f)) {
+      continue;
+    }
+
+    proximity_radius = player->radius + sqrtf(victim_mass) * 6.0f + 96.0f;
+    distance_sqr = ShroomDistanceSqr(player->position, victim_pos);
+    if (distance_sqr > (proximity_radius * proximity_radius)) {
+      continue;
+    }
+
+    if ((best_player == NULL) || (gain > best_gain + 0.5f) ||
+        ((fabsf(gain - best_gain) <= 0.5f) && (distance_sqr < best_distance_sqr))) {
+      best_player = player;
+      best_gain = gain;
+      best_distance_sqr = distance_sqr;
+    }
+  }
+
+  if (killer_gain != NULL) {
+    *killer_gain = best_gain;
+  }
+  return best_player;
 }
 
 static size_t FindPreviousLocalPrimaryIndex(const Game* game, ShroomPlayerId local_player_id) {
@@ -487,15 +570,28 @@ static void DrawCombatNotifications(const Game* game) {
 }
 
 static void DrawKillFeed(const Game* game) {
-  const float row_width = 320.0f;
+  const float row_width = fminf(320.0f, (float)game->screen_width - 36.0f);
   const float row_height = 28.0f;
+  const float row_gap = 6.0f;
+  const uint32_t shown_entries = game->kill_feed_count < 4u ? game->kill_feed_count : 4u;
   const float x = (float)game->screen_width - row_width - 18.0f;
-  float y = 96.0f;
+  float bottom_margin = 22.0f;
 
-  for (uint32_t offset = 0u; offset < game->kill_feed_count && offset < 5u; ++offset) {
+  if (shown_entries == 0u) {
+    return;
+  }
+  if (game->diagnostics_overlay_open) {
+    bottom_margin += 210.0f;
+  } else if (game->chat_open && IsOnlineMode(game->active_mode)) {
+    bottom_margin += 18.0f;
+  }
+
+  for (uint32_t offset = 0u; offset < shown_entries; ++offset) {
     const uint32_t slot = (game->kill_feed_head + game->kill_feed_count - 1u - offset) % 8u;
     const KillFeedEntry* entry = &game->kill_feed[slot];
     float alpha = 1.0f;
+    const float y = (float)game->screen_height - bottom_margin -
+                    ((float)(offset + 1u) * row_height) - ((float)offset * row_gap);
     Rectangle panel;
 
     if (!entry->active) {
@@ -513,7 +609,6 @@ static void DrawKillFeed(const Game* game) {
     DrawCircleV((Vector2){panel.x + 14.0f, panel.y + 14.0f}, 4.5f, Fade(entry->color, alpha));
     DrawText(entry->text, (int)(panel.x + 26.0f), (int)(panel.y + 7.0f), 14,
              Fade(RAYWHITE, 0.90f * alpha));
-    y += row_height + 6.0f;
   }
 }
 
@@ -656,6 +751,7 @@ static void EmitGameplayEventParticles(Game* game) {
       had_previous_local_primary && game->previous_player_alive[previous_local_primary_index] &&
       !IsDeathCutsceneOpen(game) &&
       (local_primary_missing || local_primary_entity_changed || local_primary_respawned);
+  bool local_kill_feed_reported = false;
   bool local_kill_reported = false;
   bool local_death_reported = false;
 
@@ -692,13 +788,19 @@ static void EmitGameplayEventParticles(Game* game) {
 
   if (local_primary_consumed) {
     const float previous_mass = game->previous_player_masses[previous_local_primary_index];
+    float inferred_gain = 0.0f;
+    const ShroomPlayerState* inferred_killer =
+        InferConsumeKiller(game, previous_local_primary_index, &inferred_gain);
     const char* killer_name =
-        largest_gainer != NULL ? GetPlayerDisplayName(game, largest_gainer) : "a larger colony";
+        inferred_killer != NULL ? GetPlayerDisplayName(game, inferred_killer) : "a larger colony";
+    const uint64_t feed_key =
+        MakeKillFeedEventKey(inferred_killer != NULL ? inferred_killer->entity_id : 0u,
+                             game->previous_player_entity_ids[previous_local_primary_index]);
     char feed_text[128];
 
     const ShroomVec2 death_pos = game->previous_player_positions[previous_local_primary_index];
     snprintf(feed_text, sizeof(feed_text), "%s consumed You", killer_name);
-    AddKillFeedEntry(game, feed_text, (Color){245, 84, 84, 255});
+    AddKillFeedEntry(game, feed_text, (Color){245, 84, 84, 255}, feed_key);
     game->death_camera_hold_timer = 0.6f;
     game->death_camera_hold_pos = (Vector2){death_pos.x, death_pos.y};
     QueueGameplayParticleBurst(game, game->previous_player_positions[previous_local_primary_index],
@@ -716,34 +818,43 @@ static void EmitGameplayEventParticles(Game* game) {
     local_death_reported = true;
   }
 
-  if ((largest_gainer != NULL) && !local_death_reported) {
-    for (index = 0; index < SHROOM_MAX_PLAYERS; ++index) {
-      const ShroomPlayerState* current_player;
-      char feed_text[128];
+  for (index = 0; index < SHROOM_MAX_PLAYERS; ++index) {
+    const ShroomPlayerState* current_player;
+    const ShroomPlayerState* inferred_killer;
+    float inferred_gain = 0.0f;
+    char feed_text[128];
 
-      if (!game->previous_player_alive[index] ||
-          (game->previous_player_piece_indices[index] != 0u) ||
-          (game->previous_player_ids[index] == 0u) ||
-          (game->previous_player_ids[index] == local_player_id) ||
-          (game->previous_player_ids[index] == largest_gainer->player_id)) {
+    if (!game->previous_player_alive[index] || (game->previous_player_piece_indices[index] != 0u) ||
+        (game->previous_player_ids[index] == 0u) ||
+        ((local_player_id != 0u) && (game->previous_player_ids[index] == local_player_id))) {
+      continue;
+    }
+
+    current_player = FindCurrentPlayerByEntityId(game, game->previous_player_entity_ids[index]);
+    if ((current_player != NULL) && current_player->alive) {
+      continue;
+    }
+
+    inferred_killer = InferConsumeKiller(game, index, &inferred_gain);
+    if (inferred_killer == NULL) {
+      continue;
+    }
+
+    if ((local_player_id != 0u) && (inferred_killer->player_id == local_player_id)) {
+      if (local_kill_feed_reported) {
         continue;
       }
-
-      current_player = FindCurrentPlayerByEntityId(game, game->previous_player_entity_ids[index]);
-      if ((current_player != NULL) && current_player->alive) {
-        continue;
-      }
-
-      if ((local_player_id != 0u) && (largest_gainer->player_id == local_player_id)) {
-        snprintf(feed_text, sizeof(feed_text), "You consumed %s",
-                 game->previous_player_names[index]);
-        AddKillFeedEntry(game, feed_text, (Color){112, 224, 128, 255});
-        local_kill_reported = true;
-      } else {
-        snprintf(feed_text, sizeof(feed_text), "%s consumed %s",
-                 GetPlayerDisplayName(game, largest_gainer), game->previous_player_names[index]);
-        AddKillFeedEntry(game, feed_text, (Color){210, 220, 210, 255});
-      }
+      snprintf(feed_text, sizeof(feed_text), "You consumed %s", game->previous_player_names[index]);
+      AddKillFeedEntry(game, feed_text, (Color){112, 224, 128, 255},
+                       MakeKillFeedEventKey(inferred_killer->entity_id,
+                                            game->previous_player_entity_ids[index]));
+      local_kill_feed_reported = true;
+    } else if (!local_death_reported) {
+      snprintf(feed_text, sizeof(feed_text), "%s consumed %s",
+               GetPlayerDisplayName(game, inferred_killer), game->previous_player_names[index]);
+      AddKillFeedEntry(game, feed_text, (Color){210, 220, 210, 255},
+                       MakeKillFeedEventKey(inferred_killer->entity_id,
+                                            game->previous_player_entity_ids[index]));
     }
   }
 
@@ -776,12 +887,9 @@ static void EmitGameplayEventParticles(Game* game) {
     if (local_consumed_player && !local_kill_reported && !local_death_reported) {
       char title[96];
       char detail[128];
-      char feed_text[128];
       snprintf(title, sizeof(title), "You consumed %s", GetPlayerDisplayName(game, player));
       snprintf(detail, sizeof(detail), "Victim mass %.0f  +%.0f mass  Rank %d", previous_mass,
                largest_gain, GetPlayerRank(game, largest_gainer));
-      snprintf(feed_text, sizeof(feed_text), "You consumed %s", GetPlayerDisplayName(game, player));
-      AddKillFeedEntry(game, feed_text, (Color){112, 224, 128, 255});
       QueueGameplayNotification(game, title, detail, (Color){112, 224, 128, 255}, 3.0f);
       QueueGameplayScreenFlash(game, (Color){104, 220, 122, 255}, 0.24f);
       QueueGameplaySfx(game, SHROOM_CLIENT_SFX_CONSUME, 0.86f);
@@ -3398,7 +3506,6 @@ void GameDraw(Game* game) {
   DrawInspectPrompt(game);
   DrawStatusBanners(game);
   DrawCombatNotifications(game);
-  DrawKillFeed(game);
   DrawDeathCutscene(game);
   DrawLeaderboardOverlay(game, leaderboard, shown_count);
   DrawMenuOverlay(game);
@@ -3407,6 +3514,7 @@ void GameDraw(Game* game) {
   DrawDiagnosticsOverlay(game);
   DrawChatDock(game);
   DrawInspectOverlay(game);
+  DrawKillFeed(game);
 
   if (profile_enabled) {
     const double draw_ms = ShroomProfileNanosToMs(ClientProfileNowNanos() - draw_start_nanos);

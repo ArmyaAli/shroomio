@@ -51,6 +51,7 @@ typedef struct CombatNotification {
 
 typedef struct KillFeedEntry {
   char text[128];
+  uint64_t event_key;
   Color color;
   float age;
   float duration;
