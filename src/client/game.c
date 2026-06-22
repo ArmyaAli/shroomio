@@ -547,20 +547,21 @@ static void EmitGameplayEventParticles(Game* game) {
   const ShroomPlayerState* largest_gainer = FindLargestMassGainer(game, &largest_gain);
   const size_t previous_local_primary_index = FindPreviousLocalPrimaryIndex(game, local_player_id);
   const ShroomPlayerState* current_local_primary = FindCurrentLocalPrimary(game, local_player_id);
-  /* Detect death/respawn.  Respawn keeps the same entity_id and immediately
-   *  resets alive=true, mass=SHROOM_DEFAULT_PLAYER_MASS, and position, so we
-   *  can't rely on entity_id change or alive=false.  Instead, detect a
-   *  mass drop to approximately default combined with a large position jump
-   *  which is the respawn signature.  Works for both online and offline. */
-  const bool local_primary_consumed =
-      (previous_local_primary_index < SHROOM_MAX_PLAYERS) && (current_local_primary != NULL) &&
-      game->previous_player_alive[previous_local_primary_index] &&
-      (game->previous_player_masses[previous_local_primary_index] >= SHROOM_DEFAULT_PLAYER_MASS) &&
-      (current_local_primary->mass < SHROOM_DEFAULT_PLAYER_MASS * 1.05f) &&
-      (game->previous_player_masses[previous_local_primary_index] >
-       current_local_primary->mass + SHROOM_DEFAULT_PLAYER_MASS * 0.25f) &&
+  const bool had_previous_local_primary = previous_local_primary_index < SHROOM_MAX_PLAYERS;
+  const bool local_primary_missing = had_previous_local_primary && (current_local_primary == NULL);
+  const bool local_primary_entity_changed =
+      had_previous_local_primary && (current_local_primary != NULL) &&
+      (current_local_primary->entity_id !=
+       game->previous_player_entity_ids[previous_local_primary_index]);
+  const bool local_primary_respawned =
+      had_previous_local_primary && (current_local_primary != NULL) &&
+      (current_local_primary->mass <= SHROOM_DEFAULT_PLAYER_MASS * 1.05f) &&
       (ShroomDistanceSqr(current_local_primary->position,
                          game->previous_player_positions[previous_local_primary_index]) > 2500.0f);
+  const bool local_primary_consumed =
+      had_previous_local_primary && game->previous_player_alive[previous_local_primary_index] &&
+      !IsDeathCutsceneOpen(game) &&
+      (local_primary_missing || local_primary_entity_changed || local_primary_respawned);
   bool local_kill_reported = false;
   bool local_death_reported = false;
 
