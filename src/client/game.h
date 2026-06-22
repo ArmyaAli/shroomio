@@ -49,6 +49,14 @@ typedef struct CombatNotification {
   bool active;
 } CombatNotification;
 
+typedef struct KillFeedEntry {
+  char text[128];
+  Color color;
+  float age;
+  float duration;
+  bool active;
+} KillFeedEntry;
+
 typedef enum GameplayEventType {
   GAMEPLAY_EVENT_PARTICLE_BURST = 0,
   GAMEPLAY_EVENT_NOTIFICATION,
@@ -93,12 +101,15 @@ typedef struct Game {
   uint32_t particle_cursor;
   uint32_t notification_head;
   uint32_t notification_count;
+  uint32_t kill_feed_head;
+  uint32_t kill_feed_count;
   uint32_t gameplay_event_head;
   uint32_t gameplay_event_count;
   ShroomVec2 render_positions[SHROOM_MAX_PLAYERS];
   ShroomVec2 previous_local_position;
   GameplayParticle particles[SHROOM_CLIENT_PARTICLE_CAPACITY];
   CombatNotification notifications[SHROOM_CLIENT_NOTIFICATION_CAPACITY];
+  KillFeedEntry kill_feed[8];
   GameplayEvent gameplay_events[SHROOM_CLIENT_GAMEPLAY_EVENT_CAPACITY];
   ShroomVec2 previous_spore_positions[SHROOM_MAX_SPORES];
   ShroomEntityId previous_spore_entity_ids[SHROOM_MAX_SPORES];

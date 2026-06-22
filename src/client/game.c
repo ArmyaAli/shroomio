@@ -179,6 +179,24 @@ static void AddCombatNotification(Game* game, const char* title, const char* det
   }
 }
 
+static void AddKillFeedEntry(Game* game, const char* text, Color color) {
+  if (game->kill_feed_count >= 8u) {
+    game->kill_feed_head = (game->kill_feed_head + 1u) % 8u;
+    game->kill_feed_count -= 1u;
+  }
+  {
+    const uint32_t slot = (game->kill_feed_head + game->kill_feed_count) % 8u;
+    KillFeedEntry* entry = &game->kill_feed[slot];
+
+    snprintf(entry->text, sizeof(entry->text), "%s", text);
+    entry->color = color;
+    entry->age = 0.0f;
+    entry->duration = 4.8f;
+    entry->active = true;
+    game->kill_feed_count += 1u;
+  }
+}
+
 static void StartDeathCutscene(Game* game, const char* killer_name, float final_mass,
                                int final_rank) {
   if (!game->settings.death_cutscene_enabled) {
@@ -374,6 +392,23 @@ static void UpdateCombatNotifications(Game* game, float delta_time) {
     }
   }
 
+  for (uint32_t offset = 0u; offset < game->kill_feed_count; ++offset) {
+    const uint32_t slot = (game->kill_feed_head + offset) % 8u;
+    KillFeedEntry* entry = &game->kill_feed[slot];
+    if (entry->active) {
+      entry->age += delta_time;
+    }
+  }
+  while (game->kill_feed_count > 0u) {
+    KillFeedEntry* entry = &game->kill_feed[game->kill_feed_head];
+    if (entry->active && (entry->age < entry->duration)) {
+      break;
+    }
+    entry->active = false;
+    game->kill_feed_head = (game->kill_feed_head + 1u) % 8u;
+    game->kill_feed_count -= 1u;
+  }
+
   if (game->screen_flash_timer > 0.0f) {
     game->screen_flash_timer = fmaxf(0.0f, game->screen_flash_timer - delta_time);
   }
@@ -425,6 +460,37 @@ static void DrawCombatNotifications(const Game* game) {
            Fade(RAYWHITE, alpha));
   DrawText(notification->detail, (int)(panel.x + 46.0f), (int)(panel.y + 34.0f), 13,
            Fade((Color){226, 232, 210, 255}, 0.86f * alpha));
+}
+
+static void DrawKillFeed(const Game* game) {
+  const float row_width = 320.0f;
+  const float row_height = 28.0f;
+  const float x = (float)game->screen_width - row_width - 18.0f;
+  float y = 96.0f;
+
+  for (uint32_t offset = 0u; offset < game->kill_feed_count && offset < 5u; ++offset) {
+    const uint32_t slot = (game->kill_feed_head + game->kill_feed_count - 1u - offset) % 8u;
+    const KillFeedEntry* entry = &game->kill_feed[slot];
+    float alpha = 1.0f;
+    Rectangle panel;
+
+    if (!entry->active) {
+      continue;
+    }
+    if (entry->age < 0.18f) {
+      alpha = SmoothStep01(entry->age / 0.18f);
+    } else if (entry->duration - entry->age < 0.90f) {
+      alpha = SmoothStep01(fmaxf(0.0f, (entry->duration - entry->age) / 0.90f));
+    }
+
+    panel = (Rectangle){x, y, row_width, row_height};
+    DrawRectangleRounded(panel, 0.26f, 8, Fade((Color){16, 21, 16, 255}, 0.54f * alpha));
+    DrawRectangleRoundedLines(panel, 0.26f, 8, Fade(entry->color, 0.58f * alpha));
+    DrawCircleV((Vector2){panel.x + 14.0f, panel.y + 14.0f}, 4.5f, Fade(entry->color, alpha));
+    DrawText(entry->text, (int)(panel.x + 26.0f), (int)(panel.y + 7.0f), 14,
+             Fade(RAYWHITE, 0.90f * alpha));
+    y += row_height + 6.0f;
+  }
 }
 
 static bool IsDeathCutsceneOpen(const Game* game) {
@@ -602,8 +668,11 @@ static void EmitGameplayEventParticles(Game* game) {
     const float previous_mass = game->previous_player_masses[previous_local_primary_index];
     const char* killer_name =
         largest_gainer != NULL ? GetPlayerDisplayName(game, largest_gainer) : "a larger colony";
+    char feed_text[128];
 
     const ShroomVec2 death_pos = game->previous_player_positions[previous_local_primary_index];
+    snprintf(feed_text, sizeof(feed_text), "%s consumed You", killer_name);
+    AddKillFeedEntry(game, feed_text, (Color){245, 84, 84, 255});
     game->death_camera_hold_timer = 0.6f;
     game->death_camera_hold_pos = (Vector2){death_pos.x, death_pos.y};
     QueueGameplayParticleBurst(game, game->previous_player_positions[previous_local_primary_index],
@@ -638,6 +707,13 @@ static void EmitGameplayEventParticles(Game* game) {
 
     if (game->previous_player_alive[index] && had_same_player && !had_same_entity &&
         was_primary_piece) {
+      if ((largest_gainer != NULL) && !was_local_player && !local_death_reported &&
+          (largest_gainer->player_id != local_player_id)) {
+        char feed_text[128];
+        snprintf(feed_text, sizeof(feed_text), "%s consumed %s",
+                 GetPlayerDisplayName(game, largest_gainer), GetPlayerDisplayName(game, player));
+        AddKillFeedEntry(game, feed_text, (Color){210, 220, 210, 255});
+      }
       QueueGameplayParticleBurst(game, game->previous_player_positions[index],
                                  (Color){150, 45, 42, 255}, 28, 150.0f, 7.0f, 0.76f);
       QueueGameplayParticleBurst(game, player->position, (Color){122, 220, 118, 255}, 14, 82.0f,
@@ -650,9 +726,12 @@ static void EmitGameplayEventParticles(Game* game) {
     if (local_consumed_player && !local_kill_reported && !local_death_reported) {
       char title[96];
       char detail[128];
+      char feed_text[128];
       snprintf(title, sizeof(title), "You consumed %s", GetPlayerDisplayName(game, player));
       snprintf(detail, sizeof(detail), "Victim mass %.0f  +%.0f mass  Rank %d", previous_mass,
                largest_gain, GetPlayerRank(game, largest_gainer));
+      snprintf(feed_text, sizeof(feed_text), "You consumed %s", GetPlayerDisplayName(game, player));
+      AddKillFeedEntry(game, feed_text, (Color){112, 224, 128, 255});
       QueueGameplayNotification(game, title, detail, (Color){112, 224, 128, 255}, 3.0f);
       QueueGameplayScreenFlash(game, (Color){104, 220, 122, 255}, 0.24f);
       QueueGameplaySfx(game, SHROOM_CLIENT_SFX_CONSUME, 0.86f);
@@ -3269,6 +3348,7 @@ void GameDraw(Game* game) {
   DrawInspectPrompt(game);
   DrawStatusBanners(game);
   DrawCombatNotifications(game);
+  DrawKillFeed(game);
   DrawDeathCutscene(game);
   DrawLeaderboardOverlay(game, leaderboard, shown_count);
   DrawMenuOverlay(game);
