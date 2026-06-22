@@ -16,8 +16,8 @@ make server
 Optional runtime timing logs:
 
 ```bash
-SHROOM_PROFILE=1 ./dist/shroomio-server
-SHROOM_PROFILE=1 ./dist/shroomio
+SHROOM_PROFILE=1 ./dist/server/linux/shroomio-server
+SHROOM_PROFILE=1 ./dist/client/linux/shroomio
 ```
 
 See `docs/Profiling-Instrumentation.md` for the `profile,...` fields.
@@ -44,7 +44,7 @@ Attach `build/benchmarks/summary.csv` to optimization PRs/issues. Compare:
 Run a server or benchmark under `perf`:
 
 ```bash
-perf record -g -- ./dist/shroomio-server --benchmark --benchmark-ticks 3000 --benchmark-bots 64
+perf record -g -- ./dist/server/linux/shroomio-server --benchmark --benchmark-ticks 3000 --benchmark-bots 64
 perf report
 ```
 
@@ -60,7 +60,7 @@ Look for hot paths in:
 Start the client under `perf` while connected to a local server:
 
 ```bash
-perf record -g -- ./dist/shroomio
+perf record -g -- ./dist/client/linux/shroomio
 perf report
 ```
 
@@ -93,7 +93,7 @@ make valgrind-test
 For targeted server runs:
 
 ```bash
-valgrind --leak-check=full --track-origins=yes ./dist/shroomio-server --smoke-test \
+valgrind --leak-check=full --track-origins=yes ./dist/server/linux/shroomio-server --smoke-test \
   --bind 127.0.0.1 --port 37777 --database /tmp/shroomio-profile.db
 ```
 
@@ -103,7 +103,7 @@ Use Massif when RSS or allocation growth is suspicious:
 
 ```bash
 valgrind --tool=massif --massif-out-file=build/massif-server.out \
-  ./dist/shroomio-server --benchmark --benchmark-ticks 3000 --benchmark-bots 64
+  ./dist/server/linux/shroomio-server --benchmark --benchmark-ticks 3000 --benchmark-bots 64
 ms_print build/massif-server.out
 ```
 

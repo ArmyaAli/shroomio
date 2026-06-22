@@ -124,8 +124,11 @@ jobs:
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
           mkdir -p release-assets
-          tar -czf release-assets/shroomio_client-${VERSION}-linux-x64.tar.gz -C dist shroomio shroomio-server
-          tar -czf release-assets/shroomio_server-${VERSION}-linux-x64.tar.gz -C dist shroomio-server
+          tar -czf release-assets/shroomio_client-${VERSION}-linux-x64.tar.gz \
+            -C dist/client/linux shroomio \
+            -C ../../server/linux shroomio-server
+          tar -czf release-assets/shroomio_server-${VERSION}-linux-x64.tar.gz \
+            -C dist/server/linux shroomio-server
 
       - name: Upload Linux asset
         uses: actions/upload-artifact@v4
@@ -176,8 +179,11 @@ jobs:
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
           mkdir -p release-assets
-          zip -j release-assets/shroomio_client-${VERSION}-windows-x64.zip dist/shroomio.exe dist/shroomio-server.exe
-          zip -j release-assets/shroomio_server-${VERSION}-windows-x64.zip dist/shroomio-server.exe
+          zip -j release-assets/shroomio_client-${VERSION}-windows-x64.zip \
+            dist/client/windows/shroomio.exe \
+            dist/server/windows/shroomio-server.exe
+          zip -j release-assets/shroomio_server-${VERSION}-windows-x64.zip \
+            dist/server/windows/shroomio-server.exe
 
       - name: Upload Windows asset
         uses: actions/upload-artifact@v4
@@ -217,8 +223,11 @@ jobs:
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
           mkdir -p release-assets
-          tar -czf release-assets/shroomio_client-${VERSION}-macos-x64.tar.gz -C dist shroomio-macos shroomio-server-macos
-          tar -czf release-assets/shroomio_server-${VERSION}-macos-x64.tar.gz -C dist shroomio-server-macos
+          tar -czf release-assets/shroomio_client-${VERSION}-macos-x64.tar.gz \
+            -C dist/client/macos shroomio \
+            -C ../../server/macos shroomio-server
+          tar -czf release-assets/shroomio_server-${VERSION}-macos-x64.tar.gz \
+            -C dist/server/macos shroomio-server
 
       - name: Upload macOS asset
         uses: actions/upload-artifact@v4

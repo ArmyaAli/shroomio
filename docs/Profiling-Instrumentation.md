@@ -5,8 +5,8 @@ Shroomio includes lightweight, opt-in timing instrumentation for profiling build
 Enable it with:
 
 ```bash
-SHROOM_PROFILE=1 ./dist/shroomio
-SHROOM_PROFILE=1 ./dist/shroomio-server
+SHROOM_PROFILE=1 ./dist/client/linux/shroomio
+SHROOM_PROFILE=1 ./dist/server/linux/shroomio-server
 ```
 
 When enabled, the client and server print CSV-like `profile,...` log lines roughly every five

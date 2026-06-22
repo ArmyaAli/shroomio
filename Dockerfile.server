@@ -28,7 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY --from=builder /app/dist/shroomio-server /usr/local/bin/shroomio-server
+COPY --from=builder /app/dist/server/linux/shroomio-server /usr/local/bin/shroomio-server
 COPY database ./database
 
 ENV SHROOM_SERVER_BIND=0.0.0.0 \

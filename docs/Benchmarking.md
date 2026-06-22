@@ -6,7 +6,7 @@ Use the local benchmark harness to collect repeatable server scaling numbers bef
 make benchmark
 ```
 
-The default run builds `dist/shroomio-server`, then runs deterministic bot-only scenarios for
+The default run builds `dist/server/linux/shroomio-server`, then runs deterministic bot-only scenarios for
 1, 8, and 32 simulated players over 600 ticks. Artifacts are written to `build/benchmarks/`:
 
 - `summary.csv`: one row per scenario for branch-to-branch comparison.
@@ -16,7 +16,7 @@ Useful options:
 
 ```bash
 python3 scripts/benchmark.py --ticks 1200 --players 1,8,32,64
-python3 scripts/benchmark.py --server ./dist/shroomio-server --out-dir /tmp/shroomio-bench
+python3 scripts/benchmark.py --server ./dist/server/linux/shroomio-server --out-dir /tmp/shroomio-bench
 ```
 
 ## Output fields
