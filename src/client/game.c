@@ -2421,7 +2421,7 @@ static void DrawChatDock(Game* game) {
   const float dock_width = 392.0f;
   const float history_height = game->chat_open ? 178.0f : 160.0f;
   const float input_height = game->chat_open ? 98.0f : 0.0f;
-  const float total_height = history_height + input_height + (game->chat_open ? 8.0f : 28.0f);
+  const float total_height = history_height + input_height + (game->chat_open ? 8.0f : 48.0f);
   const float pos_x = (float)game->screen_width - dock_width - 18.0f;
   const float pos_y = 132.0f;
   const float btn_size = 44.0f;
