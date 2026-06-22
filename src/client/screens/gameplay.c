@@ -5,7 +5,15 @@
 #include "raylib.h"
 
 static void RestartQuickPlaySession(Game* game) {
-  const GameSessionMode mode = game->selected_mode;
+  const GameSessionMode mode = game->active_mode;
+
+  if ((mode == SHROOM_SESSION_MODE_QUICK_PLAY) || (mode == SHROOM_SESSION_MODE_LOBBY_PLAY)) {
+    game->death_cutscene_timer = 0.0f;
+    game->death_cutscene_duration = 0.0f;
+    game->death_camera_hold_timer = 0.0f;
+    return;
+  }
+
   GameShutdown(game);
   GameInit(game, GetScreenWidth(), GetScreenHeight(), mode);
 }

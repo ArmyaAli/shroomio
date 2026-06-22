@@ -517,6 +517,30 @@ static void Test_ResultsNavigationActions(ImGuiTestContext* ctx) {
   IM_CHECK(g_imgui_test_app.game.local_player != NULL);
 }
 
+static void Test_DeathCutscenePlayAgainResumesOnlineMatch(ImGuiTestContext* ctx) {
+  ShroomPlayerState* original_player;
+
+  SetupOnlineGame();
+  g_imgui_test_app.game.selected_mode = SHROOM_SESSION_MODE_LOBBY_PLAY;
+  g_imgui_test_app.game.active_mode = SHROOM_SESSION_MODE_LOBBY_PLAY;
+  g_imgui_test_app.game.death_cutscene_duration = 1.0f;
+  g_imgui_test_app.game.death_cutscene_timer = 1.0f;
+  original_player = g_imgui_test_app.game.local_player;
+
+  ShroomTeCtx_SetRef(ctx, "Death Cutscene Actions");
+  ShroomTeCtx_Yield(ctx, 2);
+
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Death Cutscene Actions"));
+  ShroomTeCtx_ItemClick(ctx, "Play Again");
+  ShroomTeCtx_Yield(ctx, 2);
+
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_GAME);
+  IM_CHECK_EQ(g_imgui_test_app.game.active_mode, SHROOM_SESSION_MODE_LOBBY_PLAY);
+  IM_CHECK_EQ(g_imgui_test_app.game.death_cutscene_duration, 0.0f);
+  IM_CHECK_EQ(g_imgui_test_app.game.local_player, original_player);
+}
+
 /* chat: Chat dock is active in online mode. */
 static void Test_ChatDockVisibleOnline(ImGuiTestContext* ctx) {
   SetupOnlineGame();
@@ -802,6 +826,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_GameplayOfflineMenuReturnRequestsResults);
   ShroomTeEngine_RegisterTest(engine, "screens", "results_navigation_actions",
                               Test_ResultsNavigationActions);
+  ShroomTeEngine_RegisterTest(engine, "screens", "death_cutscene_play_again_resumes_online_match",
+                              Test_DeathCutscenePlayAgainResumesOnlineMatch);
   ShroomTeEngine_RegisterTest(engine, "chat", "dock_visible_in_online_mode",
                               Test_ChatDockVisibleOnline);
   ShroomTeEngine_RegisterTest(engine, "chat", "dock_hidden_in_offline_mode",
