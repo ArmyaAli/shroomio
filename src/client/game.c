@@ -1957,31 +1957,50 @@ static void DrawOffscreenIndicators(const Game* game) {
     indicator_position = Vector2Add(screen_center, Vector2Scale(direction, scale));
     direction = Vector2Normalize(direction);
 
-    /* Mushroom-cap arrow with trailing spores. */
+    /* Directional mushroom marker: cap points toward the off-screen colony. */
     {
       const Vector2 perpendicular = {-direction.y, direction.x};
-      const Vector2 tip = Vector2Add(indicator_position, Vector2Scale(direction, 10.0f));
-      const Vector2 cap_center = Vector2Subtract(indicator_position, Vector2Scale(direction, 3.0f));
+      const Vector2 cap_tip = Vector2Add(indicator_position, Vector2Scale(direction, 12.0f));
+      const Vector2 cap_center = Vector2Subtract(indicator_position, Vector2Scale(direction, 2.0f));
       const Vector2 cap_back = Vector2Subtract(indicator_position, Vector2Scale(direction, 12.0f));
-      const Vector2 cap_left = Vector2Add(cap_back, Vector2Scale(perpendicular, 15.0f));
-      const Vector2 cap_right = Vector2Subtract(cap_back, Vector2Scale(perpendicular, 15.0f));
-      const Vector2 stem_base = Vector2Subtract(indicator_position, Vector2Scale(direction, 31.0f));
-      const Vector2 stem_tip = Vector2Subtract(indicator_position, Vector2Scale(direction, 11.0f));
+      const Vector2 cap_left = Vector2Add(cap_back, Vector2Scale(perpendicular, 18.0f));
+      const Vector2 cap_right = Vector2Subtract(cap_back, Vector2Scale(perpendicular, 18.0f));
+      const Vector2 gill_left = Vector2Add(cap_back, Vector2Scale(perpendicular, 13.0f));
+      const Vector2 gill_right = Vector2Subtract(cap_back, Vector2Scale(perpendicular, 13.0f));
+      const Vector2 stem_base = Vector2Subtract(indicator_position, Vector2Scale(direction, 32.0f));
+      const Vector2 stem_top = Vector2Subtract(indicator_position, Vector2Scale(direction, 13.0f));
+      const Vector2 stem_left_base = Vector2Add(stem_base, Vector2Scale(perpendicular, 4.5f));
+      const Vector2 stem_right_base = Vector2Subtract(stem_base, Vector2Scale(perpendicular, 4.5f));
+      const Vector2 stem_left_top = Vector2Add(stem_top, Vector2Scale(perpendicular, 7.0f));
+      const Vector2 stem_right_top = Vector2Subtract(stem_top, Vector2Scale(perpendicular, 7.0f));
       const Color spore_color =
           Fade((Color){244, 214, 126, 255}, threat_state == PLAYER_THREAT_NONE ? 0.46f : 0.78f);
+      const Color stem_color = Fade((Color){236, 214, 174, 255}, 0.92f);
+      const Color gill_color = Fade((Color){249, 226, 186, 255}, 0.88f);
 
-      DrawLineEx(stem_base, stem_tip, 9.0f, Fade(BLACK, 0.48f));
-      DrawTriangle(tip, cap_left, cap_right, Fade(BLACK, 0.50f));
+      DrawTriangle(cap_tip, cap_left, cap_right, Fade(BLACK, 0.54f));
       DrawCircleV(cap_center, 17.0f, Fade(BLACK, 0.38f));
+      DrawTriangle(stem_left_base, stem_right_base, stem_left_top, Fade(BLACK, 0.44f));
+      DrawTriangle(stem_right_base, stem_right_top, stem_left_top, Fade(BLACK, 0.44f));
 
-      DrawLineEx(stem_base, stem_tip, 5.0f, Fade((Color){232, 206, 156, 255}, 0.86f));
-      DrawTriangle(tip, cap_left, cap_right, Fade(color, 0.95f));
+      DrawTriangle(stem_left_base, stem_right_base, stem_left_top, stem_color);
+      DrawTriangle(stem_right_base, stem_right_top, stem_left_top, stem_color);
+      DrawTriangle(cap_tip, cap_left, cap_right, Fade(color, 0.98f));
       DrawCircleV(cap_center, 11.0f, Fade(color, 0.96f));
-      DrawCircleV(Vector2Add(cap_center, Vector2Scale(perpendicular, 4.5f)), 3.8f,
-                  Fade(RAYWHITE, 0.72f));
+      DrawLineEx(gill_left, gill_right, 4.0f, gill_color);
+      DrawLineEx(Vector2Add(gill_left, Vector2Scale(direction, 2.0f)),
+                 Vector2Add(gill_right, Vector2Scale(direction, 2.0f)), 1.5f,
+                 Fade((Color){112, 76, 54, 255}, 0.34f));
+
+      DrawCircleV(Vector2Add(cap_center, Vector2Scale(perpendicular, 6.0f)), 3.6f,
+                  Fade(RAYWHITE, 0.76f));
+      DrawCircleV(Vector2Subtract(cap_center, Vector2Scale(perpendicular, 5.0f)), 2.6f,
+                  Fade(RAYWHITE, 0.60f));
+      DrawCircleV(Vector2Add(cap_center, Vector2Scale(direction, 5.0f)), 2.4f,
+                  Fade(RAYWHITE, 0.52f));
 
       for (int spore_index = 0; spore_index < 3; ++spore_index) {
-        const float distance = 21.0f + (float)spore_index * 9.0f;
+        const float distance = 24.0f + (float)spore_index * 9.0f;
         const float side = (spore_index == 1) ? -1.0f : 1.0f;
         const Vector2 spore_position =
             Vector2Add(Vector2Subtract(indicator_position, Vector2Scale(direction, distance)),
