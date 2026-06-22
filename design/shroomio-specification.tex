@@ -444,11 +444,11 @@ All multiplayer communication uses ENet over UDP on port 7777. ENet provides mul
 \hline
 \textbf{Channel} & \textbf{ID} & \textbf{QoS} & \textbf{Purpose} \\
 \hline
-Control & 0 & Reliable, ordered & Hello, Welcome, Ping, Pong, Auth, Chat \\
+Control & 0 & Reliable, ordered & Hello, Welcome, Ping, Pong, Auth, lobby control \\
 \hline
-Input & 1 & Unreliable, sequenced & Player directional input \\
+Snapshot & 1 & Unreliable, sequenced & Server-to-client player snapshots, spore state, powerup state \\
 \hline
-Snapshot & 2 & Unreliable, sequenced & Server-to-client world state updates \\
+Input & 2 & Unreliable, sequenced & Player directional input \\
 \hline
 Chat & 3 & Reliable, ordered & Text chat messages \\
 \hline
@@ -475,7 +475,7 @@ ShroomPacketHeader {
 \begin{verbatim}
 ShroomHelloPacket {
     ShroomPacketHeader header;
-    uint32_t protocol_version;    // SHROOM_PROTOCOL_VERSION (1)
+    uint32_t protocol_version;    // SHROOM_PROTOCOL_VERSION (3)
     char     name[32];            // player-chosen display name
 }
 \end{verbatim}
@@ -507,10 +507,15 @@ ShroomInputPacket {
     uint32_t sequence;            // monotonic, client-side
     float    direction_x;         // normalized input x
     float    direction_y;         // normalized input y
+    float    split_direction_x;
+    float    split_direction_y;
+    uint8_t  split_requested;
+    uint8_t  reserved[3];
+    uint32_t focused_entity_id;   // 0 = primary piece
 }
 \end{verbatim}
 
-Sent per tick at the server tick rate (30~Hz). The server clamps and normalizes the direction vector before applying it.
+Sent per tick at the server tick rate (30~Hz). The server clamps and normalizes the direction vector before applying it. Split fields request an aimed split, and \texttt{focused\_entity\_id} lets the server route input to the currently controlled split piece.
 
 \subsubsection{Snapshot (server to client, type = 4)}
 
@@ -523,7 +528,7 @@ ShroomSnapshotPacket {
     uint32_t                        entity_id;
     uint16_t                        player_count;
     uint16_t                        reserved;
-    ShroomSnapshotPlayerState       players[32];
+    ShroomSnapshotPlayerState       players[SHROOM_MAX_SNAPSHOT_PLAYERS];
 }
 
 ShroomSnapshotPlayerState {
@@ -533,15 +538,61 @@ ShroomSnapshotPlayerState {
     float    position_y;
     float    mass;
     float    radius;
+    char     name[32];
     uint8_t  alive;
     uint8_t  is_bot;
-    uint16_t reserved;
+    uint16_t effect_flags;
 }
 \end{verbatim}
 
 Broadcast at the snapshot rate (15~Hz). Contains player entries for visible players. Clients overwrite their local player array from this payload.
 
 Spores and powerups are replicated through separate server-to-client world-state packets (\texttt{SHROOM\_PACKET\_SPORE\_STATE} and \texttt{SHROOM\_PACKET\_POWERUP\_STATE}). The server remains authoritative for collection and powerup effects; clients apply these packets to render the online world state between player snapshots.
+
+\subsubsection{Spore State (server to client, type = 7)}
+
+\begin{verbatim}
+ShroomSporeStatePacket {
+    ShroomPacketHeader          header;
+    uint64_t                    tick;
+    uint16_t                    spore_count;
+    uint16_t                    reserved;
+    ShroomSnapshotSporeState    spores[SHROOM_MAX_SPORES];
+}
+
+ShroomSnapshotSporeState {
+    uint32_t entity_id;
+    float    position_x;
+    float    position_y;
+    uint16_t value;
+    uint16_t reserved;
+}
+\end{verbatim}
+
+Broadcast at \texttt{SHROOM\_SPORE\_STATE\_RATE} (5~Hz). Clients clamp incoming counts to \texttt{SHROOM\_MAX\_SPORES}, copy the active spore list, and mark unused local slots inactive. The server remains authoritative for spore collection and relocation.
+
+\subsubsection{Powerup State (server to client, type = 18)}
+
+\begin{verbatim}
+ShroomPowerupStatePacket {
+    ShroomPacketHeader           header;
+    uint64_t                     tick;
+    uint16_t                     powerup_count;
+    uint16_t                     reserved;
+    ShroomSnapshotPowerupState   powerups[SHROOM_MAX_POWERUPS];
+}
+
+ShroomSnapshotPowerupState {
+    uint32_t entity_id;
+    float    position_x;
+    float    position_y;
+    uint8_t  type;
+    uint8_t  active;
+    uint16_t reserved;
+}
+\end{verbatim}
+
+Powerup state uses the snapshot channel alongside player and spore state. Clients clamp incoming counts to \texttt{SHROOM\_MAX\_POWERUPS}, copy active entries, and clear unused local slots. Powerup pickup resolution and effect timers remain server-authoritative.
 
 \subsubsection{Ping / Pong (type = 5, 6)}
 
@@ -554,7 +605,7 @@ Used for latency measurement. The server echoes Pong with the same nonce. Not ye
 
 \subsection{Snapshot Capacity Constraint}
 
-The simulation supports up to 128 players (\texttt{SHROOM\_MAX\_PLAYERS}), but the snapshot packet is hard-coded to 32 player entries (\texttt{SHROOM\_MAX\_SNAPSHOT\_PLAYERS}). This means that in a full online match, only the first 32 alive players will be visible to any given client. This is a known capacity gap scheduled for remediation in milestone 2 (\S\ref{sec:roadmap}).
+The simulation supports up to 256 players (\texttt{SHROOM\_MAX\_PLAYERS}), and the snapshot packet currently allows up to 256 player entries (\texttt{SHROOM\_MAX\_SNAPSHOT\_PLAYERS}). This removes the earlier hard 32-player visibility cap. Remaining protocol risks are bandwidth growth and lack of interest management when dense worlds include many players, spores, and powerups.
 
 %---------------------------------------------------------------------
 \section{Simulation Rules}
