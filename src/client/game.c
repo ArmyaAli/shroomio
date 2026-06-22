@@ -2673,7 +2673,7 @@ static void DrawProximityMap(const Game* game) {
   if (game->local_player == NULL) {
     return;
   }
-  const Vector2 center = {98.0f, game->screen_height - 126.0f};
+  const Vector2 center = {98.0f, game->screen_height - 142.0f};
   const float inner_radius = kProximityMapRadius - 10.0f;
   const float pulse_phase = 0.5f + (0.5f * sinf(game->inspect_prompt_timer * 3.6f));
   const float pulse = 0.68f + (0.32f * pulse_phase);
