@@ -2004,8 +2004,15 @@ static void UpdateStatusBanners(Game* game, float delta_time) {
 }
 
 static void DrawStatusBanners(const Game* game) {
+  /* Stack banners vertically below the combat notification stream. The
+   * notification panel occupies y=24..82 (24px top + 58px height) when
+   * active; start banners below it with a 12px gap so they never overlap. */
+  const float notification_bottom = 24.0f + 58.0f;
+  const float top_y = (game->notification_count > 0u) ? notification_bottom + 12.0f : 18.0f;
+  float next_y = top_y;
+
   if (game->zone_callout_timer > 0.0f) {
-    ShroomImGui_SetNextWindowPos((game->screen_width - 420) * 0.5f, 18.0f,
+    ShroomImGui_SetNextWindowPos((game->screen_width - 420) * 0.5f, next_y,
                                  SHROOM_IMGUI_COND_ALWAYS);
     ShroomImGui_SetNextWindowSize(420.0f, 76.0f, SHROOM_IMGUI_COND_ALWAYS);
     ShroomImGui_SetNextWindowBgAlpha(0.74f);
@@ -2019,10 +2026,11 @@ static void DrawStatusBanners(const Game* game) {
       ShroomImGui_Text(GetZoneSummary(game->current_zone));
     }
     ShroomImGui_End();
+    next_y += 76.0f + 12.0f;
   }
 
   if (game->respawn_banner_timer > 0.0f) {
-    ShroomImGui_SetNextWindowPos((game->screen_width - 360) * 0.5f, 112.0f,
+    ShroomImGui_SetNextWindowPos((game->screen_width - 360) * 0.5f, next_y,
                                  SHROOM_IMGUI_COND_ALWAYS);
     ShroomImGui_SetNextWindowSize(360.0f, 56.0f, SHROOM_IMGUI_COND_ALWAYS);
     ShroomImGui_SetNextWindowBgAlpha(0.78f);
@@ -2034,6 +2042,7 @@ static void DrawStatusBanners(const Game* game) {
       ShroomImGui_TextColored(ToImGuiColor(ORANGE), "Consumed - respawned in the outer ring");
     }
     ShroomImGui_End();
+    next_y += 56.0f + 12.0f;
   }
 
   if (IsOnlineMode(game->active_mode) && (game->net.status == CLIENT_NET_CONNECTED) &&
@@ -2043,7 +2052,7 @@ static void DrawStatusBanners(const Game* game) {
         game->net.rtt_average_ms > 9999u ? 9999u : game->net.rtt_average_ms;
     const bool unplayable = display_rtt >= SHROOM_LATENCY_UNPLAYABLE_MS;
     const Color warn_color = unplayable ? RED : ORANGE;
-    ShroomImGui_SetNextWindowPos((game->screen_width - 300.0f) * 0.5f, 176.0f,
+    ShroomImGui_SetNextWindowPos((game->screen_width - 300.0f) * 0.5f, next_y,
                                  SHROOM_IMGUI_COND_ALWAYS);
     ShroomImGui_SetNextWindowSize(300.0f, 44.0f, SHROOM_IMGUI_COND_ALWAYS);
     ShroomImGui_SetNextWindowBgAlpha(0.78f);
