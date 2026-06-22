@@ -542,7 +542,9 @@ static void CaptureParticleBaselines(Game* game) {
 static void EmitGameplayEventParticles(Game* game) {
   size_t index;
   const ShroomPlayerId local_player_id =
-      game->local_player != NULL ? game->local_player->player_id : 0u;
+      IsOnlineMode(game->active_mode)
+          ? game->net.player_id
+          : (game->local_player != NULL ? game->local_player->player_id : 0u);
   float largest_gain = 0.0f;
   const ShroomPlayerState* largest_gainer = FindLargestMassGainer(game, &largest_gain);
   const size_t previous_local_primary_index = FindPreviousLocalPrimaryIndex(game, local_player_id);
@@ -1261,6 +1263,7 @@ static void ApplyNetworkSnapshot(Game* game) {
   game->world.player_count = game->net.snapshot_player_count;
   game->world.spore_count = game->net.spore_count;
   game->world.powerup_count = game->net.powerup_count;
+  game->local_player = NULL;
 
   for (index = 0; index < game->net.snapshot_player_count; ++index) {
     const ShroomSnapshotPlayerState* snapshot_player = &game->net.snapshot_players[index];
