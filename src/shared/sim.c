@@ -265,7 +265,58 @@ static float ShroomBotCenterPressureWeight(float bot_mass, ShroomZone zone) {
   return zone == SHROOM_ZONE_OUTER ? 1.2f : 0.8f;
 }
 
-static void ShroomUpdateBotInput(ShroomWorldState* world, ShroomPlayerState* bot) {
+#define SHROOM_SPORE_GRID_CELL_SIZE 200.0f
+#define SHROOM_SPORE_GRID_COLS (((int)(SHROOM_WORLD_WIDTH / SHROOM_SPORE_GRID_CELL_SIZE)) + 1)
+#define SHROOM_SPORE_GRID_ROWS (((int)(SHROOM_WORLD_HEIGHT / SHROOM_SPORE_GRID_CELL_SIZE)) + 1)
+#define SHROOM_SPORE_GRID_CELLS (SHROOM_SPORE_GRID_COLS * SHROOM_SPORE_GRID_ROWS)
+#define SHROOM_SPORE_GRID_MAX_PER_CELL 64
+
+/* Bots only meaningfully pursue spores inside this radius; the score formula decays as
+ * 1/distance^2 and the "give up" threshold corresponds to roughly 220 units, so 600 units
+ * covers the useful range while keeping the per-bot cell scan bounded. */
+#define SHROOM_BOT_SPORE_SEARCH_RADIUS 600.0f
+
+typedef struct ShroomSporeGridCell {
+  uint16_t indices[SHROOM_SPORE_GRID_MAX_PER_CELL];
+  uint16_t count;
+} ShroomSporeGridCell;
+
+static void ShroomBuildSporeGrid(const ShroomWorldState* world, ShroomSporeGridCell* grid) {
+  size_t spore_index;
+
+  for (size_t i = 0; i < SHROOM_SPORE_GRID_CELLS; ++i) {
+    grid[i].count = 0;
+  }
+
+  for (spore_index = 0; spore_index < world->spore_count; ++spore_index) {
+    const ShroomSporeState* spore = &world->spores[spore_index];
+    int col, row, cell;
+
+    if (!spore->active) {
+      continue;
+    }
+
+    col = (int)(spore->position.x / SHROOM_SPORE_GRID_CELL_SIZE);
+    row = (int)(spore->position.y / SHROOM_SPORE_GRID_CELL_SIZE);
+
+    if (col < 0)
+      col = 0;
+    if (col >= SHROOM_SPORE_GRID_COLS)
+      col = SHROOM_SPORE_GRID_COLS - 1;
+    if (row < 0)
+      row = 0;
+    if (row >= SHROOM_SPORE_GRID_ROWS)
+      row = SHROOM_SPORE_GRID_ROWS - 1;
+
+    cell = row * SHROOM_SPORE_GRID_COLS + col;
+    if (grid[cell].count < SHROOM_SPORE_GRID_MAX_PER_CELL) {
+      grid[cell].indices[grid[cell].count++] = (uint16_t)spore_index;
+    }
+  }
+}
+
+static void ShroomUpdateBotInput(ShroomWorldState* world, ShroomPlayerState* bot,
+                                 const ShroomSporeGridCell* spore_grid) {
   size_t index;
   const ShroomPlayerState* best_threat = 0;
   const ShroomPlayerState* best_prey = 0;
@@ -322,21 +373,71 @@ static void ShroomUpdateBotInput(ShroomWorldState* world, ShroomPlayerState* bot
     return;
   }
 
-  for (index = 0; index < world->spore_count; ++index) {
-    const ShroomSporeState* spore = &world->spores[index];
-    const float distance_sqr = ShroomDistanceSqr(bot->position, spore->position);
-    const float weighted_distance =
-        (distance_sqr + 1600.0f) /
-        ShroomBotSporeZoneWeight(bot->mass, ShroomGetZoneAtPosition(world, spore->position));
-    const float spore_score = 1.0f / weighted_distance;
+  if (spore_grid != NULL) {
+    int min_col =
+        (int)((bot->position.x - SHROOM_BOT_SPORE_SEARCH_RADIUS) / SHROOM_SPORE_GRID_CELL_SIZE);
+    int max_col =
+        (int)((bot->position.x + SHROOM_BOT_SPORE_SEARCH_RADIUS) / SHROOM_SPORE_GRID_CELL_SIZE);
+    int min_row =
+        (int)((bot->position.y - SHROOM_BOT_SPORE_SEARCH_RADIUS) / SHROOM_SPORE_GRID_CELL_SIZE);
+    int max_row =
+        (int)((bot->position.y + SHROOM_BOT_SPORE_SEARCH_RADIUS) / SHROOM_SPORE_GRID_CELL_SIZE);
+    int col, row;
 
-    if (!spore->active) {
-      continue;
+    if (min_col < 0) {
+      min_col = 0;
+    }
+    if (max_col >= SHROOM_SPORE_GRID_COLS) {
+      max_col = SHROOM_SPORE_GRID_COLS - 1;
+    }
+    if (min_row < 0) {
+      min_row = 0;
+    }
+    if (max_row >= SHROOM_SPORE_GRID_ROWS) {
+      max_row = SHROOM_SPORE_GRID_ROWS - 1;
     }
 
-    if ((best_spore == 0) || (spore_score > best_spore_score)) {
-      best_spore = spore;
-      best_spore_score = spore_score;
+    for (row = min_row; row <= max_row; ++row) {
+      for (col = min_col; col <= max_col; ++col) {
+        const ShroomSporeGridCell* cell = &spore_grid[row * SHROOM_SPORE_GRID_COLS + col];
+        uint16_t i;
+
+        for (i = 0; i < cell->count; ++i) {
+          const ShroomSporeState* spore = &world->spores[cell->indices[i]];
+          const float distance_sqr = ShroomDistanceSqr(bot->position, spore->position);
+          const float weighted_distance =
+              (distance_sqr + 1600.0f) /
+              ShroomBotSporeZoneWeight(bot->mass, ShroomGetZoneAtPosition(world, spore->position));
+          const float spore_score = 1.0f / weighted_distance;
+
+          if (!spore->active) {
+            continue;
+          }
+
+          if ((best_spore == 0) || (spore_score > best_spore_score)) {
+            best_spore = spore;
+            best_spore_score = spore_score;
+          }
+        }
+      }
+    }
+  } else {
+    for (index = 0; index < world->spore_count; ++index) {
+      const ShroomSporeState* spore = &world->spores[index];
+      const float distance_sqr = ShroomDistanceSqr(bot->position, spore->position);
+      const float weighted_distance =
+          (distance_sqr + 1600.0f) /
+          ShroomBotSporeZoneWeight(bot->mass, ShroomGetZoneAtPosition(world, spore->position));
+      const float spore_score = 1.0f / weighted_distance;
+
+      if (!spore->active) {
+        continue;
+      }
+
+      if ((best_spore == 0) || (spore_score > best_spore_score)) {
+        best_spore = spore;
+        best_spore_score = spore_score;
+      }
     }
   }
 
@@ -361,56 +462,8 @@ static void ShroomUpdateBotInput(ShroomWorldState* world, ShroomPlayerState* bot
       ShroomNormalizeOrZero(ShroomVec2Sub(ShroomWorldCenter(world), bot->position));
 }
 
-#define SHROOM_SPORE_GRID_CELL_SIZE 200.0f
-#define SHROOM_SPORE_GRID_COLS (((int)(SHROOM_WORLD_WIDTH / SHROOM_SPORE_GRID_CELL_SIZE)) + 1)
-#define SHROOM_SPORE_GRID_ROWS (((int)(SHROOM_WORLD_HEIGHT / SHROOM_SPORE_GRID_CELL_SIZE)) + 1)
-#define SHROOM_SPORE_GRID_CELLS (SHROOM_SPORE_GRID_COLS * SHROOM_SPORE_GRID_ROWS)
-#define SHROOM_SPORE_GRID_MAX_PER_CELL 64
-
-typedef struct ShroomSporeGridCell {
-  uint16_t indices[SHROOM_SPORE_GRID_MAX_PER_CELL];
-  uint16_t count;
-} ShroomSporeGridCell;
-
-static void ShroomBuildSporeGrid(const ShroomWorldState* world, ShroomSporeGridCell* grid) {
-  size_t spore_index;
-
-  for (size_t i = 0; i < SHROOM_SPORE_GRID_CELLS; ++i) {
-    grid[i].count = 0;
-  }
-
-  for (spore_index = 0; spore_index < world->spore_count; ++spore_index) {
-    const ShroomSporeState* spore = &world->spores[spore_index];
-    int col, row, cell;
-
-    if (!spore->active) {
-      continue;
-    }
-
-    col = (int)(spore->position.x / SHROOM_SPORE_GRID_CELL_SIZE);
-    row = (int)(spore->position.y / SHROOM_SPORE_GRID_CELL_SIZE);
-
-    if (col < 0)
-      col = 0;
-    if (col >= SHROOM_SPORE_GRID_COLS)
-      col = SHROOM_SPORE_GRID_COLS - 1;
-    if (row < 0)
-      row = 0;
-    if (row >= SHROOM_SPORE_GRID_ROWS)
-      row = SHROOM_SPORE_GRID_ROWS - 1;
-
-    cell = row * SHROOM_SPORE_GRID_COLS + col;
-    if (grid[cell].count < SHROOM_SPORE_GRID_MAX_PER_CELL) {
-      grid[cell].indices[grid[cell].count++] = (uint16_t)spore_index;
-    }
-  }
-}
-
-static void ShroomCollectSpores(ShroomWorldState* world) {
+static void ShroomCollectSpores(ShroomWorldState* world, const ShroomSporeGridCell* grid) {
   size_t player_index;
-  ShroomSporeGridCell grid[SHROOM_SPORE_GRID_CELLS];
-
-  ShroomBuildSporeGrid(world, grid);
 
   for (player_index = 0; player_index < world->player_count; ++player_index) {
     ShroomPlayerState* player = &world->players[player_index];
@@ -972,12 +1025,15 @@ void ShroomPlayerSetInput(ShroomPlayerState* player, ShroomVec2 input_direction)
 
 void ShroomWorldStep(ShroomWorldState* world, float delta_time) {
   size_t index;
+  ShroomSporeGridCell spore_grid[SHROOM_SPORE_GRID_CELLS];
+
+  ShroomBuildSporeGrid(world, spore_grid);
 
   for (index = 0; index < world->player_count; ++index) {
     ShroomPlayerState* player = &world->players[index];
 
     if ((player->is_bot || player->ai_controlled) && player->alive) {
-      ShroomUpdateBotInput(world, player);
+      ShroomUpdateBotInput(world, player, spore_grid);
     }
   }
 
@@ -1037,7 +1093,7 @@ void ShroomWorldStep(ShroomWorldState* world, float delta_time) {
   }
 
   ShroomUpdatePlayerEffects(world, delta_time);
-  ShroomCollectSpores(world);
+  ShroomCollectSpores(world, spore_grid);
   ShroomCollectPowerups(world);
   ShroomResolveConsumes(world);
   ShroomApplyMassRules(world, delta_time);
