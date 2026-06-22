@@ -114,6 +114,8 @@ COMMON_INCLUDE_DIRS := -I$(SRC_DIR) -I$(CLIENT_SRC_DIR) -I$(SERVER_SRC_DIR) -I$(
 TEST_CFLAGS := -std=c11 -O0 -g $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
                $(UNITY_INCLUDE) -DTEST_MODE -D_POSIX_C_SOURCE=199309L -D_DEFAULT_SOURCE
 TEST_LIBS   := -lm
+COVERAGE_CFLAGS := $(TEST_CFLAGS) -fprofile-arcs -ftest-coverage
+COVERAGE_LIBS := $(TEST_LIBS) -lgcov
 IMGUI_TEST_CFLAGS := -std=c11 -O0 -g $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
 	-I$(VCPKG_LINUX_INCLUDE_DIR) \
 	-DTEST_MODE -D_POSIX_C_SOURCE=199309L -D_DEFAULT_SOURCE
@@ -669,8 +671,8 @@ valgrind-imgui-test: $(IMGUI_TEST_BIN)
 	fi
 
 # Test with coverage (requires gcovr)
-test-coverage:
-	@command -v gcovr >/dev/null 2>&1 || (printf '%s\n' 'gcovr is not installed. Rebuild the devcontainer with make devcontainer-build && make devcontainer-up.' && exit 1)
+test-coverage: $(UNITY_DIR) $(VCPKG_LINUX_STAMP)
+	@command -v gcovr >/dev/null 2>&1 || (printf '%s\n' 'gcovr is not installed. Install gcovr or run this target inside the devcontainer: make devcontainer-exec CMD="make test-coverage".' && exit 1)
 	@echo "Building tests with coverage instrumentation..."
 	@$(MKDIR_P) $(TEST_BUILD_DIR) $(COVERAGE_DIR)
 	@for src in $(TEST_SRCS); do \
@@ -684,29 +686,29 @@ test-coverage:
 		total=$$((total + 1)); \
 		case $$test_name in \
 			test_auth) \
-				$(LINUX_CC) $(TEST_CFLAGS) -I$(SERVER_SRC_DIR) -I$(VCPKG_LINUX_INCLUDE_DIR) -fprofile-arcs -ftest-coverage \
-					$$src $(UNITY_SRC) $(SERVER_SRC_DIR)/auth.c $(SERVER_SRC_DIR)/logger.c -o $$test_bin $(TEST_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lsqlite3 -lgcov ;; \
+				$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(SERVER_SRC_DIR) -I$(VCPKG_LINUX_INCLUDE_DIR) \
+					$$src $(UNITY_SRC) $(SERVER_SRC_DIR)/auth.c $(SERVER_SRC_DIR)/logger.c -o $$test_bin $(COVERAGE_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lsqlite3 ;; \
 			test_lifecycle) \
-				$(LINUX_CC) $(TEST_CFLAGS) -fprofile-arcs -ftest-coverage \
-					$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/lifecycle.c -o $$test_bin $(TEST_LIBS) -lgcov ;; \
+				$(LINUX_CC) $(COVERAGE_CFLAGS) \
+					$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/lifecycle.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 			test_screen) \
-				$(LINUX_CC) $(TEST_CFLAGS) -fprofile-arcs -ftest-coverage \
-					$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/screen.c -o $$test_bin $(TEST_LIBS) -lgcov ;; \
+				$(LINUX_CC) $(COVERAGE_CFLAGS) \
+					$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/screen.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 			test_screen_background) \
-				$(LINUX_CC) $(TEST_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) -fprofile-arcs -ftest-coverage \
-					$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/screens/screen_background.c -o $$test_bin $(TEST_LIBS) -lgcov ;; \
+				$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) \
+					$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/screens/screen_background.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 			test_connection) \
-				$(LINUX_CC) $(TEST_CFLAGS) -fprofile-arcs -ftest-coverage \
-					$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/connection.c -o $$test_bin $(TEST_LIBS) -lgcov ;; \
+				$(LINUX_CC) $(COVERAGE_CFLAGS) \
+					$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/connection.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 			test_client_net) \
-				$(LINUX_CC) $(TEST_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) -fprofile-arcs -ftest-coverage \
-					$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c -o $$test_bin $(TEST_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lenet -lgcov ;; \
+				$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) \
+					$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c -o $$test_bin $(COVERAGE_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lenet ;; \
 			test_sim) \
-				$(LINUX_CC) $(TEST_CFLAGS) -fprofile-arcs -ftest-coverage \
-					$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/sim.c -o $$test_bin $(TEST_LIBS) -lgcov ;; \
+				$(LINUX_CC) $(COVERAGE_CFLAGS) \
+					$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/sim.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 			*) \
-				$(LINUX_CC) $(TEST_CFLAGS) -fprofile-arcs -ftest-coverage \
-					$$src $(UNITY_SRC) -o $$test_bin $(TEST_LIBS) -lgcov ;; \
+				$(LINUX_CC) $(COVERAGE_CFLAGS) \
+					$$src $(UNITY_SRC) -o $$test_bin $(COVERAGE_LIBS) ;; \
 		esac; \
 		echo ""; \
 		echo "=== Running $$test_name ==="; \
