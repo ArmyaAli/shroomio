@@ -819,6 +819,7 @@ static void EmitGameplayEventParticles(Game* game) {
     const ShroomPlayerState* current_player;
     const ShroomPlayerState* inferred_killer;
     float inferred_gain = 0.0f;
+    bool victim_respawned = false;
     char feed_text[128];
 
     if (!game->previous_player_alive[index] || (game->previous_player_piece_indices[index] != 0u) ||
@@ -829,6 +830,11 @@ static void EmitGameplayEventParticles(Game* game) {
 
     current_player = FindCurrentPlayerByEntityId(game, game->previous_player_entity_ids[index]);
     if ((current_player != NULL) && current_player->alive) {
+      victim_respawned = (current_player->mass <= SHROOM_DEFAULT_PLAYER_MASS * 1.05f) &&
+                         (ShroomDistanceSqr(current_player->position,
+                                            game->previous_player_positions[index]) > 2500.0f);
+    }
+    if ((current_player != NULL) && current_player->alive && !victim_respawned) {
       continue;
     }
 
