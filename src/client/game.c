@@ -409,10 +409,11 @@ static const ShroomPlayerState* InferConsumeKiller(const Game* game, size_t prev
   const float victim_mass = game->previous_player_masses[previous_victim_index];
   const ShroomVec2 victim_pos = game->previous_player_positions[previous_victim_index];
   const float expected_gain = victim_mass * SHROOM_CONSUME_MASS_GAIN_FACTOR;
+  const float minimum_gain = fmaxf(3.0f, expected_gain * 0.20f);
   const ShroomPlayerId victim_player_id = game->previous_player_ids[previous_victim_index];
   const ShroomPlayerState* best_player = NULL;
   float best_gain = 0.0f;
-  float best_distance_sqr = 0.0f;
+  float best_score = 0.0f;
 
   if (victim_mass <= 0.0f) {
     return NULL;
@@ -422,8 +423,8 @@ static const ShroomPlayerState* InferConsumeKiller(const Game* game, size_t prev
     const ShroomPlayerState* player = &game->world.players[index];
     float previous_mass = 0.0f;
     float gain;
-    float proximity_radius;
     float distance_sqr;
+    float score;
 
     if (!player->alive || (player->player_id == victim_player_id) ||
         !FindPreviousPlayerMassByEntityId(game, player->entity_id, &previous_mass)) {
@@ -431,21 +432,17 @@ static const ShroomPlayerState* InferConsumeKiller(const Game* game, size_t prev
     }
 
     gain = player->mass - previous_mass;
-    if (gain < fmaxf(8.0f, expected_gain * 0.45f)) {
+    if (gain < minimum_gain) {
       continue;
     }
 
-    proximity_radius = player->radius + sqrtf(victim_mass) * 6.0f + 96.0f;
     distance_sqr = ShroomDistanceSqr(player->position, victim_pos);
-    if (distance_sqr > (proximity_radius * proximity_radius)) {
-      continue;
-    }
+    score = gain - (sqrtf(distance_sqr) * 0.01f);
 
-    if ((best_player == NULL) || (gain > best_gain + 0.5f) ||
-        ((fabsf(gain - best_gain) <= 0.5f) && (distance_sqr < best_distance_sqr))) {
+    if ((best_player == NULL) || (score > best_score)) {
       best_player = player;
       best_gain = gain;
-      best_distance_sqr = distance_sqr;
+      best_score = score;
     }
   }
 
@@ -887,9 +884,18 @@ static void EmitGameplayEventParticles(Game* game) {
     if (local_consumed_player && !local_kill_reported && !local_death_reported) {
       char title[96];
       char detail[128];
+      char feed_text[128];
       snprintf(title, sizeof(title), "You consumed %s", GetPlayerDisplayName(game, player));
       snprintf(detail, sizeof(detail), "Victim mass %.0f  +%.0f mass  Rank %d", previous_mass,
                largest_gain, GetPlayerRank(game, largest_gainer));
+      if (!local_kill_feed_reported) {
+        snprintf(feed_text, sizeof(feed_text), "You consumed %s",
+                 GetPlayerDisplayName(game, player));
+        AddKillFeedEntry(game, feed_text, (Color){112, 224, 128, 255},
+                         MakeKillFeedEventKey(largest_gainer->entity_id,
+                                              game->previous_player_entity_ids[index]));
+        local_kill_feed_reported = true;
+      }
       QueueGameplayNotification(game, title, detail, (Color){112, 224, 128, 255}, 3.0f);
       QueueGameplayScreenFlash(game, (Color){104, 220, 122, 255}, 0.24f);
       QueueGameplaySfx(game, SHROOM_CLIENT_SFX_CONSUME, 0.86f);
