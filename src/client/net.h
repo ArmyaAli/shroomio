@@ -18,6 +18,12 @@ typedef struct ChatMessage {
 
 #define SHROOM_CLIENT_PING_INTERVAL_SECONDS 1.0f
 #define SHROOM_CLIENT_PING_TIMEOUT_MS 2000u
+/* How long the client waits for the server to accept the UDP connection (and
+ * finish the WELCOME handshake) before showing a friendly error instead of
+ * spinning on the connecting modal. */
+#define SHROOM_CLIENT_CONNECT_TIMEOUT_MS 5000u
+/* Friendly message shown when Play Online / Quick Play cannot reach a server. */
+#define SHROOM_NET_CONNECT_UNREACHABLE_MSG "Unable to connect to that server, does it exist?"
 #define SHROOM_CLIENT_RTT_SAMPLE_COUNT 10u
 #define SHROOM_CLIENT_CHAT_HISTORY_COUNT 50u
 typedef enum ClientNetStatus {
@@ -40,6 +46,7 @@ typedef struct ClientNetState {
   uint32_t next_ping_nonce;
   uint32_t pending_ping_nonce;
   uint32_t pending_ping_sent_time_ms;
+  uint32_t connect_started_ms;
   uint32_t rtt_ms;
   uint32_t rtt_average_ms;
   uint32_t rtt_samples[SHROOM_CLIENT_RTT_SAMPLE_COUNT];
@@ -89,6 +96,7 @@ void ClientNetSendLobbyCreate(ClientNetState* net, const char* name, uint16_t ma
 #ifdef TEST_MODE
 bool ClientNetTestCompletePendingPing(ClientNetState* net, uint32_t nonce, uint32_t now_ms);
 void ClientNetTestClearStalePendingPing(ClientNetState* net, uint32_t now_ms);
+void ClientNetTestCheckConnectTimeout(ClientNetState* net, uint32_t now_ms);
 void ClientNetTestHandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet);
 void ClientNetTestHandleLobbyList(ClientNetState* net, const ENetPacket* enet_packet);
 void ClientNetTestHandleMushroomSpeciesCatalog(ClientNetState* net, const ENetPacket* enet_packet);
