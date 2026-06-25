@@ -47,6 +47,14 @@ static void ClearStalePendingPing(ClientNetState* net, uint32_t now_ms) {
   }
 }
 
+static void CheckConnectTimeout(ClientNetState* net, uint32_t now_ms) {
+  if ((net->status == CLIENT_NET_CONNECTING) && (net->connect_started_ms != 0u) &&
+      (ElapsedMs(now_ms, net->connect_started_ms) >= SHROOM_CLIENT_CONNECT_TIMEOUT_MS)) {
+    SetStatus(net, CLIENT_NET_ERROR, SHROOM_NET_CONNECT_UNREACHABLE_MSG);
+    net->connect_started_ms = 0u;
+  }
+}
+
 static bool CompletePendingPing(ClientNetState* net, uint32_t nonce, uint32_t now_ms) {
   uint32_t rtt_ms;
 
@@ -339,7 +347,7 @@ bool ClientNetInit(ClientNetState* net, const char* host_name, uint16_t port) {
 
   address.port = port;
   if (enet_address_set_host(&address, host_name) != 0) {
-    SetStatus(net, CLIENT_NET_ERROR, "Server address lookup failed");
+    SetStatus(net, CLIENT_NET_ERROR, SHROOM_NET_CONNECT_UNREACHABLE_MSG);
     enet_host_destroy(net->host);
     net->host = 0;
     enet_deinitialize();
@@ -349,7 +357,7 @@ bool ClientNetInit(ClientNetState* net, const char* host_name, uint16_t port) {
 
   net->peer = enet_host_connect(net->host, &address, SHROOM_ENET_CHANNEL_COUNT, 0);
   if (net->peer == 0) {
-    SetStatus(net, CLIENT_NET_ERROR, "Connect request failed");
+    SetStatus(net, CLIENT_NET_ERROR, SHROOM_NET_CONNECT_UNREACHABLE_MSG);
     enet_host_destroy(net->host);
     net->host = 0;
     enet_deinitialize();
@@ -357,6 +365,7 @@ bool ClientNetInit(ClientNetState* net, const char* host_name, uint16_t port) {
     return false;
   }
 
+  net->connect_started_ms = enet_time_get();
   SetStatus(net, CLIENT_NET_CONNECTING, "Connecting");
   return true;
 }
@@ -451,6 +460,8 @@ void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, bool split
     }
   }
 
+  CheckConnectTimeout(net, enet_time_get());
+
   if (net->peer != 0) {
     ClearStalePendingPing(net, enet_time_get());
     net->input_send_accumulator += delta_time;
@@ -476,6 +487,10 @@ bool ClientNetTestCompletePendingPing(ClientNetState* net, uint32_t nonce, uint3
 
 void ClientNetTestClearStalePendingPing(ClientNetState* net, uint32_t now_ms) {
   ClearStalePendingPing(net, now_ms);
+}
+
+void ClientNetTestCheckConnectTimeout(ClientNetState* net, uint32_t now_ms) {
+  CheckConnectTimeout(net, now_ms);
 }
 
 void ClientNetTestHandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet) {

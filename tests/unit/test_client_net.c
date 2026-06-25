@@ -171,6 +171,42 @@ static void test_client_net_ignores_truncated_mushroom_species_entries(void) {
   TEST_ASSERT_EQUAL_UINT8(3u, net.mushroom_species_count);
 }
 
+static void test_client_net_connect_timeout_flips_to_friendly_error(void) {
+  ClientNetState net = {0};
+  net.status = CLIENT_NET_CONNECTING;
+  net.connect_started_ms = 1000u;
+
+  ClientNetTestCheckConnectTimeout(&net, 1000u + SHROOM_CLIENT_CONNECT_TIMEOUT_MS);
+
+  TEST_ASSERT_EQUAL_UINT32(CLIENT_NET_ERROR, net.status);
+  TEST_ASSERT_EQUAL_STRING(SHROOM_NET_CONNECT_UNREACHABLE_MSG, net.status_text);
+  /* The timer is cleared so a later frame can't re-fire the transition. */
+  TEST_ASSERT_EQUAL_UINT32(0u, net.connect_started_ms);
+}
+
+static void test_client_net_connect_timeout_not_fired_stays_connecting(void) {
+  ClientNetState net = {0};
+  net.status = CLIENT_NET_CONNECTING;
+  net.connect_started_ms = 1000u;
+
+  /* One ms short of the timeout window — still connecting. */
+  ClientNetTestCheckConnectTimeout(&net, 1000u + SHROOM_CLIENT_CONNECT_TIMEOUT_MS - 1u);
+
+  TEST_ASSERT_EQUAL_UINT32(CLIENT_NET_CONNECTING, net.status);
+  TEST_ASSERT_EQUAL_UINT32(1000u, net.connect_started_ms);
+}
+
+static void test_client_net_connect_timeout_ignores_non_connecting_states(void) {
+  ClientNetState net = {0};
+  /* An established session must never be flagged as a connect timeout. */
+  net.status = CLIENT_NET_CONNECTED;
+  net.connect_started_ms = 1000u;
+
+  ClientNetTestCheckConnectTimeout(&net, 1000u + SHROOM_CLIENT_CONNECT_TIMEOUT_MS);
+
+  TEST_ASSERT_EQUAL_UINT32(CLIENT_NET_CONNECTED, net.status);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_client_net_records_fresh_pong);
@@ -182,5 +218,8 @@ int main(void) {
   RUN_TEST(test_client_net_ignores_truncated_lobby_list_entries);
   RUN_TEST(test_client_net_accepts_trimmed_mushroom_species_catalog_packet);
   RUN_TEST(test_client_net_ignores_truncated_mushroom_species_entries);
+  RUN_TEST(test_client_net_connect_timeout_flips_to_friendly_error);
+  RUN_TEST(test_client_net_connect_timeout_not_fired_stays_connecting);
+  RUN_TEST(test_client_net_connect_timeout_ignores_non_connecting_states);
   return UNITY_END();
 }
