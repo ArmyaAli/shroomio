@@ -542,6 +542,18 @@ static float ShroomDecayMassThresholdAtPosition(const ShroomWorldState* world,
   return SHROOM_MAX_PLAYER_MASS;
 }
 
+static float ShroomDecayRateAtPosition(const ShroomWorldState* world, ShroomVec2 position) {
+  const ShroomZone zone = ShroomGetZoneAtPosition(world, position);
+
+  if (zone == SHROOM_ZONE_CENTER) {
+    return SHROOM_DECAY_RATE_CENTER_PER_SECOND;
+  }
+  if (zone == SHROOM_ZONE_MID) {
+    return SHROOM_DECAY_RATE_MID_PER_SECOND;
+  }
+  return SHROOM_DECAY_RATE_OUTER_PER_SECOND;
+}
+
 bool ShroomPlayerHasConsumeProtection(const ShroomPlayerState* player) {
   return (player != NULL) &&
          ((player->shield_powerup_timer > 0.0f) || (player->spawn_protection_timer > 0.0f));
@@ -743,7 +755,8 @@ static void ShroomApplyMassRules(ShroomWorldState* world, float delta_time,
     if (ShroomPlayerCanDecay(world, player)) {
       const float decay_threshold = ShroomDecayMassThresholdAtPosition(world, player->position);
       const float excess_mass = player->mass - decay_threshold;
-      const float decay_mass = excess_mass * SHROOM_DECAY_RATE_PER_SECOND * delta_time;
+      const float decay_mass =
+          excess_mass * ShroomDecayRateAtPosition(world, player->position) * delta_time;
       ShroomApplyMassLoss(world, player, decay_mass);
     }
     if (ShroomPlayerIdlePenaltyActive(player, current_time_ms)) {

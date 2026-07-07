@@ -714,6 +714,9 @@ test_connection) \
 			test_idle_penalty) \
 				$(LINUX_CC) $(COVERAGE_CFLAGS) \
 					$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/sim.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+			test_decay_zones) \
+				$(LINUX_CC) $(COVERAGE_CFLAGS) \
+					$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/sim.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 			test_split_cost) \
 				$(LINUX_CC) $(COVERAGE_CFLAGS) \
 					$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/sim.c -o $$test_bin $(COVERAGE_LIBS) ;; \
@@ -776,6 +779,10 @@ $(TEST_BUILD_DIR)/test_sim: $(UNIT_TESTS_DIR)/test_sim.c $(UNITY_SRC) $(SHARED_S
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
 $(TEST_BUILD_DIR)/test_idle_penalty: $(UNIT_TESTS_DIR)/test_idle_penalty.c $(UNITY_SRC) $(SHARED_SRC_DIR)/sim.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_decay_zones: $(UNIT_TESTS_DIR)/test_decay_zones.c $(UNITY_SRC) $(SHARED_SRC_DIR)/sim.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
