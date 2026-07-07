@@ -11,6 +11,7 @@ typedef enum MainMenuAction {
   MAIN_MENU_ACTION_PLAY_ONLINE,
   MAIN_MENU_ACTION_CUSTOM_SERVER,
   MAIN_MENU_ACTION_OFFLINE_PRACTICE,
+  MAIN_MENU_ACTION_WATCH_GAME,
   MAIN_MENU_ACTION_SETTINGS,
   MAIN_MENU_ACTION_HELP,
   MAIN_MENU_ACTION_CREDITS,
@@ -44,7 +45,7 @@ static void MainMenuDraw(ShroomScreenManager* manager) {
   Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
   const bool animate = MainMenuAnimationsEnabled(game);
   const float panel_width = 340.0f;
-  const float panel_height = 470.0f;
+  const float panel_height = 514.0f;
   MainMenuAction action = MAIN_MENU_ACTION_NONE;
 
   ShroomScreenDrawFungalBackground(animate);
@@ -70,6 +71,9 @@ static void MainMenuDraw(ShroomScreenManager* manager) {
   }
   if (ShroomLayoutButtonFullWidth("Offline Practice", 38.0f)) {
     action = MAIN_MENU_ACTION_OFFLINE_PRACTICE;
+  }
+  if (ShroomLayoutButtonFullWidth("Watch Game", 38.0f)) {
+    action = MAIN_MENU_ACTION_WATCH_GAME;
   }
   if (ShroomLayoutButtonFullWidth("Settings", 38.0f)) {
     action = MAIN_MENU_ACTION_SETTINGS;
@@ -113,6 +117,14 @@ static void MainMenuDraw(ShroomScreenManager* manager) {
   case MAIN_MENU_ACTION_OFFLINE_PRACTICE:
     if (game != NULL) {
       game->selected_mode = SHROOM_SESSION_MODE_OFFLINE_PRACTICE;
+      game->start_in_spectator_mode = false;
+    }
+    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
+    break;
+  case MAIN_MENU_ACTION_WATCH_GAME:
+    if (game != NULL) {
+      game->selected_mode = SHROOM_SESSION_MODE_OFFLINE_PRACTICE;
+      game->start_in_spectator_mode = true;
     }
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
     break;

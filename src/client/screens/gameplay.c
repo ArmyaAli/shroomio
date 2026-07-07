@@ -129,9 +129,10 @@ static void GameplayHandleInput(ShroomScreenManager* manager) {
     }
   }
   /* Hold Space to split — at max mass, one split per life. */
-  if (IsKeyDown(KEY_SPACE) && !game->menu_overlay_open && !game->leaderboard_overlay_open &&
-      !game->leave_confirmation_open && (game->local_player != NULL) && game->local_player->alive &&
-      !game->local_has_split && (game->local_player->mass >= SHROOM_SPLIT_MIN_MASS)) {
+  if (!game->spectator_mode && IsKeyDown(KEY_SPACE) && !game->menu_overlay_open &&
+      !game->leaderboard_overlay_open && !game->leave_confirmation_open &&
+      (game->local_player != NULL) && game->local_player->alive && !game->local_has_split &&
+      (game->local_player->mass >= SHROOM_SPLIT_MIN_MASS)) {
     game->split_hold_timer += GetFrameTime();
     if (game->split_hold_timer >= SHROOM_SPLIT_HOLD_SECONDS) {
       game->split_requested = true;
@@ -142,8 +143,11 @@ static void GameplayHandleInput(ShroomScreenManager* manager) {
   }
 
   if (IsKeyPressed(KEY_TAB)) {
-    if ((game->local_piece_count > 1) && !game->menu_overlay_open &&
-        !game->leave_confirmation_open) {
+    if (game->spectator_mode && !game->menu_overlay_open && !game->leave_confirmation_open) {
+      GameCycleSpectatorTarget(game,
+                               IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT) ? -1 : 1);
+    } else if ((game->local_piece_count > 1) && !game->menu_overlay_open &&
+               !game->leave_confirmation_open) {
       /* Cycle through the local player's split pieces. */
       ShroomPlayerId local_pid = game->local_player != NULL ? game->local_player->player_id : 0;
       if (local_pid != 0) {
@@ -186,6 +190,10 @@ static void GameplayHandleInput(ShroomScreenManager* manager) {
     game->diagnostics_overlay_open = !game->diagnostics_overlay_open;
     game->settings.diagnostics_enabled = game->diagnostics_overlay_open;
     ClientSettingsSave(&game->settings);
+  }
+
+  if (game->spectator_mode && IsKeyPressed(KEY_F)) {
+    game->spectator_follow_mode = !game->spectator_follow_mode;
   }
 
   if (IsKeyPressed(game->settings.key_hud_toggle)) {

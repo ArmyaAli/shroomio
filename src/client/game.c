@@ -432,6 +432,77 @@ static bool IsDeathCutsceneOpen(const Game* game) {
          (game->death_cutscene_timer < game->death_cutscene_duration + 20.0f);
 }
 
+static const ShroomPlayerState* FindSpectatorTarget(const Game* game) {
+  if (game == NULL) {
+    return NULL;
+  }
+  for (size_t index = 0; index < game->world.player_count; ++index) {
+    const ShroomPlayerState* player = &game->world.players[index];
+    if (player->alive && (player->entity_id == game->spectated_entity_id)) {
+      return player;
+    }
+  }
+  return NULL;
+}
+
+void GameCycleSpectatorTarget(Game* game, int direction) {
+  uint32_t targets[SHROOM_MAX_PLAYERS];
+  int target_count = 0;
+  int current_index = -1;
+
+  if (game == NULL) {
+    return;
+  }
+  for (size_t index = 0; index < game->world.player_count; ++index) {
+    const ShroomPlayerState* player = &game->world.players[index];
+    if (!player->alive || (player == game->local_player)) {
+      continue;
+    }
+    if (target_count < SHROOM_MAX_PLAYERS) {
+      if (player->entity_id == game->spectated_entity_id) {
+        current_index = target_count;
+      }
+      targets[target_count++] = player->entity_id;
+    }
+  }
+  if (target_count <= 0) {
+    game->spectated_entity_id = 0;
+    game->spectator_follow_mode = false;
+    return;
+  }
+  if (current_index < 0) {
+    current_index = direction < 0 ? 0 : target_count - 1;
+  }
+  game->spectated_entity_id =
+      targets[(current_index + target_count + (direction < 0 ? -1 : 1)) % target_count];
+  game->spectator_follow_mode = true;
+}
+
+void GameEnterSpectatorMode(Game* game) {
+  if (game == NULL) {
+    return;
+  }
+  game->spectator_mode = true;
+  game->spectator_follow_mode = true;
+  game->death_cutscene_timer = 0.0f;
+  game->death_cutscene_duration = 0.0f;
+  game->death_camera_hold_timer = 0.0f;
+  game->split_requested = false;
+  game->split_hold_timer = 0.0f;
+  if (FindSpectatorTarget(game) == NULL) {
+    GameCycleSpectatorTarget(game, 1);
+  }
+}
+
+void GameExitSpectatorMode(Game* game) {
+  if (game == NULL) {
+    return;
+  }
+  game->spectator_mode = false;
+  game->spectator_follow_mode = false;
+  game->spectated_entity_id = 0;
+}
+
 static void UpdateDeathCutscene(Game* game, float delta_time) {
   if (!IsDeathCutsceneOpen(game)) {
     return;
@@ -494,7 +565,7 @@ static void DrawDeathCutscene(Game* game) {
   if (progress >= 1.0f) {
     ShroomImGui_SetNextWindowPos((game->screen_width - 360.0f) * 0.5f, center.y + 226.0f,
                                  SHROOM_IMGUI_COND_ALWAYS);
-    ShroomImGui_SetNextWindowSize(360.0f, 84.0f, SHROOM_IMGUI_COND_ALWAYS);
+    ShroomImGui_SetNextWindowSize(360.0f, 126.0f, SHROOM_IMGUI_COND_ALWAYS);
     ShroomImGui_SetNextWindowBgAlpha(0.0f);
     if (ShroomImGui_Begin("Death Cutscene Actions", NULL,
                           SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
@@ -504,10 +575,13 @@ static void DrawDeathCutscene(Game* game) {
         game->play_again_requested = true;
       }
       ShroomImGui_SameLine();
-      if (ShroomImGui_Button("Return To Menu", 170.0f, 36.0f)) {
+      if (ShroomImGui_Button("Spectate", 170.0f, 36.0f)) {
+        GameEnterSpectatorMode(game);
+      }
+      if (ShroomImGui_Button("Return To Menu", 170.0f, 32.0f)) {
         game->return_to_menu_requested = true;
       }
-      ShroomImGui_Text("Esc skips the animation");
+      ShroomImGui_Text("Esc skips the animation. Spectate follows another colony.");
     }
     ShroomImGui_End();
   }
@@ -2832,6 +2906,60 @@ static void DrawProximityMap(const Game* game) {
   }
 }
 
+static void DrawSpectatorOverlay(Game* game, const LeaderboardEntry* leaderboard,
+                                 size_t leaderboard_count) {
+  const ShroomPlayerState* target;
+  int target_rank = 0;
+
+  if ((game == NULL) || !game->spectator_mode) {
+    return;
+  }
+
+  target = FindSpectatorTarget(game);
+  if (target != NULL) {
+    target_rank = GetPlayerRank(game, target);
+  }
+
+  ShroomImGui_SetNextWindowPos(18.0f, 104.0f, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowSize(292.0f, 318.0f, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowBgAlpha(0.82f);
+  if (!ShroomImGui_Begin("Spectator", NULL,
+                         SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
+                             SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
+                             SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
+    ShroomImGui_End();
+    return;
+  }
+
+  ShroomImGui_Text(game->spectator_follow_mode ? "Follow Camera" : "Free Camera");
+  ShroomImGui_TextWrapped("F toggles follow/free. Tab cycles players. WASD/arrows pan free camera; "
+                          "right-drag also pans.");
+  ShroomImGui_Separator();
+  if (target != NULL) {
+    ShroomImGui_Text(TextFormat("Watching %s", GetPlayerDisplayName(game, target)));
+    ShroomImGui_Text(
+        TextFormat("Mass %.0f  Rank %d  Zone %s", target->mass,
+                   target_rank > 0 ? target_rank : (int)leaderboard_count,
+                   GetZoneLabel(ShroomGetZoneAtPosition(&game->world, target->position))));
+  } else {
+    ShroomImGui_TextWrapped("No living colonies to follow. Switch to free camera or return later.");
+  }
+  ShroomImGui_Separator();
+
+  for (size_t row = 0; row < leaderboard_count && row < 8u; ++row) {
+    const ShroomPlayerState* player = &game->world.players[leaderboard[row].index];
+    char label[96];
+    snprintf(label, sizeof(label), "%zu. %s  %.0f##spectate%u", row + 1,
+             GetPlayerDisplayName(game, player), player->mass, player->entity_id);
+    if (ShroomImGui_Button(label, 250.0f, 24.0f)) {
+      game->spectated_entity_id = player->entity_id;
+      game->spectator_follow_mode = true;
+    }
+  }
+
+  ShroomImGui_End();
+}
+
 static const ShroomPlayerState* GetInputReferencePlayer(const Game* game) {
   const ShroomPlayerState* input_ref = game->local_player;
 
@@ -2916,10 +3044,54 @@ static ShroomVec2 GetSplitAimInput(const Game* game, ShroomVec2 fallback_directi
   return (ShroomVec2){1.0f, 0.0f};
 }
 
+static void UpdateSpectatorCamera(Game* game, float delta_time) {
+  const ShroomPlayerState* target;
+  Vector2 camera_target;
+  Vector2 pan = {0.0f, 0.0f};
+  const float pan_speed = 640.0f / fmaxf(game->camera.zoom, 0.35f);
+
+  if ((game == NULL) || !game->spectator_mode) {
+    return;
+  }
+
+  target = FindSpectatorTarget(game);
+  if (game->spectator_follow_mode && (target != NULL)) {
+    camera_target = (Vector2){target->position.x, target->position.y};
+    game->camera.target =
+        Vector2Lerp(game->camera.target, camera_target, Clamp(delta_time * 7.0f, 0.0f, 1.0f));
+    return;
+  }
+
+  game->spectator_follow_mode = false;
+  if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT)) {
+    pan.x += 1.0f;
+  }
+  if (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT)) {
+    pan.x -= 1.0f;
+  }
+  if (IsKeyDown(KEY_S) || IsKeyDown(KEY_DOWN)) {
+    pan.y += 1.0f;
+  }
+  if (IsKeyDown(KEY_W) || IsKeyDown(KEY_UP)) {
+    pan.y -= 1.0f;
+  }
+  if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
+    pan =
+        Vector2Subtract(pan, Vector2Scale(GetMouseDelta(), 1.0f / fmaxf(game->camera.zoom, 0.35f)));
+  }
+  if (Vector2LengthSqr(pan) > 1.0f) {
+    pan = Vector2Normalize(pan);
+  }
+  game->camera.target = Vector2Add(game->camera.target, Vector2Scale(pan, pan_speed * delta_time));
+  game->camera.target.x = Clamp(game->camera.target.x, 0.0f, game->world.width);
+  game->camera.target.y = Clamp(game->camera.target.y, 0.0f, game->world.height);
+}
+
 void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode mode) {
   size_t bot_index;
   ClientSettings settings = game->settings;
   GameSessionMode selected_mode = game->selected_mode;
+  bool start_in_spectator_mode = game->start_in_spectator_mode;
   char selected_server_host[sizeof(game->selected_server_host)] = {0};
   uint16_t selected_server_port = game->selected_server_port;
 
@@ -2937,6 +3109,7 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
     game->net = saved_net;
     game->settings = settings;
     game->selected_mode = selected_mode;
+    game->start_in_spectator_mode = start_in_spectator_mode;
     game->active_mode = mode;
     game->screen_width = screen_width;
     game->screen_height = screen_height;
@@ -2960,6 +3133,7 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
   *game = (Game){0};
   game->settings = settings;
   game->selected_mode = selected_mode;
+  game->start_in_spectator_mode = start_in_spectator_mode;
   game->active_mode = mode;
   snprintf(game->selected_server_host, sizeof(game->selected_server_host), "%s",
            selected_server_host);
@@ -3002,6 +3176,10 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
   game->zone_callout_timer = kStatusBannerDuration;
   game->diagnostics_overlay_open = game->settings.diagnostics_enabled;
   CaptureParticleBaselines(game);
+  if (game->start_in_spectator_mode) {
+    game->start_in_spectator_mode = false;
+    GameEnterSpectatorMode(game);
+  }
   ShroomClientAudioEnsureAllSfxLoaded();
 }
 
@@ -3036,7 +3214,7 @@ void GameUpdate(Game* game, float delta_time) {
   GameHandleResize(game, GetScreenWidth(), GetScreenHeight());
   ShroomClientAudioUpdateMusic(&game->settings);
 
-  if (IsOverlayBlockingGameplay(game) || game->chat_open) {
+  if (game->spectator_mode || IsOverlayBlockingGameplay(game) || game->chat_open) {
     input_direction = (ShroomVec2){0};
   } else {
     input_direction = GetMovementInput(game);
@@ -3106,13 +3284,14 @@ void GameUpdate(Game* game, float delta_time) {
   }
 
   if (IsOnlineMode(game->active_mode)) {
-    if (game->split_requested && (game->local_player != NULL) && game->local_player->alive &&
-        (game->local_player->mass >= SHROOM_SPLIT_MIN_MASS) && !game->local_player->has_split) {
+    if (!game->spectator_mode && game->split_requested && (game->local_player != NULL) &&
+        game->local_player->alive && (game->local_player->mass >= SHROOM_SPLIT_MIN_MASS) &&
+        !game->local_player->has_split) {
       QueueGameplaySfx(game, SHROOM_CLIENT_SFX_SPLIT, 0.64f);
     }
     const uint64_t network_start_nanos = profile_enabled ? ClientProfileNowNanos() : 0ull;
-    ClientNetUpdate(&game->net, input_direction, game->split_requested, split_aim_direction,
-                    game->focused_piece_entity_id, delta_time);
+    ClientNetUpdate(&game->net, input_direction, !game->spectator_mode && game->split_requested,
+                    split_aim_direction, game->focused_piece_entity_id, delta_time);
     if (profile_enabled) {
       ShroomProfileRecord(&g_client_profile.network,
                           ShroomProfileNanosToMs(ClientProfileNowNanos() - network_start_nanos));
@@ -3146,7 +3325,7 @@ void GameUpdate(Game* game, float delta_time) {
           }
         }
       }
-      if (predicted != NULL) {
+      if (!game->spectator_mode && (predicted != NULL)) {
         ApplyPredictedInputToPlayer(&game->world, predicted, input_direction, delta_time);
       }
     }
@@ -3181,8 +3360,14 @@ void GameUpdate(Game* game, float delta_time) {
         }
       }
 
-      ShroomPlayerSetInput(ctrl, input_direction);
-      if (game->split_requested && (ctrl != NULL)) {
+      if (game->spectator_mode) {
+        if (ctrl != NULL) {
+          ctrl->ai_controlled = true;
+        }
+      } else {
+        ShroomPlayerSetInput(ctrl, input_direction);
+      }
+      if (!game->spectator_mode && game->split_requested && (ctrl != NULL)) {
         if (ShroomWorldSplitPlayerToward(&game->world, ctrl, split_aim_direction)) {
           QueueGameplaySfx(game, SHROOM_CLIENT_SFX_SPLIT, 0.64f);
         }
@@ -3203,7 +3388,10 @@ void GameUpdate(Game* game, float delta_time) {
   UpdateDeathCutscene(game, delta_time);
   UpdateInspectOverlay(game, delta_time);
   UpdateChatState(game, delta_time);
-  if (game->death_camera_hold_timer > 0.0f) {
+  if (game->spectator_mode) {
+    UpdateSpectatorCamera(game, delta_time);
+    game->piece_focus_changed = false;
+  } else if (game->death_camera_hold_timer > 0.0f) {
     game->death_camera_hold_timer = fmaxf(0.0f, game->death_camera_hold_timer - delta_time);
     game->camera.target = game->death_camera_hold_pos;
     game->piece_focus_changed = false;
@@ -3266,6 +3454,7 @@ void GameDraw(Game* game) {
   DrawOffscreenIndicators(game);
   DrawProximityMap(game);
   DrawGameplayHud(game, local_rank, leaderboard_count, zone);
+  DrawSpectatorOverlay(game, leaderboard, shown_count);
   DrawInspectPrompt(game);
   DrawStatusBanners(game);
   DrawCombatNotifications(game);

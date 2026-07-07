@@ -118,6 +118,9 @@ typedef struct Game {
   bool diagnostics_overlay_open;
   bool leave_confirmation_open;
   bool inspect_overlay_open;
+  bool spectator_mode;
+  bool spectator_follow_mode;
+  bool start_in_spectator_mode;
   bool return_to_menu_requested;
   bool play_again_requested;
   float camera_zoom_target;
@@ -159,6 +162,7 @@ typedef struct Game {
   int screen_height;
   int selected_inspect_index;
   int inspect_target_count;
+  uint32_t spectated_entity_id;
   uint32_t selected_inspect_player_id;
   char selected_server_host[64];
   uint16_t selected_server_port;
@@ -177,6 +181,9 @@ void GameDraw(Game* game);
 void GameShutdown(Game* game);
 void GamePlayUiClickSound(const Game* game);
 void GamePlayUiErrorSound(const Game* game);
+void GameEnterSpectatorMode(Game* game);
+void GameExitSpectatorMode(Game* game);
+void GameCycleSpectatorTarget(Game* game, int direction);
 
 /* Leaderboard and ranking functions */
 void BuildLeaderboard(const Game* game, LeaderboardEntry* entries, size_t* entry_count);
