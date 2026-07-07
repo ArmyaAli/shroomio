@@ -67,6 +67,15 @@ typedef struct CombatNotification {
   bool active;
 } CombatNotification;
 
+typedef struct KillFeedEntry {
+  char text[128];
+  uint64_t event_key;
+  Color color;
+  float age;
+  float duration;
+  bool active;
+} KillFeedEntry;
+
 typedef enum GameplayEventType {
   GAMEPLAY_EVENT_PARTICLE_BURST = 0,
   GAMEPLAY_EVENT_NOTIFICATION,
@@ -111,18 +120,22 @@ typedef struct Game {
   uint32_t particle_cursor;
   uint32_t notification_head;
   uint32_t notification_count;
+  uint32_t kill_feed_head;
+  uint32_t kill_feed_count;
   uint32_t gameplay_event_head;
   uint32_t gameplay_event_count;
   ShroomVec2 render_positions[SHROOM_MAX_PLAYERS];
   ShroomVec2 previous_local_position;
   GameplayParticle particles[SHROOM_CLIENT_PARTICLE_CAPACITY];
   CombatNotification notifications[SHROOM_CLIENT_NOTIFICATION_CAPACITY];
+  KillFeedEntry kill_feed[8];
   GameplayEvent gameplay_events[SHROOM_CLIENT_GAMEPLAY_EVENT_CAPACITY];
   ShroomVec2 previous_spore_positions[SHROOM_MAX_SPORES];
   ShroomEntityId previous_spore_entity_ids[SHROOM_MAX_SPORES];
   ShroomVec2 previous_player_positions[SHROOM_MAX_PLAYERS];
   ShroomEntityId previous_player_entity_ids[SHROOM_MAX_PLAYERS];
   ShroomPlayerId previous_player_ids[SHROOM_MAX_PLAYERS];
+  char previous_player_names[SHROOM_MAX_PLAYERS][SHROOM_MAX_NAME_LENGTH];
   float previous_player_masses[SHROOM_MAX_PLAYERS];
   bool previous_player_alive[SHROOM_MAX_PLAYERS];
   uint8_t previous_player_piece_indices[SHROOM_MAX_PLAYERS];
