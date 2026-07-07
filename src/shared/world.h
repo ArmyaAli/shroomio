@@ -30,6 +30,7 @@ typedef struct ShroomPlayerState {
   float mass;
   float radius;
   float decay_spore_accumulator;
+  uint64_t last_move_time_ms;
   char name[SHROOM_MAX_NAME_LENGTH];
   bool alive;
   bool is_bot;

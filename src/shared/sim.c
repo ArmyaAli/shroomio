@@ -17,6 +17,18 @@ static float ShroomClamp(float value, float min_value, float max_value) {
   return value;
 }
 
+static uint64_t ShroomWorldCurrentTimeMs(const ShroomWorldState* world) {
+  if (world == NULL) {
+    return 0u;
+  }
+  return (uint64_t)(((double)world->tick * 1000.0) / (double)SHROOM_SERVER_TICK_RATE);
+}
+
+static uint64_t ShroomWorldStepEndTimeMs(const ShroomWorldState* world, float delta_time) {
+  const double delta_ms = (double)delta_time * 1000.0;
+  return ShroomWorldCurrentTimeMs(world) + (uint64_t)(delta_ms > 0.0 ? delta_ms : 0.0);
+}
+
 static uint32_t ShroomNormalizeSeed(uint32_t seed) { return seed == 0 ? 0x6d2b79f5u : seed; }
 
 static uint32_t ShroomNextRandom(ShroomWorldState* world) {
@@ -144,6 +156,7 @@ static void ShroomRespawnPlayer(ShroomWorldState* world, ShroomPlayerState* play
   player->mass = SHROOM_DEFAULT_PLAYER_MASS;
   player->radius = ShroomMassToRadius(player->mass);
   player->decay_spore_accumulator = 0.0f;
+  player->last_move_time_ms = ShroomWorldCurrentTimeMs(world);
   player->alive = true;
   player->ai_controlled = false;
   player->has_split = false;
@@ -678,7 +691,45 @@ float ShroomMassToSpeed(float mass) {
       floor_speed, SHROOM_MIN_PLAYER_SPEED);
 }
 
-static void ShroomApplyMassRules(ShroomWorldState* world, float delta_time) {
+static void ShroomApplyMassLoss(ShroomWorldState* world, ShroomPlayerState* player,
+                                float mass_loss) {
+  float eject_radius;
+  float angle;
+  ShroomVec2 spore_position;
+  uint16_t spore_value;
+
+  if (mass_loss <= 0.0f) {
+    return;
+  }
+
+  eject_radius = player->radius + 12.0f;
+  angle = ShroomRandomFloat(world, 0.0f, 6.2831853f);
+  spore_position = (ShroomVec2){
+      ShroomClamp(player->position.x + (cosf(angle) * eject_radius), 60.0f, world->width - 60.0f),
+      ShroomClamp(player->position.y + (sinf(angle) * eject_radius), 60.0f, world->height - 60.0f),
+  };
+
+  player->mass = ShroomClamp(player->mass - mass_loss, 0.0f, SHROOM_MAX_PLAYER_MASS);
+  player->decay_spore_accumulator += mass_loss;
+  spore_value = (uint16_t)player->decay_spore_accumulator;
+  if (spore_value > 0u) {
+    ShroomSpawnDecaySpore(world, spore_position, spore_value);
+    player->decay_spore_accumulator -= (float)spore_value;
+  }
+}
+
+static bool ShroomPlayerIdlePenaltyActive(const ShroomPlayerState* player,
+                                          uint64_t current_time_ms) {
+  const uint64_t grace_ms = (uint64_t)(SHROOM_IDLE_PENALTY_GRACE_SECONDS * 1000.0f);
+
+  if ((player == NULL) || !player->alive) {
+    return false;
+  }
+  return current_time_ms > player->last_move_time_ms + grace_ms;
+}
+
+static void ShroomApplyMassRules(ShroomWorldState* world, float delta_time,
+                                 uint64_t current_time_ms) {
   size_t index;
 
   for (index = 0; index < world->player_count; ++index) {
@@ -689,33 +740,14 @@ static void ShroomApplyMassRules(ShroomWorldState* world, float delta_time) {
     }
 
     player->mass = ShroomClamp(player->mass, 0.0f, SHROOM_MAX_PLAYER_MASS);
-    {
+    if (ShroomPlayerCanDecay(world, player)) {
       const float decay_threshold = ShroomDecayMassThresholdAtPosition(world, player->position);
-
-      if (!ShroomPlayerCanDecay(world, player)) {
-        player->radius = ShroomMassToRadius(player->mass);
-        continue;
-      }
-
       const float excess_mass = player->mass - decay_threshold;
       const float decay_mass = excess_mass * SHROOM_DECAY_RATE_PER_SECOND * delta_time;
-      const float eject_radius = player->radius + 12.0f;
-      const float angle = ShroomRandomFloat(world, 0.0f, 6.2831853f);
-      const ShroomVec2 spore_position = {
-          ShroomClamp(player->position.x + (cosf(angle) * eject_radius), 60.0f,
-                      world->width - 60.0f),
-          ShroomClamp(player->position.y + (sinf(angle) * eject_radius), 60.0f,
-                      world->height - 60.0f),
-      };
-      uint16_t spore_value;
-
-      player->mass = ShroomClamp(player->mass - decay_mass, 0.0f, SHROOM_MAX_PLAYER_MASS);
-      player->decay_spore_accumulator += decay_mass;
-      spore_value = (uint16_t)player->decay_spore_accumulator;
-      if (spore_value > 0u) {
-        ShroomSpawnDecaySpore(world, spore_position, spore_value);
-        player->decay_spore_accumulator -= (float)spore_value;
-      }
+      ShroomApplyMassLoss(world, player, decay_mass);
+    }
+    if (ShroomPlayerIdlePenaltyActive(player, current_time_ms)) {
+      ShroomApplyMassLoss(world, player, SHROOM_IDLE_PENALTY_BLEED_PER_SECOND * delta_time);
     }
 
     player->radius = ShroomMassToRadius(player->mass);
@@ -771,6 +803,7 @@ initialize_player:
       .position = ShroomRandomSpawnPosition(world, true),
       .mass = SHROOM_DEFAULT_PLAYER_MASS,
       .radius = ShroomMassToRadius(SHROOM_DEFAULT_PLAYER_MASS),
+      .last_move_time_ms = ShroomWorldCurrentTimeMs(world),
       .alive = true,
       .is_bot = is_bot,
   };
@@ -949,6 +982,7 @@ bool ShroomWorldSplitPlayerToward(ShroomWorldState* world, ShroomPlayerState* pl
       .input_direction = launch_dir,
       .mass = half_mass,
       .radius = ShroomMassToRadius(half_mass),
+      .last_move_time_ms = ShroomWorldCurrentTimeMs(world),
       .alive = true,
       .is_bot = player->is_bot,
       .ai_controlled = true,
@@ -961,6 +995,7 @@ bool ShroomWorldSplitPlayerToward(ShroomWorldState* world, ShroomPlayerState* pl
 
   player->mass = half_mass;
   player->radius = ShroomMassToRadius(half_mass);
+  player->last_move_time_ms = ShroomWorldCurrentTimeMs(world);
   player->has_split = true;
   if (player->merge_timer <= 0.0f) {
     player->merge_timer = SHROOM_SPLIT_MERGE_SECONDS;
@@ -1042,6 +1077,7 @@ void ShroomPlayerSetInput(ShroomPlayerState* player, ShroomVec2 input_direction)
 void ShroomWorldStep(ShroomWorldState* world, float delta_time) {
   size_t index;
   ShroomSporeGridCell spore_grid[SHROOM_SPORE_GRID_CELLS];
+  const uint64_t step_end_time_ms = ShroomWorldStepEndTimeMs(world, delta_time);
 
   ShroomBuildSporeGrid(world, spore_grid);
 
@@ -1060,6 +1096,10 @@ void ShroomWorldStep(ShroomWorldState* world, float delta_time) {
 
     if (!player->alive) {
       continue;
+    }
+
+    if (ShroomVec2LengthSqr(player->input_direction) > SHROOM_IDLE_PENALTY_MOVEMENT_THRESHOLD_SQR) {
+      player->last_move_time_ms = step_end_time_ms;
     }
 
     if (player->speed_powerup_timer > 0.0f) {
@@ -1112,7 +1152,7 @@ void ShroomWorldStep(ShroomWorldState* world, float delta_time) {
   ShroomCollectSpores(world, spore_grid);
   ShroomCollectPowerups(world);
   ShroomResolveConsumes(world);
-  ShroomApplyMassRules(world, delta_time);
+  ShroomApplyMassRules(world, delta_time, step_end_time_ms);
   ShroomApplyForcedSplits(world);
   ShroomResolveMerges(world);
   ShroomUpdatePowerups(world, delta_time);
