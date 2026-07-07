@@ -20,6 +20,8 @@ typedef enum ShroomZone {
 typedef enum ShroomPowerupType {
   SHROOM_POWERUP_SPEED = SHROOM_POWERUP_TYPE_SPEED,
   SHROOM_POWERUP_SHIELD = SHROOM_POWERUP_TYPE_SHIELD,
+  SHROOM_POWERUP_MAGNET = SHROOM_POWERUP_TYPE_MAGNET,
+  SHROOM_POWERUP_DECAY_IMMUNE = SHROOM_POWERUP_TYPE_DECAY_IMMUNE,
 } ShroomPowerupType;
 
 typedef struct ShroomPlayerState {
@@ -41,6 +43,8 @@ typedef struct ShroomPlayerState {
   float spawn_protection_timer;
   float speed_powerup_timer;
   float shield_powerup_timer;
+  float magnet_powerup_timer;
+  float decay_immune_powerup_timer;
   float eject_cooldown_timer;
   uint8_t piece_index; /* 0 = primary; 1-3 = split fragment */
 } ShroomPlayerState;

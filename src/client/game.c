@@ -1678,6 +1678,11 @@ static void ApplyNetworkSnapshot(Game* game) {
             (snapshot_player->effect_flags & SHROOM_POWERUP_EFFECT_SPEED) != 0u ? 1.0f : 0.0f,
         .shield_powerup_timer =
             (snapshot_player->effect_flags & SHROOM_POWERUP_EFFECT_SHIELD) != 0u ? 1.0f : 0.0f,
+        .magnet_powerup_timer =
+            (snapshot_player->effect_flags & SHROOM_POWERUP_EFFECT_MAGNET) != 0u ? 1.0f : 0.0f,
+        .decay_immune_powerup_timer =
+            (snapshot_player->effect_flags & SHROOM_POWERUP_EFFECT_DECAY_IMMUNE) != 0u ? 1.0f
+                                                                                       : 0.0f,
     };
     snprintf(player->name, sizeof(player->name), "%s", snapshot_player->name);
 
@@ -2094,6 +2099,10 @@ static Color GetPowerupColor(ShroomPowerupType type) {
     return SKYBLUE;
   case SHROOM_POWERUP_SHIELD:
     return VIOLET;
+  case SHROOM_POWERUP_MAGNET:
+    return LIME;
+  case SHROOM_POWERUP_DECAY_IMMUNE:
+    return GOLD;
   default:
     return RAYWHITE;
   }
