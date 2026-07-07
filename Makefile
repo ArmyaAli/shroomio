@@ -201,6 +201,7 @@ CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/main.c \
 	$(CLIENT_SRC_DIR)/audio.c \
 	$(CLIENT_SRC_DIR)/client_settings.c \
+	$(CLIENT_SRC_DIR)/cursor.c \
 	$(CLIENT_SRC_DIR)/game.c \
 	$(CLIENT_SRC_DIR)/layout.c \
 	$(CLIENT_SRC_DIR)/net.c \
@@ -241,6 +242,7 @@ SHARED_HEADERS := \
 	$(SHARED_SRC_DIR)/lifecycle.h \
 	$(SHARED_SRC_DIR)/connection.h \
 	$(CLIENT_SRC_DIR)/audio.h \
+	$(CLIENT_SRC_DIR)/cursor.h \
 	$(CLIENT_SRC_DIR)/layout.h \
 	$(SERVER_SRC_DIR)/database.h \
 	$(SERVER_SRC_DIR)/auth.h
@@ -262,6 +264,7 @@ IMGUI_TEST_ENGINE_SOURCE_NAMES := imgui_capture_tool imgui_te_context imgui_te_c
 IMGUI_TEST_CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/audio.c \
 	$(CLIENT_SRC_DIR)/client_settings.c \
+	$(CLIENT_SRC_DIR)/cursor.c \
 	$(CLIENT_SRC_DIR)/game.c \
 	$(CLIENT_SRC_DIR)/layout.c \
 	$(CLIENT_SRC_DIR)/net.c \
