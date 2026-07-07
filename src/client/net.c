@@ -208,6 +208,12 @@ static void HandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet) {
 
   net->last_snapshot_tick = packet->tick;
   net->last_processed_input_sequence = packet->last_processed_input_sequence;
+  net->match_phase = packet->match_phase;
+  net->match_time_remaining = packet->match_time_remaining;
+  for (uint32_t i = 0; i < SHROOM_MATCH_PODIUM_COUNT; ++i) {
+    net->podium_player_ids[i] = packet->podium_player_ids[i];
+    net->podium_masses[i] = packet->podium_masses[i];
+  }
   player_count = packet->player_count;
   if (player_count > SHROOM_MAX_SNAPSHOT_PLAYERS) {
     player_count = SHROOM_MAX_SNAPSHOT_PLAYERS;

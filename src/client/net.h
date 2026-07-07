@@ -79,6 +79,11 @@ typedef struct ClientNetState {
   float world_height;
   uint8_t lobby_count;
   ShroomLobbyEntry lobby_list[SHROOM_MAX_LOBBIES];
+  /* Match timer state */
+  uint8_t match_phase;
+  float match_time_remaining;
+  uint32_t podium_player_ids[SHROOM_MATCH_PODIUM_COUNT];
+  float podium_masses[SHROOM_MATCH_PODIUM_COUNT];
 } ClientNetState;
 
 bool ClientNetInit(ClientNetState* net, const char* host_name, uint16_t port);
