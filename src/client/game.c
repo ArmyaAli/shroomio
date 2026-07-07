@@ -7,6 +7,7 @@
 #include <time.h>
 
 #include "audio.h"
+#include "cursor.h"
 #include "imgui_wrapper.h"
 #include "raymath.h"
 #include "render_lod.h"
@@ -32,6 +33,7 @@ static Color GetPowerupColor(ShroomPowerupType type);
 static Color GetZoneColor(ShroomZone zone);
 static const char* GetZoneSummary(ShroomZone zone);
 static const char* GetZoneLabel(ShroomZone zone);
+static const ShroomPlayerState* GetInputReferencePlayer(const Game* game);
 
 static bool IsOnlineMode(GameSessionMode mode) {
   return mode == SHROOM_SESSION_MODE_QUICK_PLAY || mode == SHROOM_SESSION_MODE_LOBBY_PLAY;
@@ -3544,6 +3546,50 @@ static ShroomVec2 GetSplitAimInput(const Game* game, ShroomVec2 fallback_directi
   return (ShroomVec2){1.0f, 0.0f};
 }
 
+static bool LocalCanConsumeMouseTarget(const Game* game) {
+  const ShroomPlayerState* local = game != NULL ? GetInputReferencePlayer(game) : NULL;
+  const Vector2 mouse_world =
+      game != NULL ? GetScreenToWorld2D(GetMousePosition(), game->camera) : (Vector2){0};
+  const ShroomVec2 mouse_pos = {mouse_world.x, mouse_world.y};
+
+  if ((game == NULL) || (local == NULL) || !local->alive) {
+    return false;
+  }
+
+  for (size_t index = 0; index < game->world.player_count; ++index) {
+    const ShroomPlayerState* target = &game->world.players[index];
+
+    if (!target->alive || (target->player_id == local->player_id)) {
+      continue;
+    }
+    if (ShroomDistanceSqr(mouse_pos, target->position) > (target->radius * target->radius)) {
+      continue;
+    }
+    if (ShroomPlayerCanConsume(&game->world, local, target)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+static ShroomCursorMode GetGameCursorMode(const Game* game) {
+  const ShroomPlayerState* local = game != NULL ? GetInputReferencePlayer(game) : NULL;
+
+  if ((game == NULL) || game->spectator_mode || IsOverlayBlockingGameplay(game) ||
+      game->chat_open || (local == NULL) || !local->alive) {
+    return SHROOM_CURSOR_DISABLED;
+  }
+  if (LocalCanConsumeMouseTarget(game)) {
+    return SHROOM_CURSOR_CONSUME;
+  }
+  if ((game->split_hold_timer > 0.0f) || game->split_requested) {
+    return SHROOM_CURSOR_SPLIT;
+  }
+
+  return SHROOM_CURSOR_GAMEPLAY;
+}
+
 static void UpdateSpectatorCamera(Game* game, float delta_time) {
   const ShroomPlayerState* target;
   Vector2 camera_target;
@@ -3628,6 +3674,7 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
     ShroomWorldInit(&game->world);
     CaptureParticleBaselines(game);
     ShroomClientAudioEnsureAllSfxLoaded();
+    ShroomCursorHideSystem();
     /* local_player is NULL until first snapshot from server. */
     return;
   }
@@ -3683,6 +3730,7 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
     GameEnterSpectatorMode(game);
   }
   ShroomClientAudioEnsureAllSfxLoaded();
+  ShroomCursorHideSystem();
 }
 
 void GameHandleResize(Game* game, int screen_width, int screen_height) {
@@ -3976,6 +4024,7 @@ void GameDraw(Game* game) {
   DrawChatDock(game);
   DrawInspectOverlay(game);
   DrawKillFeed(game);
+  ShroomCursorDraw(GetGameCursorMode(game));
 
   if (profile_enabled) {
     const double draw_ms = ShroomProfileNanosToMs(ClientProfileNowNanos() - draw_start_nanos);
@@ -3990,4 +4039,5 @@ void GameShutdown(Game* game) {
     ClientNetShutdown(&game->net);
   }
   ShroomClientAudioShutdown();
+  ShroomCursorShowSystem();
 }
