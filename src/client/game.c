@@ -628,6 +628,51 @@ static const ShroomPlayerState* FindSpectatorTarget(const Game* game) {
   return NULL;
 }
 
+static const ShroomLobbyEntry* FindCurrentLobbyEntry(const Game* game, int* current_index) {
+  if (current_index != NULL) {
+    *current_index = -1;
+  }
+  if ((game == NULL) || (game->net.lobby_id == 0u)) {
+    return NULL;
+  }
+  for (uint8_t index = 0; index < game->net.lobby_count; ++index) {
+    const ShroomLobbyEntry* lobby = &game->net.lobby_list[index];
+    if (lobby->lobby_id == game->net.lobby_id) {
+      if (current_index != NULL) {
+        *current_index = (int)index;
+      }
+      return lobby;
+    }
+  }
+  return NULL;
+}
+
+static void GameSwitchSpectatorLobby(Game* game, int direction) {
+  int current_index = -1;
+  int next_index;
+
+  if ((game == NULL) || !game->spectator_mode || !IsOnlineMode(game->active_mode) ||
+      (game->net.lobby_count <= 1u)) {
+    return;
+  }
+
+  FindCurrentLobbyEntry(game, &current_index);
+  if (current_index < 0) {
+    current_index = direction < 0 ? 0 : (int)game->net.lobby_count - 1;
+  }
+
+  next_index = (current_index + (int)game->net.lobby_count + (direction < 0 ? -1 : 1)) %
+               (int)game->net.lobby_count;
+  if (game->net.lobby_list[next_index].lobby_id == game->net.lobby_id) {
+    return;
+  }
+
+  ClientNetSendLobbyLeave(&game->net);
+  ClientNetSendLobbyJoin(&game->net, game->net.lobby_list[next_index].lobby_id, true);
+  game->spectated_entity_id = 0;
+  game->spectator_follow_mode = true;
+}
+
 void GameCycleSpectatorTarget(Game* game, int direction) {
   uint32_t targets[SHROOM_MAX_PLAYERS];
   int target_count = 0;
@@ -3178,20 +3223,41 @@ static void DrawProximityMap(const Game* game) {
 static void DrawSpectatorOverlay(Game* game, const LeaderboardEntry* leaderboard,
                                  size_t leaderboard_count) {
   const ShroomPlayerState* target;
+  const ShroomLobbyEntry* current_lobby;
   int target_rank = 0;
+  int current_lobby_index = -1;
+  float panel_width;
+  float panel_height;
+  float panel_x;
+  float panel_y;
 
   if ((game == NULL) || !game->spectator_mode) {
     return;
+  }
+
+  panel_width = game->screen_width < 760 ? (float)game->screen_width - 32.0f : 330.0f;
+  if (panel_width < 260.0f) {
+    panel_width = 260.0f;
+  }
+  panel_height = game->screen_height < 560 ? 206.0f : 238.0f;
+  panel_x = (float)game->screen_width - panel_width - 18.0f;
+  if (panel_x < 16.0f) {
+    panel_x = 16.0f;
+  }
+  panel_y = (float)game->screen_height - panel_height - 18.0f;
+  if (panel_y < 96.0f) {
+    panel_y = 96.0f;
   }
 
   target = FindSpectatorTarget(game);
   if (target != NULL) {
     target_rank = GetPlayerRank(game, target);
   }
+  current_lobby = FindCurrentLobbyEntry(game, &current_lobby_index);
 
-  ShroomImGui_SetNextWindowPos(18.0f, 104.0f, SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowSize(292.0f, 318.0f, SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowBgAlpha(0.82f);
+  ShroomImGui_SetNextWindowPos(panel_x, panel_y, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowSize(panel_width, panel_height, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowBgAlpha(0.64f);
   if (!ShroomImGui_Begin("Spectator", NULL,
                          SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
                              SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
@@ -3200,12 +3266,31 @@ static void DrawSpectatorOverlay(Game* game, const LeaderboardEntry* leaderboard
     return;
   }
 
+  if ((current_lobby != NULL) || (game->net.lobby_name[0] != '\0')) {
+    ShroomImGui_Text(
+        TextFormat("Lobby %s", current_lobby != NULL ? current_lobby->name : game->net.lobby_name));
+  } else {
+    ShroomImGui_Text("Local Spectator");
+  }
   ShroomImGui_Text(game->spectator_follow_mode ? "Follow Camera" : "Free Camera");
-  ShroomImGui_TextWrapped("F toggles follow/free. Tab cycles players. WASD/arrows pan free camera; "
-                          "right-drag also pans.");
+  ShroomImGui_TextWrapped(
+      "Tab cycles players. F toggles follow/free. WASD/arrows pan free camera.");
+  if (IsOnlineMode(game->active_mode) && (game->net.lobby_count > 1u)) {
+    if (ShroomImGui_Button("Prev Lobby", 96.0f, 24.0f)) {
+      GameSwitchSpectatorLobby(game, -1);
+    }
+    ShroomImGui_SameLine();
+    if (ShroomImGui_Button("Next Lobby", 96.0f, 24.0f)) {
+      GameSwitchSpectatorLobby(game, 1);
+    }
+    ShroomImGui_SameLine();
+    ShroomImGui_Text(TextFormat("%d/%u", current_lobby_index >= 0 ? current_lobby_index + 1 : 0,
+                                game->net.lobby_count));
+  }
   ShroomImGui_Separator();
   if (target != NULL) {
-    ShroomImGui_Text(TextFormat("Watching %s", GetPlayerDisplayName(game, target)));
+    ShroomImGui_TextColored(ToImGuiColor((Color){190, 235, 150, 255}),
+                            TextFormat("Watching > %s", GetPlayerDisplayName(game, target)));
     ShroomImGui_Text(
         TextFormat("Mass %.0f  Rank %d  Zone %s", target->mass,
                    target_rank > 0 ? target_rank : (int)leaderboard_count,
@@ -3215,16 +3300,29 @@ static void DrawSpectatorOverlay(Game* game, const LeaderboardEntry* leaderboard
   }
   ShroomImGui_Separator();
 
-  for (size_t row = 0; row < leaderboard_count && row < 8u; ++row) {
+  ShroomImGui_BeginChild("SpectatorTargets", 0.0f, 82.0f, false);
+  for (size_t row = 0; row < leaderboard_count && row < 6u; ++row) {
     const ShroomPlayerState* player = &game->world.players[leaderboard[row].index];
     char label[96];
-    snprintf(label, sizeof(label), "%zu. %s  %.0f##spectate%u", row + 1,
+    const bool selected = player->entity_id == game->spectated_entity_id;
+    snprintf(label, sizeof(label), "%s%zu. %s  %.0f##spectate%u", selected ? "> " : "  ", row + 1,
              GetPlayerDisplayName(game, player), player->mass, player->entity_id);
-    if (ShroomImGui_Button(label, 250.0f, 24.0f)) {
+    if (selected) {
+      ShroomImGui_PushStyleColor(SHROOM_IMGUI_COL_BUTTON, 0.24f, 0.36f, 0.16f, 0.86f);
+      ShroomImGui_PushStyleColor(SHROOM_IMGUI_COL_BUTTON_HOVERED, 0.34f, 0.50f, 0.23f, 0.94f);
+      ShroomImGui_PushStyleColor(SHROOM_IMGUI_COL_BUTTON_ACTIVE, 0.42f, 0.62f, 0.28f, 1.0f);
+    }
+    if (ShroomImGui_Button(label, panel_width - 34.0f, 22.0f)) {
       game->spectated_entity_id = player->entity_id;
       game->spectator_follow_mode = true;
     }
+    if (selected) {
+      ShroomImGui_PopStyleColor();
+      ShroomImGui_PopStyleColor();
+      ShroomImGui_PopStyleColor();
+    }
   }
+  ShroomImGui_EndChild();
 
   ShroomImGui_End();
 }
