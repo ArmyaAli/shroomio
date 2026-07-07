@@ -10,6 +10,7 @@
 
 static Sound g_client_sfx[SHROOM_CLIENT_SFX_COUNT];
 static bool g_client_sfx_loaded[SHROOM_CLIENT_SFX_COUNT];
+static double g_client_sfx_last_played_at[SHROOM_CLIENT_SFX_COUNT];
 static Sound g_client_music_loop;
 static bool g_client_music_loaded;
 
@@ -25,6 +26,46 @@ static float SmoothStep01(float value) {
 static float NextNoiseSample(uint32_t* state) {
   *state = (*state * 1664525u) + 1013904223u;
   return ((float)((*state >> 8u) & 0xFFFFu) / 32767.5f) - 1.0f;
+}
+
+static double GetSfxCooldownSeconds(ShroomClientSfx sfx) {
+  switch (sfx) {
+  case SHROOM_CLIENT_SFX_SPORE:
+    return 0.16;
+  case SHROOM_CLIENT_SFX_CONSUME:
+    return 0.14;
+  case SHROOM_CLIENT_SFX_WARNING:
+    return 0.75;
+  case SHROOM_CLIENT_SFX_POWERUP:
+  case SHROOM_CLIENT_SFX_SPLIT:
+    return 0.12;
+  case SHROOM_CLIENT_SFX_UI_CLICK:
+  case SHROOM_CLIENT_SFX_UI_ERROR:
+    return 0.04;
+  case SHROOM_CLIENT_SFX_DEATH:
+  case SHROOM_CLIENT_SFX_COUNT:
+  default:
+    return 0.0;
+  }
+}
+
+static bool CanPlaySfxNow(ShroomClientSfx sfx, double now_seconds) {
+  const double cooldown = GetSfxCooldownSeconds(sfx);
+
+  if ((sfx < 0) || (sfx >= SHROOM_CLIENT_SFX_COUNT)) {
+    return false;
+  }
+  if (cooldown <= 0.0) {
+    g_client_sfx_last_played_at[sfx] = now_seconds;
+    return true;
+  }
+  if ((g_client_sfx_last_played_at[sfx] > 0.0) &&
+      ((now_seconds - g_client_sfx_last_played_at[sfx]) < cooldown)) {
+    return false;
+  }
+
+  g_client_sfx_last_played_at[sfx] = now_seconds;
+  return true;
 }
 
 static Sound GenerateOrganicSfx(float start_hz, float end_hz, float seconds, float attack_seconds,
@@ -207,6 +248,7 @@ void ShroomClientAudioShutdown(void) {
   }
   memset(g_client_sfx, 0, sizeof(g_client_sfx));
   memset(g_client_sfx_loaded, 0, sizeof(g_client_sfx_loaded));
+  memset(g_client_sfx_last_played_at, 0, sizeof(g_client_sfx_last_played_at));
   if (g_client_music_loaded) {
     UnloadSound(g_client_music_loop);
   }
@@ -220,6 +262,9 @@ void ShroomClientAudioPlaySfx(const ClientSettings* settings, ShroomClientSfx sf
   int active_sounds = 0;
 
   if ((settings == NULL) || (sfx < 0) || (sfx >= SHROOM_CLIENT_SFX_COUNT)) {
+    return;
+  }
+  if (!CanPlaySfxNow(sfx, GetTime())) {
     return;
   }
 
@@ -253,3 +298,13 @@ void ShroomClientAudioPlaySfx(const ClientSettings* settings, ShroomClientSfx sf
   SetSoundPan(g_client_sfx[sfx], 0.5f);
   PlaySound(g_client_sfx[sfx]);
 }
+
+#ifdef TEST_MODE
+void ShroomClientAudioTestResetThrottleState(void) {
+  memset(g_client_sfx_last_played_at, 0, sizeof(g_client_sfx_last_played_at));
+}
+
+bool ShroomClientAudioTestCanPlaySfx(ShroomClientSfx sfx, double now_seconds) {
+  return CanPlaySfxNow(sfx, now_seconds);
+}
+#endif

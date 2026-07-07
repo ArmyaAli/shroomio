@@ -98,6 +98,7 @@ bool ClientNetTestCompletePendingPing(ClientNetState* net, uint32_t nonce, uint3
 void ClientNetTestClearStalePendingPing(ClientNetState* net, uint32_t now_ms);
 void ClientNetTestCheckConnectTimeout(ClientNetState* net, uint32_t now_ms);
 void ClientNetTestHandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet);
+void ClientNetTestHandleSporeState(ClientNetState* net, const ENetPacket* enet_packet);
 void ClientNetTestHandleLobbyList(ClientNetState* net, const ENetPacket* enet_packet);
 void ClientNetTestHandleMushroomSpeciesCatalog(ClientNetState* net, const ENetPacket* enet_packet);
 #endif

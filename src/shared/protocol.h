@@ -9,6 +9,7 @@
 
 #define SHROOM_PROTOCOL_VERSION 3u
 #define SHROOM_SERVER_PORT 7777u
+#define SHROOM_MAX_UNRELIABLE_PACKET_SIZE 1200u
 #define SHROOM_MAX_PASSWORD_LENGTH 64u
 #define SHROOM_AUTH_TOKEN_LENGTH 64u
 /* Total ENet peers across all lobbies (SHROOM_MAX_LOBBIES * SHROOM_MAX_PLAYERS). */
@@ -154,8 +155,8 @@ typedef struct ShroomSnapshotSporeState {
 typedef struct ShroomSporeStatePacket {
   ShroomPacketHeader header;
   uint64_t tick;
-  uint16_t spore_count;
-  uint16_t reserved;
+  uint16_t spore_count; /* total active spores across all chunks */
+  uint16_t reserved;    /* chunk start index for spore-state packets */
   ShroomSnapshotSporeState spores[SHROOM_MAX_SPORES];
 } ShroomSporeStatePacket;
 
@@ -356,6 +357,15 @@ static inline void ShroomPacketHeaderInit(ShroomPacketHeader* header, ShroomPack
   header->type = (uint8_t)type;
   header->reserved = ShroomPacketTypeToChannel(type);
   header->size = size;
+}
+
+static inline uint16_t ShroomSporeStatePacketMaxSpores(void) {
+  const size_t header_size = offsetof(ShroomSporeStatePacket, spores);
+  const size_t available = SHROOM_MAX_UNRELIABLE_PACKET_SIZE > header_size
+                               ? SHROOM_MAX_UNRELIABLE_PACKET_SIZE - header_size
+                               : 0u;
+
+  return (uint16_t)(available / sizeof(ShroomSnapshotSporeState));
 }
 
 static inline bool ShroomPacketHeaderUsesExpectedChannel(const ShroomPacketHeader* header,
