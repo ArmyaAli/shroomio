@@ -967,16 +967,11 @@ bool ShroomPlayerCanSplit(const ShroomWorldState* world, const ShroomPlayerState
   if ((world == NULL) || (player == NULL) || !player->alive) {
     return false;
   }
-  /* The min-mass floor is evaluated post-cost: each piece would be
-   * (parent_mass - split_cost) / 2, and we require each resulting piece to
-   * weigh at least SHROOM_SPLIT_MIN_MASS / 2 so the split doesn't drop a
-   * piece below the genre-typical "small colony" floor. The simpler
-   * equivalent (and what players will intuit) is: parent_mass must exceed
-   * SHROOM_SPLIT_MIN_MASS by enough that the post-cost halves stay above
-   * half the floor. */
-  const float split_cost = player->mass * SHROOM_SPLIT_MASS_LOSS_FRACTION;
-  const float post_cost_mass = player->mass - split_cost;
-  if (post_cost_mass < SHROOM_SPLIT_MIN_MASS) {
+  /* ## Decisions: split mass floor.
+   * The floor is checked against pre-cost mass so a 4x default-mass colony can
+   * split tactically. The cost is still paid before halving, making the split a
+   * commitment without reserving the mechanic only for near-cap players. */
+  if (player->mass < SHROOM_SPLIT_MIN_MASS) {
     return false;
   }
   if (!player->is_bot && player->has_split) {
@@ -1052,7 +1047,7 @@ bool ShroomWorldSplitPlayerToward(ShroomWorldState* world, ShroomPlayerState* pl
       .last_move_time_ms = ShroomWorldCurrentTimeMs(world),
       .alive = true,
       .is_bot = player->is_bot,
-      .ai_controlled = true,
+      .ai_controlled = player->is_bot,
       .merge_timer = SHROOM_SPLIT_MERGE_SECONDS,
       .spawn_protection_timer = SHROOM_SPLIT_PROTECTION_SECONDS,
       .piece_index = (uint8_t)piece_count,

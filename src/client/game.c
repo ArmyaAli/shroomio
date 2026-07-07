@@ -3590,6 +3590,31 @@ static ShroomCursorMode GetGameCursorMode(const Game* game) {
   return SHROOM_CURSOR_GAMEPLAY;
 }
 
+static uint32_t FindHoveredLocalPieceEntity(const Game* game) {
+  const ShroomPlayerId local_pid =
+      game != NULL && game->local_player != NULL ? game->local_player->player_id : 0u;
+  const Vector2 mouse_world =
+      game != NULL ? GetScreenToWorld2D(GetMousePosition(), game->camera) : (Vector2){0};
+  const ShroomVec2 mouse_pos = {mouse_world.x, mouse_world.y};
+
+  if (local_pid == 0u) {
+    return 0u;
+  }
+
+  for (size_t index = 0; index < game->world.player_count; ++index) {
+    const ShroomPlayerState* player = &game->world.players[index];
+
+    if (!player->alive || (player->player_id != local_pid)) {
+      continue;
+    }
+    if (ShroomDistanceSqr(mouse_pos, player->position) <= (player->radius * player->radius)) {
+      return player->entity_id;
+    }
+  }
+
+  return 0u;
+}
+
 static void UpdateSpectatorCamera(Game* game, float delta_time) {
   const ShroomPlayerState* target;
   Vector2 camera_target;
@@ -3764,6 +3789,14 @@ void GameUpdate(Game* game, float delta_time) {
   GameHandleResize(game, GetScreenWidth(), GetScreenHeight());
   ShroomClientAudioUpdateMusic(&game->settings);
 
+  if (!game->spectator_mode && !IsOverlayBlockingGameplay(game) && !game->chat_open) {
+    const uint32_t hovered_piece = FindHoveredLocalPieceEntity(game);
+    if (hovered_piece != 0u) {
+      game->focused_piece_entity_id = hovered_piece;
+      game->piece_focus_changed = true;
+    }
+  }
+
   if (game->spectator_mode || IsOverlayBlockingGameplay(game) || game->chat_open) {
     input_direction = (ShroomVec2){0};
   } else {
@@ -3902,12 +3935,12 @@ void GameUpdate(Game* game, float delta_time) {
         }
       }
 
-      /* Hand off unfocused pieces to AI. */
+      /* Human split pieces without focus keep their last direction; bot pieces keep AI. */
       if (local_pid != 0) {
         for (pi = 0; pi < game->world.player_count; ++pi) {
           ShroomPlayerState* p = &game->world.players[pi];
           if (p->alive && (p->player_id == local_pid)) {
-            p->ai_controlled = (ctrl != NULL) && (p != ctrl);
+            p->ai_controlled = p->is_bot && (ctrl != NULL) && (p != ctrl);
           }
         }
       }

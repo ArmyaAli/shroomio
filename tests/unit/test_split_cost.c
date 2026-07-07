@@ -46,25 +46,20 @@ static void test_split_conserve_mass_minus_cost(void) {
   TEST_ASSERT_FLOAT_WITHIN(0.001f, expected_half, piece->mass);
 }
 
-static void test_cannot_split_at_exact_floor_post_cost(void) {
+static void test_can_split_at_exact_pre_cost_floor(void) {
   ShroomPlayerState* player;
-  /* At the floor, post-cost mass = FLOOR * (1 - 0.05) = below the floor.
-   * ShroomPlayerCanSplit must refuse because each piece would land below
-   * FLOOR / 2, violating the post-cost check. */
+
   player = ShroomWorldSpawnPlayer(&world, 1, false);
   TEST_ASSERT_NOT_NULL(player);
   player->mass = SHROOM_SPLIT_MIN_MASS;
   player->radius = ShroomMassToRadius(player->mass);
   player->input_direction = (ShroomVec2){1.0f, 0.0f};
 
-  TEST_ASSERT_FALSE(ShroomPlayerCanSplit(&world, player));
-  TEST_ASSERT_FALSE(ShroomWorldSplitPlayer(&world, player));
+  TEST_ASSERT_TRUE(ShroomPlayerCanSplit(&world, player));
+  TEST_ASSERT_TRUE(ShroomWorldSplitPlayer(&world, player));
 }
 
 static void test_can_split_above_floor_with_margin(void) {
-  /* Mass slightly above the floor by enough that post-cost stays above the
-   * floor. With cost fraction 0.05, post-cost = mass * 0.95 >= floor -> mass
-   * >= floor / 0.95 ~= floor * 1.0526. Use +100 to be safely above. */
   ShroomPlayerState* player;
   const float starting_mass = SHROOM_SPLIT_MIN_MASS + 100.0f;
 
@@ -95,7 +90,7 @@ static void test_mass_loss_fraction_is_positive(void) {
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_split_conserve_mass_minus_cost);
-  RUN_TEST(test_cannot_split_at_exact_floor_post_cost);
+  RUN_TEST(test_can_split_at_exact_pre_cost_floor);
   RUN_TEST(test_can_split_above_floor_with_margin);
   RUN_TEST(test_mass_loss_fraction_is_positive);
   return UNITY_END();

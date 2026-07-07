@@ -940,12 +940,12 @@ static void HandleInputPacket(ServerSession* session, const ENetPacket* enet_pac
   ShroomPlayerSetInput(target_piece,
                        NormalizeInput((ShroomVec2){packet->direction_x, packet->direction_y}));
 
-  /* Mark all other pieces of this player as AI-controlled. */
+  /* Human split pieces without focus keep their last direction; bot pieces keep AI. */
   if (world != NULL) {
     for (i = 0; i < world->player_count; ++i) {
       ShroomPlayerState* p = &world->players[i];
       if (p->alive && (p->player_id == session->player_id)) {
-        p->ai_controlled = (p->entity_id != session->focused_entity_id);
+        p->ai_controlled = p->is_bot && (p->entity_id != session->focused_entity_id);
       }
     }
   }

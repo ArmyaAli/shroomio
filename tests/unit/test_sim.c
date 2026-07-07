@@ -46,7 +46,7 @@ static ShroomPlayerState* FindSplitPiece(ShroomPlayerId player_id) {
 }
 
 static float SplitRequiredPreCostMass(void) {
-  return SHROOM_SPLIT_MIN_MASS / (1.0f - SHROOM_SPLIT_MASS_LOSS_FRACTION);
+  return SHROOM_SPLIT_MIN_MASS;
 }
 
 void test_world_init_sets_expected_defaults(void) {
@@ -596,7 +596,7 @@ void test_player_can_voluntarily_split_at_large_colony_threshold(void) {
   TEST_ASSERT_NOT_EQUAL_UINT32(player->entity_id, piece->entity_id);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, starting_mass * (1.0f - SHROOM_SPLIT_MASS_LOSS_FRACTION),
                            player->mass + piece->mass);
-  TEST_ASSERT_TRUE(piece->ai_controlled);
+  TEST_ASSERT_FALSE(piece->ai_controlled);
 }
 
 void test_player_split_uses_requested_aim_direction(void) {
@@ -1130,7 +1130,7 @@ void test_split_spawn_protection_expires_before_merge_timer(void) {
 
   larger_player->mass = starting_mass * 1.5f;
   larger_player->radius = ShroomMassToRadius(larger_player->mass);
-  larger_player->position = (ShroomVec2){3600.0f, 3000.0f};
+  larger_player->position = (ShroomVec2){5200.0f, 5200.0f};
 
   TEST_ASSERT_TRUE(ShroomWorldSplitPlayer(&world, player));
   piece = FindSplitPiece(player->player_id);
