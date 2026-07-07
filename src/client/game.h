@@ -1,6 +1,8 @@
 #ifndef SHROOM_CLIENT_GAME_H
 #define SHROOM_CLIENT_GAME_H
 
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "raylib.h"
@@ -13,6 +15,22 @@
 #define SHROOM_CLIENT_PARTICLE_CAPACITY 384u
 #define SHROOM_CLIENT_NOTIFICATION_CAPACITY 6u
 #define SHROOM_CLIENT_GAMEPLAY_EVENT_CAPACITY 64u
+#define SHROOM_CLIENT_PROXIMITY_SPORE_DOT_BUDGET 96u
+
+static inline bool ShroomClientShouldSampleIndexedItem(size_t index, size_t total_count,
+                                                       size_t budget) {
+  size_t stride;
+
+  if ((budget == 0u) || (total_count == 0u)) {
+    return false;
+  }
+  if (total_count <= budget) {
+    return true;
+  }
+
+  stride = (total_count + budget - 1u) / budget;
+  return (index % stride) == 0u;
+}
 
 typedef enum GameSessionMode {
   SHROOM_SESSION_MODE_QUICK_PLAY = 0,

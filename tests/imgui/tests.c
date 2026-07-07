@@ -102,6 +102,11 @@ static void Test_HelpAndCreditsBackNavigation(ImGuiTestContext* ctx) {
   IM_CHECK(ShroomTeImGui_WindowIsActive("How To Play"));
 
   ShroomTeCtx_SetRef(ctx, "How To Play");
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Sprout 86"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Cluster 112"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Bloom 148"));
+
+  ShroomTeCtx_ItemClick(ctx, "Bloom 148");
   ShroomTeCtx_ItemClick(ctx, "Back");
   IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
               SHROOM_SCREEN_MAIN_MENU);
@@ -352,6 +357,42 @@ static void Test_LobbyConnectionModalStates(ImGuiTestContext* ctx) {
   ShroomTeCtx_ItemClick(ctx, "Back");
   IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
               SHROOM_SCREEN_SERVER_BROWSER);
+}
+
+/* lobby: Play Online against an unreachable server surfaces a friendly
+ * 'unable to connect' message after the connect timeout, with Retry/Back
+ * recovery so the user isn't stuck on the connecting spinner. Regression for
+ * #371. */
+static void Test_LobbyUnreachableServerShowsFriendlyError(ImGuiTestContext* ctx) {
+  ShroomImGuiTestAppReset(false);
+  ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_LOBBY);
+  /* Reproduce the post-click Play Online state: auto-join pending, connecting. */
+  g_imgui_test_app.game.auto_join_lobby = true;
+  g_imgui_test_app.game.net.status = CLIENT_NET_CONNECTING;
+  g_imgui_test_app.game.net.handshake_received = false;
+  g_imgui_test_app.game.net.connect_started_ms = 1000u;
+
+  /* Advance the net clock past the connect timeout via the real helper the
+   * production ClientNetUpdate uses. */
+  ClientNetTestCheckConnectTimeout(&g_imgui_test_app.game.net,
+                                   1000u + SHROOM_CLIENT_CONNECT_TIMEOUT_MS);
+
+  IM_CHECK_EQ(g_imgui_test_app.game.net.status, CLIENT_NET_ERROR);
+  IM_CHECK_STR_EQ(g_imgui_test_app.game.net.status_text,
+                  SHROOM_NET_CONNECT_UNREACHABLE_MSG);
+
+  ShroomTeCtx_SetRef(ctx, "Connection Status");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Connection Status"));
+  /* Recovery path must be reachable so the player can escape the error. */
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Retry"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Back"));
+
+  ShroomTeCtx_ItemClick(ctx, "Back");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_SERVER_BROWSER);
+  IM_CHECK_EQ(g_imgui_test_app.game.auto_join_lobby, false);
 }
 
 static void Test_LobbyEmptyAndFullStatesRender(ImGuiTestContext* ctx) {
@@ -812,6 +853,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_ServerBrowserInvalidHostAndHostPortParsing);
   ShroomTeEngine_RegisterTest(engine, "screens", "lobby_connection_modal_states",
                               Test_LobbyConnectionModalStates);
+  ShroomTeEngine_RegisterTest(engine, "screens", "lobby_unreachable_server_friendly_error",
+                              Test_LobbyUnreachableServerShowsFriendlyError);
   ShroomTeEngine_RegisterTest(engine, "screens", "lobby_empty_and_full_states_render",
                               Test_LobbyEmptyAndFullStatesRender);
   ShroomTeEngine_RegisterTest(engine, "screens", "gameplay_overlay_state_toggles",

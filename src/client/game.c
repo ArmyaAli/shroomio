@@ -2995,10 +2995,17 @@ static void DrawProximityMap(const Game* game) {
 
   for (size_t index = 0; index < game->world.spore_count; ++index) {
     const ShroomSporeState* spore = &game->world.spores[index];
-    const ShroomVec2 delta = ShroomVec2Sub(spore->position, local_position);
-    const float distance_sqr = ShroomVec2LengthSqr(delta);
+    ShroomVec2 delta;
+    float distance_sqr;
     Vector2 map_position;
     float scale;
+
+    if (!ShroomClientShouldSampleIndexedItem(index, game->world.spore_count,
+                                             SHROOM_CLIENT_PROXIMITY_SPORE_DOT_BUDGET)) {
+      continue;
+    }
+    delta = ShroomVec2Sub(spore->position, local_position);
+    distance_sqr = ShroomVec2LengthSqr(delta);
 
     if (!spore->active || (distance_sqr > (kProximityMapRange * kProximityMapRange))) {
       continue;

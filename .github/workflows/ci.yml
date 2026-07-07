@@ -25,6 +25,10 @@ on:
       - 'database/**'
       - '*.md'
 
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
   changes:
     name: Detect change scope
@@ -36,14 +40,16 @@ jobs:
         with:
           fetch-depth: 0
       - id: filter
-        uses: dorny/paths-filter@v3
-        with:
-          predicate-quantifier: every
-          filters: |
-            docs-only:
-              - 'docs/**'
-              - 'design/**'
-              - '*.md'
+        name: Detect docs-only changes
+        run: |
+          docs_only=true
+          while IFS= read -r path; do
+            case "$path" in
+              docs/*|design/*|*.md) ;;
+              *) docs_only=false ;;
+            esac
+          done < <(git diff --name-only "${{ github.event.pull_request.base.sha }}" HEAD)
+          printf 'docs-only=%s\n' "$docs_only" >> "$GITHUB_OUTPUT"
 
   quality:
     name: Quality

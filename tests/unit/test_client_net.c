@@ -1,6 +1,7 @@
 #include "unity.h"
 
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "client/net.h"
@@ -97,6 +98,63 @@ static void test_client_net_ignores_truncated_snapshot_players(void) {
   TEST_ASSERT_EQUAL_UINT16(9u, net.snapshot_player_count);
 }
 
+static void test_client_net_accepts_chunked_spore_state_packet(void) {
+  ClientNetState net = {0};
+  ShroomSporeStatePacket spore_state = {0};
+  ENetPacket packet = {0};
+  const size_t packet_size = offsetof(ShroomSporeStatePacket, spores) +
+                             (2u * sizeof(ShroomSnapshotSporeState));
+
+  ShroomPacketHeaderInit(&spore_state.header, SHROOM_PACKET_SPORE_STATE, (uint16_t)packet_size);
+  spore_state.tick = 55u;
+  spore_state.spore_count = 5u;
+  spore_state.reserved = 3u;
+  spore_state.spores[0] = (ShroomSnapshotSporeState){.entity_id = 40u, .position_x = 4.0f};
+  spore_state.spores[1] = (ShroomSnapshotSporeState){.entity_id = 50u, .position_x = 5.0f};
+  packet.data = (enet_uint8*)&spore_state;
+  packet.dataLength = packet_size;
+
+  ClientNetTestHandleSporeState(&net, &packet);
+
+  TEST_ASSERT_EQUAL_UINT16(5u, net.spore_count);
+  TEST_ASSERT_EQUAL_UINT32(40u, net.snapshot_spores[3].entity_id);
+  TEST_ASSERT_EQUAL_UINT32(50u, net.snapshot_spores[4].entity_id);
+  TEST_ASSERT_EQUAL_FLOAT(5.0f, net.snapshot_spores[4].position_x);
+}
+
+static void test_client_net_ignores_misaligned_spore_state_packet(void) {
+  ClientNetState net = {0};
+  ShroomSporeStatePacket spore_state = {0};
+  ENetPacket packet = {0};
+
+  net.spore_count = 7u;
+  spore_state.spore_count = 1u;
+  packet.data = (enet_uint8*)&spore_state;
+  packet.dataLength = offsetof(ShroomSporeStatePacket, spores) + 1u;
+
+  ClientNetTestHandleSporeState(&net, &packet);
+
+  TEST_ASSERT_EQUAL_UINT16(7u, net.spore_count);
+}
+
+static void test_client_net_zero_spore_state_clears_stale_spores(void) {
+  ClientNetState net = {0};
+  ShroomSporeStatePacket spore_state = {0};
+  ENetPacket packet = {0};
+
+  net.spore_count = 3u;
+  net.snapshot_spores[0].entity_id = 99u;
+  ShroomPacketHeaderInit(&spore_state.header, SHROOM_PACKET_SPORE_STATE,
+                         (uint16_t)offsetof(ShroomSporeStatePacket, spores));
+  packet.data = (enet_uint8*)&spore_state;
+  packet.dataLength = offsetof(ShroomSporeStatePacket, spores);
+
+  ClientNetTestHandleSporeState(&net, &packet);
+
+  TEST_ASSERT_EQUAL_UINT16(0u, net.spore_count);
+  TEST_ASSERT_EQUAL_UINT32(0u, net.snapshot_spores[0].entity_id);
+}
+
 static void test_client_net_accepts_trimmed_lobby_list_packet(void) {
   ClientNetState net = {0};
   ShroomLobbyListPacket list = {0};
@@ -171,6 +229,68 @@ static void test_client_net_ignores_truncated_mushroom_species_entries(void) {
   TEST_ASSERT_EQUAL_UINT8(3u, net.mushroom_species_count);
 }
 
+static void test_client_net_connect_timeout_flips_to_friendly_error(void) {
+  ClientNetState net = {0};
+  net.status = CLIENT_NET_CONNECTING;
+  net.connect_started_ms = 1000u;
+
+  ClientNetTestCheckConnectTimeout(&net, 1000u + SHROOM_CLIENT_CONNECT_TIMEOUT_MS);
+
+  TEST_ASSERT_EQUAL_UINT32(CLIENT_NET_ERROR, net.status);
+  TEST_ASSERT_EQUAL_STRING(SHROOM_NET_CONNECT_UNREACHABLE_MSG, net.status_text);
+  /* The timer is cleared so a later frame can't re-fire the transition. */
+  TEST_ASSERT_EQUAL_UINT32(0u, net.connect_started_ms);
+}
+
+static void test_client_net_connect_timeout_not_fired_stays_connecting(void) {
+  ClientNetState net = {0};
+  net.status = CLIENT_NET_CONNECTING;
+  net.connect_started_ms = 1000u;
+
+  /* One ms short of the timeout window — still connecting. */
+  ClientNetTestCheckConnectTimeout(&net, 1000u + SHROOM_CLIENT_CONNECT_TIMEOUT_MS - 1u);
+
+  TEST_ASSERT_EQUAL_UINT32(CLIENT_NET_CONNECTING, net.status);
+  TEST_ASSERT_EQUAL_UINT32(1000u, net.connect_started_ms);
+}
+
+static void test_client_net_connect_timeout_ignores_non_connecting_states(void) {
+  ClientNetState net = {0};
+  /* An established session must never be flagged as a connect timeout. */
+  net.status = CLIENT_NET_CONNECTED;
+  net.connect_started_ms = 1000u;
+
+  ClientNetTestCheckConnectTimeout(&net, 1000u + SHROOM_CLIENT_CONNECT_TIMEOUT_MS);
+
+  TEST_ASSERT_EQUAL_UINT32(CLIENT_NET_CONNECTED, net.status);
+}
+
+static void test_client_net_shutdown_clears_session_state(void) {
+  ClientNetState net = {0};
+
+  net.status = CLIENT_NET_ERROR;
+  net.welcome_received = true;
+  net.handshake_received = true;
+  net.player_id = 12u;
+  net.entity_id = 34u;
+  net.lobby_id = 56u;
+  net.lobby_count = 1u;
+  net.pending_ping_nonce = 78u;
+  snprintf(net.status_text, sizeof(net.status_text), "%s", "stale error");
+
+  ClientNetShutdown(&net);
+
+  TEST_ASSERT_EQUAL_UINT32(CLIENT_NET_DISCONNECTED, net.status);
+  TEST_ASSERT_FALSE(net.welcome_received);
+  TEST_ASSERT_FALSE(net.handshake_received);
+  TEST_ASSERT_EQUAL_UINT32(0u, net.player_id);
+  TEST_ASSERT_EQUAL_UINT32(0u, net.entity_id);
+  TEST_ASSERT_EQUAL_UINT32(0u, net.lobby_id);
+  TEST_ASSERT_EQUAL_UINT8(0u, net.lobby_count);
+  TEST_ASSERT_EQUAL_UINT32(0u, net.pending_ping_nonce);
+  TEST_ASSERT_EQUAL_CHAR('\0', net.status_text[0]);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_client_net_records_fresh_pong);
@@ -178,9 +298,16 @@ int main(void) {
   RUN_TEST(test_client_net_clears_timed_out_pending_ping);
   RUN_TEST(test_client_net_accepts_trimmed_snapshot_packet);
   RUN_TEST(test_client_net_ignores_truncated_snapshot_players);
+  RUN_TEST(test_client_net_accepts_chunked_spore_state_packet);
+  RUN_TEST(test_client_net_ignores_misaligned_spore_state_packet);
+  RUN_TEST(test_client_net_zero_spore_state_clears_stale_spores);
   RUN_TEST(test_client_net_accepts_trimmed_lobby_list_packet);
   RUN_TEST(test_client_net_ignores_truncated_lobby_list_entries);
   RUN_TEST(test_client_net_accepts_trimmed_mushroom_species_catalog_packet);
   RUN_TEST(test_client_net_ignores_truncated_mushroom_species_entries);
+  RUN_TEST(test_client_net_connect_timeout_flips_to_friendly_error);
+  RUN_TEST(test_client_net_connect_timeout_not_fired_stays_connecting);
+  RUN_TEST(test_client_net_connect_timeout_ignores_non_connecting_states);
+  RUN_TEST(test_client_net_shutdown_clears_session_state);
   return UNITY_END();
 }

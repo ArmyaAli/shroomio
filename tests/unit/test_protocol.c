@@ -291,6 +291,18 @@ void test_spore_state_packet_initialization(void) {
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 600.0f, packet.spores[2].position_y);
 }
 
+void test_spore_state_packet_chunk_size_is_bounded(void) {
+  const uint16_t max_spores = ShroomSporeStatePacketMaxSpores();
+  const size_t packet_size = offsetof(ShroomSporeStatePacket, spores) +
+                             ((size_t)max_spores * sizeof(ShroomSnapshotSporeState));
+  const size_t next_packet_size = packet_size + sizeof(ShroomSnapshotSporeState);
+
+  TEST_ASSERT_TRUE(max_spores > 0u);
+  TEST_ASSERT_TRUE(packet_size <= SHROOM_MAX_UNRELIABLE_PACKET_SIZE);
+  TEST_ASSERT_TRUE(next_packet_size > SHROOM_MAX_UNRELIABLE_PACKET_SIZE);
+  TEST_ASSERT_TRUE(packet_size < 65536u);
+}
+
 void test_snapshot_powerup_state_size(void) {
   TEST_ASSERT_EQUAL(4 + 4 + 4 + 1 + 1 + 2, sizeof(ShroomSnapshotPowerupState));
 }
@@ -410,6 +422,7 @@ int main(void) {
   RUN_TEST(test_snapshot_player_state_initialization);
   RUN_TEST(test_snapshot_spore_state_size);
   RUN_TEST(test_spore_state_packet_initialization);
+  RUN_TEST(test_spore_state_packet_chunk_size_is_bounded);
   RUN_TEST(test_snapshot_powerup_state_size);
   RUN_TEST(test_powerup_state_packet_initialization);
   RUN_TEST(test_lobby_packet_channel_mapping);

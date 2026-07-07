@@ -710,9 +710,8 @@ static void SendSnapshot(ENetPeer* peer, const ServerSession* session,
 
 static void SendSporeState(ENetPeer* peer, const ShroomWorldState* world) {
   uint16_t spore_count = 0;
+  const uint16_t max_spores_per_packet = ShroomSporeStatePacketMaxSpores();
   size_t index;
-  size_t packet_size;
-  ENetPacket* enet_packet;
 
   for (index = 0; index < world->spore_count; ++index) {
     if (world->spores[index].active) {
@@ -720,18 +719,35 @@ static void SendSporeState(ENetPeer* peer, const ShroomWorldState* world) {
     }
   }
 
-  packet_size = sizeof(ShroomPacketHeader) + sizeof(uint64_t) + sizeof(uint16_t) +
-                sizeof(uint16_t) + ((size_t)spore_count * sizeof(ShroomSnapshotSporeState));
-  enet_packet = enet_packet_create(NULL, packet_size, 0);
-
-  {
+  if (spore_count == 0u) {
+    const size_t packet_size = offsetof(ShroomSporeStatePacket, spores);
+    ENetPacket* enet_packet = enet_packet_create(NULL, packet_size, 0);
     ShroomSporeStatePacket* packet = (ShroomSporeStatePacket*)enet_packet->data;
-    uint16_t i = 0;
+
+    ShroomPacketHeaderInit(&packet->header, SHROOM_PACKET_SPORE_STATE, (uint16_t)packet_size);
+    packet->tick = world->tick;
+    packet->spore_count = 0u;
+    packet->reserved = 0u;
+    enet_peer_send(peer, SHROOM_ENET_CHANNEL_SNAPSHOT, enet_packet);
+    return;
+  }
+
+  for (uint16_t chunk_start = 0u; chunk_start < spore_count;
+       chunk_start = (uint16_t)(chunk_start + max_spores_per_packet)) {
+    const uint16_t remaining = (uint16_t)(spore_count - chunk_start);
+    const uint16_t chunk_count =
+        remaining < max_spores_per_packet ? remaining : max_spores_per_packet;
+    const size_t packet_size = offsetof(ShroomSporeStatePacket, spores) +
+                               ((size_t)chunk_count * sizeof(ShroomSnapshotSporeState));
+    ENetPacket* enet_packet = enet_packet_create(NULL, packet_size, 0);
+    ShroomSporeStatePacket* packet = (ShroomSporeStatePacket*)enet_packet->data;
+    uint16_t active_index = 0u;
+    uint16_t packet_index = 0u;
 
     ShroomPacketHeaderInit(&packet->header, SHROOM_PACKET_SPORE_STATE, (uint16_t)packet_size);
     packet->tick = world->tick;
     packet->spore_count = spore_count;
-    packet->reserved = 0;
+    packet->reserved = chunk_start;
 
     for (index = 0; index < world->spore_count; ++index) {
       const ShroomSporeState* spore = &world->spores[index];
@@ -739,8 +755,14 @@ static void SendSporeState(ENetPeer* peer, const ShroomWorldState* world) {
       if (!spore->active) {
         continue;
       }
+      if (active_index++ < chunk_start) {
+        continue;
+      }
+      if (packet_index >= chunk_count) {
+        break;
+      }
 
-      packet->spores[i++] = (ShroomSnapshotSporeState){
+      packet->spores[packet_index++] = (ShroomSnapshotSporeState){
           .entity_id = spore->entity_id,
           .position_x = spore->position.x,
           .position_y = spore->position.y,
@@ -748,9 +770,9 @@ static void SendSporeState(ENetPeer* peer, const ShroomWorldState* world) {
           .reserved = 0,
       };
     }
-  }
 
-  enet_peer_send(peer, SHROOM_ENET_CHANNEL_SNAPSHOT, enet_packet);
+    enet_peer_send(peer, SHROOM_ENET_CHANNEL_SNAPSHOT, enet_packet);
+  }
 }
 
 static void SendPowerupState(ENetPeer* peer, const ShroomWorldState* world) {

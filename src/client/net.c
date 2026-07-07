@@ -47,6 +47,14 @@ static void ClearStalePendingPing(ClientNetState* net, uint32_t now_ms) {
   }
 }
 
+static void CheckConnectTimeout(ClientNetState* net, uint32_t now_ms) {
+  if ((net->status == CLIENT_NET_CONNECTING) && (net->connect_started_ms != 0u) &&
+      (ElapsedMs(now_ms, net->connect_started_ms) >= SHROOM_CLIENT_CONNECT_TIMEOUT_MS)) {
+    SetStatus(net, CLIENT_NET_ERROR, SHROOM_NET_CONNECT_UNREACHABLE_MSG);
+    net->connect_started_ms = 0u;
+  }
+}
+
 static bool CompletePendingPing(ClientNetState* net, uint32_t nonce, uint32_t now_ms) {
   uint32_t rtt_ms;
 
@@ -241,29 +249,52 @@ static void HandleChat(ClientNetState* net, const ENetPacket* enet_packet) {
 
 static void HandleSporeState(ClientNetState* net, const ENetPacket* enet_packet) {
   const ShroomSporeStatePacket* packet = (const ShroomSporeStatePacket*)enet_packet->data;
-  uint16_t spore_count;
+  uint16_t total_spore_count;
+  uint16_t chunk_start_index;
+  size_t chunk_count;
   size_t payload_size;
+  const size_t min_size = offsetof(ShroomSporeStatePacket, spores);
 
-  if (enet_packet->dataLength <
-      sizeof(ShroomPacketHeader) + sizeof(uint64_t) + sizeof(uint16_t) + sizeof(uint16_t)) {
+  if (enet_packet->dataLength < min_size) {
     return;
   }
 
-  spore_count = packet->spore_count;
-  if (spore_count > SHROOM_MAX_SPORES) {
-    spore_count = SHROOM_MAX_SPORES;
+  total_spore_count = packet->spore_count;
+  if (total_spore_count > SHROOM_MAX_SPORES) {
+    total_spore_count = SHROOM_MAX_SPORES;
   }
 
-  payload_size = sizeof(ShroomPacketHeader) + sizeof(uint64_t) + sizeof(uint16_t) +
-                 sizeof(uint16_t) + ((size_t)spore_count * sizeof(ShroomSnapshotSporeState));
-  if (enet_packet->dataLength < payload_size) {
+  payload_size = enet_packet->dataLength - min_size;
+  if ((payload_size % sizeof(ShroomSnapshotSporeState)) != 0u) {
     return;
   }
+  chunk_count = payload_size / sizeof(ShroomSnapshotSporeState);
+  chunk_start_index = packet->reserved;
+  if (total_spore_count == 0u) {
+    if ((chunk_start_index != 0u) || (chunk_count != 0u)) {
+      return;
+    }
+    net->spore_count = 0u;
+    memset(net->snapshot_spores, 0, sizeof(net->snapshot_spores));
+    return;
+  }
+  if ((chunk_start_index >= SHROOM_MAX_SPORES) || (chunk_start_index >= total_spore_count)) {
+    return;
+  }
+  if ((size_t)chunk_start_index + chunk_count > SHROOM_MAX_SPORES) {
+    chunk_count = SHROOM_MAX_SPORES - chunk_start_index;
+  }
+  if ((size_t)chunk_start_index + chunk_count > total_spore_count) {
+    chunk_count = (size_t)total_spore_count - chunk_start_index;
+  }
 
-  net->spore_count = spore_count;
-  if (spore_count > 0) {
-    memcpy(net->snapshot_spores, packet->spores,
-           (size_t)spore_count * sizeof(ShroomSnapshotSporeState));
+  net->spore_count = total_spore_count;
+  if (chunk_start_index == 0u) {
+    memset(net->snapshot_spores, 0, sizeof(net->snapshot_spores));
+  }
+  if (chunk_count > 0u) {
+    memcpy(&net->snapshot_spores[chunk_start_index], packet->spores,
+           chunk_count * sizeof(ShroomSnapshotSporeState));
   }
 }
 
@@ -321,6 +352,9 @@ static void HandleMushroomSpeciesCatalog(ClientNetState* net, const ENetPacket* 
 bool ClientNetInit(ClientNetState* net, const char* host_name, uint16_t port) {
   ENetAddress address = {0};
 
+  if ((net->peer != 0) || (net->host != 0) || net->enet_initialized) {
+    ClientNetShutdown(net);
+  }
   *net = (ClientNetState){0};
 
   if (enet_initialize() != 0) {
@@ -339,7 +373,7 @@ bool ClientNetInit(ClientNetState* net, const char* host_name, uint16_t port) {
 
   address.port = port;
   if (enet_address_set_host(&address, host_name) != 0) {
-    SetStatus(net, CLIENT_NET_ERROR, "Server address lookup failed");
+    SetStatus(net, CLIENT_NET_ERROR, SHROOM_NET_CONNECT_UNREACHABLE_MSG);
     enet_host_destroy(net->host);
     net->host = 0;
     enet_deinitialize();
@@ -349,7 +383,7 @@ bool ClientNetInit(ClientNetState* net, const char* host_name, uint16_t port) {
 
   net->peer = enet_host_connect(net->host, &address, SHROOM_ENET_CHANNEL_COUNT, 0);
   if (net->peer == 0) {
-    SetStatus(net, CLIENT_NET_ERROR, "Connect request failed");
+    SetStatus(net, CLIENT_NET_ERROR, SHROOM_NET_CONNECT_UNREACHABLE_MSG);
     enet_host_destroy(net->host);
     net->host = 0;
     enet_deinitialize();
@@ -357,6 +391,7 @@ bool ClientNetInit(ClientNetState* net, const char* host_name, uint16_t port) {
     return false;
   }
 
+  net->connect_started_ms = enet_time_get();
   SetStatus(net, CLIENT_NET_CONNECTING, "Connecting");
   return true;
 }
@@ -451,6 +486,8 @@ void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, bool split
     }
   }
 
+  CheckConnectTimeout(net, enet_time_get());
+
   if (net->peer != 0) {
     ClearStalePendingPing(net, enet_time_get());
     net->input_send_accumulator += delta_time;
@@ -478,8 +515,16 @@ void ClientNetTestClearStalePendingPing(ClientNetState* net, uint32_t now_ms) {
   ClearStalePendingPing(net, now_ms);
 }
 
+void ClientNetTestCheckConnectTimeout(ClientNetState* net, uint32_t now_ms) {
+  CheckConnectTimeout(net, now_ms);
+}
+
 void ClientNetTestHandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet) {
   HandleSnapshot(net, enet_packet);
+}
+
+void ClientNetTestHandleSporeState(ClientNetState* net, const ENetPacket* enet_packet) {
+  HandleSporeState(net, enet_packet);
 }
 
 void ClientNetTestHandleLobbyList(ClientNetState* net, const ENetPacket* enet_packet) {
@@ -505,6 +550,7 @@ void ClientNetShutdown(ClientNetState* net) {
     enet_deinitialize();
     net->enet_initialized = false;
   }
+  *net = (ClientNetState){0};
 }
 
 const char* ClientNetStatusLabel(const ClientNetState* net) {
