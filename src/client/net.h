@@ -98,6 +98,7 @@ void ClientNetSendLobbyListQuery(ClientNetState* net);
 void ClientNetSendLobbyJoin(ClientNetState* net, uint32_t lobby_id, bool spectate);
 void ClientNetSendLobbyLeave(ClientNetState* net);
 void ClientNetSendLobbyCreate(ClientNetState* net, const char* name, uint16_t max_players);
+void ClientNetSendReadyState(ClientNetState* net, bool is_ready);
 
 #ifdef TEST_MODE
 bool ClientNetTestCompletePendingPing(ClientNetState* net, uint32_t nonce, uint32_t now_ms);

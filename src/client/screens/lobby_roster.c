@@ -177,6 +177,7 @@ static void LobbyRosterDraw(ShroomScreenManager* manager) {
 
   if (ShroomImGui_Button(g_ready_state ? "Ready" : "Not Ready", 140.0f, 0.0f)) {
     g_ready_state = !g_ready_state;
+    ClientNetSendReadyState(&game->net, g_ready_state);
   }
   ShroomImGui_SameLine();
   if (ShroomImGui_Button("Leave Lobby", 140.0f, 0.0f)) {

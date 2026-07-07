@@ -41,6 +41,7 @@ typedef struct ServerSession {
   bool authenticated;
   bool handshake_received;
   bool spectating;
+  bool is_ready;
   uint32_t lobby_id;
   uint32_t player_id;
   uint32_t user_id;
@@ -1135,6 +1136,20 @@ static void HandleChatPacket(ENetHost* host, ServerSession* session, const ENetP
   enet_host_flush(host);
 }
 
+static void HandleReadyStatePacket(ENetHost* host, ServerSession* session, const ENetPacket* enet_packet) {
+  const ShroomReadyStatePacket* packet;
+
+  if ((host == NULL) || (session == NULL) || !session->active || (session->player == NULL) ||
+      (enet_packet == NULL) || (enet_packet->dataLength < sizeof(ShroomReadyStatePacket))) {
+    return;
+  }
+
+  packet = (const ShroomReadyStatePacket*)enet_packet->data;
+  session->is_ready = packet->is_ready != 0;
+
+  LOG_INFO("ready state player_id=%u ready=%d", session->player_id, session->is_ready);
+}
+
 static bool AddLobbyBot(ShroomLobby* lobby, uint32_t* next_player_id) {
   ShroomPlayerState* bot;
   uint32_t bot_number;
@@ -1377,6 +1392,10 @@ static void DispatchLobbyCreate(ServerPacketContext* context) {
                     context->next_player_id, context->next_lobby_id);
 }
 
+static void DispatchReadyState(ServerPacketContext* context) {
+  HandleReadyStatePacket(context->host, context->session, context->enet_packet);
+}
+
 static const ServerPacketDispatchEntry kServerPacketDispatch[] = {
     {SHROOM_PACKET_HELLO, DispatchHelloPacket},
     {SHROOM_PACKET_INPUT, DispatchInputPacket},
@@ -1387,6 +1406,7 @@ static const ServerPacketDispatchEntry kServerPacketDispatch[] = {
     {SHROOM_PACKET_LOBBY_JOIN, DispatchLobbyJoin},
     {SHROOM_PACKET_LOBBY_LEAVE, DispatchLobbyLeave},
     {SHROOM_PACKET_LOBBY_CREATE, DispatchLobbyCreate},
+    {SHROOM_PACKET_READY_STATE, DispatchReadyState},
 };
 
 static const ServerPacketDispatchEntry* FindServerPacketDispatchEntry(ShroomPacketType type) {
