@@ -134,7 +134,11 @@ typedef struct ShroomSnapshotPacket {
   uint32_t player_id;
   uint32_t entity_id;
   uint16_t player_count;
-  uint16_t reserved;
+  uint8_t match_phase;
+  uint8_t reserved;
+  float match_time_remaining;
+  uint32_t podium_player_ids[SHROOM_MATCH_PODIUM_COUNT];
+  float podium_masses[SHROOM_MATCH_PODIUM_COUNT];
   ShroomSnapshotPlayerState players[SHROOM_MAX_SNAPSHOT_PLAYERS];
 } ShroomSnapshotPacket;
 

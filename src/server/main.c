@@ -62,6 +62,7 @@ typedef struct ServerConfig {
   char database_path[256];
   enet_uint32 bind_address;
   uint16_t port;
+  float match_duration_seconds;
   bool smoke_test;
   bool benchmark;
   uint32_t benchmark_ticks;
@@ -77,6 +78,8 @@ typedef struct ServerProfileStats {
 } ServerProfileStats;
 
 static ServerProfileStats g_server_profile;
+
+static float g_match_duration_seconds = SHROOM_MATCH_DURATION_SECONDS;
 
 static bool ParsePort(const char* text, uint16_t* port) {
   char* end = NULL;
@@ -130,6 +133,8 @@ static void PrintUsage(const char* program_name) {
   printf("  --bind ADDRESS    Local bind IP address, default 0.0.0.0\n");
   printf("  --port PORT       UDP listen port, default %u\n", SHROOM_SERVER_PORT);
   printf("  --database PATH   SQLite database path, default shroomio.db\n");
+  printf("  --match-duration SECONDS  Match duration in seconds, default %.0f\n",
+         SHROOM_MATCH_DURATION_SECONDS);
   printf("  --smoke-test      Start, initialize subsystems, then shut down cleanly\n");
   printf("  --benchmark       Run deterministic server simulation benchmark and exit\n");
   printf("  --benchmark-ticks N    Benchmark tick count, default 600\n");
@@ -174,8 +179,10 @@ static bool LoadServerConfig(ServerConfig* config, int argc, char** argv) {
   const char* env_port = getenv("SHROOM_SERVER_PORT");
   const char* env_database = getenv("SHROOM_SERVER_DB_PATH");
 
-  *config = (ServerConfig){
-      .port = (uint16_t)SHROOM_SERVER_PORT, .benchmark_ticks = 600u, .benchmark_bots = 8u};
+  *config = (ServerConfig){.port = (uint16_t)SHROOM_SERVER_PORT,
+                           .match_duration_seconds = SHROOM_MATCH_DURATION_SECONDS,
+                           .benchmark_ticks = 600u,
+                           .benchmark_bots = 8u};
   CopyConfigString(config->bind_host, sizeof(config->bind_host), "0.0.0.0");
   CopyConfigString(config->database_path, sizeof(config->database_path), "shroomio.db");
 
@@ -244,6 +251,20 @@ static bool LoadServerConfig(ServerConfig* config, int argc, char** argv) {
         fprintf(stderr, "Invalid --benchmark-bots: %s\n", argv[i]);
         return false;
       }
+    } else if (strcmp(argv[i], "--match-duration") == 0) {
+      char* end = NULL;
+      double value;
+      if ((i + 1) >= argc) {
+        fprintf(stderr, "Missing value for --match-duration\n");
+        return false;
+      }
+      ++i;
+      value = strtod(argv[i], &end);
+      if ((end == argv[i]) || (*end != '\0') || (value < 1.0) || (value > 86400.0)) {
+        fprintf(stderr, "Invalid --match-duration: %s\n", argv[i]);
+        return false;
+      }
+      config->match_duration_seconds = (float)value;
     } else {
       fprintf(stderr, "Unknown option: %s\n", argv[i]);
       PrintUsage(argv[0]);
@@ -670,7 +691,14 @@ static void SendSnapshot(ENetPeer* peer, const ServerSession* session,
       .last_processed_input_sequence = session->last_processed_input_sequence,
       .player_id = session->player_id,
       .entity_id = (session->player != NULL) ? session->player->entity_id : 0u,
+      .match_phase = (uint8_t)world->match_phase,
+      .match_time_remaining = world->match_time_remaining,
   };
+
+  for (uint32_t pi = 0; pi < SHROOM_MATCH_PODIUM_COUNT; ++pi) {
+    packet.podium_player_ids[pi] = world->podium_player_ids[pi];
+    packet.podium_masses[pi] = world->podium_masses[pi];
+  }
 
   for (index = 0; (index < world->player_count) && (player_count < SHROOM_MAX_SNAPSHOT_PLAYERS);
        ++index) {
@@ -1208,6 +1236,7 @@ static ShroomLobby* CreateLobby(ShroomLobby* lobbies, uint32_t lobby_id, const c
         snprintf(lobby->name, sizeof(lobby->name), "Arena %u", lobby_id);
       }
       ShroomWorldInit(&lobby->world);
+      ShroomWorldSetMatchDuration(&lobby->world, g_match_duration_seconds);
       InitializeLobbyBots(lobby, next_player_id);
       LOG_INFO("lobby created: id=%u name=%.31s dynamic=%d", lobby_id, lobby->name,
                (int)is_dynamic);
@@ -1444,6 +1473,8 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  g_match_duration_seconds = config.match_duration_seconds;
+
   if (config.benchmark) {
     return RunServerBenchmark(&config);
   }
@@ -1582,6 +1613,10 @@ int main(int argc, char** argv) {
 
         phase_start_nanos = profile_enabled ? GetTimeNanos() : 0ull;
         ShroomWorldStep(&lobby->world, 1.0f / SHROOM_SERVER_TICK_RATE);
+        if (lobby->world.match_phase == SHROOM_MATCH_PHASE_RESET) {
+          ShroomWorldResetMatch(&lobby->world);
+          LOG_INFO("match reset: lobby_id=%u", lobby->lobby_id);
+        }
         if (profile_enabled) {
           simulation_ms = ShroomProfileNanosToMs(GetTimeNanos() - phase_start_nanos);
         }

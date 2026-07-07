@@ -24,6 +24,12 @@ typedef enum ShroomPowerupType {
   SHROOM_POWERUP_DECAY_IMMUNE = SHROOM_POWERUP_TYPE_DECAY_IMMUNE,
 } ShroomPowerupType;
 
+typedef enum ShroomMatchPhase {
+  SHROOM_MATCH_PHASE_RUNNING = 0,
+  SHROOM_MATCH_PHASE_RESULTS = 1,
+  SHROOM_MATCH_PHASE_RESET = 2,
+} ShroomMatchPhase;
+
 typedef struct ShroomPlayerState {
   ShroomPlayerId player_id;
   ShroomEntityId entity_id;
@@ -71,6 +77,12 @@ typedef struct ShroomWorldState {
   uint32_t random_seed;
   uint32_t random_state;
   ShroomEntityId next_entity_id;
+  ShroomMatchPhase match_phase;
+  float match_duration_seconds;
+  float match_time_remaining;
+  float match_results_time_remaining;
+  ShroomPlayerId podium_player_ids[SHROOM_MATCH_PODIUM_COUNT];
+  float podium_masses[SHROOM_MATCH_PODIUM_COUNT];
   size_t player_count;
   size_t spore_count;
   size_t powerup_count;

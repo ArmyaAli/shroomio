@@ -813,6 +813,10 @@ void ShroomWorldInitWithSeed(ShroomWorldState* world, uint32_t seed) {
   world->random_seed = ShroomNormalizeSeed(seed);
   world->random_state = world->random_seed;
   world->next_entity_id = 1;
+  world->match_phase = SHROOM_MATCH_PHASE_RUNNING;
+  world->match_duration_seconds = SHROOM_MATCH_DURATION_SECONDS;
+  world->match_time_remaining = SHROOM_MATCH_DURATION_SECONDS;
+  world->match_results_time_remaining = 0.0f;
   ShroomInitializeSpores(world);
   ShroomInitializePowerups(world);
 }
@@ -1177,6 +1181,100 @@ void ShroomPlayerSetInput(ShroomPlayerState* player, ShroomVec2 input_direction)
   player->input_direction = input_direction;
 }
 
+void ShroomComputeMatchPodium(ShroomWorldState* world) {
+  size_t i;
+  size_t j;
+
+  if (world == NULL) {
+    return;
+  }
+
+  for (i = 0; i < SHROOM_MATCH_PODIUM_COUNT; ++i) {
+    world->podium_player_ids[i] = 0;
+    world->podium_masses[i] = 0.0f;
+  }
+
+  for (i = 0; i < world->player_count; ++i) {
+    const ShroomPlayerState* player = &world->players[i];
+
+    if (!player->alive || (player->mass <= 0.0f)) {
+      continue;
+    }
+
+    for (j = 0; j < SHROOM_MATCH_PODIUM_COUNT; ++j) {
+      if ((player->mass > world->podium_masses[j]) ||
+          ((player->mass == world->podium_masses[j]) &&
+           ((world->podium_player_ids[j] == 0) ||
+            (player->player_id < world->podium_player_ids[j])))) {
+        size_t k;
+        for (k = SHROOM_MATCH_PODIUM_COUNT - 1; k > j; --k) {
+          world->podium_player_ids[k] = world->podium_player_ids[k - 1];
+          world->podium_masses[k] = world->podium_masses[k - 1];
+        }
+        world->podium_player_ids[j] = player->player_id;
+        world->podium_masses[j] = player->mass;
+        break;
+      }
+    }
+  }
+}
+
+void ShroomWorldSetMatchDuration(ShroomWorldState* world, float duration_seconds) {
+  if (world == NULL) {
+    return;
+  }
+  if (duration_seconds < 1.0f) {
+    duration_seconds = 1.0f;
+  }
+  world->match_duration_seconds = duration_seconds;
+  world->match_time_remaining = duration_seconds;
+}
+
+void ShroomWorldResetMatch(ShroomWorldState* world) {
+  size_t i;
+
+  if (world == NULL) {
+    return;
+  }
+
+  for (i = 0; i < world->player_count; ++i) {
+    ShroomPlayerState* player = &world->players[i];
+
+    if (player->alive) {
+      player->position = ShroomRandomSpawnPosition(world, true);
+      player->mass = SHROOM_DEFAULT_PLAYER_MASS;
+      player->radius = ShroomMassToRadius(player->mass);
+      player->input_direction = (ShroomVec2){0};
+      player->split_velocity = (ShroomVec2){0};
+      player->has_split = false;
+      player->piece_index = 0;
+      player->merge_timer = 0.0f;
+      player->spawn_protection_timer = 0.0f;
+      player->speed_powerup_timer = 0.0f;
+      player->shield_powerup_timer = 0.0f;
+      player->magnet_powerup_timer = 0.0f;
+      player->decay_immune_powerup_timer = 0.0f;
+      player->eject_cooldown_timer = 0.0f;
+      player->decay_spore_accumulator = 0.0f;
+      player->last_move_time_ms = ShroomWorldCurrentTimeMs(world);
+    }
+  }
+
+  world->spore_count = 0;
+  world->powerup_count = 0;
+  ShroomInitializeSpores(world);
+  ShroomInitializePowerups(world);
+
+  for (i = 0; i < SHROOM_MATCH_PODIUM_COUNT; ++i) {
+    world->podium_player_ids[i] = 0;
+    world->podium_masses[i] = 0.0f;
+  }
+
+  world->match_phase = SHROOM_MATCH_PHASE_RUNNING;
+  world->match_time_remaining = world->match_duration_seconds;
+  world->match_results_time_remaining = 0.0f;
+}
+
 void ShroomWorldStep(ShroomWorldState* world, float delta_time) {
   size_t index;
   ShroomSporeGridCell spore_grid[SHROOM_SPORE_GRID_CELLS];
@@ -1265,6 +1363,22 @@ void ShroomWorldStep(ShroomWorldState* world, float delta_time) {
   ShroomApplyForcedSplits(world);
   ShroomResolveMerges(world);
   ShroomUpdatePowerups(world, delta_time);
+
+  if (world->match_phase == SHROOM_MATCH_PHASE_RUNNING) {
+    world->match_time_remaining -= delta_time;
+    if (world->match_time_remaining <= 0.0f) {
+      world->match_time_remaining = 0.0f;
+      ShroomComputeMatchPodium(world);
+      world->match_phase = SHROOM_MATCH_PHASE_RESULTS;
+      world->match_results_time_remaining = SHROOM_MATCH_RESULTS_SECONDS;
+    }
+  } else if (world->match_phase == SHROOM_MATCH_PHASE_RESULTS) {
+    world->match_results_time_remaining -= delta_time;
+    if (world->match_results_time_remaining <= 0.0f) {
+      world->match_results_time_remaining = 0.0f;
+      world->match_phase = SHROOM_MATCH_PHASE_RESET;
+    }
+  }
 
   world->tick += 1;
 }
