@@ -538,7 +538,6 @@ bool ShroomPlayerCanConsume(const ShroomWorldState* world, const ShroomPlayerSta
                             const ShroomPlayerState* target) {
   float overlap_radius;
   float required_advantage;
-  const float boundary_margin = 100.0f;
   bool near_boundary = false;
 
   if ((world == NULL) || (attacker == NULL) || (target == NULL)) {
@@ -562,14 +561,14 @@ bool ShroomPlayerCanConsume(const ShroomWorldState* world, const ShroomPlayerSta
   }
 
   /* Check if either player is near a boundary */
-  if (attacker->position.x < boundary_margin ||
-      attacker->position.x > (world->width - boundary_margin) ||
-      attacker->position.y < boundary_margin ||
-      attacker->position.y > (world->height - boundary_margin) ||
-      target->position.x < boundary_margin ||
-      target->position.x > (world->width - boundary_margin) ||
-      target->position.y < boundary_margin ||
-      target->position.y > (world->height - boundary_margin)) {
+  if (attacker->position.x < SHROOM_BOUNDARY_CONSUME_MARGIN ||
+      attacker->position.x > (world->width - SHROOM_BOUNDARY_CONSUME_MARGIN) ||
+      attacker->position.y < SHROOM_BOUNDARY_CONSUME_MARGIN ||
+      attacker->position.y > (world->height - SHROOM_BOUNDARY_CONSUME_MARGIN) ||
+      target->position.x < SHROOM_BOUNDARY_CONSUME_MARGIN ||
+      target->position.x > (world->width - SHROOM_BOUNDARY_CONSUME_MARGIN) ||
+      target->position.y < SHROOM_BOUNDARY_CONSUME_MARGIN ||
+      target->position.y > (world->height - SHROOM_BOUNDARY_CONSUME_MARGIN)) {
     near_boundary = true;
   }
 
