@@ -718,6 +718,7 @@ void test_world_step_decays_oversized_player_and_ejects_spore_mass(void) {
   player->position = (ShroomVec2){3000.0f, 3000.0f};
   player->mass = SHROOM_DECAY_MASS_THRESHOLD + 100.0f;
   player->radius = ShroomMassToRadius(player->mass);
+  player->last_move_time_ms = 100000u;
 
   ShroomWorldStep(&world, 10.0f);
 
@@ -739,6 +740,7 @@ void test_outer_zone_disables_decay_for_oversized_player(void) {
   player->position = (ShroomVec2){300.0f, 300.0f};
   player->mass = SHROOM_DECAY_MASS_THRESHOLD + 100.0f;
   player->radius = ShroomMassToRadius(player->mass);
+  player->last_move_time_ms = 100000u;
 
   ShroomWorldStep(&world, 10.0f);
 
@@ -758,6 +760,7 @@ void test_center_zone_decay_starts_at_lower_threshold(void) {
   player->position = (ShroomVec2){world.width * 0.5f, world.height * 0.5f};
   player->mass = (SHROOM_DEFAULT_PLAYER_MASS * 2.0f) + 20.0f;
   player->radius = ShroomMassToRadius(player->mass);
+  player->last_move_time_ms = 100000u;
 
   ShroomWorldStep(&world, 10.0f);
 
