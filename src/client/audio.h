@@ -1,6 +1,8 @@
 #ifndef SHROOM_CLIENT_AUDIO_H
 #define SHROOM_CLIENT_AUDIO_H
 
+#include <stdbool.h>
+
 #include "client_settings.h"
 
 typedef enum ShroomClientSfx {
@@ -21,5 +23,10 @@ void ShroomClientAudioUpdateMusic(const ClientSettings* settings);
 void ShroomClientAudioShutdown(void);
 void ShroomClientAudioPlaySfx(const ClientSettings* settings, ShroomClientSfx sfx,
                               float importance);
+
+#ifdef TEST_MODE
+void ShroomClientAudioTestResetThrottleState(void);
+bool ShroomClientAudioTestCanPlaySfx(ShroomClientSfx sfx, double now_seconds);
+#endif
 
 #endif
