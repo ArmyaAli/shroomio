@@ -102,6 +102,11 @@ static void Test_HelpAndCreditsBackNavigation(ImGuiTestContext* ctx) {
   IM_CHECK(ShroomTeImGui_WindowIsActive("How To Play"));
 
   ShroomTeCtx_SetRef(ctx, "How To Play");
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Sprout 86"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Cluster 112"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Bloom 148"));
+
+  ShroomTeCtx_ItemClick(ctx, "Bloom 148");
   ShroomTeCtx_ItemClick(ctx, "Back");
   IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
               SHROOM_SCREEN_MAIN_MENU);
