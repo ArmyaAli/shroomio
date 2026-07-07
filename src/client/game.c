@@ -2143,6 +2143,45 @@ static void DrawPowerups(const ShroomWorldState* world, Rectangle view_bounds) {
   }
 }
 
+static Color GetSpawnProtectionRingColor(float remaining_seconds) {
+  const float alpha =
+      Clamp(0.22f + (remaining_seconds / SHROOM_SPLIT_PROTECTION_SECONDS) * 0.58f, 0.22f, 0.80f);
+  return Fade((Color){92, 225, 255, 255}, alpha);
+}
+
+static Color GetShieldShellColor(float remaining_seconds) {
+  const float alpha =
+      Clamp(0.42f + (remaining_seconds / SHROOM_POWERUP_SHIELD_SECONDS) * 0.48f, 0.42f, 0.90f);
+  return Fade((Color){255, 72, 218, 255}, alpha);
+}
+
+static void DrawSpawnProtectionRing(Vector2 position, float radius, float remaining_seconds) {
+  const float pulse = 0.65f + (0.35f * sinf((float)GetTime() * 9.0f));
+  const Color color = GetSpawnProtectionRingColor(remaining_seconds);
+
+  DrawCircleLines((int)position.x, (int)position.y, radius + 10.0f + (pulse * 3.0f), color);
+  DrawCircleLines((int)position.x, (int)position.y, radius + 14.0f + (pulse * 5.0f),
+                  Fade(color, 0.42f));
+}
+
+static void DrawShieldShell(Vector2 position, float radius, float remaining_seconds) {
+  const float shell_radius = radius + 22.0f;
+  const Color color = GetShieldShellColor(remaining_seconds);
+  Vector2 points[6];
+
+  for (int index = 0; index < 6; ++index) {
+    const float angle = -1.5707963f + ((float)index * 1.0471976f);
+    points[index] =
+        (Vector2){position.x + cosf(angle) * shell_radius, position.y + sinf(angle) * shell_radius};
+  }
+  for (int index = 0; index < 6; ++index) {
+    DrawLineEx(points[index], points[(index + 1) % 6], 3.0f, color);
+  }
+  for (int index = 0; index < 6; ++index) {
+    DrawCircleV(points[index], 3.0f, Fade(color, 0.85f));
+  }
+}
+
 static void DrawPlayers(const Game* game, Rectangle view_bounds) {
   for (size_t index = 0; index < game->world.player_count; ++index) {
     const ShroomPlayerState* player = &game->world.players[index];
@@ -2250,6 +2289,12 @@ static void DrawPlayers(const Game* game, Rectangle view_bounds) {
                         Fade((Color){255, 236, 140, 255}, 0.95f));
         DrawCircleLines((int)position.x, (int)position.y, player->radius + 12.0f,
                         Fade((Color){255, 255, 220, 255}, 0.48f));
+      }
+      if (player->spawn_protection_timer > 0.0f) {
+        DrawSpawnProtectionRing(position, player->radius, player->spawn_protection_timer);
+      }
+      if (player->shield_powerup_timer > 0.0f) {
+        DrawShieldShell(position, player->radius, player->shield_powerup_timer);
       }
       if (IsDecayMassActive(&game->world, player)) {
         DrawCircleLines((int)position.x, (int)position.y, player->radius + 11.0f,
