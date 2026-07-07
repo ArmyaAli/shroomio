@@ -7,7 +7,7 @@
 
 #include "config.h"
 
-#define SHROOM_PROTOCOL_VERSION 3u
+#define SHROOM_PROTOCOL_VERSION 4u
 #define SHROOM_SERVER_PORT 7777u
 #define SHROOM_MAX_UNRELIABLE_PACKET_SIZE 1200u
 #define SHROOM_MAX_PASSWORD_LENGTH 64u
@@ -107,7 +107,8 @@ typedef struct ShroomInputPacket {
   float split_direction_x;
   float split_direction_y;
   uint8_t split_requested; /* 1 = player pressed split this tick */
-  uint8_t reserved[3];
+  uint8_t eject_requested; /* 1 = player requested mass ejection this tick */
+  uint8_t reserved[2];
   uint32_t focused_entity_id; /* entity_id of the piece being controlled; 0 = primary */
 } ShroomInputPacket;
 

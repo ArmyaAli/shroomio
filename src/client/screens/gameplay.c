@@ -142,6 +142,13 @@ static void GameplayHandleInput(ShroomScreenManager* manager) {
     game->split_hold_timer = 0.0f;
   }
 
+  if (!game->spectator_mode && !game->menu_overlay_open && !game->leaderboard_overlay_open &&
+      !game->leave_confirmation_open && (game->local_player != NULL) && game->local_player->alive &&
+      (game->local_player->mass >= SHROOM_EJECT_MIN_MASS) &&
+      (IsKeyPressed(KEY_E) || IsMouseButtonPressed(MOUSE_BUTTON_RIGHT))) {
+    game->eject_requested = true;
+  }
+
   if (IsKeyPressed(KEY_TAB)) {
     if (game->spectator_mode && !game->menu_overlay_open && !game->leave_confirmation_open) {
       GameCycleSpectatorTarget(game,

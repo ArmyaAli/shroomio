@@ -71,7 +71,7 @@ static void LobbyRosterUpdate(ShroomScreenManager* manager, float delta_time) {
   /* Keep pumping ENet so LOBBY_JOINED and snapshots continue to flow
    * while the player reviews the roster. We do NOT auto-transition to
    * gameplay — entering the match is explicit via the Enter Match button. */
-  ClientNetUpdate(&game->net, no_input, false, no_input, 0u, delta_time);
+  ClientNetUpdate(&game->net, no_input, false, false, no_input, 0u, delta_time);
 
   g_status_pulse_timer += delta_time;
 }

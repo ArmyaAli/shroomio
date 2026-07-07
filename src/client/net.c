@@ -105,7 +105,8 @@ static void SendHello(ClientNetState* net) {
 }
 
 static void SendInput(ClientNetState* net, ShroomVec2 input_direction, bool split_requested,
-                      ShroomVec2 split_direction, uint32_t focused_entity_id) {
+                      bool eject_requested, ShroomVec2 split_direction,
+                      uint32_t focused_entity_id) {
   ShroomInputPacket packet = {0};
 
   if (!net->welcome_received || (net->peer == 0) ||
@@ -120,6 +121,7 @@ static void SendInput(ClientNetState* net, ShroomVec2 input_direction, bool spli
   packet.split_direction_x = split_direction.x;
   packet.split_direction_y = split_direction.y;
   packet.split_requested = split_requested ? 1u : 0u;
+  packet.eject_requested = eject_requested ? 1u : 0u;
   packet.focused_entity_id = focused_entity_id;
 
   enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_INPUT,
@@ -397,7 +399,8 @@ bool ClientNetInit(ClientNetState* net, const char* host_name, uint16_t port) {
 }
 
 void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, bool split_requested,
-                     ShroomVec2 split_direction, uint32_t focused_entity_id, float delta_time) {
+                     bool eject_requested, ShroomVec2 split_direction, uint32_t focused_entity_id,
+                     float delta_time) {
   ENetEvent event;
 
   if (net->host == 0) {
@@ -492,9 +495,11 @@ void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, bool split
     ClearStalePendingPing(net, enet_time_get());
     net->input_send_accumulator += delta_time;
     while (net->input_send_accumulator >= (1.0f / SHROOM_SERVER_TICK_RATE)) {
-      SendInput(net, input_direction, split_requested, split_direction, focused_entity_id);
-      /* Split flag is one-shot — clear after the first packet in this update. */
+      SendInput(net, input_direction, split_requested, eject_requested, split_direction,
+                focused_entity_id);
+      /* Action flags are one-shot — clear after the first packet in this update. */
       split_requested = false;
+      eject_requested = false;
       net->input_send_accumulator -= 1.0f / SHROOM_SERVER_TICK_RATE;
     }
     net->ping_send_accumulator += delta_time;

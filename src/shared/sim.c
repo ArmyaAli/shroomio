@@ -165,6 +165,7 @@ static void ShroomRespawnPlayer(ShroomWorldState* world, ShroomPlayerState* play
   player->spawn_protection_timer = 0.0f;
   player->speed_powerup_timer = 0.0f;
   player->shield_powerup_timer = 0.0f;
+  player->eject_cooldown_timer = 0.0f;
   player->piece_index = 0;
 }
 
@@ -1023,6 +1024,47 @@ bool ShroomWorldSplitPlayer(ShroomWorldState* world, ShroomPlayerState* player) 
                                       player != NULL ? player->input_direction : (ShroomVec2){0});
 }
 
+bool ShroomWorldEjectMass(ShroomWorldState* world, ShroomPlayerState* player,
+                          ShroomVec2 aim_direction) {
+  ShroomVec2 eject_dir;
+  ShroomVec2 eject_position;
+  float mass_loss;
+
+  if ((world == NULL) || (player == NULL) || !player->alive) {
+    return false;
+  }
+  if ((player->eject_cooldown_timer > 0.0f) || (player->mass < SHROOM_EJECT_MIN_MASS)) {
+    return false;
+  }
+
+  mass_loss = SHROOM_EJECT_MASS_VALUE * (1.0f + SHROOM_EJECT_COST_FRACTION);
+  if ((player->mass - mass_loss) < SHROOM_DEFAULT_PLAYER_MASS) {
+    return false;
+  }
+
+  eject_dir = ShroomNormalizeOrZero(aim_direction);
+  if (ShroomVec2LengthSqr(eject_dir) < 0.0001f) {
+    eject_dir = ShroomNormalizeOrZero(player->input_direction);
+  }
+  if (ShroomVec2LengthSqr(eject_dir) < 0.0001f) {
+    eject_dir = (ShroomVec2){1.0f, 0.0f};
+  }
+
+  eject_position = ShroomVec2Add(player->position,
+                                 ShroomVec2Scale(eject_dir, player->radius + SHROOM_POWERUP_RADIUS +
+                                                                SHROOM_EJECT_IMPULSE_RANGE));
+  eject_position.x =
+      ShroomClamp(eject_position.x, SHROOM_POWERUP_RADIUS, world->width - SHROOM_POWERUP_RADIUS);
+  eject_position.y =
+      ShroomClamp(eject_position.y, SHROOM_POWERUP_RADIUS, world->height - SHROOM_POWERUP_RADIUS);
+
+  player->mass -= mass_loss;
+  player->radius = ShroomMassToRadius(player->mass);
+  player->eject_cooldown_timer = SHROOM_EJECT_COOLDOWN_SECONDS;
+  ShroomSpawnDecaySpore(world, eject_position, (uint16_t)SHROOM_EJECT_MASS_VALUE);
+  return true;
+}
+
 bool ShroomPlayersCanMerge(const ShroomPlayerState* primary, const ShroomPlayerState* piece) {
   float merge_radius;
 
@@ -1157,6 +1199,12 @@ void ShroomWorldStep(ShroomWorldState* world, float delta_time) {
       player->spawn_protection_timer -= delta_time;
       if (player->spawn_protection_timer < 0.0f) {
         player->spawn_protection_timer = 0.0f;
+      }
+    }
+    if (player->eject_cooldown_timer > 0.0f) {
+      player->eject_cooldown_timer -= delta_time;
+      if (player->eject_cooldown_timer < 0.0f) {
+        player->eject_cooldown_timer = 0.0f;
       }
     }
   }

@@ -41,6 +41,7 @@ typedef struct ShroomPlayerState {
   float spawn_protection_timer;
   float speed_powerup_timer;
   float shield_powerup_timer;
+  float eject_cooldown_timer;
   uint8_t piece_index; /* 0 = primary; 1-3 = split fragment */
 } ShroomPlayerState;
 

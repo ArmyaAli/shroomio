@@ -20,6 +20,8 @@ bool ShroomPlayersCanMerge(const ShroomPlayerState* primary, const ShroomPlayerS
 bool ShroomWorldSplitPlayer(ShroomWorldState* world, ShroomPlayerState* player);
 bool ShroomWorldSplitPlayerToward(ShroomWorldState* world, ShroomPlayerState* player,
                                   ShroomVec2 aim_direction);
+bool ShroomWorldEjectMass(ShroomWorldState* world, ShroomPlayerState* player,
+                          ShroomVec2 aim_direction);
 
 float ShroomMassToRadius(float mass);
 float ShroomMassToSpeed(float mass);
