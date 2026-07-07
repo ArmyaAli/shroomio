@@ -67,7 +67,7 @@
 #define SHROOM_SPAWN_SAFE_DISTANCE 440.0f
 
 /* Splitting — large colonies may split before the hard mass cap. */
-#define SHROOM_SPLIT_MIN_MASS (SHROOM_DEFAULT_PLAYER_MASS * 18.0f)
+#define SHROOM_SPLIT_MIN_MASS (SHROOM_DEFAULT_PLAYER_MASS * 4.0f)
 #define SHROOM_SPLIT_MASS_THRESHOLD SHROOM_SPLIT_MIN_MASS
 /* Mass lost to ejection cost on split. Net mass after split = parent_mass * (1 - this).
  * The lost mass is discarded (not spawned as a decay spore) for simplicity —
