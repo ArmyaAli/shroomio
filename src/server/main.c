@@ -1136,7 +1136,8 @@ static void HandleChatPacket(ENetHost* host, ServerSession* session, const ENetP
   enet_host_flush(host);
 }
 
-static void HandleReadyStatePacket(ENetHost* host, ServerSession* session, const ENetPacket* enet_packet) {
+static void HandleReadyStatePacket(ENetHost* host, ServerSession* session,
+                                   const ENetPacket* enet_packet) {
   const ShroomReadyStatePacket* packet;
 
   if ((host == NULL) || (session == NULL) || !session->active || (session->player == NULL) ||

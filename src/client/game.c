@@ -3350,43 +3350,43 @@ static void DrawProximityMap(const Game* game) {
              Fade((Color){255, 236, 236, 255}, 0.90f));
     DrawCircleV((Vector2){prey_x + swatch_radius, row_y + (float)row_size * 0.5f}, swatch_radius,
                 Fade(SKYBLUE, 0.96f));
-     DrawText(prey_label, (int)(prey_x + swatch_radius * 2.0f + col_gap), (int)row_y, row_size,
-              Fade((Color){232, 245, 255, 255}, 0.90f));
-   }
+    DrawText(prey_label, (int)(prey_x + swatch_radius * 2.0f + col_gap), (int)row_y, row_size,
+             Fade((Color){232, 245, 255, 255}, 0.90f));
+  }
 
-   // Match timer display (online mode only)
-   if (IsOnlineMode(game->active_mode) && game->net.welcome_received) {
-     const float time_remaining = game->net.match_time_remaining;
-     const int minutes = (int)(time_remaining / 60.0f);
-     const int seconds = (int)time_remaining % 60;
-     
-     // Determine timer color based on time remaining
-     Color timer_color = (Color){255, 255, 255, 255}; // White
-     if (time_remaining < 10.0f) {
-       timer_color = (Color){255, 80, 80, 255}; // Red
-     } else if (time_remaining < 60.0f) {
-       timer_color = (Color){255, 200, 80, 255}; // Yellow/Orange
-     }
-     
-     const float timer_width = 140.0f;
-     const float timer_height = 50.0f;
-     const float timer_x = (game->screen_width - timer_width) * 0.5f;
-     const float timer_y = 18.0f;
-     
-     DrawFungalHudPanel((Rectangle){timer_x, timer_y, timer_width, timer_height}, timer_color);
-     ShroomImGui_SetNextWindowPos(timer_x, timer_y, SHROOM_IMGUI_COND_ALWAYS);
-     ShroomImGui_SetNextWindowSize(timer_width, timer_height, SHROOM_IMGUI_COND_ALWAYS);
-     ShroomImGui_SetNextWindowBgAlpha(0.30f);
-     if (ShroomImGui_Begin("Match Timer", NULL,
-                           SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
-                               SHROOM_IMGUI_WINDOW_NO_MOVE | SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
-                               SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS |
-                               SHROOM_IMGUI_WINDOW_NO_SCROLLBAR)) {
-       ShroomImGui_TextColored(ToImGuiColor(timer_color), TextFormat("%d:%02d", minutes, seconds));
-     }
-     ShroomImGui_End();
-   }
- }
+  // Match timer display (online mode only)
+  if (IsOnlineMode(game->active_mode) && game->net.welcome_received) {
+    const float time_remaining = game->net.match_time_remaining;
+    const int minutes = (int)(time_remaining / 60.0f);
+    const int seconds = (int)time_remaining % 60;
+
+    // Determine timer color based on time remaining
+    Color timer_color = (Color){255, 255, 255, 255}; // White
+    if (time_remaining < 10.0f) {
+      timer_color = (Color){255, 80, 80, 255}; // Red
+    } else if (time_remaining < 60.0f) {
+      timer_color = (Color){255, 200, 80, 255}; // Yellow/Orange
+    }
+
+    const float timer_width = 140.0f;
+    const float timer_height = 50.0f;
+    const float timer_x = (game->screen_width - timer_width) * 0.5f;
+    const float timer_y = 18.0f;
+
+    DrawFungalHudPanel((Rectangle){timer_x, timer_y, timer_width, timer_height}, timer_color);
+    ShroomImGui_SetNextWindowPos(timer_x, timer_y, SHROOM_IMGUI_COND_ALWAYS);
+    ShroomImGui_SetNextWindowSize(timer_width, timer_height, SHROOM_IMGUI_COND_ALWAYS);
+    ShroomImGui_SetNextWindowBgAlpha(0.30f);
+    if (ShroomImGui_Begin("Match Timer", NULL,
+                          SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
+                              SHROOM_IMGUI_WINDOW_NO_MOVE | SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
+                              SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS |
+                              SHROOM_IMGUI_WINDOW_NO_SCROLLBAR)) {
+      ShroomImGui_TextColored(ToImGuiColor(timer_color), TextFormat("%d:%02d", minutes, seconds));
+    }
+    ShroomImGui_End();
+  }
+}
 
 static void DrawSpectatorOverlay(Game* game, const LeaderboardEntry* leaderboard,
                                  size_t leaderboard_count) {
