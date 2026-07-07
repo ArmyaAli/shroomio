@@ -3048,11 +3048,13 @@ static void UpdateSpectatorCamera(Game* game, float delta_time) {
   const ShroomPlayerState* target;
   Vector2 camera_target;
   Vector2 pan = {0.0f, 0.0f};
-  const float pan_speed = 640.0f / fmaxf(game->camera.zoom, 0.35f);
+  float pan_speed;
 
   if ((game == NULL) || !game->spectator_mode) {
     return;
   }
+
+  pan_speed = 640.0f / fmaxf(game->camera.zoom, 0.35f);
 
   target = FindSpectatorTarget(game);
   if (game->spectator_follow_mode && (target != NULL)) {
