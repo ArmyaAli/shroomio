@@ -6,6 +6,9 @@
 void ShroomWorldInit(ShroomWorldState* world);
 void ShroomWorldInitWithSeed(ShroomWorldState* world, uint32_t seed);
 void ShroomWorldStep(ShroomWorldState* world, float delta_time);
+void ShroomWorldSetMatchDuration(ShroomWorldState* world, float duration_seconds);
+void ShroomWorldResetMatch(ShroomWorldState* world);
+void ShroomComputeMatchPodium(ShroomWorldState* world);
 
 ShroomPlayerState* ShroomWorldSpawnPlayer(ShroomWorldState* world, ShroomPlayerId player_id,
                                           bool is_bot);

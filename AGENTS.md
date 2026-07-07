@@ -15,7 +15,9 @@
 - Run local client: `make run`; run local server: `make run-server`.
 - Cross-compile Windows: `make client-windows` and `make server-windows` require `mingw-w64`.
 - Full local non-Valgrind gate: `make check` runs `make lint` then `make test`.
+- Fastest local iteration: `make unit-test` runs Unity tests only (no graphics, no ImGui harness).
 - CI also runs `make valgrind-test`, `make client-linux`, `make server-linux`, `make client-windows`, `make server-windows`, `make client-macos`, and `make server-macos`; `make check` alone is not the whole PR gate.
+- CI skips all build/test/valgrind jobs for docs-only PRs (changes limited to `docs/*`, `design/*`, `*.md`).
 - Format C sources only: `make format`; check formatting: `make format-check` using `.clang-format`.
 - Static analysis: `make cppcheck`; lint alias: `make lint`.
 - Build spec PDF: `make spec` -> `dist/latex/shroomio-specification.pdf`.
@@ -40,7 +42,7 @@
 
 - The server is UDP/ENet on port `7777` by default; CLI flags override env vars, which override defaults: `--bind`/`SHROOM_SERVER_BIND`, `--port`/`SHROOM_SERVER_PORT`, `--database`/`SHROOM_SERVER_DB_PATH`.
 - Server self-checks exist: `./dist/linux/server/shroomio-server --smoke-test --bind 127.0.0.1 --port 37777 --database /tmp/shroomio-smoke.db`.
-- Deterministic performance baseline: `make benchmark` writes CSVs under `build/benchmarks/`; use the same command before/after optimization claims.
+- Deterministic performance baseline: `make benchmark` writes CSVs under `build/benchmarks/`; requires `python3` (runs `scripts/benchmark.py`); use the same command before/after optimization claims.
 - Docker server image build copies ENet artifacts from `vcpkg_installed/linux/x64-linux`; run `make vcpkg-install-linux` before `make docker-server` if those files are absent.
 - Docker Compose service maps `7777:7777/udp` and persists SQLite data in the `shroomio-server-data` volume.
 
