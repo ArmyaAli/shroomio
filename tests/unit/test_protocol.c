@@ -29,6 +29,16 @@ void test_pong_packet_size(void) {
   TEST_ASSERT_EQUAL(sizeof(ShroomPacketHeader) + 4, sizeof(ShroomPongPacket));
 }
 
+void test_chat_message_packet_size(void) {
+  TEST_ASSERT_EQUAL(sizeof(ShroomPacketHeader) + 4 + SHROOM_MAX_CHAT_MESSAGE_LENGTH,
+                    sizeof(ShroomChatMessagePacket));
+}
+
+void test_voice_frame_packet_size(void) {
+  TEST_ASSERT_EQUAL(sizeof(ShroomPacketHeader) + 4 + 2 + 2 + 512,
+                    sizeof(ShroomVoiceFramePacket));
+}
+
 void test_snapshot_player_state_size(void) {
   TEST_ASSERT_EQUAL(4 + 4 + 4 + 4 + 4 + 4 + 32 + 1 + 1 + 2, sizeof(ShroomSnapshotPlayerState));
 }
@@ -41,12 +51,15 @@ void test_packet_type_values(void) {
   TEST_ASSERT_EQUAL(5, SHROOM_PACKET_PING);
   TEST_ASSERT_EQUAL(6, SHROOM_PACKET_PONG);
   TEST_ASSERT_EQUAL(7, SHROOM_PACKET_SPORE_STATE);
+  TEST_ASSERT_EQUAL(10, SHROOM_PACKET_CHAT_MESSAGE);
+  TEST_ASSERT_EQUAL(11, SHROOM_PACKET_VOICE_FRAME);
 }
 
 void test_protocol_constants(void) {
   TEST_ASSERT_EQUAL(7777, SHROOM_SERVER_PORT);
   TEST_ASSERT_EQUAL(1, SHROOM_PROTOCOL_VERSION);
   TEST_ASSERT_EQUAL(32, SHROOM_MAX_NAME_LENGTH);
+  TEST_ASSERT_EQUAL(256, SHROOM_MAX_CHAT_MESSAGE_LENGTH);
   TEST_ASSERT_EQUAL(15, SHROOM_SNAPSHOT_RATE);
   TEST_ASSERT_EQUAL(128, SHROOM_MAX_SNAPSHOT_PLAYERS);
   TEST_ASSERT_EQUAL(5, SHROOM_SPORE_STATE_RATE);
@@ -66,6 +79,10 @@ void test_packet_channel_mapping(void) {
                     ShroomPacketTypeToChannel(SHROOM_PACKET_SNAPSHOT));
   TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_SNAPSHOT,
                     ShroomPacketTypeToChannel(SHROOM_PACKET_SPORE_STATE));
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CHAT,
+                    ShroomPacketTypeToChannel(SHROOM_PACKET_CHAT_MESSAGE));
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_VOICE,
+                    ShroomPacketTypeToChannel(SHROOM_PACKET_VOICE_FRAME));
   TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CONTROL,
                     ShroomPacketTypeToChannel(SHROOM_PACKET_AUTH_RESPONSE));
 }
@@ -75,9 +92,43 @@ void test_packet_reliability_mapping(void) {
   TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_WELCOME));
   TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_PING));
   TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_AUTH_REQUEST));
+  TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_CHAT_MESSAGE));
   TEST_ASSERT_FALSE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_INPUT));
   TEST_ASSERT_FALSE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_SNAPSHOT));
   TEST_ASSERT_FALSE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_SPORE_STATE));
+  TEST_ASSERT_FALSE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_VOICE_FRAME));
+}
+
+void test_chat_packet_initialization(void) {
+  ShroomChatMessagePacket packet;
+  memset(&packet, 0, sizeof(packet));
+
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_CHAT_MESSAGE, sizeof(packet));
+  packet.player_id = 7;
+  strncpy(packet.message, "spore rush center", sizeof(packet.message) - 1);
+
+  TEST_ASSERT_EQUAL(SHROOM_PACKET_CHAT_MESSAGE, packet.header.type);
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CHAT, packet.header.reserved);
+  TEST_ASSERT_EQUAL(sizeof(packet), packet.header.size);
+  TEST_ASSERT_EQUAL(7, packet.player_id);
+  TEST_ASSERT_EQUAL_STRING("spore rush center", packet.message);
+}
+
+void test_voice_packet_initialization(void) {
+  ShroomVoiceFramePacket packet;
+  memset(&packet, 0, sizeof(packet));
+
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_VOICE_FRAME, sizeof(packet));
+  packet.player_id = 4;
+  packet.payload_size = 128;
+  packet.payload[0] = 0xABu;
+
+  TEST_ASSERT_EQUAL(SHROOM_PACKET_VOICE_FRAME, packet.header.type);
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_VOICE, packet.header.reserved);
+  TEST_ASSERT_EQUAL(sizeof(packet), packet.header.size);
+  TEST_ASSERT_EQUAL(4, packet.player_id);
+  TEST_ASSERT_EQUAL(128, packet.payload_size);
+  TEST_ASSERT_EQUAL_HEX8(0xAB, packet.payload[0]);
 }
 
 void test_packet_header_initializes_channel_metadata(void) {
@@ -200,6 +251,8 @@ int main(void) {
   RUN_TEST(test_input_packet_size);
   RUN_TEST(test_ping_packet_size);
   RUN_TEST(test_pong_packet_size);
+  RUN_TEST(test_chat_message_packet_size);
+  RUN_TEST(test_voice_frame_packet_size);
   RUN_TEST(test_snapshot_player_state_size);
   RUN_TEST(test_packet_type_values);
   RUN_TEST(test_protocol_constants);
@@ -209,6 +262,8 @@ int main(void) {
   RUN_TEST(test_packet_header_validates_expected_channel);
   RUN_TEST(test_hello_packet_initialization);
   RUN_TEST(test_input_packet_initialization);
+  RUN_TEST(test_chat_packet_initialization);
+  RUN_TEST(test_voice_packet_initialization);
   RUN_TEST(test_snapshot_player_state_initialization);
   RUN_TEST(test_snapshot_spore_state_size);
   RUN_TEST(test_spore_state_packet_initialization);

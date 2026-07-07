@@ -10,6 +10,7 @@
 #define SHROOM_SERVER_PORT 7777u
 #define SHROOM_MAX_PASSWORD_LENGTH 64u
 #define SHROOM_AUTH_TOKEN_LENGTH 64u
+#define SHROOM_MAX_CHAT_MESSAGE_LENGTH 256u
 #define SHROOM_SERVER_MAX_CLIENTS 128u
 #define SHROOM_SNAPSHOT_RATE 15u
 #define SHROOM_MAX_SNAPSHOT_PLAYERS 128u
@@ -36,6 +37,8 @@ typedef enum ShroomPacketType {
   SHROOM_PACKET_SPORE_STATE = 7,
   SHROOM_PACKET_AUTH_REQUEST = 8,
   SHROOM_PACKET_AUTH_RESPONSE = 9,
+  SHROOM_PACKET_CHAT_MESSAGE = 10,
+  SHROOM_PACKET_VOICE_FRAME = 11,
 } ShroomPacketType;
 
 typedef enum ShroomAuthMethod {
@@ -74,6 +77,10 @@ static inline uint8_t ShroomPacketTypeToChannel(ShroomPacketType type) {
     return SHROOM_ENET_CHANNEL_SNAPSHOT;
   case SHROOM_PACKET_INPUT:
     return SHROOM_ENET_CHANNEL_INPUT;
+  case SHROOM_PACKET_CHAT_MESSAGE:
+    return SHROOM_ENET_CHANNEL_CHAT;
+  case SHROOM_PACKET_VOICE_FRAME:
+    return SHROOM_ENET_CHANNEL_VOICE;
   default:
     return SHROOM_ENET_CHANNEL_CONTROL;
   }
@@ -87,10 +94,12 @@ static inline bool ShroomPacketTypeUsesReliableDelivery(ShroomPacketType type) {
   case SHROOM_PACKET_PONG:
   case SHROOM_PACKET_AUTH_REQUEST:
   case SHROOM_PACKET_AUTH_RESPONSE:
+  case SHROOM_PACKET_CHAT_MESSAGE:
     return true;
   case SHROOM_PACKET_INPUT:
   case SHROOM_PACKET_SNAPSHOT:
   case SHROOM_PACKET_SPORE_STATE:
+  case SHROOM_PACKET_VOICE_FRAME:
   default:
     return false;
   }
@@ -209,5 +218,19 @@ typedef struct ShroomAuthResponsePacket {
   char token[SHROOM_AUTH_TOKEN_LENGTH];
   char message[64];
 } ShroomAuthResponsePacket;
+
+typedef struct ShroomChatMessagePacket {
+  ShroomPacketHeader header;
+  uint32_t player_id;
+  char message[SHROOM_MAX_CHAT_MESSAGE_LENGTH];
+} ShroomChatMessagePacket;
+
+typedef struct ShroomVoiceFramePacket {
+  ShroomPacketHeader header;
+  uint32_t player_id;
+  uint16_t payload_size;
+  uint16_t reserved;
+  uint8_t payload[512];
+} ShroomVoiceFramePacket;
 
 #endif
