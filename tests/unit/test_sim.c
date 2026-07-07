@@ -45,6 +45,10 @@ static ShroomPlayerState* FindSplitPiece(ShroomPlayerId player_id) {
   return NULL;
 }
 
+static float SplitRequiredPreCostMass(void) {
+  return SHROOM_SPLIT_MIN_MASS / (1.0f - SHROOM_SPLIT_MASS_LOSS_FRACTION);
+}
+
 void test_world_init_sets_expected_defaults(void) {
   TEST_ASSERT_EQUAL_UINT64(0, world.tick);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_WORLD_WIDTH, world.width);
@@ -212,10 +216,10 @@ void test_split_predicate_respects_mass_life_and_piece_boundaries(void) {
   player = ShroomWorldSpawnPlayer(&world, 1, false);
   TEST_ASSERT_NOT_NULL(player);
 
-  player->mass = SHROOM_SPLIT_MIN_MASS - 0.1f;
+  player->mass = SplitRequiredPreCostMass() - 0.1f;
   TEST_ASSERT_FALSE(ShroomPlayerCanSplit(&world, player));
 
-  player->mass = SHROOM_SPLIT_MIN_MASS;
+  player->mass = SplitRequiredPreCostMass();
   TEST_ASSERT_TRUE(ShroomPlayerCanSplit(&world, player));
 
   player->has_split = true;
@@ -243,7 +247,7 @@ void test_merge_predicate_respects_cooldown_proximity_and_identity(void) {
 
   player = ShroomWorldSpawnPlayer(&world, 1, false);
   TEST_ASSERT_NOT_NULL(player);
-  player->mass = SHROOM_SPLIT_MIN_MASS;
+  player->mass = SplitRequiredPreCostMass();
   player->radius = ShroomMassToRadius(player->mass);
   TEST_ASSERT_TRUE(ShroomWorldSplitPlayer(&world, player));
   piece = FindSplitPiece(player->player_id);
@@ -562,15 +566,18 @@ void test_world_step_caps_mass_gain_at_configured_maximum(void) {
 
   ShroomWorldStep(&world, 0.0f);
 
-  /* Mass was capped at SHROOM_MAX_PLAYER_MASS, then halved by forced split. */
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_MAX_PLAYER_MASS / 2.0f, player->mass);
+  /* Mass was capped at SHROOM_MAX_PLAYER_MASS, then halved by forced split,
+   * with SHROOM_SPLIT_MASS_LOSS_FRACTION deducted as the cost. */
+  TEST_ASSERT_FLOAT_WITHIN(0.001f,
+                           SHROOM_MAX_PLAYER_MASS * (1.0f - SHROOM_SPLIT_MASS_LOSS_FRACTION) / 2.0f,
+                           player->mass);
   TEST_ASSERT_EQUAL(2, world.player_count);
 }
 
 void test_player_can_voluntarily_split_at_large_colony_threshold(void) {
   ShroomPlayerState* player;
   ShroomPlayerState* piece;
-  const float starting_mass = SHROOM_SPLIT_MIN_MASS;
+  const float starting_mass = SplitRequiredPreCostMass();
 
   ResetWorldForPlayers();
 
@@ -587,7 +594,8 @@ void test_player_can_voluntarily_split_at_large_colony_threshold(void) {
   TEST_ASSERT_NOT_NULL(piece);
   TEST_ASSERT_EQUAL_size_t(2, CountAlivePieces(player->player_id));
   TEST_ASSERT_NOT_EQUAL_UINT32(player->entity_id, piece->entity_id);
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, starting_mass, player->mass + piece->mass);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, starting_mass * (1.0f - SHROOM_SPLIT_MASS_LOSS_FRACTION),
+                           player->mass + piece->mass);
   TEST_ASSERT_TRUE(piece->ai_controlled);
 }
 
@@ -600,7 +608,7 @@ void test_player_split_uses_requested_aim_direction(void) {
   player = ShroomWorldSpawnPlayer(&world, 1, false);
   TEST_ASSERT_NOT_NULL(player);
 
-  player->mass = SHROOM_SPLIT_MIN_MASS;
+  player->mass = SplitRequiredPreCostMass();
   player->radius = ShroomMassToRadius(player->mass);
   player->input_direction = (ShroomVec2){1.0f, 0.0f};
 
@@ -622,7 +630,7 @@ void test_player_cannot_voluntarily_split_below_large_colony_threshold(void) {
   player = ShroomWorldSpawnPlayer(&world, 1, false);
   TEST_ASSERT_NOT_NULL(player);
 
-  player->mass = SHROOM_SPLIT_MIN_MASS - 1.0f;
+  player->mass = SplitRequiredPreCostMass() - 1.0f;
   player->radius = ShroomMassToRadius(player->mass);
 
   TEST_ASSERT_FALSE(ShroomWorldSplitPlayer(&world, player));
@@ -638,7 +646,7 @@ void test_split_pieces_wait_to_merge_until_cooldown_and_proximity(void) {
   player = ShroomWorldSpawnPlayer(&world, 1, false);
   TEST_ASSERT_NOT_NULL(player);
 
-  player->mass = SHROOM_SPLIT_MIN_MASS;
+  player->mass = SplitRequiredPreCostMass();
   player->radius = ShroomMassToRadius(player->mass);
   TEST_ASSERT_TRUE(ShroomWorldSplitPlayer(&world, player));
   piece = FindSplitPiece(player->player_id);
@@ -657,7 +665,8 @@ void test_split_pieces_wait_to_merge_until_cooldown_and_proximity(void) {
   ShroomWorldStep(&world, 0.0f);
 
   TEST_ASSERT_EQUAL_size_t(1, CountAlivePieces(player->player_id));
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_SPLIT_MIN_MASS, player->mass);
+  TEST_ASSERT_FLOAT_WITHIN(
+      0.001f, SplitRequiredPreCostMass() * (1.0f - SHROOM_SPLIT_MASS_LOSS_FRACTION), player->mass);
 }
 
 void test_consuming_primary_clears_old_split_fragments_after_respawn(void) {
@@ -672,7 +681,7 @@ void test_consuming_primary_clears_old_split_fragments_after_respawn(void) {
   TEST_ASSERT_NOT_NULL(attacker);
   TEST_ASSERT_NOT_NULL(victim);
 
-  victim->mass = SHROOM_SPLIT_MIN_MASS;
+  victim->mass = SplitRequiredPreCostMass();
   victim->radius = ShroomMassToRadius(victim->mass);
   victim->position = (ShroomVec2){3000.0f, 3000.0f};
   TEST_ASSERT_TRUE(ShroomWorldSplitPlayer(&world, victim));
@@ -985,7 +994,7 @@ void test_split_piece_survives_immediately_after_creation(void) {
   TEST_ASSERT_NOT_NULL(other_player);
 
   /* Set up player with enough mass to split */
-  player->mass = SHROOM_SPLIT_MIN_MASS;
+  player->mass = SplitRequiredPreCostMass();
   player->radius = ShroomMassToRadius(player->mass);
   player->input_direction = (ShroomVec2){1.0f, 0.0f};
   player->position = (ShroomVec2){3000.0f, 3000.0f};
@@ -1014,7 +1023,7 @@ void test_split_piece_not_consumed_by_nearby_larger_player(void) {
   ShroomPlayerState* player;
   ShroomPlayerState* piece;
   ShroomPlayerState* larger_player;
-  const float starting_mass = SHROOM_SPLIT_MIN_MASS;
+  const float starting_mass = SplitRequiredPreCostMass();
 
   ResetWorldForPlayers();
 
@@ -1051,7 +1060,7 @@ void test_split_spawn_protection_blocks_larger_player_consumption(void) {
   ShroomPlayerState* player;
   ShroomPlayerState* piece;
   ShroomPlayerState* larger_player;
-  const float starting_mass = SHROOM_SPLIT_MIN_MASS;
+  const float starting_mass = SplitRequiredPreCostMass();
 
   ResetWorldForPlayers();
 
@@ -1080,8 +1089,10 @@ void test_split_spawn_protection_blocks_larger_player_consumption(void) {
   TEST_ASSERT_TRUE(piece->alive);
   TEST_ASSERT_EQUAL_UINT32(player->player_id, piece->player_id);
   TEST_ASSERT_EQUAL_UINT8(1, piece->piece_index);
-  TEST_ASSERT_FLOAT_WITHIN(0.1f, starting_mass / 2.0f, piece->mass);
-  TEST_ASSERT_FLOAT_WITHIN(0.1f, starting_mass / 2.0f, player->mass);
+  TEST_ASSERT_FLOAT_WITHIN(0.1f, starting_mass * (1.0f - SHROOM_SPLIT_MASS_LOSS_FRACTION) / 2.0f,
+                           piece->mass);
+  TEST_ASSERT_FLOAT_WITHIN(0.1f, starting_mass * (1.0f - SHROOM_SPLIT_MASS_LOSS_FRACTION) / 2.0f,
+                           player->mass);
   TEST_ASSERT_TRUE(piece->merge_timer > 0.0f);
   TEST_ASSERT_TRUE(piece->spawn_protection_timer > 0.0f);
   TEST_ASSERT_TRUE(player->spawn_protection_timer > 0.0f);
@@ -1100,7 +1111,7 @@ void test_split_spawn_protection_expires_before_merge_timer(void) {
   ShroomPlayerState* player;
   ShroomPlayerState* piece;
   ShroomPlayerState* larger_player;
-  const float starting_mass = SHROOM_SPLIT_MIN_MASS;
+  const float starting_mass = SplitRequiredPreCostMass();
 
   ResetWorldForPlayers();
 

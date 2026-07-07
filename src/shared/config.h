@@ -50,6 +50,10 @@
 /* Splitting — large colonies may split before the hard mass cap. */
 #define SHROOM_SPLIT_MIN_MASS (SHROOM_DEFAULT_PLAYER_MASS * 18.0f)
 #define SHROOM_SPLIT_MASS_THRESHOLD SHROOM_SPLIT_MIN_MASS
+/* Mass lost to ejection cost on split. Net mass after split = parent_mass * (1 - this).
+ * The lost mass is discarded (not spawned as a decay spore) for simplicity —
+ * split is positioned as a tactical tradeoff, not a free lunch. */
+#define SHROOM_SPLIT_MASS_LOSS_FRACTION 0.05f
 #define SHROOM_SPLIT_MERGE_SECONDS 10.0f
 #define SHROOM_SPLIT_PROTECTION_SECONDS 1.4f
 #define SHROOM_MAX_SPLIT_PIECES 4
