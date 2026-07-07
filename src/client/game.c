@@ -3784,12 +3784,14 @@ void GameUpdate(Game* game, float delta_time) {
     }
     const uint64_t network_start_nanos = profile_enabled ? ClientProfileNowNanos() : 0ull;
     ClientNetUpdate(&game->net, input_direction, !game->spectator_mode && game->split_requested,
-                    split_aim_direction, game->focused_piece_entity_id, delta_time);
+                    !game->spectator_mode && game->eject_requested, split_aim_direction,
+                    game->focused_piece_entity_id, delta_time);
     if (profile_enabled) {
       ShroomProfileRecord(&g_client_profile.network,
                           ShroomProfileNanosToMs(ClientProfileNowNanos() - network_start_nanos));
     }
     game->split_requested = false;
+    game->eject_requested = false;
   }
 
   if (IsOnlineMode(game->active_mode) &&
@@ -3865,7 +3867,11 @@ void GameUpdate(Game* game, float delta_time) {
           QueueGameplaySfx(game, SHROOM_CLIENT_SFX_SPLIT, 0.64f);
         }
       }
+      if (!game->spectator_mode && game->eject_requested && (ctrl != NULL)) {
+        ShroomWorldEjectMass(&game->world, ctrl, split_aim_direction);
+      }
       game->split_requested = false;
+      game->eject_requested = false;
       ShroomWorldStep(&game->world, delta_time);
     }
   }

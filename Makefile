@@ -798,6 +798,10 @@ $(TEST_BUILD_DIR)/test_split_cost: $(UNIT_TESTS_DIR)/test_split_cost.c $(UNITY_S
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
+$(TEST_BUILD_DIR)/test_eject: $(UNIT_TESTS_DIR)/test_eject.c $(UNITY_SRC) $(SHARED_SRC_DIR)/sim.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
 $(TEST_BUILD_DIR)/%: $(UNIT_TESTS_DIR)/%.c $(UNITY_SRC) | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)

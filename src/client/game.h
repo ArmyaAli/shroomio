@@ -203,6 +203,7 @@ typedef struct Game {
   float final_mass;
   int final_rank;
   bool show_results;
+  bool eject_requested;
 } Game;
 
 void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode mode);

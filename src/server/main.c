@@ -951,6 +951,11 @@ static void HandleInputPacket(ServerSession* session, const ENetPacket* enet_pac
         world, target_piece,
         NormalizeInput((ShroomVec2){packet->split_direction_x, packet->split_direction_y}));
   }
+  if (packet->eject_requested && (world != NULL)) {
+    ShroomWorldEjectMass(
+        world, target_piece,
+        NormalizeInput((ShroomVec2){packet->split_direction_x, packet->split_direction_y}));
+  }
 }
 
 static void HandleAuthRequestPacket(ENetPeer* peer, ServerSession* session,
