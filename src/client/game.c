@@ -890,11 +890,11 @@ static void EmitGameplayEventParticles(Game* game) {
     if (local_consumed_player && !local_kill_reported && !local_death_reported) {
       char title[96];
       char detail[128];
-      char feed_text[128];
       snprintf(title, sizeof(title), "You consumed %s", GetPlayerDisplayName(game, player));
       snprintf(detail, sizeof(detail), "Victim mass %.0f  +%.0f mass  Rank %d", previous_mass,
                largest_gain, GetPlayerRank(game, largest_gainer));
       if (!local_kill_feed_reported) {
+        char feed_text[128];
         snprintf(feed_text, sizeof(feed_text), "You consumed %s",
                  GetPlayerDisplayName(game, player));
         AddKillFeedEntry(game, feed_text, (Color){112, 224, 128, 255},
