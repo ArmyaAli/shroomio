@@ -9,6 +9,7 @@
 #include "audio.h"
 #include "imgui_wrapper.h"
 #include "raymath.h"
+#include "render_lod.h"
 #include "shared/config.h"
 #include "shared/protocol.h"
 #include "shared/profiler.h"
@@ -1975,6 +1976,8 @@ static void DrawPlayers(const Game* game, Rectangle view_bounds) {
       const Color threat_outline = GetThreatOutlineColor(threat_state);
       const float decay_pulse =
           0.45f + (0.35f * (0.5f + (0.5f * sinf(game->inspect_prompt_timer * 5.0f))));
+      const ShroomPlayerRenderLodTier lod = ShroomPlayerRenderLodForRadius(player->radius);
+      const int text_shadow_passes = ShroomPlayerRenderLodTextShadowPasses(lod);
 
       // Strong shadow underneath for depth
       DrawCircleV(position, player->radius + 5.0f, Fade((Color){20, 15, 10, 255}, 0.7f));
@@ -1985,22 +1988,26 @@ static void DrawPlayers(const Game* game, Rectangle view_bounds) {
       // Main mushroom cap with strong color
       DrawCircleV(position, player->radius, fill);
 
-      if (is_local) {
+      if (is_local && ShroomPlayerRenderLodShouldDrawInnerHighlight(lod)) {
         DrawCircleV(position, player->radius * 0.78f, Fade((Color){255, 230, 120, 255}, 0.18f));
       }
 
       // Large, bright mushroom cap highlight (top lighting)
-      DrawCircleV(
-          (Vector2){position.x - player->radius * 0.25f, position.y - player->radius * 0.25f},
-          player->radius * 0.7f, Fade((Color){255, 255, 255, 255}, 0.35f));
+      if (ShroomPlayerRenderLodShouldDrawPrimaryTopLight(lod)) {
+        DrawCircleV(
+            (Vector2){position.x - player->radius * 0.25f, position.y - player->radius * 0.25f},
+            player->radius * 0.7f, Fade((Color){255, 255, 255, 255}, 0.35f));
+      }
 
       // Secondary highlight for more depth
-      DrawCircleV(
-          (Vector2){position.x - player->radius * 0.15f, position.y - player->radius * 0.35f},
-          player->radius * 0.4f, Fade((Color){255, 255, 255, 255}, 0.25f));
+      if (ShroomPlayerRenderLodShouldDrawSecondaryHighlight(lod)) {
+        DrawCircleV(
+            (Vector2){position.x - player->radius * 0.15f, position.y - player->radius * 0.35f},
+            player->radius * 0.4f, Fade((Color){255, 255, 255, 255}, 0.25f));
+      }
 
       // Large, visible mushroom species markings based on size.
-      if (player->radius > 12.0f) {
+      if ((player->radius > 12.0f) && ShroomPlayerRenderLodShouldDrawSpeciesPattern(lod)) {
         DrawSpeciesPattern(game, species, position, player->radius);
       }
 
@@ -2027,10 +2034,16 @@ static void DrawPlayers(const Game* game, Rectangle view_bounds) {
       DrawRectangleRoundedLines(text_badge, 0.45f, 8,
                                 Fade((Color){255, 216, 118, 255}, is_local ? 0.72f : 0.32f));
 
-      DrawText(mass_text, text_x + 2, text_y, font_size, Fade((Color){12, 8, 5, 255}, 0.9f));
-      DrawText(mass_text, text_x - 2, text_y, font_size, Fade((Color){12, 8, 5, 255}, 0.9f));
-      DrawText(mass_text, text_x, text_y + 2, font_size, Fade((Color){12, 8, 5, 255}, 0.9f));
-      DrawText(mass_text, text_x, text_y - 2, font_size, Fade((Color){12, 8, 5, 255}, 0.9f));
+      /* Text shadow: slice through the four legacy offset passes per the
+       * player's LOD tier so a large player pays at most `text_shadow_passes`
+       * shadow fills instead of four. Order matches the hard-coded offsets
+       * that preceded this block (right, left, down, up) so FULL is unchanged. */
+      static const Vector2 shadow_offsets[4] = {{2, 0}, {-2, 0}, {0, 2}, {0, -2}};
+      for (int pass = 0; pass < text_shadow_passes; ++pass) {
+        DrawText(mass_text, text_x + (int)shadow_offsets[pass].x,
+                 text_y + (int)shadow_offsets[pass].y, font_size,
+                 Fade((Color){12, 8, 5, 255}, 0.9f));
+      }
       DrawText(mass_text, text_x, text_y, font_size, Fade(label_color, label_alpha));
 
       // Outline rings
