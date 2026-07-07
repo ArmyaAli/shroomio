@@ -60,6 +60,7 @@ typedef enum ShroomPacketType {
   SHROOM_PACKET_POWERUP_STATE = 18,
   SHROOM_PACKET_MUSHROOM_SPECIES_CATALOG = 19,
   SHROOM_PACKET_VOICE_FRAME = 20,
+  SHROOM_PACKET_READY_STATE = 21,
 } ShroomPacketType;
 
 typedef enum ShroomAuthMethod {
@@ -297,6 +298,13 @@ typedef struct ShroomVoiceFramePacket {
   uint8_t payload[512];
 } ShroomVoiceFramePacket;
 
+typedef struct ShroomReadyStatePacket {
+  ShroomPacketHeader header;
+  uint32_t player_id;
+  uint8_t is_ready;
+  uint8_t reserved[3];
+} ShroomReadyStatePacket;
+
 #define SHROOM_PACKET_METADATA(X)                                                                  \
   X(SHROOM_PACKET_HELLO, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomHelloPacket))             \
   X(SHROOM_PACKET_WELCOME, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomWelcomePacket))         \
@@ -327,7 +335,8 @@ typedef struct ShroomVoiceFramePacket {
   X(SHROOM_PACKET_POWERUP_STATE, SHROOM_ENET_CHANNEL_SNAPSHOT, false,                              \
     offsetof(ShroomPowerupStatePacket, powerups))                                                  \
   X(SHROOM_PACKET_MUSHROOM_SPECIES_CATALOG, SHROOM_ENET_CHANNEL_CONTROL, true,                     \
-    offsetof(ShroomMushroomSpeciesCatalogPacket, species))
+    offsetof(ShroomMushroomSpeciesCatalogPacket, species))                                         \
+  X(SHROOM_PACKET_READY_STATE, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomReadyStatePacket))
 
 static inline uint8_t ShroomPacketTypeToChannel(ShroomPacketType type) {
   switch (type) {

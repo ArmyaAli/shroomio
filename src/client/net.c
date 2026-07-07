@@ -626,6 +626,21 @@ void ClientNetSendLobbyCreate(ClientNetState* net, const char* name, uint16_t ma
                  CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_LOBBY_CREATE));
 }
 
+void ClientNetSendReadyState(ClientNetState* net, bool is_ready) {
+  ShroomReadyStatePacket packet = {0};
+
+  if ((net == NULL) || (net->peer == NULL) || (net->peer->state != ENET_PEER_STATE_CONNECTED) ||
+      !net->welcome_received) {
+    return;
+  }
+
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_READY_STATE, sizeof(packet));
+  packet.player_id = net->player_id;
+  packet.is_ready = is_ready ? 1 : 0;
+  enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CONTROL,
+                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_READY_STATE));
+}
+
 bool ClientNetSendChat(ClientNetState* net, uint32_t player_id, const char* sender_name,
                        const char* message) {
   ShroomChatPacket packet = {0};
