@@ -868,7 +868,16 @@ bool ShroomPlayerCanSplit(const ShroomWorldState* world, const ShroomPlayerState
   if ((world == NULL) || (player == NULL) || !player->alive) {
     return false;
   }
-  if (player->mass < SHROOM_SPLIT_MIN_MASS) {
+  /* The min-mass floor is evaluated post-cost: each piece would be
+   * (parent_mass - split_cost) / 2, and we require each resulting piece to
+   * weigh at least SHROOM_SPLIT_MIN_MASS / 2 so the split doesn't drop a
+   * piece below the genre-typical "small colony" floor. The simpler
+   * equivalent (and what players will intuit) is: parent_mass must exceed
+   * SHROOM_SPLIT_MIN_MASS by enough that the post-cost halves stay above
+   * half the floor. */
+  const float split_cost = player->mass * SHROOM_SPLIT_MASS_LOSS_FRACTION;
+  const float post_cost_mass = player->mass - split_cost;
+  if (post_cost_mass < SHROOM_SPLIT_MIN_MASS) {
     return false;
   }
   if (!player->is_bot && player->has_split) {
@@ -892,6 +901,7 @@ static ShroomPlayerState* ShroomFindPrimaryPiece(ShroomWorldState* world,
 bool ShroomWorldSplitPlayerToward(ShroomWorldState* world, ShroomPlayerState* player,
                                   ShroomVec2 aim_direction) {
   ShroomPlayerState* new_piece;
+  float split_cost;
   float half_mass;
   ShroomVec2 launch_dir;
   int piece_count;
@@ -917,7 +927,14 @@ bool ShroomWorldSplitPlayerToward(ShroomWorldState* world, ShroomPlayerState* pl
     new_piece = &world->players[world->player_count++];
   }
 
-  half_mass = player->mass / 2.0f;
+  /* ## Decisions: split mass cost.
+   * The split-cost branch deducts SHROOM_SPLIT_MASS_LOSS_FRACTION of the
+   * parent's mass BEFORE halving. The lost mass is discarded — it is not
+   * spawned as a decay spore, because doing so would feed the local player
+   * free recapture of their own ejecta. Discarding keeps split a real
+   * tactical tradeoff, not a free lunch. */
+  split_cost = player->mass * SHROOM_SPLIT_MASS_LOSS_FRACTION;
+  half_mass = (player->mass - split_cost) / 2.0f;
   launch_dir = ShroomNormalizeOrZero(aim_direction);
   if (ShroomVec2LengthSqr(launch_dir) < 0.0001f) {
     launch_dir = ShroomNormalizeOrZero(player->input_direction);

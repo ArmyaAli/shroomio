@@ -711,6 +711,9 @@ test_connection) \
 			test_sim) \
 				$(LINUX_CC) $(COVERAGE_CFLAGS) \
 					$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/sim.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+			test_split_cost) \
+				$(LINUX_CC) $(COVERAGE_CFLAGS) \
+					$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/sim.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 			*) \
 				$(LINUX_CC) $(COVERAGE_CFLAGS) \
 					$$src $(UNITY_SRC) -o $$test_bin $(COVERAGE_LIBS) ;; \
@@ -776,6 +779,10 @@ $(TEST_BUILD_DIR)/test_auth: $(UNIT_TESTS_DIR)/test_auth.c $(UNITY_SRC) $(SERVER
 $(TEST_BUILD_DIR)/test_render_lod: $(UNIT_TESTS_DIR)/test_render_lod.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/render_lod.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) -I$(CLIENT_SRC_DIR) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_split_cost: $(UNIT_TESTS_DIR)/test_split_cost.c $(UNITY_SRC) $(SHARED_SRC_DIR)/sim.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
 $(TEST_BUILD_DIR)/%: $(UNIT_TESTS_DIR)/%.c $(UNITY_SRC) | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
