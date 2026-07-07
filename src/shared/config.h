@@ -43,6 +43,7 @@
 #define SHROOM_CONSUME_MASS_ADVANTAGE 1.18f
 #define SHROOM_CENTER_CONSUME_ADVANTAGE 1.08f
 #define SHROOM_CONSUME_MASS_GAIN_FACTOR 0.58f
+#define SHROOM_BOUNDARY_CONSUME_MARGIN 100.0f
 
 // Give fresh spawns more breathing room before re-entering contested space.
 #define SHROOM_SPAWN_SAFE_DISTANCE 440.0f

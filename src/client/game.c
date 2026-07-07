@@ -67,6 +67,34 @@ static bool CircleIntersectsRect(Vector2 center, float radius, Rectangle rect) {
          (center.y + radius >= rect.y) && (center.y - radius <= rect.y + rect.height);
 }
 
+static bool IsPositionInBoundaryConsumeZone(const ShroomWorldState* world, ShroomVec2 position) {
+  if (world == NULL) {
+    return false;
+  }
+  return position.x < SHROOM_BOUNDARY_CONSUME_MARGIN ||
+         position.x > (world->width - SHROOM_BOUNDARY_CONSUME_MARGIN) ||
+         position.y < SHROOM_BOUNDARY_CONSUME_MARGIN ||
+         position.y > (world->height - SHROOM_BOUNDARY_CONSUME_MARGIN);
+}
+
+static float GetBoundaryConsumeWarningIntensity(const ShroomWorldState* world,
+                                                ShroomVec2 position) {
+  float nearest_edge;
+
+  if (world == NULL) {
+    return 0.0f;
+  }
+
+  nearest_edge = fminf(fminf(position.x, world->width - position.x),
+                       fminf(position.y, world->height - position.y));
+  if (nearest_edge >= SHROOM_BOUNDARY_CONSUME_MARGIN) {
+    return 0.0f;
+  }
+
+  return Clamp((SHROOM_BOUNDARY_CONSUME_MARGIN - nearest_edge) / SHROOM_BOUNDARY_CONSUME_MARGIN,
+               0.0f, 1.0f);
+}
+
 static int GetParticleBudget(ClientParticleQuality quality) {
   switch (quality) {
   case CLIENT_PARTICLES_OFF:
@@ -1988,6 +2016,49 @@ static void DrawArenaZones(const ShroomWorldState* world, Rectangle view_bounds)
   }
 }
 
+static void DrawBoundaryConsumeWarning(const Game* game, Rectangle view_bounds) {
+  const ShroomWorldState* world;
+  const ShroomPlayerState* local_player;
+  Rectangle visible_world;
+  float intensity;
+  Color warning_color;
+
+  if ((game == NULL) || (game->local_player == NULL) || !game->local_player->alive) {
+    return;
+  }
+
+  world = &game->world;
+  local_player = game->local_player;
+  visible_world = ClampRectToWorld(view_bounds, world);
+  intensity = GetBoundaryConsumeWarningIntensity(world, local_player->position);
+  if (intensity <= 0.0f) {
+    return;
+  }
+
+  warning_color = Fade((Color){255, 88, 62, 255}, 0.10f + (0.24f * intensity));
+  if (visible_world.x <= SHROOM_BOUNDARY_CONSUME_MARGIN) {
+    DrawRectangleRec(
+        (Rectangle){0.0f, visible_world.y, SHROOM_BOUNDARY_CONSUME_MARGIN, visible_world.height},
+        warning_color);
+  }
+  if ((visible_world.x + visible_world.width) >= (world->width - SHROOM_BOUNDARY_CONSUME_MARGIN)) {
+    DrawRectangleRec((Rectangle){world->width - SHROOM_BOUNDARY_CONSUME_MARGIN, visible_world.y,
+                                 SHROOM_BOUNDARY_CONSUME_MARGIN, visible_world.height},
+                     warning_color);
+  }
+  if (visible_world.y <= SHROOM_BOUNDARY_CONSUME_MARGIN) {
+    DrawRectangleRec(
+        (Rectangle){visible_world.x, 0.0f, visible_world.width, SHROOM_BOUNDARY_CONSUME_MARGIN},
+        warning_color);
+  }
+  if ((visible_world.y + visible_world.height) >=
+      (world->height - SHROOM_BOUNDARY_CONSUME_MARGIN)) {
+    DrawRectangleRec((Rectangle){visible_world.x, world->height - SHROOM_BOUNDARY_CONSUME_MARGIN,
+                                 visible_world.width, SHROOM_BOUNDARY_CONSUME_MARGIN},
+                     warning_color);
+  }
+}
+
 static void DrawSpores(const ShroomWorldState* world, Rectangle view_bounds) {
   float time = GetTime();
 
@@ -2183,6 +2254,14 @@ static void DrawPlayers(const Game* game, Rectangle view_bounds) {
       if (IsDecayMassActive(&game->world, player)) {
         DrawCircleLines((int)position.x, (int)position.y, player->radius + 11.0f,
                         Fade(RED, decay_pulse));
+      }
+      if (!is_local && IsPositionInBoundaryConsumeZone(&game->world, player->position) &&
+          ShroomPlayerCanConsume(&game->world, player, game->local_player)) {
+        const float halo_pulse = 0.55f + (0.30f * sinf((float)GetTime() * 7.0f));
+        DrawCircleLines((int)position.x, (int)position.y, player->radius + 14.0f,
+                        Fade((Color){255, 76, 48, 255}, halo_pulse));
+        DrawCircleLines((int)position.x, (int)position.y, player->radius + 20.0f,
+                        Fade((Color){255, 150, 68, 255}, 0.26f + (0.18f * halo_pulse)));
       }
       /* Hold-to-split: charge arc + large low-latency launch direction arrow. */
       if (is_focused && (game->split_hold_timer > 0.0f)) {
@@ -3812,6 +3891,7 @@ void GameDraw(Game* game) {
 
   BeginMode2D(game->camera);
   DrawArenaZones(&game->world, view_bounds);
+  DrawBoundaryConsumeWarning(game, view_bounds);
   DrawRectangleLines(0, 0, (int)game->world.width, (int)game->world.height, Fade(DARKGREEN, 0.7f));
   DrawGrid(80, 64.0f);
   DrawSpores(&game->world, view_bounds);
