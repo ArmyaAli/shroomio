@@ -165,6 +165,8 @@ static void ShroomRespawnPlayer(ShroomWorldState* world, ShroomPlayerState* play
   player->spawn_protection_timer = 0.0f;
   player->speed_powerup_timer = 0.0f;
   player->shield_powerup_timer = 0.0f;
+  player->magnet_powerup_timer = 0.0f;
+  player->decay_immune_powerup_timer = 0.0f;
   player->eject_cooldown_timer = 0.0f;
   player->piece_index = 0;
 }
@@ -221,7 +223,7 @@ static void ShroomSpawnOrResetPowerup(ShroomWorldState* world, ShroomPowerupStat
                                                     : SHROOM_ZONE_CENTER;
 
   powerup->position = ShroomRandomPointInZone(world, zone);
-  powerup->type = (slot_index % 2u) == 0u ? SHROOM_POWERUP_SPEED : SHROOM_POWERUP_SHIELD;
+  powerup->type = (ShroomPowerupType)(1u + (ShroomNextRandom(world) % SHROOM_POWERUP_TYPE_COUNT));
   powerup->respawn_timer = 0.0f;
   powerup->active = true;
   if (powerup->entity_id == 0) {
@@ -476,7 +478,37 @@ static void ShroomUpdateBotInput(ShroomWorldState* world, ShroomPlayerState* bot
       ShroomNormalizeOrZero(ShroomVec2Sub(ShroomWorldCenter(world), bot->position));
 }
 
-static void ShroomCollectSpores(ShroomWorldState* world, const ShroomSporeGridCell* grid) {
+static void ShroomApplyMagnetToSpores(ShroomWorldState* world, const ShroomPlayerState* player,
+                                      float delta_time) {
+  const float magnet_radius_sqr = SHROOM_POWERUP_MAGNET_RADIUS * SHROOM_POWERUP_MAGNET_RADIUS;
+
+  if ((player->magnet_powerup_timer <= 0.0f) || (delta_time <= 0.0f)) {
+    return;
+  }
+
+  for (size_t index = 0; index < world->spore_count; ++index) {
+    ShroomSporeState* spore = &world->spores[index];
+    ShroomVec2 to_player;
+    float distance_sqr;
+    float distance;
+    float step;
+
+    if (!spore->active) {
+      continue;
+    }
+    to_player = ShroomVec2Sub(player->position, spore->position);
+    distance_sqr = ShroomVec2LengthSqr(to_player);
+    if ((distance_sqr <= 0.0001f) || (distance_sqr > magnet_radius_sqr)) {
+      continue;
+    }
+    distance = sqrtf(distance_sqr);
+    step = fminf(distance, SHROOM_POWERUP_MAGNET_PULL_SPEED * delta_time);
+    spore->position = ShroomVec2Add(spore->position, ShroomVec2Scale(to_player, step / distance));
+  }
+}
+
+static void ShroomCollectSpores(ShroomWorldState* world, const ShroomSporeGridCell* grid,
+                                float delta_time) {
   size_t player_index;
 
   for (player_index = 0; player_index < world->player_count; ++player_index) {
@@ -487,6 +519,8 @@ static void ShroomCollectSpores(ShroomWorldState* world, const ShroomSporeGridCe
     if (!player->alive) {
       continue;
     }
+
+    ShroomApplyMagnetToSpores(world, player, delta_time);
 
     if (player->mass >= SHROOM_MAX_PLAYER_MASS) {
       continue;
@@ -609,6 +643,9 @@ bool ShroomPlayerCanConsume(const ShroomWorldState* world, const ShroomPlayerSta
 
 bool ShroomPlayerCanDecay(const ShroomWorldState* world, const ShroomPlayerState* player) {
   if ((world == NULL) || (player == NULL) || !player->alive) {
+    return false;
+  }
+  if (player->decay_immune_powerup_timer > 0.0f) {
     return false;
   }
 
@@ -760,7 +797,8 @@ static void ShroomApplyMassRules(ShroomWorldState* world, float delta_time,
           excess_mass * ShroomDecayRateAtPosition(world, player->position) * delta_time;
       ShroomApplyMassLoss(world, player, decay_mass);
     }
-    if (ShroomPlayerIdlePenaltyActive(player, current_time_ms)) {
+    if ((player->decay_immune_powerup_timer <= 0.0f) &&
+        ShroomPlayerIdlePenaltyActive(player, current_time_ms)) {
       ShroomApplyMassLoss(world, player, SHROOM_IDLE_PENALTY_BLEED_PER_SECOND * delta_time);
     }
 
@@ -852,6 +890,12 @@ static void ShroomCollectPowerups(ShroomWorldState* world) {
       case SHROOM_POWERUP_SHIELD:
         player->shield_powerup_timer = SHROOM_POWERUP_SHIELD_SECONDS;
         break;
+      case SHROOM_POWERUP_MAGNET:
+        player->magnet_powerup_timer = SHROOM_POWERUP_MAGNET_SECONDS;
+        break;
+      case SHROOM_POWERUP_DECAY_IMMUNE:
+        player->decay_immune_powerup_timer = SHROOM_POWERUP_DECAY_IMMUNE_SECONDS;
+        break;
       default:
         break;
       }
@@ -891,6 +935,15 @@ static void ShroomUpdatePlayerEffects(ShroomWorldState* world, float delta_time)
     if (player->shield_powerup_timer > 0.0f) {
       player->shield_powerup_timer = ShroomClamp(player->shield_powerup_timer - delta_time, 0.0f,
                                                  SHROOM_POWERUP_SHIELD_SECONDS);
+    }
+    if (player->magnet_powerup_timer > 0.0f) {
+      player->magnet_powerup_timer = ShroomClamp(player->magnet_powerup_timer - delta_time, 0.0f,
+                                                 SHROOM_POWERUP_MAGNET_SECONDS);
+    }
+    if (player->decay_immune_powerup_timer > 0.0f) {
+      player->decay_immune_powerup_timer =
+          ShroomClamp(player->decay_immune_powerup_timer - delta_time, 0.0f,
+                      SHROOM_POWERUP_DECAY_IMMUNE_SECONDS);
     }
   }
 }
@@ -1210,7 +1263,7 @@ void ShroomWorldStep(ShroomWorldState* world, float delta_time) {
   }
 
   ShroomUpdatePlayerEffects(world, delta_time);
-  ShroomCollectSpores(world, spore_grid);
+  ShroomCollectSpores(world, spore_grid, delta_time);
   ShroomCollectPowerups(world);
   ShroomResolveConsumes(world);
   ShroomApplyMassRules(world, delta_time, step_end_time_ms);

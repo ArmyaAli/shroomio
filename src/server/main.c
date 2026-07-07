@@ -691,7 +691,11 @@ static void SendSnapshot(ENetPeer* peer, const ServerSession* session,
         .is_bot = player->is_bot ? 1u : 0u,
         .effect_flags =
             (uint16_t)((player->speed_powerup_timer > 0.0f ? SHROOM_POWERUP_EFFECT_SPEED : 0u) |
-                       (player->shield_powerup_timer > 0.0f ? SHROOM_POWERUP_EFFECT_SHIELD : 0u)),
+                       (player->shield_powerup_timer > 0.0f ? SHROOM_POWERUP_EFFECT_SHIELD : 0u) |
+                       (player->magnet_powerup_timer > 0.0f ? SHROOM_POWERUP_EFFECT_MAGNET : 0u) |
+                       (player->decay_immune_powerup_timer > 0.0f
+                            ? SHROOM_POWERUP_EFFECT_DECAY_IMMUNE
+                            : 0u)),
     };
     snprintf(packet.players[player_count - 1].name, sizeof(packet.players[player_count - 1].name),
              "%s", player->name);
