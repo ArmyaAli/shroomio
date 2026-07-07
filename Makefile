@@ -204,6 +204,7 @@ CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/game.c \
 	$(CLIENT_SRC_DIR)/layout.c \
 	$(CLIENT_SRC_DIR)/net.c \
+	$(CLIENT_SRC_DIR)/render_lod.c \
 	$(CLIENT_SRC_DIR)/screen.c \
 	$(CLIENT_SRC_DIR)/screens/screen_background.c \
 	$(CLIENT_SRC_DIR)/screens/main_menu.c \
@@ -264,6 +265,7 @@ IMGUI_TEST_CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/game.c \
 	$(CLIENT_SRC_DIR)/layout.c \
 	$(CLIENT_SRC_DIR)/net.c \
+	$(CLIENT_SRC_DIR)/render_lod.c \
 	$(CLIENT_SRC_DIR)/screen.c \
 	$(CLIENT_SRC_DIR)/screens/screen_background.c \
 	$(CLIENT_SRC_DIR)/screens/main_menu.c \
@@ -697,10 +699,13 @@ test-coverage: $(UNITY_DIR) $(VCPKG_LINUX_STAMP)
 			test_screen_background) \
 				$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) \
 					$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/screens/screen_background.c -o $$test_bin $(COVERAGE_LIBS) ;; \
-			test_connection) \
-				$(LINUX_CC) $(COVERAGE_CFLAGS) \
-					$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/connection.c -o $$test_bin $(COVERAGE_LIBS) ;; \
-			test_client_net) \
+test_connection) \
+			$(LINUX_CC) $(COVERAGE_CFLAGS) \
+				$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/connection.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+		test_render_lod) \
+			$(LINUX_CC) $(COVERAGE_CFLAGS) \
+				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/render_lod.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+		test_client_net) \
 				$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) \
 					$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c -o $$test_bin $(COVERAGE_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lenet ;; \
 			test_sim) \
@@ -767,6 +772,10 @@ $(TEST_BUILD_DIR)/test_sim: $(UNIT_TESTS_DIR)/test_sim.c $(UNITY_SRC) $(SHARED_S
 $(TEST_BUILD_DIR)/test_auth: $(UNIT_TESTS_DIR)/test_auth.c $(UNITY_SRC) $(SERVER_SRC_DIR)/auth.c $(SERVER_SRC_DIR)/logger.c | $(UNITY_DIR) $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) -I$(SERVER_SRC_DIR) -I$(VCPKG_LINUX_INCLUDE_DIR) $^ -o $@ $(TEST_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lsqlite3
+
+$(TEST_BUILD_DIR)/test_render_lod: $(UNIT_TESTS_DIR)/test_render_lod.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/render_lod.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) -I$(CLIENT_SRC_DIR) $^ -o $@ $(TEST_LIBS)
 
 $(TEST_BUILD_DIR)/%: $(UNIT_TESTS_DIR)/%.c $(UNITY_SRC) | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
