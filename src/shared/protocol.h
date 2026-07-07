@@ -57,6 +57,7 @@ typedef enum ShroomPacketType {
   SHROOM_PACKET_LOBBY_CREATED = 17,
   SHROOM_PACKET_POWERUP_STATE = 18,
   SHROOM_PACKET_MUSHROOM_SPECIES_CATALOG = 19,
+  SHROOM_PACKET_VOICE_FRAME = 20,
 } ShroomPacketType;
 
 typedef enum ShroomAuthMethod {
@@ -281,6 +282,14 @@ typedef struct ShroomChatPacket {
   char message[SHROOM_CHAT_MAX_MESSAGE_LENGTH + 1u];
 } ShroomChatPacket;
 
+typedef struct ShroomVoiceFramePacket {
+  ShroomPacketHeader header;
+  uint32_t player_id;
+  uint16_t payload_size;
+  uint16_t reserved;
+  uint8_t payload[512];
+} ShroomVoiceFramePacket;
+
 #define SHROOM_PACKET_METADATA(X)                                                                  \
   X(SHROOM_PACKET_HELLO, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomHelloPacket))             \
   X(SHROOM_PACKET_WELCOME, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomWelcomePacket))         \
@@ -296,6 +305,7 @@ typedef struct ShroomChatPacket {
   X(SHROOM_PACKET_AUTH_RESPONSE, SHROOM_ENET_CHANNEL_CONTROL, true,                                \
     sizeof(ShroomAuthResponsePacket))                                                              \
   X(SHROOM_PACKET_CHAT, SHROOM_ENET_CHANNEL_CHAT, true, sizeof(ShroomChatPacket))                  \
+  X(SHROOM_PACKET_VOICE_FRAME, SHROOM_ENET_CHANNEL_VOICE, false, sizeof(ShroomVoiceFramePacket))   \
   X(SHROOM_PACKET_LOBBY_LIST_QUERY, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomPacketHeader)) \
   X(SHROOM_PACKET_LOBBY_LIST, SHROOM_ENET_CHANNEL_CONTROL, true,                                   \
     offsetof(ShroomLobbyListPacket, lobbies))                                                      \

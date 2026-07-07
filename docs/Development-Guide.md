@@ -191,6 +191,16 @@ Manual testing workflow:
 3. **Docker**: `make docker-run-server` then connect a client.
 4. **Windows**: `make client-windows` — copy `dist/windows/client/shroomio.exe` to a Windows machine and run.
 
+## Protocol Notes
+
+`src/shared/protocol.h` defines both packet layout and channel assignment. When adding new packet types:
+
+1. Assign them to the correct ENet channel with `ShroomPacketTypeToChannel()`
+2. Mark whether they require reliable delivery with `ShroomPacketTypeUsesReliableDelivery()`
+3. Add or update protocol unit tests in `tests/unit/test_protocol.c`
+
+Use reliable channels for control flow and chat, and unreliable channels for fast-expiring state such as snapshots, input, and voice frames.
+
 ## Debugging Tips
 
 - The server prints peer connect/disconnect events to stdout.

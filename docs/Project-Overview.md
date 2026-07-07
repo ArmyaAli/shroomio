@@ -64,6 +64,20 @@ src/
 - Server code may depend on shared but never on client.
 - Simulation rules are centralized in `src/shared/sim.c` and `src/shared/config.h`.
 
+### Network Channels
+
+The protocol uses dedicated ENet channels so latency-sensitive traffic does not block reliable control flow:
+
+| Channel | Reliability | Purpose | Current / Planned Packets |
+|---------|-------------|---------|----------------------------|
+| 0 `CONTROL` | Reliable, ordered | handshake, auth, lifecycle | `HELLO`, `WELCOME`, `PING`, `PONG`, `AUTH_REQUEST`, `AUTH_RESPONSE` |
+| 1 `SNAPSHOT` | Unreliable, fire-and-forget | world replication | `SNAPSHOT`, `SPORE_STATE` |
+| 2 `INPUT` | Unreliable, ordered by sequence | player movement input | `INPUT` |
+| 3 `CHAT` | Reliable, ordered | text communication | `CHAT` |
+| 4 `VOICE` | Unreliable, ordered | real-time voice payloads | `VOICE_FRAME` |
+
+This layout keeps stale snapshots and voice packets from clogging reliable control and chat traffic.
+
 ## Tech Stack
 
 | Component | Technology |
