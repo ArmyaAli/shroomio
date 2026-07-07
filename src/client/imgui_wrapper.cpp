@@ -105,7 +105,6 @@ void ShroomImGui_ApplyTheme(bool high_contrast) {
   ImGuiStyle& style = ImGui::GetStyle();
   ImVec4* colors;
 
-  ImGui::StyleColorsDark();
   style.WindowPadding = ImVec2(16.0f, 14.0f);
   style.FramePadding = ImVec2(10.0f, 7.0f);
   style.ItemSpacing = ImVec2(10.0f, 8.0f);
@@ -119,64 +118,162 @@ void ShroomImGui_ApplyTheme(bool high_contrast) {
   style.FrameBorderSize = 1.0f;
 
   colors = style.Colors;
-  colors[ImGuiCol_Text] = ImVec4(0.96f, 0.92f, 0.82f, 1.0f);
-  colors[ImGuiCol_TextDisabled] = ImVec4(0.58f, 0.52f, 0.44f, 1.0f);
-  colors[ImGuiCol_WindowBg] = ImVec4(0.10f, 0.08f, 0.07f, 0.94f);
-  colors[ImGuiCol_ChildBg] = ImVec4(0.12f, 0.10f, 0.08f, 0.90f);
-  colors[ImGuiCol_PopupBg] = ImVec4(0.12f, 0.09f, 0.07f, 0.96f);
-  colors[ImGuiCol_Border] = ImVec4(0.62f, 0.42f, 0.23f, 0.58f);
-  colors[ImGuiCol_FrameBg] = ImVec4(0.24f, 0.16f, 0.12f, 0.92f);
-  colors[ImGuiCol_FrameBgHovered] = ImVec4(0.42f, 0.28f, 0.17f, 0.96f);
-  colors[ImGuiCol_FrameBgActive] = ImVec4(0.56f, 0.39f, 0.20f, 1.0f);
-  colors[ImGuiCol_TitleBg] = ImVec4(0.18f, 0.12f, 0.10f, 1.0f);
-  colors[ImGuiCol_TitleBgActive] = ImVec4(0.32f, 0.20f, 0.13f, 1.0f);
-  colors[ImGuiCol_Button] = ImVec4(0.49f, 0.29f, 0.18f, 0.96f);
-  colors[ImGuiCol_ButtonHovered] = ImVec4(0.72f, 0.45f, 0.22f, 1.0f);
-  colors[ImGuiCol_ButtonActive] = ImVec4(0.86f, 0.64f, 0.29f, 1.0f);
-  colors[ImGuiCol_Header] = ImVec4(0.30f, 0.45f, 0.25f, 0.86f);
-  colors[ImGuiCol_HeaderHovered] = ImVec4(0.43f, 0.63f, 0.34f, 0.96f);
-  colors[ImGuiCol_HeaderActive] = ImVec4(0.55f, 0.78f, 0.42f, 1.0f);
-  colors[ImGuiCol_CheckMark] = ImVec4(1.0f, 0.89f, 0.44f, 1.0f);
-  colors[ImGuiCol_SliderGrab] = ImVec4(1.0f, 0.78f, 0.32f, 1.0f);
-  colors[ImGuiCol_SliderGrabActive] = ImVec4(1.0f, 0.86f, 0.42f, 1.0f);
-  colors[ImGuiCol_Separator] = ImVec4(0.62f, 0.42f, 0.23f, 0.52f);
-  colors[ImGuiCol_SeparatorHovered] = ImVec4(0.72f, 0.55f, 0.31f, 0.86f);
-  colors[ImGuiCol_SeparatorActive] = ImVec4(0.84f, 0.64f, 0.36f, 1.0f);
-  colors[ImGuiCol_ScrollbarBg] = ImVec4(0.08f, 0.06f, 0.05f, 0.86f);
-  colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.32f, 0.22f, 0.14f, 0.94f);
-  colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.46f, 0.31f, 0.18f, 0.98f);
-  colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.58f, 0.42f, 0.22f, 1.0f);
-  colors[ImGuiCol_ResizeGrip] = ImVec4(0.42f, 0.30f, 0.18f, 0.40f);
-  colors[ImGuiCol_ResizeGripHovered] = ImVec4(0.62f, 0.45f, 0.24f, 0.68f);
-  colors[ImGuiCol_ResizeGripActive] = ImVec4(0.78f, 0.58f, 0.30f, 0.90f);
-  colors[ImGuiCol_NavHighlight] = ImVec4(0.62f, 0.45f, 0.24f, 0.86f);
-  colors[ImGuiCol_PlotLines] = ImVec4(0.62f, 0.45f, 0.24f, 0.86f);
-  colors[ImGuiCol_PlotLinesHovered] = ImVec4(0.84f, 0.64f, 0.29f, 1.0f);
-  colors[ImGuiCol_PlotHistogram] = ImVec4(0.43f, 0.63f, 0.34f, 0.96f);
-  colors[ImGuiCol_PlotHistogramHovered] = ImVec4(0.55f, 0.78f, 0.42f, 1.0f);
-  colors[ImGuiCol_DragDropTarget] = ImVec4(1.0f, 0.78f, 0.32f, 0.90f);
-  colors[ImGuiCol_Tab] = ImVec4(0.22f, 0.16f, 0.12f, 1.0f);
-  colors[ImGuiCol_TabHovered] = ImVec4(0.46f, 0.31f, 0.19f, 1.0f);
-  colors[ImGuiCol_TabActive] = ImVec4(0.34f, 0.24f, 0.15f, 1.0f);
-  colors[ImGuiCol_TableHeaderBg] = ImVec4(0.22f, 0.29f, 0.16f, 1.0f);
-  colors[ImGuiCol_TableRowBgAlt] = ImVec4(0.20f, 0.14f, 0.10f, 0.35f);
 
   if (!high_contrast) {
-    return;
-  }
+    // Fungal palette - organic, earthy tones matching the art style
+    // Base colors from Cartoony-Art-Style.md
+    const ImVec4 night_mycelium = ImVec4(0.071f, 0.071f, 0.102f, 1.0f);      // #12121A
+    const ImVec4 deep_cap_brown = ImVec4(0.243f, 0.165f, 0.129f, 1.0f);     // #3E2A21
+    const ImVec4 spore_gold = ImVec4(1.0f, 0.894f, 0.439f, 1.0f);           // #FFE470
+    const ImVec4 moss_green = ImVec4(0.439f, 0.878f, 0.502f, 1.0f);         // #70E080
+    const ImVec4 glow_purple = ImVec4(0.729f, 0.408f, 0.784f, 1.0f);        // #BA68C8
 
-  colors[ImGuiCol_WindowBg] = ImVec4(0.03f, 0.03f, 0.06f, 0.96f);
-  colors[ImGuiCol_ChildBg] = ImVec4(0.07f, 0.07f, 0.10f, 0.92f);
-  colors[ImGuiCol_FrameBg] = ImVec4(0.10f, 0.10f, 0.16f, 1.0f);
-  colors[ImGuiCol_FrameBgHovered] = ImVec4(0.18f, 0.28f, 0.44f, 1.0f);
-  colors[ImGuiCol_FrameBgActive] = ImVec4(0.18f, 0.32f, 0.54f, 1.0f);
-  colors[ImGuiCol_Button] = ImVec4(0.16f, 0.26f, 0.42f, 1.0f);
-  colors[ImGuiCol_ButtonHovered] = ImVec4(0.24f, 0.38f, 0.62f, 1.0f);
-  colors[ImGuiCol_ButtonActive] = ImVec4(0.28f, 0.44f, 0.72f, 1.0f);
-  colors[ImGuiCol_Header] = ImVec4(0.16f, 0.28f, 0.46f, 1.0f);
-  colors[ImGuiCol_HeaderHovered] = ImVec4(0.26f, 0.42f, 0.66f, 1.0f);
-  colors[ImGuiCol_HeaderActive] = ImVec4(0.32f, 0.50f, 0.78f, 1.0f);
-  colors[ImGuiCol_Text] = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+    // Text
+    colors[ImGuiCol_Text] = ImVec4(0.96f, 0.92f, 0.82f, 1.0f);
+    colors[ImGuiCol_TextDisabled] = ImVec4(0.58f, 0.52f, 0.44f, 1.0f);
+
+    // Backgrounds - use night mycelium as base
+    colors[ImGuiCol_WindowBg] = ImVec4(night_mycelium.x, night_mycelium.y, night_mycelium.z, 0.94f);
+    colors[ImGuiCol_ChildBg] = ImVec4(night_mycelium.x * 1.2f, night_mycelium.y * 1.2f, night_mycelium.z * 1.2f, 0.90f);
+    colors[ImGuiCol_PopupBg] = ImVec4(night_mycelium.x * 1.1f, night_mycelium.y * 1.1f, night_mycelium.z * 1.1f, 0.96f);
+
+    // Borders - deep cap brown
+    colors[ImGuiCol_Border] = ImVec4(deep_cap_brown.x, deep_cap_brown.y, deep_cap_brown.z, 0.58f);
+    colors[ImGuiCol_Separator] = ImVec4(deep_cap_brown.x, deep_cap_brown.y, deep_cap_brown.z, 0.52f);
+    colors[ImGuiCol_SeparatorHovered] = ImVec4(deep_cap_brown.x * 1.3f, deep_cap_brown.y * 1.3f, deep_cap_brown.z * 1.3f, 0.86f);
+    colors[ImGuiCol_SeparatorActive] = ImVec4(deep_cap_brown.x * 1.6f, deep_cap_brown.y * 1.6f, deep_cap_brown.z * 1.6f, 1.0f);
+
+    // Frames - warm stem tan variants
+    colors[ImGuiCol_FrameBg] = ImVec4(deep_cap_brown.x * 1.2f, deep_cap_brown.y * 1.2f, deep_cap_brown.z * 1.2f, 0.92f);
+    colors[ImGuiCol_FrameBgHovered] = ImVec4(deep_cap_brown.x * 1.8f, deep_cap_brown.y * 1.8f, deep_cap_brown.z * 1.8f, 0.96f);
+    colors[ImGuiCol_FrameBgActive] = ImVec4(deep_cap_brown.x * 2.2f, deep_cap_brown.y * 2.2f, deep_cap_brown.z * 2.2f, 1.0f);
+
+    // Titles
+    colors[ImGuiCol_TitleBg] = ImVec4(night_mycelium.x * 1.5f, night_mycelium.y * 1.5f, night_mycelium.z * 1.5f, 1.0f);
+    colors[ImGuiCol_TitleBgActive] = ImVec4(deep_cap_brown.x, deep_cap_brown.y, deep_cap_brown.z, 1.0f);
+
+    // Buttons - warm stem tan to spore gold gradient
+    colors[ImGuiCol_Button] = ImVec4(0.49f, 0.32f, 0.20f, 0.96f);
+    colors[ImGuiCol_ButtonHovered] = ImVec4(0.72f, 0.50f, 0.28f, 1.0f);
+    colors[ImGuiCol_ButtonActive] = ImVec4(spore_gold.x * 0.9f, spore_gold.y * 0.9f, spore_gold.z * 0.9f, 1.0f);
+
+    // Headers - moss green for positive actions
+    colors[ImGuiCol_Header] = ImVec4(moss_green.x * 0.5f, moss_green.y * 0.5f, moss_green.z * 0.5f, 0.86f);
+    colors[ImGuiCol_HeaderHovered] = ImVec4(moss_green.x * 0.7f, moss_green.y * 0.7f, moss_green.z * 0.7f, 0.96f);
+    colors[ImGuiCol_HeaderActive] = ImVec4(moss_green.x * 0.85f, moss_green.y * 0.85f, moss_green.z * 0.85f, 1.0f);
+
+    // Interactive elements
+    colors[ImGuiCol_CheckMark] = spore_gold;
+    colors[ImGuiCol_SliderGrab] = ImVec4(spore_gold.x * 0.9f, spore_gold.y * 0.9f, spore_gold.z * 0.9f, 1.0f);
+    colors[ImGuiCol_SliderGrabActive] = spore_gold;
+
+    // Scrollbar
+    colors[ImGuiCol_ScrollbarBg] = ImVec4(night_mycelium.x * 0.8f, night_mycelium.y * 0.8f, night_mycelium.z * 0.8f, 0.86f);
+    colors[ImGuiCol_ScrollbarGrab] = ImVec4(deep_cap_brown.x * 1.5f, deep_cap_brown.y * 1.5f, deep_cap_brown.z * 1.5f, 0.94f);
+    colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(deep_cap_brown.x * 2.0f, deep_cap_brown.y * 2.0f, deep_cap_brown.z * 2.0f, 0.98f);
+    colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(deep_cap_brown.x * 2.5f, deep_cap_brown.y * 2.5f, deep_cap_brown.z * 2.5f, 1.0f);
+
+    // Resize grip
+    colors[ImGuiCol_ResizeGrip] = ImVec4(deep_cap_brown.x * 1.8f, deep_cap_brown.y * 1.8f, deep_cap_brown.z * 1.8f, 0.40f);
+    colors[ImGuiCol_ResizeGripHovered] = ImVec4(deep_cap_brown.x * 2.5f, deep_cap_brown.y * 2.5f, deep_cap_brown.z * 2.5f, 0.68f);
+    colors[ImGuiCol_ResizeGripActive] = ImVec4(spore_gold.x * 0.8f, spore_gold.y * 0.8f, spore_gold.z * 0.8f, 0.90f);
+
+    // Navigation and plots
+    colors[ImGuiCol_NavHighlight] = glow_purple;
+    colors[ImGuiCol_PlotLines] = ImVec4(deep_cap_brown.x * 2.5f, deep_cap_brown.y * 2.5f, deep_cap_brown.z * 2.5f, 0.86f);
+    colors[ImGuiCol_PlotLinesHovered] = spore_gold;
+    colors[ImGuiCol_PlotHistogram] = moss_green;
+    colors[ImGuiCol_PlotHistogramHovered] = ImVec4(moss_green.x * 1.2f, moss_green.y * 1.2f, moss_green.z * 1.2f, 1.0f);
+
+    // Drag and drop
+    colors[ImGuiCol_DragDropTarget] = ImVec4(spore_gold.x * 0.9f, spore_gold.y * 0.9f, spore_gold.z * 0.9f, 0.90f);
+
+    // Tabs
+    colors[ImGuiCol_Tab] = ImVec4(deep_cap_brown.x * 0.9f, deep_cap_brown.y * 0.9f, deep_cap_brown.z * 0.9f, 1.0f);
+    colors[ImGuiCol_TabHovered] = ImVec4(deep_cap_brown.x * 1.8f, deep_cap_brown.y * 1.8f, deep_cap_brown.z * 1.8f, 1.0f);
+    colors[ImGuiCol_TabActive] = ImVec4(deep_cap_brown.x * 1.4f, deep_cap_brown.y * 1.4f, deep_cap_brown.z * 1.4f, 1.0f);
+
+    // Tables - fungal palette
+    colors[ImGuiCol_TableHeaderBg] = ImVec4(moss_green.x * 0.4f, moss_green.y * 0.4f, moss_green.z * 0.4f, 1.0f);
+    colors[ImGuiCol_TableRowBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+    colors[ImGuiCol_TableRowBgAlt] = ImVec4(deep_cap_brown.x * 0.8f, deep_cap_brown.y * 0.8f, deep_cap_brown.z * 0.8f, 0.35f);
+  } else {
+    // High contrast - brighter, more saturated fungal colors with stronger contrast
+    const ImVec4 night_mycelium_dark = ImVec4(0.03f, 0.03f, 0.06f, 1.0f);
+    const ImVec4 deep_cap_brown_dark = ImVec4(0.15f, 0.10f, 0.08f, 1.0f);
+    const ImVec4 spore_gold_bright = ImVec4(1.0f, 0.95f, 0.55f, 1.0f);
+    const ImVec4 moss_green_bright = ImVec4(0.55f, 0.95f, 0.60f, 1.0f);
+
+    // Text - pure white for maximum contrast
+    colors[ImGuiCol_Text] = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+    colors[ImGuiCol_TextDisabled] = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+
+    // Backgrounds - darker for contrast
+    colors[ImGuiCol_WindowBg] = ImVec4(night_mycelium_dark.x, night_mycelium_dark.y, night_mycelium_dark.z, 0.96f);
+    colors[ImGuiCol_ChildBg] = ImVec4(night_mycelium_dark.x * 1.5f, night_mycelium_dark.y * 1.5f, night_mycelium_dark.z * 1.5f, 0.92f);
+    colors[ImGuiCol_PopupBg] = ImVec4(night_mycelium_dark.x * 1.3f, night_mycelium_dark.y * 1.3f, night_mycelium_dark.z * 1.3f, 0.96f);
+
+    // Borders - brighter
+    colors[ImGuiCol_Border] = ImVec4(deep_cap_brown_dark.x * 2.0f, deep_cap_brown_dark.y * 2.0f, deep_cap_brown_dark.z * 2.0f, 0.70f);
+    colors[ImGuiCol_Separator] = ImVec4(deep_cap_brown_dark.x * 2.0f, deep_cap_brown_dark.y * 2.0f, deep_cap_brown_dark.z * 2.0f, 0.60f);
+    colors[ImGuiCol_SeparatorHovered] = ImVec4(deep_cap_brown_dark.x * 3.0f, deep_cap_brown_dark.y * 3.0f, deep_cap_brown_dark.z * 3.0f, 0.90f);
+    colors[ImGuiCol_SeparatorActive] = spore_gold_bright;
+
+    // Frames
+    colors[ImGuiCol_FrameBg] = ImVec4(deep_cap_brown_dark.x * 1.5f, deep_cap_brown_dark.y * 1.5f, deep_cap_brown_dark.z * 1.5f, 1.0f);
+    colors[ImGuiCol_FrameBgHovered] = ImVec4(deep_cap_brown_dark.x * 2.5f, deep_cap_brown_dark.y * 2.5f, deep_cap_brown_dark.z * 2.5f, 1.0f);
+    colors[ImGuiCol_FrameBgActive] = ImVec4(deep_cap_brown_dark.x * 3.5f, deep_cap_brown_dark.y * 3.5f, deep_cap_brown_dark.z * 3.5f, 1.0f);
+
+    // Titles
+    colors[ImGuiCol_TitleBg] = ImVec4(deep_cap_brown_dark.x, deep_cap_brown_dark.y, deep_cap_brown_dark.z, 1.0f);
+    colors[ImGuiCol_TitleBgActive] = ImVec4(deep_cap_brown_dark.x * 2.0f, deep_cap_brown_dark.y * 2.0f, deep_cap_brown_dark.z * 2.0f, 1.0f);
+
+    // Buttons - high contrast warm tones
+    colors[ImGuiCol_Button] = ImVec4(0.35f, 0.22f, 0.14f, 1.0f);
+    colors[ImGuiCol_ButtonHovered] = ImVec4(0.55f, 0.38f, 0.22f, 1.0f);
+    colors[ImGuiCol_ButtonActive] = spore_gold_bright;
+
+    // Headers - bright moss green
+    colors[ImGuiCol_Header] = moss_green_bright;
+    colors[ImGuiCol_HeaderHovered] = ImVec4(moss_green_bright.x * 1.1f, moss_green_bright.y * 1.1f, moss_green_bright.z * 1.1f, 1.0f);
+    colors[ImGuiCol_HeaderActive] = ImVec4(moss_green_bright.x * 1.2f, moss_green_bright.y * 1.2f, moss_green_bright.z * 1.2f, 1.0f);
+
+    // Interactive elements
+    colors[ImGuiCol_CheckMark] = spore_gold_bright;
+    colors[ImGuiCol_SliderGrab] = spore_gold_bright;
+    colors[ImGuiCol_SliderGrabActive] = ImVec4(1.0f, 1.0f, 0.7f, 1.0f);
+
+    // Scrollbar
+    colors[ImGuiCol_ScrollbarBg] = ImVec4(night_mycelium_dark.x * 0.8f, night_mycelium_dark.y * 0.8f, night_mycelium_dark.z * 0.8f, 0.90f);
+    colors[ImGuiCol_ScrollbarGrab] = ImVec4(deep_cap_brown_dark.x * 2.5f, deep_cap_brown_dark.y * 2.5f, deep_cap_brown_dark.z * 2.5f, 1.0f);
+    colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(deep_cap_brown_dark.x * 3.5f, deep_cap_brown_dark.y * 3.5f, deep_cap_brown_dark.z * 3.5f, 1.0f);
+    colors[ImGuiCol_ScrollbarGrabActive] = spore_gold_bright;
+
+    // Resize grip
+    colors[ImGuiCol_ResizeGrip] = ImVec4(deep_cap_brown_dark.x * 2.0f, deep_cap_brown_dark.y * 2.0f, deep_cap_brown_dark.z * 2.0f, 0.50f);
+    colors[ImGuiCol_ResizeGripHovered] = ImVec4(deep_cap_brown_dark.x * 3.0f, deep_cap_brown_dark.y * 3.0f, deep_cap_brown_dark.z * 3.0f, 0.80f);
+    colors[ImGuiCol_ResizeGripActive] = spore_gold_bright;
+
+    // Navigation and plots
+    colors[ImGuiCol_NavHighlight] = ImVec4(1.0f, 0.6f, 0.9f, 1.0f);
+    colors[ImGuiCol_PlotLines] = ImVec4(0.95f, 0.80f, 0.60f, 1.0f);
+    colors[ImGuiCol_PlotLinesHovered] = spore_gold_bright;
+    colors[ImGuiCol_PlotHistogram] = moss_green_bright;
+    colors[ImGuiCol_PlotHistogramHovered] = ImVec4(moss_green_bright.x * 1.2f, moss_green_bright.y * 1.2f, moss_green_bright.z * 1.2f, 1.0f);
+
+    // Drag and drop
+    colors[ImGuiCol_DragDropTarget] = spore_gold_bright;
+
+    // Tabs
+    colors[ImGuiCol_Tab] = deep_cap_brown_dark;
+    colors[ImGuiCol_TabHovered] = ImVec4(deep_cap_brown_dark.x * 2.5f, deep_cap_brown_dark.y * 2.5f, deep_cap_brown_dark.z * 2.5f, 1.0f);
+    colors[ImGuiCol_TabActive] = ImVec4(deep_cap_brown_dark.x * 1.8f, deep_cap_brown_dark.y * 1.8f, deep_cap_brown_dark.z * 1.8f, 1.0f);
+
+    // Tables - high contrast
+    colors[ImGuiCol_TableHeaderBg] = moss_green_bright;
+    colors[ImGuiCol_TableRowBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+    colors[ImGuiCol_TableRowBgAlt] = ImVec4(deep_cap_brown_dark.x * 1.2f, deep_cap_brown_dark.y * 1.2f, deep_cap_brown_dark.z * 1.2f, 0.45f);
+  }
 }
 
 void ShroomImGui_SetNextWindowPos(float x, float y, int condition) {
