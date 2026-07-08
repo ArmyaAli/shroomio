@@ -17,6 +17,8 @@ static float ShroomClamp(float value, float min_value, float max_value) {
   return value;
 }
 
+static float ShroomLerp(float start, float end, float t) { return start + ((end - start) * t); }
+
 static uint64_t ShroomWorldCurrentTimeMs(const ShroomWorldState* world) {
   if (world == NULL) {
     return 0u;
@@ -67,6 +69,82 @@ static ShroomVec2 ShroomWorldCenter(const ShroomWorldState* world) {
   return (ShroomVec2){world->width * 0.5f, world->height * 0.5f};
 }
 
+static size_t ShroomSpawnPopulation(const ShroomWorldState* world) {
+  size_t count = 0;
+
+  for (size_t index = 0; index < world->player_count; ++index) {
+    const ShroomPlayerState* player = &world->players[index];
+
+    if (player->alive && (player->piece_index == 0)) {
+      count += 1;
+    }
+  }
+
+  return count;
+}
+
+static float ShroomSpawnDensity(const ShroomWorldState* world) {
+  const size_t population = ShroomSpawnPopulation(world);
+
+  if (population <= 1u) {
+    return 0.0f;
+  }
+
+  return ShroomClamp((float)(population - 1u) / (float)(SHROOM_MAX_PLAYERS - 1u), 0.0f, 1.0f);
+}
+
+static float ShroomSpawnSafeDistance(const ShroomWorldState* world) {
+  const size_t population = ShroomSpawnPopulation(world);
+  float t;
+
+  if (population <= SHROOM_SPAWN_SMALL_LOBBY_PLAYERS) {
+    return SHROOM_SPAWN_SAFE_DISTANCE;
+  }
+
+  if (population <= SHROOM_SPAWN_MEDIUM_LOBBY_PLAYERS) {
+    t = (float)(population - SHROOM_SPAWN_SMALL_LOBBY_PLAYERS) /
+        (float)(SHROOM_SPAWN_MEDIUM_LOBBY_PLAYERS - SHROOM_SPAWN_SMALL_LOBBY_PLAYERS);
+    return ShroomLerp(SHROOM_SPAWN_SAFE_DISTANCE, SHROOM_SPAWN_MEDIUM_SAFE_DISTANCE, t);
+  }
+
+  t = (float)(population - SHROOM_SPAWN_MEDIUM_LOBBY_PLAYERS) /
+      (float)(SHROOM_MAX_PLAYERS - SHROOM_SPAWN_MEDIUM_LOBBY_PLAYERS);
+  return ShroomLerp(SHROOM_SPAWN_MEDIUM_SAFE_DISTANCE, SHROOM_SPAWN_MIN_SAFE_DISTANCE,
+                    ShroomClamp(t, 0.0f, 1.0f));
+}
+
+static float ShroomSpawnOuterRadius(const ShroomWorldState* world) {
+  const float max_radius = (fminf(world->width, world->height) * 0.5f) - SHROOM_SPAWN_PADDING;
+  const float min_radius = fminf(SHROOM_SPAWN_MIN_RADIUS, max_radius);
+
+  return ShroomLerp(max_radius, min_radius, ShroomSpawnDensity(world));
+}
+
+static ShroomVec2 ShroomRandomSpawnCandidate(ShroomWorldState* world, bool prefer_outer) {
+  const ShroomVec2 center = ShroomWorldCenter(world);
+  const float min_x = SHROOM_SPAWN_PADDING;
+  const float min_y = SHROOM_SPAWN_PADDING;
+  const float max_x = world->width - SHROOM_SPAWN_PADDING;
+  const float max_y = world->height - SHROOM_SPAWN_PADDING;
+
+  if (prefer_outer) {
+    const float density = ShroomSpawnDensity(world);
+    const float outer_radius = ShroomSpawnOuterRadius(world);
+    const float band_width =
+        ShroomLerp(SHROOM_SPAWN_MAX_BAND_WIDTH, SHROOM_SPAWN_MIN_BAND_WIDTH, density);
+    const float inner_radius = fmaxf(SHROOM_ZONE_MID_RADIUS, outer_radius - band_width);
+    const float distance =
+        sqrtf(ShroomRandomFloat(world, inner_radius * inner_radius, outer_radius * outer_radius));
+    const float angle = ShroomRandomFloat(world, 0.0f, 6.2831853f);
+
+    return (ShroomVec2){ShroomClamp(center.x + (cosf(angle) * distance), min_x, max_x),
+                        ShroomClamp(center.y + (sinf(angle) * distance), min_y, max_y)};
+  }
+
+  return (ShroomVec2){ShroomRandomFloat(world, min_x, max_x),
+                      ShroomRandomFloat(world, min_y, max_y)};
+}
+
 static ShroomVec2 ShroomRandomPointInZone(ShroomWorldState* world, ShroomZone zone) {
   const ShroomVec2 center = ShroomWorldCenter(world);
   const float min_x = 60.0f;
@@ -110,10 +188,11 @@ float ShroomGetConsumeMassAdvantageAtPosition(const ShroomWorldState* world, Shr
 
 static bool ShroomIsSafeSpawn(const ShroomWorldState* world, ShroomVec2 position) {
   size_t index;
+  const float safe_distance = ShroomSpawnSafeDistance(world);
 
   for (index = 0; index < world->player_count; ++index) {
     const ShroomPlayerState* other = &world->players[index];
-    const float safety_radius = other->radius + SHROOM_SPAWN_SAFE_DISTANCE;
+    const float safety_radius = other->radius + safe_distance;
 
     if (!other->alive) {
       continue;
@@ -128,26 +207,37 @@ static bool ShroomIsSafeSpawn(const ShroomWorldState* world, ShroomVec2 position
 }
 
 static ShroomVec2 ShroomRandomSpawnPosition(ShroomWorldState* world, bool prefer_outer) {
-  const float padding = 120.0f;
   size_t attempt;
+  ShroomVec2 best_candidate = ShroomRandomSpawnCandidate(world, prefer_outer);
+  float best_clearance_sqr = -1.0f;
 
-  for (attempt = 0; attempt < 32; ++attempt) {
-    const ShroomVec2 candidate = {
-        ShroomRandomFloat(world, padding, world->width - padding),
-        ShroomRandomFloat(world, padding, world->height - padding),
-    };
+  for (attempt = 0; attempt < 64; ++attempt) {
+    const ShroomVec2 candidate = ShroomRandomSpawnCandidate(world, prefer_outer);
     const ShroomZone zone = ShroomGetZoneAtPosition(world, candidate);
+    float nearest_sqr = INFINITY;
+
+    for (size_t index = 0; index < world->player_count; ++index) {
+      const ShroomPlayerState* other = &world->players[index];
+
+      if (!other->alive) {
+        continue;
+      }
+      nearest_sqr = fminf(nearest_sqr, ShroomDistanceSqr(candidate, other->position));
+    }
 
     if (prefer_outer && zone != SHROOM_ZONE_OUTER) {
       continue;
+    }
+    if (nearest_sqr > best_clearance_sqr) {
+      best_candidate = candidate;
+      best_clearance_sqr = nearest_sqr;
     }
     if (ShroomIsSafeSpawn(world, candidate)) {
       return candidate;
     }
   }
 
-  return (ShroomVec2){ShroomRandomFloat(world, padding, world->width - padding),
-                      ShroomRandomFloat(world, padding, world->height - padding)};
+  return best_candidate;
 }
 
 static void ShroomRespawnPlayer(ShroomWorldState* world, ShroomPlayerState* player) {

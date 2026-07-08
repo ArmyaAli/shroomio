@@ -45,9 +45,7 @@ static ShroomPlayerState* FindSplitPiece(ShroomPlayerId player_id) {
   return NULL;
 }
 
-static float SplitRequiredPreCostMass(void) {
-  return SHROOM_SPLIT_MIN_MASS;
-}
+static float SplitRequiredPreCostMass(void) { return SHROOM_SPLIT_MIN_MASS; }
 
 void test_world_init_sets_expected_defaults(void) {
   TEST_ASSERT_EQUAL_UINT64(0, world.tick);
@@ -286,6 +284,51 @@ void test_spawn_player_prefers_safe_outer_spawn(void) {
   TEST_ASSERT_EQUAL(SHROOM_ZONE_OUTER, ShroomGetZoneAtPosition(&world, second->position));
   TEST_ASSERT_GREATER_OR_EQUAL_FLOAT(min_distance * min_distance,
                                      ShroomDistanceSqr(first->position, second->position));
+}
+
+static float DistanceFromWorldCenter(const ShroomWorldState* test_world, ShroomVec2 position) {
+  const ShroomVec2 center = {test_world->width * 0.5f, test_world->height * 0.5f};
+
+  return sqrtf(ShroomDistanceSqr(center, position));
+}
+
+void test_spawn_density_tightens_with_large_lobbies(void) {
+  ShroomPlayerState* player;
+  float largest_late_spawn_radius = 0.0f;
+
+  ResetWorldForPlayers();
+
+  for (size_t index = 0; index < 200u; ++index) {
+    player = ShroomWorldSpawnPlayer(&world, (ShroomPlayerId)(index + 1u), false);
+    TEST_ASSERT_NOT_NULL(player);
+    TEST_ASSERT_EQUAL(SHROOM_ZONE_OUTER, ShroomGetZoneAtPosition(&world, player->position));
+
+    if (index >= SHROOM_SPAWN_MEDIUM_LOBBY_PLAYERS) {
+      largest_late_spawn_radius =
+          fmaxf(largest_late_spawn_radius, DistanceFromWorldCenter(&world, player->position));
+    }
+  }
+
+  TEST_ASSERT_LESS_OR_EQUAL_FLOAT(2500.0f, largest_late_spawn_radius);
+}
+
+void test_spawn_distribution_avoids_player_overlap_in_crowded_lobbies(void) {
+  ResetWorldForPlayers();
+
+  for (size_t index = 0; index < SHROOM_SPAWN_MEDIUM_LOBBY_PLAYERS; ++index) {
+    TEST_ASSERT_NOT_NULL(ShroomWorldSpawnPlayer(&world, (ShroomPlayerId)(index + 1u), false));
+  }
+
+  for (size_t i = 0; i < world.player_count; ++i) {
+    for (size_t j = i + 1u; j < world.player_count; ++j) {
+      const ShroomPlayerState* a = &world.players[i];
+      const ShroomPlayerState* b = &world.players[j];
+      const float min_distance = a->radius + b->radius;
+
+      TEST_ASSERT_GREATER_THAN_FLOAT(min_distance * min_distance,
+                                     ShroomDistanceSqr(a->position, b->position));
+    }
+  }
 }
 
 void test_world_step_moves_player_and_increments_tick(void) {
@@ -1212,6 +1255,8 @@ int main(void) {
   RUN_TEST(test_split_predicate_respects_mass_life_and_piece_boundaries);
   RUN_TEST(test_merge_predicate_respects_cooldown_proximity_and_identity);
   RUN_TEST(test_spawn_player_prefers_safe_outer_spawn);
+  RUN_TEST(test_spawn_density_tightens_with_large_lobbies);
+  RUN_TEST(test_spawn_distribution_avoids_player_overlap_in_crowded_lobbies);
   RUN_TEST(test_world_step_moves_player_and_increments_tick);
   RUN_TEST(test_world_step_clamps_player_to_world_bounds);
   RUN_TEST(test_world_step_collects_spores_and_gains_mass);
