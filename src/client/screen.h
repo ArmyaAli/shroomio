@@ -7,6 +7,7 @@ typedef enum ShroomScreenType {
   SHROOM_SCREEN_NONE = 0,
   SHROOM_SCREEN_MAIN_MENU,
   SHROOM_SCREEN_AUTH,
+  SHROOM_SCREEN_GAME_MODE_SELECT,
   SHROOM_SCREEN_SERVER_BROWSER,
   SHROOM_SCREEN_LOBBY,
   SHROOM_SCREEN_LOBBY_ROSTER,
@@ -60,6 +61,7 @@ void ShroomScreenRegisterMainMenu(ShroomScreenManager* manager);
 void ShroomScreenRegisterSettings(ShroomScreenManager* manager);
 void ShroomScreenRegisterHelp(ShroomScreenManager* manager);
 void ShroomScreenRegisterCredits(ShroomScreenManager* manager);
+void ShroomScreenRegisterGameModeSelect(ShroomScreenManager* manager);
 void ShroomScreenRegisterServerBrowser(ShroomScreenManager* manager);
 void ShroomScreenRegisterLobbyBrowser(ShroomScreenManager* manager);
 void ShroomScreenRegisterLobbyRoster(ShroomScreenManager* manager);

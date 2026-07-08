@@ -138,6 +138,8 @@ const char* ShroomScreenTypeToString(ShroomScreenType type) {
     return "MAIN_MENU";
   case SHROOM_SCREEN_AUTH:
     return "AUTH";
+  case SHROOM_SCREEN_GAME_MODE_SELECT:
+    return "GAME_MODE_SELECT";
   case SHROOM_SCREEN_SERVER_BROWSER:
     return "SERVER_BROWSER";
   case SHROOM_SCREEN_LOBBY:

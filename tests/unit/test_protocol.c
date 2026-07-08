@@ -36,7 +36,7 @@ void test_voice_frame_packet_size(void) {
 }
 
 void test_snapshot_player_state_size(void) {
-  TEST_ASSERT_EQUAL(4 + 4 + 4 + 4 + 4 + 4 + 32 + 1 + 1 + 2, sizeof(ShroomSnapshotPlayerState));
+  TEST_ASSERT_EQUAL(4 + 4 + 4 + 4 + 4 + 4 + 32 + 1 + 1 + 2 + 1 + 3, sizeof(ShroomSnapshotPlayerState));
 }
 
 void test_packet_type_values(void) {
@@ -57,6 +57,7 @@ void test_packet_type_values(void) {
   TEST_ASSERT_EQUAL(18, SHROOM_PACKET_POWERUP_STATE);
   TEST_ASSERT_EQUAL(19, SHROOM_PACKET_MUSHROOM_SPECIES_CATALOG);
   TEST_ASSERT_EQUAL(20, SHROOM_PACKET_VOICE_FRAME);
+  TEST_ASSERT_EQUAL(21, SHROOM_PACKET_READY_STATE);
 }
 
 void test_lobby_packet_channel_mapping(void) {

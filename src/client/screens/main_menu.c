@@ -75,6 +75,11 @@ static void MainMenuDraw(ShroomScreenManager* manager) {
   if (ShroomLayoutButtonFullWidth("Watch Game", 38.0f)) {
     action = MAIN_MENU_ACTION_WATCH_GAME;
   }
+  if (ShroomLayoutButtonFullWidth("Game Modes", 38.0f)) {
+    GamePlayUiClickSound(game);
+    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME_MODE_SELECT);
+    return;
+  }
   if (ShroomLayoutButtonFullWidth("Settings", 38.0f)) {
     action = MAIN_MENU_ACTION_SETTINGS;
   }
