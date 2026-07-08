@@ -26,6 +26,21 @@
 #define SHROOM_IDLE_PENALTY_MOVEMENT_THRESHOLD_SQR 1.0f
 #define SHROOM_SPEED_FLOOR_FACTOR 0.60f
 
+// Game modes
+typedef enum ShroomGameMode {
+  SHROOM_GAME_MODE_FFA = 0,          // Free-for-all (default)
+  SHROOM_GAME_MODE_TEAMS_2V2,        // 2v2 teams
+  SHROOM_GAME_MODE_TEAMS_3V3,        // 3v3 teams
+  SHROOM_GAME_MODE_TEAMS_4V4,        // 4v4 teams
+  SHROOM_GAME_MODE_BATTLE_ROYALE,    // Last player standing with shrinking zone
+  SHROOM_GAME_MODE_KING_OF_HILL,     // Control center zone for points
+  SHROOM_GAME_MODE_MASS_RACE,        // First to reach target mass wins
+  SHROOM_GAME_MODE_COUNT
+} ShroomGameMode;
+
+#define SHROOM_MAX_TEAMS 8u
+#define SHROOM_TEAM_NAME_LENGTH 32u
+
 // Keep small colonies nimble while letting large colonies become catchable.
 #define SHROOM_MIN_PLAYER_SPEED 132.0f
 #define SHROOM_MAX_PLAYER_SPEED 252.0f

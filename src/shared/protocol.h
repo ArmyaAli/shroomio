@@ -126,6 +126,8 @@ typedef struct ShroomSnapshotPlayerState {
   uint8_t alive;
   uint8_t is_bot;
   uint16_t effect_flags;
+  uint8_t team_id;
+  uint8_t reserved[3];
 } ShroomSnapshotPlayerState;
 
 typedef struct ShroomSnapshotPacket {
@@ -136,7 +138,7 @@ typedef struct ShroomSnapshotPacket {
   uint32_t entity_id;
   uint16_t player_count;
   uint8_t match_phase;
-  uint8_t reserved;
+  uint8_t game_mode;
   float match_time_remaining;
   uint32_t podium_player_ids[SHROOM_MATCH_PODIUM_COUNT];
   float podium_masses[SHROOM_MATCH_PODIUM_COUNT];
