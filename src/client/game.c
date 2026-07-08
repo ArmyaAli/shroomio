@@ -3393,12 +3393,10 @@ static void DrawProximityMap(const Game* game) {
     const float timer_y = 20.0f;
 
     // Draw background panel with rounded corners
-    DrawRectangleRounded(
-        (Rectangle){timer_x, timer_y, timer_width, timer_height},
-        0.3f, 8, timer_bg);
-    DrawRectangleRoundedLines(
-        (Rectangle){timer_x, timer_y, timer_width, timer_height},
-        0.3f, 8, Fade(timer_color, 0.6f));
+    DrawRectangleRounded((Rectangle){timer_x, timer_y, timer_width, timer_height}, 0.3f, 8,
+                         timer_bg);
+    DrawRectangleRoundedLines((Rectangle){timer_x, timer_y, timer_width, timer_height}, 0.3f, 8,
+                              Fade(timer_color, 0.6f));
 
     // Draw timer text centered
     const float text_x = timer_x + (timer_width - (float)text_width) * 0.5f;
