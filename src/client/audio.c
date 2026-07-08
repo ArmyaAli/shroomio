@@ -139,9 +139,8 @@ static Sound GenerateAmbientLoopSound(void) {
   // Each chord lasts 4 beats at 60 BPM = 4 seconds per chord
   // Total progression = 16 seconds, loops 3 times in 48 seconds
   const int chord_progression[] = {60, 67, 69, 65}; // C4, G4, A4, F4 (root notes)
-  const float chord_duration = 4.0f;                // seconds per chord
-  const float bpm = 60.0f;
-  const float beat_duration = 60.0f / bpm;
+  const float chord_duration = 4.0f; // seconds per chord
+  const float beat_duration = 1.0f;  // 60 BPM = 1 beat per second
 
   for (unsigned int index = 0u; index < frame_count; ++index) {
     const float t = (float)index / (float)sample_rate;
