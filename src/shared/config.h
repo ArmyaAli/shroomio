@@ -28,13 +28,13 @@
 
 // Game modes
 typedef enum ShroomGameMode {
-  SHROOM_GAME_MODE_FFA = 0,          // Free-for-all (default)
-  SHROOM_GAME_MODE_TEAMS_2V2,        // 2v2 teams
-  SHROOM_GAME_MODE_TEAMS_3V3,        // 3v3 teams
-  SHROOM_GAME_MODE_TEAMS_4V4,        // 4v4 teams
-  SHROOM_GAME_MODE_BATTLE_ROYALE,    // Last player standing with shrinking zone
-  SHROOM_GAME_MODE_KING_OF_HILL,     // Control center zone for points
-  SHROOM_GAME_MODE_MASS_RACE,        // First to reach target mass wins
+  SHROOM_GAME_MODE_FFA = 0,       // Free-for-all (default)
+  SHROOM_GAME_MODE_TEAMS_2V2,     // 2v2 teams
+  SHROOM_GAME_MODE_TEAMS_3V3,     // 3v3 teams
+  SHROOM_GAME_MODE_TEAMS_4V4,     // 4v4 teams
+  SHROOM_GAME_MODE_BATTLE_ROYALE, // Last player standing with shrinking zone
+  SHROOM_GAME_MODE_KING_OF_HILL,  // Control center zone for points
+  SHROOM_GAME_MODE_MASS_RACE,     // First to reach target mass wins
   SHROOM_GAME_MODE_COUNT
 } ShroomGameMode;
 

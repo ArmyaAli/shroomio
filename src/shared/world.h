@@ -85,7 +85,7 @@ typedef struct ShroomWorldState {
   ShroomPlayerId podium_player_ids[SHROOM_MATCH_PODIUM_COUNT];
   float podium_masses[SHROOM_MATCH_PODIUM_COUNT];
   ShroomGameMode game_mode;
-  uint8_t team_count; /* number of teams in team-based modes */
+  uint8_t team_count;                  /* number of teams in team-based modes */
   float team_masses[SHROOM_MAX_TEAMS]; /* combined mass per team */
   size_t player_count;
   size_t spore_count;
