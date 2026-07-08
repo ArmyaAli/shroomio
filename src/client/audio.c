@@ -117,9 +117,14 @@ static Sound GenerateOrganicSfx(float start_hz, float end_hz, float seconds, flo
   return sound;
 }
 
+static float NoteToHz(int note) {
+  // Convert MIDI note number to frequency (A4 = 440Hz = MIDI note 69)
+  return 440.0f * powf(2.0f, ((float)note - 69.0f) / 12.0f);
+}
+
 static Sound GenerateAmbientLoopSound(void) {
   const unsigned int sample_rate = 32000u;
-  const float seconds = 3.2f;
+  const float seconds = 48.0f; // 48 seconds for a longer, more immersive loop
   const unsigned int frame_count = (unsigned int)(seconds * (float)sample_rate);
   int16_t* samples = malloc(frame_count * sizeof(int16_t));
   Wave wave = {0};
@@ -130,15 +135,60 @@ static Sound GenerateAmbientLoopSound(void) {
     return sound;
   }
 
+  // Peaceful chord progression in C major: C - G - Am - F
+  // Each chord lasts 4 beats at 60 BPM = 4 seconds per chord
+  // Total progression = 16 seconds, loops 3 times in 48 seconds
+  const int chord_progression[] = {60, 67, 69, 65}; // C4, G4, A4, F4 (root notes)
+  const float chord_duration = 4.0f; // seconds per chord
+  const float bpm = 60.0f;
+  const float beat_duration = 60.0f / bpm;
+
   for (unsigned int index = 0u; index < frame_count; ++index) {
     const float t = (float)index / (float)sample_rate;
-    const float loop_phase = (float)index / (float)frame_count;
-    const float fade = sinf(PI * loop_phase);
-    const float drone = sinf(2.0f * PI * 92.0f * t) * 0.34f;
-    const float overtone = sinf(2.0f * PI * 184.0f * t + sinf(2.0f * PI * 0.31f * t)) * 0.18f;
-    const float shimmer = sinf(2.0f * PI * 276.0f * t) * sinf(2.0f * PI * 0.17f * t) * 0.08f;
-    const float sample = (drone + overtone + shimmer) * (0.52f + (0.48f * fade));
-    samples[index] = (int16_t)(Clamp(sample, -1.0f, 1.0f) * 5200.0f);
+    
+    // Smooth fade in/out for seamless looping
+    const float fade_in = SmoothStep01(t / 2.0f);
+    const float fade_out = SmoothStep01((seconds - t) / 2.0f);
+    const float loop_fade = fade_in * fade_out;
+    
+    // Determine current chord
+    const float progression_time = fmodf(t, 16.0f); // 16-second progression
+    const int chord_index = (int)(progression_time / chord_duration) % 4;
+    const int chord_root = chord_progression[chord_index];
+    const float chord_time = fmodf(progression_time, chord_duration);
+    const float chord_fade = sinf(PI * (chord_time / chord_duration)); // Smooth chord transitions
+    
+    // Bass drone (root note, one octave down)
+    const float bass_hz = NoteToHz(chord_root - 12);
+    const float bass = sinf(2.0f * PI * bass_hz * t) * 0.25f;
+    
+    // Chord pad (root, third, fifth)
+    const float root_hz = NoteToHz(chord_root);
+    const float third_hz = NoteToHz(chord_root + 4); // Major third
+    const float fifth_hz = NoteToHz(chord_root + 7); // Perfect fifth
+    const float pad = (sinf(2.0f * PI * root_hz * t) +
+                       sinf(2.0f * PI * third_hz * t) * 0.7f +
+                       sinf(2.0f * PI * fifth_hz * t) * 0.5f) * 0.15f;
+    
+    // Gentle melody notes (arpeggiate through chord tones)
+    const float melody_time = fmodf(t, beat_duration * 2.0f);
+    const int melody_note_index = (int)(melody_time / beat_duration) % 2;
+    const int melody_offset = melody_note_index == 0 ? 0 : 7; // Alternate root and fifth
+    const float melody_hz = NoteToHz(chord_root + 12 + melody_offset); // One octave up
+    const float melody_envelope = sinf(PI * (melody_time / (beat_duration * 2.0f)));
+    const float melody = sinf(2.0f * PI * melody_hz * t) * 0.08f * melody_envelope;
+    
+    // Subtle shimmer/high harmonics
+    const float shimmer_hz = NoteToHz(chord_root + 24); // Two octaves up
+    const float shimmer = sinf(2.0f * PI * shimmer_hz * t + sinf(2.0f * PI * 0.2f * t)) * 0.03f;
+    
+    // Combine all elements
+    const float sample = (bass + pad * chord_fade + melody + shimmer) * loop_fade;
+    
+    // Soft clipping to avoid harsh artifacts
+    const float soft_sample = tanhf(sample * 1.2f) * 0.85f;
+    
+    samples[index] = (int16_t)(Clamp(soft_sample, -1.0f, 1.0f) * 6000.0f);
   }
 
   wave.frameCount = frame_count;
