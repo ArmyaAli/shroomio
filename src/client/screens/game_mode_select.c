@@ -14,7 +14,8 @@ static bool GameModeSelectInit(ShroomScreenManager* manager) {
 
 static void GameModeSelectUpdate(ShroomScreenManager* manager, float delta_time) {
   const Game* game = manager != NULL ? (const Game*)manager->user_data : NULL;
-  ShroomScreenUpdateFungalBackground(delta_time, game != NULL && game->settings.menu_animations_enabled);
+  ShroomScreenUpdateFungalBackground(delta_time,
+                                     game != NULL && game->settings.menu_animations_enabled);
 }
 
 static void GameModeSelectDraw(ShroomScreenManager* manager) {
@@ -41,37 +42,37 @@ static void GameModeSelectDraw(ShroomScreenManager* manager) {
     game->selected_game_mode = SHROOM_GAME_MODE_FFA;
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
   }
-  
+
   if (ShroomLayoutButtonFullWidth("Teams 2v2", 38.0f)) {
     GamePlayUiClickSound(game);
     game->selected_game_mode = SHROOM_GAME_MODE_TEAMS_2V2;
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
   }
-  
+
   if (ShroomLayoutButtonFullWidth("Teams 3v3", 38.0f)) {
     GamePlayUiClickSound(game);
     game->selected_game_mode = SHROOM_GAME_MODE_TEAMS_3V3;
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
   }
-  
+
   if (ShroomLayoutButtonFullWidth("Teams 4v4", 38.0f)) {
     GamePlayUiClickSound(game);
     game->selected_game_mode = SHROOM_GAME_MODE_TEAMS_4V4;
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
   }
-  
+
   if (ShroomLayoutButtonFullWidth("Battle Royale", 38.0f)) {
     GamePlayUiClickSound(game);
     game->selected_game_mode = SHROOM_GAME_MODE_BATTLE_ROYALE;
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
   }
-  
+
   if (ShroomLayoutButtonFullWidth("King of the Hill", 38.0f)) {
     GamePlayUiClickSound(game);
     game->selected_game_mode = SHROOM_GAME_MODE_KING_OF_HILL;
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
   }
-  
+
   if (ShroomLayoutButtonFullWidth("Mass Race", 38.0f)) {
     GamePlayUiClickSound(game);
     game->selected_game_mode = SHROOM_GAME_MODE_MASS_RACE;
@@ -87,9 +88,7 @@ static void GameModeSelectDraw(ShroomScreenManager* manager) {
   ShroomImGui_End();
 }
 
-static void GameModeSelectHandleInput(ShroomScreenManager* manager) {
-  (void)manager;
-}
+static void GameModeSelectHandleInput(ShroomScreenManager* manager) { (void)manager; }
 
 void ShroomScreenRegisterGameModeSelect(ShroomScreenManager* manager) {
   ShroomScreen* screen;
