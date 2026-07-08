@@ -3362,29 +3362,39 @@ static void DrawProximityMap(const Game* game) {
 
     // Determine timer color based on time remaining
     Color timer_color = (Color){255, 255, 255, 255}; // White
+    Color timer_bg = (Color){40, 40, 40, 200};       // Dark background
     if (time_remaining < 10.0f) {
-      timer_color = (Color){255, 80, 80, 255}; // Red
+      timer_color = (Color){255, 100, 100, 255}; // Red
+      timer_bg = (Color){60, 20, 20, 220};       // Dark red background
     } else if (time_remaining < 60.0f) {
-      timer_color = (Color){255, 200, 80, 255}; // Yellow/Orange
+      timer_color = (Color){255, 200, 100, 255}; // Yellow/Orange
+      timer_bg = (Color){60, 50, 20, 220};       // Dark yellow background
     }
 
-    const float timer_width = 140.0f;
-    const float timer_height = 50.0f;
+    // Format timer text
+    char timer_text[16];
+    snprintf(timer_text, sizeof(timer_text), "%d:%02d", minutes, seconds);
+
+    const int font_size = 28;
+    const int text_width = MeasureText(timer_text, font_size);
+    const float padding = 20.0f;
+    const float timer_width = (float)text_width + padding * 2.0f;
+    const float timer_height = (float)font_size + padding * 2.0f;
     const float timer_x = (game->screen_width - timer_width) * 0.5f;
-    const float timer_y = 18.0f;
+    const float timer_y = 20.0f;
 
-    DrawFungalHudPanel((Rectangle){timer_x, timer_y, timer_width, timer_height}, timer_color);
-    ShroomImGui_SetNextWindowPos(timer_x, timer_y, SHROOM_IMGUI_COND_ALWAYS);
-    ShroomImGui_SetNextWindowSize(timer_width, timer_height, SHROOM_IMGUI_COND_ALWAYS);
-    ShroomImGui_SetNextWindowBgAlpha(0.30f);
-    if (ShroomImGui_Begin("Match Timer", NULL,
-                          SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
-                              SHROOM_IMGUI_WINDOW_NO_MOVE | SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
-                              SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS |
-                              SHROOM_IMGUI_WINDOW_NO_SCROLLBAR)) {
-      ShroomImGui_TextColored(ToImGuiColor(timer_color), TextFormat("%d:%02d", minutes, seconds));
-    }
-    ShroomImGui_End();
+    // Draw background panel with rounded corners
+    DrawRectangleRounded(
+        (Rectangle){timer_x, timer_y, timer_width, timer_height},
+        0.3f, 8, timer_bg);
+    DrawRectangleRoundedLines(
+        (Rectangle){timer_x, timer_y, timer_width, timer_height},
+        0.3f, 8, Fade(timer_color, 0.6f));
+
+    // Draw timer text centered
+    const float text_x = timer_x + (timer_width - (float)text_width) * 0.5f;
+    const float text_y = timer_y + (timer_height - (float)font_size) * 0.5f;
+    DrawText(timer_text, (int)text_x, (int)text_y, font_size, timer_color);
   }
 }
 
