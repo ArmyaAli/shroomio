@@ -2218,9 +2218,12 @@ static void DrawPlayers(const Game* game, Rectangle view_bounds) {
           0.45f + (0.35f * (0.5f + (0.5f * sinf(game->inspect_prompt_timer * 5.0f))));
       const ShroomPlayerRenderLodTier lod = ShroomPlayerRenderLodForRadius(player->radius);
       const int text_shadow_passes = ShroomPlayerRenderLodTextShadowPasses(lod);
+      const bool is_very_large = player->radius >= 140.0f;
 
-      // Strong shadow underneath for depth
-      DrawCircleV(position, player->radius + 5.0f, Fade((Color){20, 15, 10, 255}, 0.7f));
+      // Strong shadow underneath for depth (skip for very large players to reduce overdraw)
+      if (!is_very_large) {
+        DrawCircleV(position, player->radius + 5.0f, Fade((Color){20, 15, 10, 255}, 0.7f));
+      }
 
       // Mushroom cap base (darker underside) - very visible
       DrawCircleV(position, player->radius + 3.0f, Fade((Color){50, 35, 25, 255}, 0.8f));
@@ -2257,8 +2260,14 @@ static void DrawPlayers(const Game* game, Rectangle view_bounds) {
       int font_size = (int)(player->radius * 0.55f);
       if (font_size < 8)
         font_size = 8;
-      if (font_size > 34)
-        font_size = 34;
+      // Cap text size more aggressively for very large players to reduce rendering cost
+      if (is_very_large) {
+        if (font_size > 24)
+          font_size = 24;
+      } else {
+        if (font_size > 34)
+          font_size = 34;
+      }
 
       const int text_width = MeasureText(mass_text, font_size);
       const int text_x = (int)(position.x - text_width * 0.5f);
@@ -2286,16 +2295,16 @@ static void DrawPlayers(const Game* game, Rectangle view_bounds) {
       }
       DrawText(mass_text, text_x, text_y, font_size, Fade(label_color, label_alpha));
 
-      // Outline rings
+      // Outline rings (reduce for very large players)
       DrawCircleLines((int)position.x, (int)position.y, player->radius + 3.0f, Fade(BLACK, 0.55f));
-      if (!is_local) {
+      if (!is_local && !is_very_large) {
         DrawCircleLines((int)position.x, (int)position.y, player->radius + 6.0f, threat_outline);
       } else if (!is_focused) {
         /* Unfocused local piece: yellow ring to distinguish from enemy and focused piece. */
         DrawCircleLines((int)position.x, (int)position.y, player->radius + 6.0f,
                         Fade(YELLOW, 0.70f));
       }
-      if (is_focused) {
+      if (is_focused && !is_very_large) {
         DrawCircleLines((int)position.x, (int)position.y, player->radius + 8.0f,
                         Fade((Color){255, 236, 140, 255}, 0.95f));
         DrawCircleLines((int)position.x, (int)position.y, player->radius + 12.0f,
@@ -2307,12 +2316,12 @@ static void DrawPlayers(const Game* game, Rectangle view_bounds) {
       if (player->shield_powerup_timer > 0.0f) {
         DrawShieldShell(position, player->radius, player->shield_powerup_timer);
       }
-      if (IsDecayMassActive(&game->world, player)) {
+      if (IsDecayMassActive(&game->world, player) && !is_very_large) {
         DrawCircleLines((int)position.x, (int)position.y, player->radius + 11.0f,
                         Fade(RED, decay_pulse));
       }
       if (!is_local && IsPositionInBoundaryConsumeZone(&game->world, player->position) &&
-          ShroomPlayerCanConsume(&game->world, player, game->local_player)) {
+          ShroomPlayerCanConsume(&game->world, player, game->local_player) && !is_very_large) {
         const float halo_pulse = 0.55f + (0.30f * sinf((float)GetTime() * 7.0f));
         DrawCircleLines((int)position.x, (int)position.y, player->radius + 14.0f,
                         Fade((Color){255, 76, 48, 255}, halo_pulse));
@@ -2320,7 +2329,7 @@ static void DrawPlayers(const Game* game, Rectangle view_bounds) {
                         Fade((Color){255, 150, 68, 255}, 0.26f + (0.18f * halo_pulse)));
       }
       /* Hold-to-split: charge arc + large low-latency launch direction arrow. */
-      if (is_focused && (game->split_hold_timer > 0.0f)) {
+      if (is_focused && (game->split_hold_timer > 0.0f) && !is_very_large) {
         const float progress =
             Clamp(game->split_hold_timer / SHROOM_SPLIT_HOLD_SECONDS, 0.0f, 1.0f);
         const float pulse = 0.72f + (0.28f * sinf((float)GetTime() * 18.0f));
