@@ -80,6 +80,14 @@ typedef enum ShroomGameMode {
 
 // Give fresh spawns more breathing room before re-entering contested space.
 #define SHROOM_SPAWN_SAFE_DISTANCE 440.0f
+#define SHROOM_SPAWN_MEDIUM_SAFE_DISTANCE 320.0f
+#define SHROOM_SPAWN_MIN_SAFE_DISTANCE 220.0f
+#define SHROOM_SPAWN_PADDING 120.0f
+#define SHROOM_SPAWN_SMALL_LOBBY_PLAYERS 64u
+#define SHROOM_SPAWN_MEDIUM_LOBBY_PLAYERS 128u
+#define SHROOM_SPAWN_MIN_RADIUS (SHROOM_ZONE_MID_RADIUS + SHROOM_SPAWN_PADDING)
+#define SHROOM_SPAWN_MAX_BAND_WIDTH 900.0f
+#define SHROOM_SPAWN_MIN_BAND_WIDTH 220.0f
 
 /* Splitting — large colonies may split before the hard mass cap. */
 #define SHROOM_SPLIT_MIN_MASS (SHROOM_DEFAULT_PLAYER_MASS * 4.0f)
