@@ -203,6 +203,7 @@ CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/client_settings.c \
 	$(CLIENT_SRC_DIR)/cursor.c \
 	$(CLIENT_SRC_DIR)/game.c \
+	$(CLIENT_SRC_DIR)/game_mode_availability.c \
 	$(CLIENT_SRC_DIR)/layout.c \
 	$(CLIENT_SRC_DIR)/net.c \
 	$(CLIENT_SRC_DIR)/render_lod.c \
@@ -267,6 +268,7 @@ IMGUI_TEST_CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/client_settings.c \
 	$(CLIENT_SRC_DIR)/cursor.c \
 	$(CLIENT_SRC_DIR)/game.c \
+	$(CLIENT_SRC_DIR)/game_mode_availability.c \
 	$(CLIENT_SRC_DIR)/layout.c \
 	$(CLIENT_SRC_DIR)/net.c \
 	$(CLIENT_SRC_DIR)/render_lod.c \
@@ -710,6 +712,9 @@ test_connection) \
 		test_render_lod) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/render_lod.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+		test_game_mode_availability) \
+			$(LINUX_CC) $(COVERAGE_CFLAGS) \
+				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/game_mode_availability.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_client_net) \
 				$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) \
 					$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c -o $$test_bin $(COVERAGE_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lenet ;; \
@@ -777,6 +782,10 @@ $(TEST_BUILD_DIR)/test_audio: $(UNIT_TESTS_DIR)/test_audio.c $(UNITY_SRC) $(CLIE
 $(TEST_BUILD_DIR)/test_client_budget: $(UNIT_TESTS_DIR)/test_client_budget.c $(UNITY_SRC) | $(UNITY_DIR) $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_game_mode_availability: $(UNIT_TESTS_DIR)/test_game_mode_availability.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/game_mode_availability.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
 $(TEST_BUILD_DIR)/test_client_net: $(UNIT_TESTS_DIR)/test_client_net.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)

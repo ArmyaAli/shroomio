@@ -12,6 +12,7 @@ typedef enum MainMenuAction {
   MAIN_MENU_ACTION_CUSTOM_SERVER,
   MAIN_MENU_ACTION_OFFLINE_PRACTICE,
   MAIN_MENU_ACTION_WATCH_GAME,
+  MAIN_MENU_ACTION_GAME_MODES,
   MAIN_MENU_ACTION_SETTINGS,
   MAIN_MENU_ACTION_HELP,
   MAIN_MENU_ACTION_CREDITS,
@@ -76,9 +77,7 @@ static void MainMenuDraw(ShroomScreenManager* manager) {
     action = MAIN_MENU_ACTION_WATCH_GAME;
   }
   if (ShroomLayoutButtonFullWidth("Game Modes", 38.0f)) {
-    GamePlayUiClickSound(game);
-    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME_MODE_SELECT);
-    return;
+    action = MAIN_MENU_ACTION_GAME_MODES;
   }
   if (ShroomLayoutButtonFullWidth("Settings", 38.0f)) {
     action = MAIN_MENU_ACTION_SETTINGS;
@@ -132,6 +131,9 @@ static void MainMenuDraw(ShroomScreenManager* manager) {
       game->start_in_spectator_mode = true;
     }
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
+    break;
+  case MAIN_MENU_ACTION_GAME_MODES:
+    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME_MODE_SELECT);
     break;
   case MAIN_MENU_ACTION_SETTINGS:
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SETTINGS);

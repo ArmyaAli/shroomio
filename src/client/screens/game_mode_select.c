@@ -1,10 +1,13 @@
 #include "game.h"
+#include "game_mode_availability.h"
 #include "layout.h"
 #include "screen.h"
 #include "screen_background.h"
 
 #include "imgui_wrapper.h"
 #include "raylib.h"
+
+#include <stdio.h>
 
 static bool GameModeSelectInit(ShroomScreenManager* manager) {
   (void)manager;
@@ -22,7 +25,9 @@ static void GameModeSelectDraw(ShroomScreenManager* manager) {
   Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
   const bool animate = game != NULL && game->settings.menu_animations_enabled;
   const float panel_width = 500.0f;
-  const float panel_height = 600.0f;
+  const float panel_height = 620.0f;
+  size_t capability_count;
+  const ShroomGameModeCapability* capabilities = ShroomGameModeCapabilities(&capability_count);
 
   ShroomScreenDrawFungalBackground(animate);
 
@@ -34,49 +39,23 @@ static void GameModeSelectDraw(ShroomScreenManager* manager) {
     return;
   }
 
-  ShroomImGui_TextWrapped("Choose a game mode to play:");
+  ShroomImGui_TextWrapped("Choose a mode. More formats will unlock as server support lands.");
   ShroomImGui_Spacing();
 
-  if (ShroomLayoutButtonFullWidth("Free-for-All (FFA)", 38.0f)) {
-    GamePlayUiClickSound(game);
-    game->selected_game_mode = SHROOM_GAME_MODE_FFA;
-    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
-  }
+  for (size_t index = 0; index < capability_count; ++index) {
+    const ShroomGameModeCapability* capability = &capabilities[index];
+    char button_label[96];
 
-  if (ShroomLayoutButtonFullWidth("Teams 2v2", 38.0f)) {
-    GamePlayUiClickSound(game);
-    game->selected_game_mode = SHROOM_GAME_MODE_TEAMS_2V2;
-    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
-  }
-
-  if (ShroomLayoutButtonFullWidth("Teams 3v3", 38.0f)) {
-    GamePlayUiClickSound(game);
-    game->selected_game_mode = SHROOM_GAME_MODE_TEAMS_3V3;
-    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
-  }
-
-  if (ShroomLayoutButtonFullWidth("Teams 4v4", 38.0f)) {
-    GamePlayUiClickSound(game);
-    game->selected_game_mode = SHROOM_GAME_MODE_TEAMS_4V4;
-    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
-  }
-
-  if (ShroomLayoutButtonFullWidth("Battle Royale", 38.0f)) {
-    GamePlayUiClickSound(game);
-    game->selected_game_mode = SHROOM_GAME_MODE_BATTLE_ROYALE;
-    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
-  }
-
-  if (ShroomLayoutButtonFullWidth("King of the Hill", 38.0f)) {
-    GamePlayUiClickSound(game);
-    game->selected_game_mode = SHROOM_GAME_MODE_KING_OF_HILL;
-    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
-  }
-
-  if (ShroomLayoutButtonFullWidth("Mass Race", 38.0f)) {
-    GamePlayUiClickSound(game);
-    game->selected_game_mode = SHROOM_GAME_MODE_MASS_RACE;
-    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
+    snprintf(button_label, sizeof(button_label), "%s%s", capability->label,
+             capability->available ? "" : " - Unavailable");
+    ShroomImGui_BeginDisabled(!capability->available);
+    if (ShroomLayoutButtonFullWidth(button_label, 32.0f)) {
+      GamePlayUiClickSound(game);
+      game->selected_game_mode = capability->mode;
+      ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
+    }
+    ShroomImGui_EndDisabled();
+    ShroomImGui_TextDisabled(capability->summary);
   }
 
   ShroomImGui_Spacing();
@@ -88,7 +67,11 @@ static void GameModeSelectDraw(ShroomScreenManager* manager) {
   ShroomImGui_End();
 }
 
-static void GameModeSelectHandleInput(ShroomScreenManager* manager) { (void)manager; }
+static void GameModeSelectHandleInput(ShroomScreenManager* manager) {
+  if (IsKeyPressed(KEY_ESCAPE)) {
+    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_MAIN_MENU);
+  }
+}
 
 void ShroomScreenRegisterGameModeSelect(ShroomScreenManager* manager) {
   ShroomScreen* screen;
