@@ -252,7 +252,7 @@ static void ShroomRespawnPlayer(ShroomWorldState* world, ShroomPlayerState* play
   player->has_split = false;
   player->split_velocity = (ShroomVec2){0};
   player->merge_timer = 0.0f;
-  player->spawn_protection_timer = 0.0f;
+  player->spawn_protection_timer = player->is_bot ? 0.0f : SHROOM_PLAYER_SPAWN_PROTECTION_SECONDS;
   player->speed_powerup_timer = 0.0f;
   player->shield_powerup_timer = 0.0f;
   player->magnet_powerup_timer = 0.0f;
@@ -952,6 +952,7 @@ initialize_player:
       .last_move_time_ms = ShroomWorldCurrentTimeMs(world),
       .alive = true,
       .is_bot = is_bot,
+      .spawn_protection_timer = is_bot ? 0.0f : SHROOM_PLAYER_SPAWN_PROTECTION_SECONDS,
   };
 
   return player;
@@ -1339,7 +1340,8 @@ void ShroomWorldResetMatch(ShroomWorldState* world) {
       player->has_split = false;
       player->piece_index = 0;
       player->merge_timer = 0.0f;
-      player->spawn_protection_timer = 0.0f;
+      player->spawn_protection_timer =
+          player->is_bot ? 0.0f : SHROOM_PLAYER_SPAWN_PROTECTION_SECONDS;
       player->speed_powerup_timer = 0.0f;
       player->shield_powerup_timer = 0.0f;
       player->magnet_powerup_timer = 0.0f;

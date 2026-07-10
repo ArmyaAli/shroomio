@@ -42,6 +42,7 @@ typedef struct ServerSession {
   bool handshake_received;
   bool spectating;
   bool is_ready;
+  bool entered_match;
   uint32_t lobby_id;
   uint32_t player_id;
   uint32_t user_id;
@@ -951,6 +952,10 @@ static void HandleInputPacket(ServerSession* session, const ENetPacket* enet_pac
   }
 
   session->last_processed_input_sequence = packet->sequence;
+  if (!session->entered_match) {
+    session->entered_match = true;
+    session->player->spawn_protection_timer = SHROOM_PLAYER_SPAWN_PROTECTION_SECONDS;
+  }
 
   /* Resolve which piece the client is controlling. */
   target_piece = session->player;
@@ -1289,6 +1294,7 @@ static void HandleLobbyJoin(ENetPeer* peer, ServerSession* session, ShroomLobby*
 
   session->lobby_id = lobby->lobby_id;
   session->spectating = (packet->spectate != 0);
+  session->entered_match = false;
 
   if (!session->spectating) {
     session->player = ShroomWorldSpawnPlayer(&lobby->world, (*next_player_id)++, false);
@@ -1315,6 +1321,7 @@ static void HandleLobbyLeave(ServerSession* session) {
   LOG_INFO("lobby leave: player_id=%u lobby_id=%u", session->player_id, session->lobby_id);
   session->lobby_id = 0;
   session->spectating = false;
+  session->entered_match = false;
   session->player_id = 0;
 }
 
@@ -1629,6 +1636,18 @@ int main(int argc, char** argv) {
         }
 
         lobby->empty_since_ms = 0;
+
+        /* Roster players are present in snapshots but have not entered gameplay yet. */
+        for (pi = 0; pi < host->peerCount; ++pi) {
+          ServerSession* session = (ServerSession*)host->peers[pi].data;
+
+          if ((host->peers[pi].state == ENET_PEER_STATE_CONNECTED) && (session != NULL) &&
+              session->active && !session->spectating && !session->entered_match &&
+              (session->lobby_id == lobby->lobby_id) && (session->player != NULL) &&
+              session->player->alive) {
+            session->player->spawn_protection_timer = SHROOM_PLAYER_SPAWN_PROTECTION_SECONDS;
+          }
+        }
 
         AdjustLobbyBots(lobby, host, &next_player_id, now_ms);
 
