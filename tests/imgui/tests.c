@@ -66,7 +66,7 @@ static void SetupResultsScreen(float peak_mass, float final_mass, int final_rank
   g_imgui_test_app.game.peak_mass = peak_mass;
   g_imgui_test_app.game.final_mass = final_mass;
   g_imgui_test_app.game.final_rank = final_rank;
-  g_imgui_test_app.game.session_start_time = 0.0;
+  g_imgui_test_app.game.session_duration_seconds = 65u;
   ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_RESULTS);
 }
 
@@ -669,6 +669,7 @@ static void Test_ResultsNavigationActions(ImGuiTestContext* ctx) {
   ShroomTeCtx_Yield(ctx, 2);
 
   IM_CHECK(ShroomTeImGui_WindowIsActive("Match Results"));
+  IM_CHECK_STR_EQ(ShroomTestGetResultsDurationText(&g_imgui_test_app.game), "1:05");
   IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Play Again"));
   IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Main Menu"));
 
@@ -683,6 +684,29 @@ static void Test_ResultsNavigationActions(ImGuiTestContext* ctx) {
               SHROOM_SCREEN_GAME);
   IM_CHECK_EQ(g_imgui_test_app.game.active_mode, SHROOM_SESSION_MODE_OFFLINE_PRACTICE);
   IM_CHECK(g_imgui_test_app.game.local_player != NULL);
+  IM_CHECK_EQ(g_imgui_test_app.game.session_duration_seconds, 0u);
+  IM_CHECK(g_imgui_test_app.game.session_start_time > 0.0f);
+}
+
+static void Test_ResultsDurationStaysFrozen(ImGuiTestContext* ctx) {
+  uint32_t captured_duration;
+
+  SetupOfflineGame();
+  g_imgui_test_app.game.session_start_time = (float)GetTime() - 65.25f;
+  g_imgui_test_app.game.return_to_menu_requested = true;
+  ShroomTeCtx_Yield(ctx, 2);
+
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_RESULTS);
+  captured_duration = g_imgui_test_app.game.session_duration_seconds;
+  IM_CHECK_EQ(captured_duration, 65u);
+
+  g_imgui_test_app.game.session_start_time = (float)GetTime() - 600.0f;
+  ShroomTeCtx_SetRef(ctx, "Match Results");
+  ShroomTeCtx_Yield(ctx, 3);
+
+  IM_CHECK_EQ(g_imgui_test_app.game.session_duration_seconds, captured_duration);
+  IM_CHECK_STR_EQ(ShroomTestGetResultsDurationText(&g_imgui_test_app.game), "1:05");
 }
 
 static void Test_DeathCutscenePlayAgainResumesOnlineMatch(ImGuiTestContext* ctx) {
@@ -1026,6 +1050,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_GameplayOfflineMenuReturnRequestsResults);
   ShroomTeEngine_RegisterTest(engine, "screens", "results_navigation_actions",
                               Test_ResultsNavigationActions);
+  ShroomTeEngine_RegisterTest(engine, "screens", "results_duration_stays_frozen",
+                              Test_ResultsDurationStaysFrozen);
   ShroomTeEngine_RegisterTest(engine, "screens", "death_cutscene_play_again_resumes_online_match",
                               Test_DeathCutscenePlayAgainResumesOnlineMatch);
   ShroomTeEngine_RegisterTest(engine, "chat", "dock_visible_in_online_mode",

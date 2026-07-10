@@ -80,6 +80,7 @@ void ShroomTestMarkServerBrowserStale(void);
 void ShroomTestCompleteServerBrowserRefresh(bool demo_mode);
 
 struct Game;
+const char* ShroomTestGetResultsDurationText(const struct Game* game);
 bool ShroomTestMainMenuAnimationsEnabled(const struct Game* game);
 void ShroomTestSettingsEscape(ShroomScreenManager* manager);
 #endif

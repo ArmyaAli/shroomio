@@ -200,6 +200,7 @@ typedef struct Game {
   uint16_t selected_server_port;
   /* Session statistics for results screen */
   float session_start_time;
+  uint32_t session_duration_seconds;
   float peak_mass;
   float final_mass;
   int final_rank;

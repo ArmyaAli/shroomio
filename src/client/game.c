@@ -3742,6 +3742,7 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
     game->camera_zoom_target = game->settings.camera_zoom;
     game->diagnostics_overlay_open = game->settings.diagnostics_enabled;
     game->session_start_time = (float)GetTime();
+    game->session_duration_seconds = 0u;
     game->peak_mass = 0.0f;
     game->final_mass = 0.0f;
     game->final_rank = 0;
@@ -3764,6 +3765,8 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
   game->selected_server_port = selected_server_port;
   game->screen_width = screen_width;
   game->screen_height = screen_height;
+  game->session_start_time = (float)GetTime();
+  game->session_duration_seconds = 0u;
 
   if (mode == SHROOM_SESSION_MODE_QUICK_PLAY) {
     ClientNetInit(&game->net, game->selected_server_host, game->selected_server_port);
