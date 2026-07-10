@@ -76,6 +76,7 @@ int ShroomTestGetServerBrowserRecentCount(void);
 
 struct Game;
 bool ShroomTestMainMenuAnimationsEnabled(const struct Game* game);
+void ShroomTestSettingsEscape(ShroomScreenManager* manager);
 #endif
 
 #endif
