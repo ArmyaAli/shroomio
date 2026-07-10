@@ -314,6 +314,10 @@ bool ShroomImGui_Button(const char* label, float width, float height) {
   return ImGui::Button(label, ImVec2(width, height));
 }
 
+void ShroomImGui_BeginDisabled(bool disabled) { ImGui::BeginDisabled(disabled); }
+
+void ShroomImGui_EndDisabled(void) { ImGui::EndDisabled(); }
+
 bool ShroomImGui_Checkbox(const char* label, bool* value) { return ImGui::Checkbox(label, value); }
 
 bool ShroomImGui_SliderInt(const char* label, int* value, int minimum, int maximum,

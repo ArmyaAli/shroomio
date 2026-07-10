@@ -138,6 +138,38 @@ static void Test_MainMenuExposesPrimaryActions(ImGuiTestContext* ctx) {
   IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Exit"));
 }
 
+static void Test_GameModeAvailabilityAndNavigation(ImGuiTestContext* ctx) {
+  ShroomImGuiTestAppReset(true);
+
+  ShroomTeCtx_SetRef(ctx, "Main Menu");
+  ShroomTeCtx_ItemClick(ctx, "Game Modes");
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_GAME_MODE_SELECT);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Select Game Mode"));
+
+  ShroomTeCtx_SetRef(ctx, "Select Game Mode");
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Free-for-All (FFA)"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Teams 2v2 - Unavailable"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Battle Royale - Unavailable"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Mass Race - Unavailable"));
+
+  ShroomTeCtx_ItemClick(ctx, "Teams 2v2 - Unavailable");
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_GAME_MODE_SELECT);
+
+  ShroomTeCtx_ItemClick(ctx, "Back");
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_MAIN_MENU);
+
+  ShroomTeCtx_SetRef(ctx, "Main Menu");
+  ShroomTeCtx_ItemClick(ctx, "Game Modes");
+  ShroomTeCtx_SetRef(ctx, "Select Game Mode");
+  ShroomTeCtx_ItemClick(ctx, "Free-for-All (FFA)");
+  IM_CHECK_EQ(g_imgui_test_app.game.selected_game_mode, SHROOM_GAME_MODE_FFA);
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_SERVER_BROWSER);
+}
+
 static void Test_OfflinePracticeEntryInitializesGame(ImGuiTestContext* ctx) {
   ShroomImGuiTestAppReset(true);
 
@@ -837,6 +869,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_HelpAndCreditsBackNavigation);
   ShroomTeEngine_RegisterTest(engine, "screens", "main_menu_exposes_primary_actions",
                               Test_MainMenuExposesPrimaryActions);
+  ShroomTeEngine_RegisterTest(engine, "screens", "game_mode_availability_and_navigation",
+                              Test_GameModeAvailabilityAndNavigation);
   ShroomTeEngine_RegisterTest(engine, "screens", "offline_practice_entry_initializes_game",
                               Test_OfflinePracticeEntryInitializesGame);
   ShroomTeEngine_RegisterTest(engine, "screens",

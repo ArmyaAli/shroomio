@@ -67,6 +67,8 @@ void ShroomImGui_Spacing(void);
 void ShroomImGui_SameLine(void);
 
 bool ShroomImGui_Button(const char* label, float width, float height);
+void ShroomImGui_BeginDisabled(bool disabled);
+void ShroomImGui_EndDisabled(void);
 bool ShroomImGui_Checkbox(const char* label, bool* value);
 bool ShroomImGui_SliderInt(const char* label, int* value, int minimum, int maximum,
                            const char* format);
