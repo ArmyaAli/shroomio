@@ -1,5 +1,6 @@
 #include "game.h"
 #include "imgui_wrapper.h"
+#include "results_summary.h"
 #include "screen.h"
 
 #include "raylib.h"
@@ -63,6 +64,8 @@ static void GameplayDraw(ShroomScreenManager* manager) {
     size_t leaderboard_count = 0;
     BuildLeaderboard(game, leaderboard, &leaderboard_count);
     game->final_rank = GetLocalPlayerRank(game, leaderboard, leaderboard_count);
+    game->session_duration_seconds =
+        ShroomResultsElapsedSeconds(game->session_start_time, (float)GetTime());
     game->show_results = true;
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_RESULTS);
   }

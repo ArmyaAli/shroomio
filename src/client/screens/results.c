@@ -1,5 +1,6 @@
 #include "client/game.h"
 #include "client/layout.h"
+#include "client/results_summary.h"
 #include "client/screen.h"
 #include "client/screens/screen_background.h"
 #include "imgui_wrapper.h"
@@ -29,14 +30,13 @@ static void ResultsDraw(ShroomScreenManager* manager) {
     return;
   }
 
-  const float session_duration = (float)GetTime() - game->session_start_time;
-  const int minutes = (int)session_duration / 60;
-  const int seconds = (int)session_duration % 60;
-
   ShroomLayoutHeading("Session Summary");
 
+  char duration_value[32];
   char duration_text[64];
-  snprintf(duration_text, sizeof(duration_text), "Duration: %d:%02d", minutes, seconds);
+  ShroomResultsFormatDuration(game->session_duration_seconds, duration_value,
+                              sizeof(duration_value));
+  snprintf(duration_text, sizeof(duration_text), "Duration: %s", duration_value);
   ShroomImGui_Text(duration_text);
 
   char peak_mass_text[64];
@@ -80,6 +80,19 @@ static void ResultsDraw(ShroomScreenManager* manager) {
 }
 
 static void ResultsHandleInput(ShroomScreenManager* manager) { (void)manager; }
+
+#ifdef TEST_MODE
+const char* ShroomTestGetResultsDurationText(const Game* game) {
+  static char duration_text[32];
+
+  if (game == NULL) {
+    return "";
+  }
+
+  ShroomResultsFormatDuration(game->session_duration_seconds, duration_text, sizeof(duration_text));
+  return duration_text;
+}
+#endif
 
 void ShroomScreenRegisterResults(ShroomScreenManager* manager) {
   ShroomScreen* screen;
