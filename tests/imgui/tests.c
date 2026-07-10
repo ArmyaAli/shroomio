@@ -214,7 +214,7 @@ static void Test_SettingsExposesSpecControlsAndAppliesBoundaryValues(ImGuiTestCo
 
   ShroomTeCtx_SetRef(ctx, "Main Menu");
   ShroomTeCtx_ItemClick(ctx, "Settings");
-  ShroomTeCtx_SetRef(ctx, "Settings");
+  IM_CHECK(ShroomTeCtx_SetRefWindow(ctx, "//Settings/SettingsContent"));
   ShroomTeCtx_Yield(ctx, 2);
 
   IM_CHECK(ShroomTeCtx_ItemExists(ctx, "UI Scale"));
@@ -235,6 +235,7 @@ static void Test_SettingsExposesSpecControlsAndAppliesBoundaryValues(ImGuiTestCo
   ShroomTeCtx_ItemInputValueInt(ctx, "Master Volume", 0);
   ShroomTeCtx_ItemInputValueInt(ctx, "Music Volume", 100);
   ShroomTeCtx_ItemInputValueInt(ctx, "Effects Volume", 0);
+  ShroomTeCtx_SetRef(ctx, "Settings");
   ShroomTeCtx_ItemClick(ctx, "Save");
   ShroomTeCtx_Yield(ctx, 2);
 
@@ -243,8 +244,10 @@ static void Test_SettingsExposesSpecControlsAndAppliesBoundaryValues(ImGuiTestCo
   IM_CHECK_EQ(g_imgui_test_app.game.settings.music_volume_percent, 100);
   IM_CHECK_EQ(g_imgui_test_app.game.settings.effects_volume_percent, 0);
 
+  IM_CHECK(ShroomTeCtx_SetRefWindow(ctx, "//Settings/SettingsContent"));
   ShroomTeCtx_ItemInputValueInt(ctx, "Music Volume", 0);
   ShroomTeCtx_ItemInputValueInt(ctx, "Effects Volume", 100);
+  ShroomTeCtx_SetRef(ctx, "Settings");
   ShroomTeCtx_ItemClick(ctx, "Save");
   ShroomTeCtx_Yield(ctx, 2);
 
@@ -260,7 +263,7 @@ static void Test_SettingsPersistence(ImGuiTestContext* ctx) {
 
   ShroomTeCtx_SetRef(ctx, "Main Menu");
   ShroomTeCtx_ItemClick(ctx, "Settings");
-  ShroomTeCtx_SetRef(ctx, "Settings");
+  IM_CHECK(ShroomTeCtx_SetRefWindow(ctx, "//Settings/SettingsContent"));
   ShroomTeCtx_ItemInputValueInt(ctx, "UI Scale", 130);
   ShroomTeCtx_ItemInputValueInt(ctx, "Master Volume", 65);
   ShroomTeCtx_ItemInputValueInt(ctx, "Music Volume", 40);
@@ -269,6 +272,7 @@ static void Test_SettingsPersistence(ImGuiTestContext* ctx) {
   ShroomTeCtx_ItemCheckbox(ctx, "Show Diagnostics On Launch");
   ShroomTeCtx_ItemCheckbox(ctx, "Show Ping In HUD");
   ShroomTeCtx_ItemCheckbox(ctx, "Animated Menu Backgrounds");
+  ShroomTeCtx_SetRef(ctx, "Settings");
   ShroomTeCtx_ItemClick(ctx, "Save");
 
   IM_CHECK(ClientSettingsLoad(&loaded));
@@ -280,6 +284,61 @@ static void Test_SettingsPersistence(ImGuiTestContext* ctx) {
   IM_CHECK(loaded.diagnostics_enabled);
   IM_CHECK(loaded.show_ping_ms);
   IM_CHECK(loaded.menu_animations_enabled);
+}
+
+static void Test_SettingsDiscardAndEscape(ImGuiTestContext* ctx) {
+  ShroomImGuiTestAppReset(true);
+  const int original_scale = g_imgui_test_app.game.settings.ui_scale_percent;
+
+  ShroomTeCtx_SetRef(ctx, "Main Menu");
+  ShroomTeCtx_ItemClick(ctx, "Settings");
+  IM_CHECK(ShroomTeCtx_SetRefWindow(ctx, "//Settings/SettingsContent"));
+  ShroomTeCtx_ItemInputValueInt(ctx, "UI Scale", 150);
+  ShroomTeCtx_Yield(ctx, 2);
+
+  IM_CHECK_EQ(g_imgui_test_app.game.settings.ui_scale_percent, original_scale);
+  ShroomTeCtx_SetRef(ctx, "Settings");
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Discard Changes"));
+  ShroomTestSettingsEscape(&g_imgui_test_app.screen_manager);
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_MAIN_MENU);
+  IM_CHECK_EQ(g_imgui_test_app.game.settings.ui_scale_percent, original_scale);
+
+  ShroomTeCtx_SetRef(ctx, "Main Menu");
+  ShroomTeCtx_ItemClick(ctx, "Settings");
+  IM_CHECK(ShroomTeCtx_SetRefWindow(ctx, "//Settings/SettingsContent"));
+  ShroomTeCtx_ItemInputValueInt(ctx, "UI Scale", 145);
+  ShroomTeCtx_SetRef(ctx, "Settings");
+  ShroomTeCtx_ItemClick(ctx, "Discard Changes");
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_MAIN_MENU);
+  IM_CHECK_EQ(g_imgui_test_app.game.settings.ui_scale_percent, original_scale);
+}
+
+static void Test_SettingsRestoreDefaultsRequiresSave(ImGuiTestContext* ctx) {
+  ClientSettings loaded;
+  ShroomImGuiTestAppReset(true);
+  g_imgui_test_app.game.settings.ui_scale_percent = 140;
+  g_imgui_test_app.game.settings.master_volume_percent = 35;
+
+  ShroomTeCtx_SetRef(ctx, "Main Menu");
+  ShroomTeCtx_ItemClick(ctx, "Settings");
+  ShroomTeCtx_SetRef(ctx, "Settings");
+  ShroomTeCtx_ItemClick(ctx, "Restore Defaults");
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Confirm Defaults"));
+  ShroomTeCtx_ItemClick(ctx, "Confirm Defaults");
+
+  IM_CHECK_EQ(g_imgui_test_app.game.settings.ui_scale_percent, 140);
+  IM_CHECK_EQ(g_imgui_test_app.game.settings.master_volume_percent, 35);
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Discard Changes"));
+
+  ShroomTeCtx_ItemClick(ctx, "Save");
+  IM_CHECK_EQ(g_imgui_test_app.game.settings.ui_scale_percent, 100);
+  IM_CHECK_EQ(g_imgui_test_app.game.settings.master_volume_percent, 80);
+  IM_CHECK(ClientSettingsLoad(&loaded));
+  IM_CHECK_EQ(loaded.ui_scale_percent, 100);
+  IM_CHECK_EQ(loaded.master_volume_percent, 80);
 }
 
 static void Test_ServerBrowserJoinAndValidation(ImGuiTestContext* ctx) {
@@ -879,6 +938,10 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
   ShroomTeEngine_RegisterTest(engine, "screens", "settings_exposes_controls_and_applies_bounds",
                               Test_SettingsExposesSpecControlsAndAppliesBoundaryValues);
   ShroomTeEngine_RegisterTest(engine, "screens", "settings_persistence", Test_SettingsPersistence);
+  ShroomTeEngine_RegisterTest(engine, "screens", "settings_discard_and_escape",
+                              Test_SettingsDiscardAndEscape);
+  ShroomTeEngine_RegisterTest(engine, "screens", "settings_restore_defaults_requires_save",
+                              Test_SettingsRestoreDefaultsRequiresSave);
   ShroomTeEngine_RegisterTest(engine, "screens", "server_browser_join_and_validation",
                               Test_ServerBrowserJoinAndValidation);
   ShroomTeEngine_RegisterTest(engine, "screens", "server_browser_recent_join_persists",

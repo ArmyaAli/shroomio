@@ -99,6 +99,15 @@ void ShroomTeCtx_SetRef(ImGuiTestContext *ctx, const char *ref) {
   ctx->SetRef(ref);
 }
 
+bool ShroomTeCtx_SetRefWindow(ImGuiTestContext *ctx, const char *ref) {
+  ImGuiTestItemInfo info = ctx->WindowInfo(ref);
+  if (info.Window == nullptr) {
+    return false;
+  }
+  ctx->SetRef(info.Window);
+  return true;
+}
+
 void ShroomTeCtx_ItemClick(ImGuiTestContext *ctx, const char *ref) {
   ctx->ItemClick(ref);
 }

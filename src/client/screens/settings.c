@@ -1,6 +1,7 @@
 #include "game.h"
 #include "screen.h"
 #include "screen_background.h"
+#include "settings_session.h"
 
 #include "imgui_wrapper.h"
 #include "raylib.h"
@@ -10,9 +11,10 @@
 #define SHROOM_KEYBINDING_SLOT_COUNT 4
 
 typedef struct SettingsScreenState {
-  ClientSettings pending;
-  bool dirty;
+  ShroomSettingsSession session;
   bool save_succeeded;
+  bool save_failed;
+  bool confirm_restore_defaults;
   /* Rebind capture state. slot == -1 means idle; 0..3 captures next key
    * for that slot. The captured-key path uses a single-frame queue so
    * the press that opens the rebind UI does not also assign. */
@@ -54,9 +56,14 @@ static const ShroomMushroomSpeciesEntry* FindSpeciesEntry(const ClientNetState* 
   return NULL;
 }
 
-static void ApplySettings(Game* game) {
-  game->settings = g_settings_screen.pending;
+static void ApplySettings(Game* game, const ClientSettings* settings) {
+  game->settings = *settings;
   SetMasterVolume((float)game->settings.master_volume_percent / 100.0f);
+}
+
+static void DiscardAndGoBack(ShroomScreenManager* manager) {
+  ShroomSettingsSessionDiscard(&g_settings_screen.session);
+  ShroomScreenManagerGoBack(manager);
 }
 
 static int* SettingsSlotKeyPtr(ClientSettings* settings, int slot) {
@@ -100,9 +107,10 @@ static bool SettingsInit(ShroomScreenManager* manager) {
     return false;
   }
 
-  g_settings_screen.pending = game->settings;
-  g_settings_screen.dirty = false;
+  ShroomSettingsSessionInit(&g_settings_screen.session, &game->settings);
   g_settings_screen.save_succeeded = false;
+  g_settings_screen.save_failed = false;
+  g_settings_screen.confirm_restore_defaults = false;
   g_settings_screen.rebind_slot = -1;
   g_settings_screen.rebind_armed = false;
   g_settings_screen.rebind_conflict_slot = -1;
@@ -147,39 +155,44 @@ static void SettingsDraw(ShroomScreenManager* manager) {
     return;
   }
 
+  ShroomImGui_BeginChild("SettingsContent", 0.0f, (float)screen_height * 0.8f - 150.0f, false);
   ShroomImGui_Text("Interface");
-  changed |= ShroomImGui_SliderInt("UI Scale", &g_settings_screen.pending.ui_scale_percent, 80, 160,
-                                   "%d%%");
-  changed |= ShroomImGui_Combo("Preferred Region",
-                               &g_settings_screen.pending.preferred_region_index, kRegionItems, 3);
-  changed |= ShroomImGui_Combo("Palette", (int*)&g_settings_screen.pending.palette_preset,
+  changed |= ShroomImGui_SliderInt("UI Scale", &g_settings_screen.session.pending.ui_scale_percent,
+                                   80, 160, "%d%%");
+  changed |=
+      ShroomImGui_Combo("Preferred Region",
+                        &g_settings_screen.session.pending.preferred_region_index, kRegionItems, 3);
+  changed |= ShroomImGui_Combo("Palette", (int*)&g_settings_screen.session.pending.palette_preset,
                                kPaletteItems, 2);
 
   ShroomImGui_Separator();
   ShroomImGui_Text("Audio");
   changed |= ShroomImGui_SliderInt(
-      "Master Volume", &g_settings_screen.pending.master_volume_percent, 0, 100, "%d%%");
-  changed |= ShroomImGui_SliderInt("Music Volume", &g_settings_screen.pending.music_volume_percent,
-                                   0, 100, "%d%%");
+      "Master Volume", &g_settings_screen.session.pending.master_volume_percent, 0, 100, "%d%%");
   changed |= ShroomImGui_SliderInt(
-      "Effects Volume", &g_settings_screen.pending.effects_volume_percent, 0, 100, "%d%%");
+      "Music Volume", &g_settings_screen.session.pending.music_volume_percent, 0, 100, "%d%%");
+  changed |= ShroomImGui_SliderInt(
+      "Effects Volume", &g_settings_screen.session.pending.effects_volume_percent, 0, 100, "%d%%");
 
   ShroomImGui_Separator();
   ShroomImGui_Text("Gameplay");
-  changed |= ShroomImGui_Checkbox("Invert Mouse", &g_settings_screen.pending.invert_mouse);
+  changed |= ShroomImGui_Checkbox("Invert Mouse", &g_settings_screen.session.pending.invert_mouse);
   changed |= ShroomImGui_Checkbox("Show Diagnostics On Launch",
-                                  &g_settings_screen.pending.diagnostics_enabled);
-  changed |= ShroomImGui_Checkbox("Show Ping In HUD", &g_settings_screen.pending.show_ping_ms);
-  changed |= ShroomImGui_Combo(
-      "Particle Quality", (int*)&g_settings_screen.pending.particle_quality, kParticleItems, 4);
+                                  &g_settings_screen.session.pending.diagnostics_enabled);
+  changed |=
+      ShroomImGui_Checkbox("Show Ping In HUD", &g_settings_screen.session.pending.show_ping_ms);
+  changed |= ShroomImGui_Combo("Particle Quality",
+                               (int*)&g_settings_screen.session.pending.particle_quality,
+                               kParticleItems, 4);
   changed |= ShroomImGui_Checkbox("Animated Menu Backgrounds",
-                                  &g_settings_screen.pending.menu_animations_enabled);
-  changed |=
-      ShroomImGui_Checkbox("Death Cutscene", &g_settings_screen.pending.death_cutscene_enabled);
-  changed |=
-      ShroomImGui_Combo("Mushroom Species", (int*)&g_settings_screen.pending.mushroom_species,
-                        species_items, CLIENT_MUSHROOM_COUNT);
-  selected_species = FindSpeciesEntry(&game->net, g_settings_screen.pending.mushroom_species);
+                                  &g_settings_screen.session.pending.menu_animations_enabled);
+  changed |= ShroomImGui_Checkbox("Death Cutscene",
+                                  &g_settings_screen.session.pending.death_cutscene_enabled);
+  changed |= ShroomImGui_Combo("Mushroom Species",
+                               (int*)&g_settings_screen.session.pending.mushroom_species,
+                               species_items, CLIENT_MUSHROOM_COUNT);
+  selected_species =
+      FindSpeciesEntry(&game->net, g_settings_screen.session.pending.mushroom_species);
   if ((selected_species != NULL) && (selected_species->description[0] != '\0')) {
     ShroomImGui_TextWrapped(selected_species->description);
     ShroomImGui_Text("Collection: server catalog loaded.");
@@ -201,7 +214,7 @@ static void SettingsDraw(ShroomScreenManager* manager) {
     ShroomImGui_TableSetupColumn("Bound Key", 210.0f);
 
     for (int slot = 0; slot < SHROOM_KEYBINDING_SLOT_COUNT; ++slot) {
-      int* slot_key = SettingsSlotKeyPtr(&g_settings_screen.pending, slot);
+      int* slot_key = SettingsSlotKeyPtr(&g_settings_screen.session.pending, slot);
       const char* slot_label = ClientSettingsKeySlotLabel(slot);
       char button_label[64];
 
@@ -246,18 +259,18 @@ static void SettingsDraw(ShroomScreenManager* manager) {
         g_settings_screen.rebind_slot = -1;
         g_settings_screen.rebind_armed = false;
       } else {
-        const int conflicted = SettingsFindConflictSlot(&g_settings_screen.pending, pressed,
+        const int conflicted = SettingsFindConflictSlot(&g_settings_screen.session.pending, pressed,
                                                         g_settings_screen.rebind_slot);
         if (conflicted >= 0) {
           g_settings_screen.rebind_conflict_slot = conflicted;
         } else {
           int* slot_key =
-              SettingsSlotKeyPtr(&g_settings_screen.pending, g_settings_screen.rebind_slot);
+              SettingsSlotKeyPtr(&g_settings_screen.session.pending, g_settings_screen.rebind_slot);
           if (slot_key != NULL) {
             *slot_key = pressed;
-            g_settings_screen.dirty = true;
+            ShroomSettingsSessionMarkDirty(&g_settings_screen.session);
             g_settings_screen.save_succeeded = false;
-            ApplySettings(game);
+            g_settings_screen.save_failed = false;
           }
         }
         g_settings_screen.rebind_slot = -1;
@@ -266,43 +279,81 @@ static void SettingsDraw(ShroomScreenManager* manager) {
     }
   }
 
+  ShroomImGui_EndChild();
+
   if (changed) {
-    ClientSettingsValidate(&g_settings_screen.pending);
-    g_settings_screen.dirty = true;
+    ClientSettingsValidate(&g_settings_screen.session.pending);
+    ShroomSettingsSessionMarkDirty(&g_settings_screen.session);
     g_settings_screen.save_succeeded = false;
-    ApplySettings(game);
+    g_settings_screen.save_failed = false;
   }
 
   ShroomImGui_Spacing();
   if (g_settings_screen.save_succeeded) {
-    ShroomImGui_Text("Saved to client_settings.cfg");
-  } else if (g_settings_screen.dirty) {
-    ShroomImGui_Text("Unsaved changes");
+    ShroomImGui_Text("Settings applied and saved to client_settings.cfg");
+  } else if (g_settings_screen.save_failed) {
+    ShroomImGui_TextColored((ShroomImGuiColor){1.0f, 0.45f, 0.4f, 1.0f},
+                            "Save failed; current settings were not changed.");
+  } else if (g_settings_screen.session.dirty) {
+    ShroomImGui_Text("Unsaved changes; Save to apply them.");
   }
 
   if (ShroomImGui_Button("Save", 140.0f, 36.0f)) {
-    ClientSettingsValidate(&g_settings_screen.pending);
-    ApplySettings(game);
-    g_settings_screen.save_succeeded = ClientSettingsSave(&game->settings);
-    g_settings_screen.dirty = !g_settings_screen.save_succeeded;
+    ClientSettingsValidate(&g_settings_screen.session.pending);
+    g_settings_screen.save_succeeded = ClientSettingsSave(&g_settings_screen.session.pending);
+    g_settings_screen.save_failed = !g_settings_screen.save_succeeded;
     if (g_settings_screen.save_succeeded) {
+      ApplySettings(game, &g_settings_screen.session.pending);
+      ShroomSettingsSessionCommit(&g_settings_screen.session);
       GamePlayUiClickSound(game);
     } else {
       GamePlayUiErrorSound(game);
     }
   }
   ShroomImGui_SameLine();
-  if (ShroomImGui_Button("Back", 140.0f, 36.0f)) {
+  if (ShroomImGui_Button(g_settings_screen.session.dirty ? "Discard Changes" : "Back", 160.0f,
+                         36.0f)) {
     GamePlayUiClickSound(game);
-    ShroomScreenManagerGoBack(manager);
+    DiscardAndGoBack(manager);
+  }
+  ShroomImGui_SameLine();
+  if (ShroomImGui_Button("Restore Defaults", 160.0f, 36.0f)) {
+    g_settings_screen.confirm_restore_defaults = true;
+    g_settings_screen.save_succeeded = false;
+    g_settings_screen.save_failed = false;
+  }
+
+  if (g_settings_screen.confirm_restore_defaults) {
+    ShroomImGui_Text("Replace pending values with defaults?");
+    if (ShroomImGui_Button("Confirm Defaults", 160.0f, 32.0f)) {
+      ShroomSettingsSessionRestoreDefaults(&g_settings_screen.session);
+      g_settings_screen.confirm_restore_defaults = false;
+    }
+    ShroomImGui_SameLine();
+    if (ShroomImGui_Button("Keep Current", 140.0f, 32.0f)) {
+      g_settings_screen.confirm_restore_defaults = false;
+    }
   }
 
   ShroomImGui_End();
 }
 
+static void HandleSettingsEscape(ShroomScreenManager* manager) {
+  if (g_settings_screen.rebind_armed) {
+    g_settings_screen.rebind_slot = -1;
+    g_settings_screen.rebind_armed = false;
+  } else {
+    DiscardAndGoBack(manager);
+  }
+}
+
+#ifdef TEST_MODE
+void ShroomTestSettingsEscape(ShroomScreenManager* manager) { HandleSettingsEscape(manager); }
+#endif
+
 static void SettingsHandleInput(ShroomScreenManager* manager) {
   if (IsKeyPressed(KEY_ESCAPE)) {
-    ShroomScreenManagerGoBack(manager);
+    HandleSettingsEscape(manager);
   }
 }
 
