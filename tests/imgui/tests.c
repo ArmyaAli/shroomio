@@ -2,6 +2,7 @@
 #include "imgui_te_wrapper.h"
 
 #include "client/screens/screen_background.h"
+#include "client/server_browser_model.h"
 #include "shared/protocol.h"
 
 #include <math.h>
@@ -356,11 +357,9 @@ static void Test_ServerBrowserJoinAndValidation(ImGuiTestContext* ctx) {
                   "Port must be between 1 and 65535.");
 
   ShroomTeCtx_ItemInputValueStr(ctx, "Port", "7777");
-  IM_CHECK_EQ(ShroomTestGetServerBrowserSelectedIndex(), 0);
-  IM_CHECK_STR_EQ(ShroomTestGetServerBrowserSelectedHost(), "127.0.0.1");
-  ShroomTeCtx_ItemClick(ctx, "Sort Name");
-  IM_CHECK_STR_EQ(ShroomTestGetServerBrowserSelectedHost(), "127.0.0.1");
-  ShroomTeCtx_ItemClick(ctx, "Join Selected");
+  IM_CHECK_EQ(ShroomTestGetServerBrowserSelectedIndex(), -1);
+  IM_CHECK_STR_EQ(ShroomTestGetServerBrowserSelectedHost(), "");
+  ShroomTeCtx_ItemClick(ctx, "Join Host");
 
   /* JoinServer connects and transitions to the lobby browser, not GAME. */
   IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
@@ -405,9 +404,8 @@ static void Test_ServerBrowserInvalidHostAndHostPortParsing(ImGuiTestContext* ct
   ShroomTeCtx_Yield(ctx, 2);
 
   IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Refresh"));
-  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Sort Name"));
-  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Sort Players"));
-  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Sort Ping"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Sort by"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Ascending"));
   IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Join Selected"));
   IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Join Host"));
 
@@ -424,6 +422,44 @@ static void Test_ServerBrowserInvalidHostAndHostPortParsing(ImGuiTestContext* ct
               SHROOM_SCREEN_LOBBY);
   IM_CHECK_STR_EQ(g_imgui_test_app.game.selected_server_host, "recent.shroomio.test");
   IM_CHECK_EQ(g_imgui_test_app.game.selected_server_port, 7789);
+}
+
+static void Test_ServerBrowserDiscoveryStatesAndSorting(ImGuiTestContext* ctx) {
+  ShroomImGuiTestAppReset(true);
+  ShroomTeCtx_SetRef(ctx, "Main Menu");
+  ShroomTeCtx_ItemClick(ctx, "Custom Server");
+  ShroomTeCtx_SetRef(ctx, "Server Browser");
+
+  IM_CHECK_EQ(ShroomTestGetServerBrowserDiscoveryState(), SHROOM_SERVER_DISCOVERY_EMPTY);
+  IM_CHECK_EQ(ShroomTestGetServerBrowserServerCount(), 0);
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Join Host"));
+
+  ShroomTeCtx_ItemClick(ctx, "Refresh");
+  IM_CHECK_EQ(ShroomTestGetServerBrowserDiscoveryState(), SHROOM_SERVER_DISCOVERY_LOADING);
+  ShroomTestCompleteServerBrowserRefresh(false);
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_EQ(ShroomTestGetServerBrowserDiscoveryState(), SHROOM_SERVER_DISCOVERY_FAILED);
+  IM_CHECK_EQ(ShroomTestGetServerBrowserServerCount(), 0);
+
+  ShroomTeCtx_ItemClick(ctx, "Refresh");
+  ShroomTestCompleteServerBrowserRefresh(true);
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_EQ(ShroomTestGetServerBrowserDiscoveryState(), SHROOM_SERVER_DISCOVERY_READY);
+  IM_CHECK_EQ(ShroomTestGetServerBrowserServerCount(), 5);
+  IM_CHECK_STR_EQ(ShroomTestGetServerBrowserSelectedHost(), "local.demo.invalid");
+
+  ShroomTeCtx_ItemClick(ctx, "Ascending");
+  IM_CHECK(ShroomTestGetServerBrowserSortDescending());
+  ShroomTeCtx_ItemClick(ctx, "Join Selected");
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_SERVER_BROWSER);
+
+  ShroomTestMarkServerBrowserStale();
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_EQ(ShroomTestGetServerBrowserDiscoveryState(), SHROOM_SERVER_DISCOVERY_STALE);
+  ShroomTeCtx_ItemClick(ctx, "Join Selected");
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_SERVER_BROWSER);
 }
 
 static void Test_LobbyConnectionModalStates(ImGuiTestContext* ctx) {
@@ -948,6 +984,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_ServerBrowserRecentJoinPersists);
   ShroomTeEngine_RegisterTest(engine, "screens", "server_browser_invalid_host_and_host_port",
                               Test_ServerBrowserInvalidHostAndHostPortParsing);
+  ShroomTeEngine_RegisterTest(engine, "screens", "server_browser_discovery_states_and_sorting",
+                              Test_ServerBrowserDiscoveryStatesAndSorting);
   ShroomTeEngine_RegisterTest(engine, "screens", "lobby_connection_modal_states",
                               Test_LobbyConnectionModalStates);
   ShroomTeEngine_RegisterTest(engine, "screens", "lobby_unreachable_server_friendly_error",
