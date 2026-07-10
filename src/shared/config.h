@@ -88,6 +88,7 @@ typedef enum ShroomGameMode {
 #define SHROOM_SPAWN_MIN_RADIUS (SHROOM_ZONE_MID_RADIUS + SHROOM_SPAWN_PADDING)
 #define SHROOM_SPAWN_MAX_BAND_WIDTH 900.0f
 #define SHROOM_SPAWN_MIN_BAND_WIDTH 220.0f
+#define SHROOM_PLAYER_SPAWN_PROTECTION_SECONDS 2.0f
 
 /* Splitting — large colonies may split before the hard mass cap. */
 #define SHROOM_SPLIT_MIN_MASS (SHROOM_DEFAULT_PLAYER_MASS * 4.0f)

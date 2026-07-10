@@ -145,6 +145,55 @@ void test_mass_helpers_respect_expected_scaling_and_bounds(void) {
   TEST_ASSERT_TRUE(ShroomMassToSpeed(SHROOM_DECAY_MASS_THRESHOLD * 1.5f) < SHROOM_MIN_PLAYER_SPEED);
 }
 
+void test_human_spawn_protection_blocks_consumption_then_expires(void) {
+  ShroomPlayerState* attacker;
+  ShroomPlayerState* victim;
+  const float attacker_mass = SHROOM_DEFAULT_PLAYER_MASS * 2.0f;
+  const float expected_gain = SHROOM_DEFAULT_PLAYER_MASS * SHROOM_CONSUME_MASS_GAIN_FACTOR;
+
+  ResetWorldForPlayers();
+
+  attacker = ShroomWorldSpawnPlayer(&world, 1, false);
+  victim = ShroomWorldSpawnPlayer(&world, 2, false);
+  TEST_ASSERT_NOT_NULL(attacker);
+  TEST_ASSERT_NOT_NULL(victim);
+
+  attacker->spawn_protection_timer = 0.0f;
+  attacker->mass = attacker_mass;
+  attacker->radius = ShroomMassToRadius(attacker->mass);
+  attacker->position = (ShroomVec2){800.0f, 800.0f};
+  victim->position = attacker->position;
+
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_PLAYER_SPAWN_PROTECTION_SECONDS,
+                           victim->spawn_protection_timer);
+  ShroomWorldStep(&world, SHROOM_PLAYER_SPAWN_PROTECTION_SECONDS - 0.01f);
+
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, attacker_mass, attacker->mass);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.01f, victim->spawn_protection_timer);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 800.0f, victim->position.x);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 800.0f, victim->position.y);
+
+  ShroomWorldStep(&world, 0.01f);
+
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, attacker_mass + expected_gain, attacker->mass);
+  TEST_ASSERT_TRUE(victim->alive);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_DEFAULT_PLAYER_MASS, victim->mass);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_PLAYER_SPAWN_PROTECTION_SECONDS,
+                           victim->spawn_protection_timer);
+  TEST_ASSERT_TRUE((victim->position.x != 800.0f) || (victim->position.y != 800.0f));
+}
+
+void test_bot_spawn_keeps_existing_unprotected_behavior(void) {
+  ShroomPlayerState* bot;
+
+  ResetWorldForPlayers();
+
+  bot = ShroomWorldSpawnPlayer(&world, 1, true);
+  TEST_ASSERT_NOT_NULL(bot);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, bot->spawn_protection_timer);
+  TEST_ASSERT_FALSE(ShroomPlayerHasConsumeProtection(bot));
+}
+
 void test_consume_predicate_respects_mass_zone_and_protection_boundaries(void) {
   ShroomPlayerState* attacker;
   ShroomPlayerState* victim;
@@ -155,6 +204,7 @@ void test_consume_predicate_respects_mass_zone_and_protection_boundaries(void) {
   victim = ShroomWorldSpawnPlayer(&world, 2, false);
   TEST_ASSERT_NOT_NULL(attacker);
   TEST_ASSERT_NOT_NULL(victim);
+  victim->spawn_protection_timer = 0.0f;
 
   attacker->position = (ShroomVec2){300.0f, 300.0f};
   victim->position = attacker->position;
@@ -441,6 +491,7 @@ void test_mass_shield_powerup_blocks_consumption_until_expired(void) {
   victim->mass = 100.0f;
   victim->radius = ShroomMassToRadius(victim->mass);
   victim->position = attacker->position;
+  victim->spawn_protection_timer = 0.0f;
   victim->shield_powerup_timer = SHROOM_POWERUP_SHIELD_SECONDS;
 
   ShroomWorldStep(&world, 0.0f);
@@ -500,6 +551,7 @@ void test_world_step_consumes_player_when_mass_advantage_and_overlap_match(void)
   victim->mass = 100.0f;
   victim->radius = ShroomMassToRadius(victim->mass);
   victim->position = attacker->position;
+  victim->spawn_protection_timer = 0.0f;
 
   ShroomWorldStep(&world, 0.0f);
 
@@ -529,6 +581,7 @@ void test_world_step_does_not_consume_without_required_mass_advantage(void) {
   victim->mass = 100.0f;
   victim->radius = ShroomMassToRadius(victim->mass);
   victim->position = attacker->position;
+  victim->spawn_protection_timer = 0.0f;
 
   ShroomWorldStep(&world, 0.0f);
 
@@ -555,6 +608,7 @@ void test_center_zone_uses_lower_consume_advantage(void) {
   victim->mass = 100.0f;
   victim->radius = ShroomMassToRadius(victim->mass);
   victim->position = attacker->position;
+  victim->spawn_protection_timer = 0.0f;
 
   TEST_ASSERT_TRUE(attacker->mass < (victim->mass * SHROOM_CONSUME_MASS_ADVANTAGE));
   TEST_ASSERT_TRUE(attacker->mass >= (victim->mass * SHROOM_CENTER_CONSUME_ADVANTAGE));
@@ -954,6 +1008,7 @@ void test_corner_consume_works_near_boundaries(void) {
   victim->mass = 100.0f;
   victim->radius = ShroomMassToRadius(victim->mass);
   victim->position = (ShroomVec2){world.width - victim->radius, world.height - victim->radius};
+  victim->spawn_protection_timer = 0.0f;
 
   ShroomWorldStep(&world, 0.0f);
 
@@ -979,6 +1034,7 @@ void test_edge_consume_works_when_target_pinned_against_wall(void) {
   victim->mass = 100.0f;
   victim->radius = ShroomMassToRadius(victim->mass);
   victim->position = (ShroomVec2){world.width - victim->radius, 3000.0f};
+  victim->spawn_protection_timer = 0.0f;
 
   /* Attacker approaches from the left, overlapping into the wall */
   attacker->mass = 140.0f;
@@ -1250,6 +1306,8 @@ int main(void) {
   RUN_TEST(test_world_init_populates_powerups_across_supported_types);
   RUN_TEST(test_zone_classification_matches_center_mid_and_outer);
   RUN_TEST(test_mass_helpers_respect_expected_scaling_and_bounds);
+  RUN_TEST(test_human_spawn_protection_blocks_consumption_then_expires);
+  RUN_TEST(test_bot_spawn_keeps_existing_unprotected_behavior);
   RUN_TEST(test_consume_predicate_respects_mass_zone_and_protection_boundaries);
   RUN_TEST(test_decay_predicate_respects_zone_threshold_boundaries);
   RUN_TEST(test_split_predicate_respects_mass_life_and_piece_boundaries);

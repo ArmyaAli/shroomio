@@ -106,6 +106,10 @@ void test_reset_match_restores_players_to_default_mass(void) {
   TEST_ASSERT_EQUAL_UINT32(SHROOM_MATCH_PHASE_RUNNING, world.match_phase);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_DEFAULT_PLAYER_MASS, p1->mass);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_DEFAULT_PLAYER_MASS, p2->mass);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_PLAYER_SPAWN_PROTECTION_SECONDS,
+                           p1->spawn_protection_timer);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_PLAYER_SPAWN_PROTECTION_SECONDS,
+                           p2->spawn_protection_timer);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, world.match_duration_seconds, world.match_time_remaining);
 }
 

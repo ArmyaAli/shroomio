@@ -832,6 +832,28 @@ static void Test_LobbyAutoJoinTransitionsToRoster(ImGuiTestContext* ctx) {
   IM_CHECK(ShroomTeImGui_WindowIsActive("Lobby Roster"));
 }
 
+static void Test_FirstLobbyEntryDoesNotOpenDeathCutscene(ImGuiTestContext* ctx) {
+  SetupLobbyBrowser();
+  InjectFakeLobbies(1);
+  g_imgui_test_app.game.auto_join_lobby = true;
+  ShroomTeCtx_Yield(ctx, 1);
+
+  g_imgui_test_app.game.net.welcome_received = true;
+  g_imgui_test_app.game.net.player_id = 7u;
+  g_imgui_test_app.game.net.entity_id = 42u;
+  ShroomTeCtx_Yield(ctx, 2);
+
+  ShroomTeCtx_SetRef(ctx, "Lobby Roster");
+  ShroomTeCtx_ItemClick(ctx, "Enter Match");
+  ShroomTeCtx_Yield(ctx, 3);
+
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_GAME);
+  IM_CHECK_EQ(g_imgui_test_app.game.active_mode, SHROOM_SESSION_MODE_LOBBY_PLAY);
+  IM_CHECK_EQ(g_imgui_test_app.game.death_cutscene_duration, 0.0f);
+  IM_CHECK(!ShroomTeImGui_WindowIsActive("Death Cutscene Actions"));
+}
+
 /* menu: Clicking Play Online calls ClientNetInit (real ENet host create +
  * connect) and transitions to the lobby browser. Regression for #334's
  * reported segfault — the click handler touches ENet + audio + screen
@@ -1021,6 +1043,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_LobbyAutoJoinPicksLeastPopulated);
   ShroomTeEngine_RegisterTest(engine, "lobby", "auto_join_transitions_to_roster",
                               Test_LobbyAutoJoinTransitionsToRoster);
+  ShroomTeEngine_RegisterTest(engine, "lobby", "first_entry_has_no_death_cutscene",
+                              Test_FirstLobbyEntryDoesNotOpenDeathCutscene);
   ShroomTeEngine_RegisterTest(engine, "menu", "play_online_click_transitions_to_lobby",
                               Test_PlayOnlineClickTransitionsToLobby);
   ShroomTeEngine_RegisterTest(engine, "menu", "play_online_persisted_settings_survives_lobby_frames",
