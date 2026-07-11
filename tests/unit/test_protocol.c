@@ -58,6 +58,8 @@ void test_packet_type_values(void) {
   TEST_ASSERT_EQUAL(19, SHROOM_PACKET_MUSHROOM_SPECIES_CATALOG);
   TEST_ASSERT_EQUAL(20, SHROOM_PACKET_VOICE_FRAME);
   TEST_ASSERT_EQUAL(21, SHROOM_PACKET_READY_STATE);
+  TEST_ASSERT_EQUAL(22, SHROOM_PACKET_ENTER_MATCH);
+  TEST_ASSERT_EQUAL(23, SHROOM_PACKET_LOBBY_ROSTER);
 }
 
 void test_lobby_packet_channel_mapping(void) {
@@ -169,7 +171,7 @@ void test_lobby_config_constants(void) {
 
 void test_protocol_constants(void) {
   TEST_ASSERT_EQUAL(7777, SHROOM_SERVER_PORT);
-  TEST_ASSERT_EQUAL(5, SHROOM_PROTOCOL_VERSION);
+  TEST_ASSERT_EQUAL(6, SHROOM_PROTOCOL_VERSION);
   TEST_ASSERT_EQUAL(32, SHROOM_MAX_NAME_LENGTH);
   TEST_ASSERT_EQUAL(15, SHROOM_SNAPSHOT_RATE);
   TEST_ASSERT_EQUAL(256, SHROOM_MAX_SNAPSHOT_PLAYERS);
@@ -248,6 +250,19 @@ void test_packet_minimum_size_mapping(void) {
                     ShroomPacketTypeMinimumSize(SHROOM_PACKET_POWERUP_STATE));
   TEST_ASSERT_EQUAL(offsetof(ShroomMushroomSpeciesCatalogPacket, species),
                     ShroomPacketTypeMinimumSize(SHROOM_PACKET_MUSHROOM_SPECIES_CATALOG));
+  TEST_ASSERT_EQUAL(sizeof(ShroomEnterMatchPacket),
+                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_ENTER_MATCH));
+  TEST_ASSERT_EQUAL(offsetof(ShroomLobbyRosterPacket, players),
+                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_LOBBY_ROSTER));
+}
+
+void test_match_entry_packets_are_reliable_control_messages(void) {
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CONTROL,
+                    ShroomPacketTypeToChannel(SHROOM_PACKET_ENTER_MATCH));
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CONTROL,
+                    ShroomPacketTypeToChannel(SHROOM_PACKET_LOBBY_ROSTER));
+  TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_ENTER_MATCH));
+  TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_LOBBY_ROSTER));
 }
 
 void test_voice_packet_initialization(void) {
@@ -447,6 +462,7 @@ int main(void) {
   RUN_TEST(test_packet_channel_mapping);
   RUN_TEST(test_packet_reliability_mapping);
   RUN_TEST(test_packet_minimum_size_mapping);
+  RUN_TEST(test_match_entry_packets_are_reliable_control_messages);
   RUN_TEST(test_packet_header_initializes_channel_metadata);
   RUN_TEST(test_packet_header_validates_expected_channel);
   RUN_TEST(test_hello_packet_initialization);

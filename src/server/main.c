@@ -634,6 +634,52 @@ static void SendLobbyJoined(ENetPeer* peer, const ServerSession* session,
                  CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_LOBBY_JOINED));
 }
 
+static void BroadcastLobbyRoster(ENetHost* host, uint32_t lobby_id) {
+  ShroomLobbyRosterPacket packet = {0};
+  size_t packet_size;
+  size_t index;
+
+  if ((host == NULL) || (lobby_id == 0u)) {
+    return;
+  }
+
+  packet.lobby_id = lobby_id;
+  for (index = 0; index < host->peerCount && packet.player_count < SHROOM_MAX_PLAYERS; ++index) {
+    const ENetPeer* peer = &host->peers[index];
+    const ServerSession* session = (const ServerSession*)peer->data;
+    ShroomLobbyRosterEntry* entry;
+
+    if ((peer->state != ENET_PEER_STATE_CONNECTED) || (session == NULL) || !session->active ||
+        (session->lobby_id != lobby_id)) {
+      continue;
+    }
+    entry = &packet.players[packet.player_count++];
+    entry->player_id = session->player_id;
+    entry->is_spectator = session->spectating ? 1u : 0u;
+    entry->is_ready = session->is_ready ? 1u : 0u;
+    entry->entered_match = session->entered_match ? 1u : 0u;
+    if (session->entered_match) {
+      packet.match_started = 1u;
+    }
+  }
+
+  packet_size = offsetof(ShroomLobbyRosterPacket, players) +
+                (size_t)packet.player_count * sizeof(packet.players[0]);
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_ROSTER, (uint16_t)packet_size);
+  for (index = 0; index < host->peerCount; ++index) {
+    ENetPeer* peer = &host->peers[index];
+    const ServerSession* session = (const ServerSession*)peer->data;
+
+    if ((peer->state != ENET_PEER_STATE_CONNECTED) || (session == NULL) || !session->active ||
+        (session->lobby_id != lobby_id)) {
+      continue;
+    }
+    enet_peer_send(peer, SHROOM_ENET_CHANNEL_CONTROL,
+                   CreateProtocolPacket(&packet, packet_size, SHROOM_PACKET_LOBBY_ROSTER));
+  }
+  enet_host_flush(host);
+}
+
 static void SendLobbyCreated(ENetPeer* peer, const ShroomLobby* lobby) {
   ShroomLobbyCreatedPacket packet = {0};
 
@@ -950,12 +996,11 @@ static void HandleInputPacket(ServerSession* session, const ENetPacket* enet_pac
   if (enet_packet->dataLength < sizeof(*packet)) {
     return;
   }
+  if (!session->entered_match) {
+    return;
+  }
 
   session->last_processed_input_sequence = packet->sequence;
-  if (!session->entered_match) {
-    session->entered_match = true;
-    session->player->spawn_protection_timer = SHROOM_PLAYER_SPAWN_PROTECTION_SECONDS;
-  }
 
   /* Resolve which piece the client is controlling. */
   target_piece = session->player;
@@ -1141,7 +1186,7 @@ static void HandleChatPacket(ENetHost* host, ServerSession* session, const ENetP
   enet_host_flush(host);
 }
 
-static void HandleReadyStatePacket(const ENetHost* host, ServerSession* session,
+static void HandleReadyStatePacket(ENetHost* host, ServerSession* session,
                                    const ENetPacket* enet_packet) {
   const ShroomReadyStatePacket* packet;
 
@@ -1151,9 +1196,42 @@ static void HandleReadyStatePacket(const ENetHost* host, ServerSession* session,
   }
 
   packet = (const ShroomReadyStatePacket*)enet_packet->data;
+  if ((session->lobby_id == 0u) || (packet->player_id != session->player_id)) {
+    return;
+  }
   session->is_ready = packet->is_ready != 0;
 
   LOG_INFO("ready state player_id=%u ready=%d", session->player_id, session->is_ready);
+  BroadcastLobbyRoster(host, session->lobby_id);
+}
+
+static void HandleEnterMatchPacket(ENetHost* host, ServerSession* session,
+                                   const ENetPacket* enet_packet) {
+  const ShroomEnterMatchPacket* packet;
+
+  if ((host == NULL) || (session == NULL) || !session->active || (enet_packet == NULL) ||
+      (enet_packet->dataLength < sizeof(ShroomEnterMatchPacket))) {
+    return;
+  }
+
+  packet = (const ShroomEnterMatchPacket*)enet_packet->data;
+  if ((session->lobby_id == 0u) || (packet->lobby_id != session->lobby_id) ||
+      (!session->spectating && ((session->player == NULL) || !session->is_ready))) {
+    return;
+  }
+  if (session->entered_match) {
+    return;
+  }
+
+  session->entered_match = true;
+  session->focused_entity_id = 0u;
+  if (session->player != NULL) {
+    session->player->input_direction = (ShroomVec2){0};
+    session->player->spawn_protection_timer = SHROOM_PLAYER_SPAWN_PROTECTION_SECONDS;
+  }
+  LOG_INFO("match entry: player_id=%u lobby_id=%u spectating=%d", session->player_id,
+           session->lobby_id, (int)session->spectating);
+  BroadcastLobbyRoster(host, session->lobby_id);
 }
 
 static bool AddLobbyBot(ShroomLobby* lobby, uint32_t* next_player_id) {
@@ -1275,7 +1353,8 @@ static void HandleLobbyListQuery(ENetPeer* peer, const ServerSession* session, S
   SendLobbyList(peer, lobbies, host);
 }
 
-static void HandleLobbyJoin(ENetPeer* peer, ServerSession* session, ShroomLobby* lobbies,
+static void HandleLobbyJoin(ENetHost* host, ENetPeer* peer, ServerSession* session,
+                            ShroomLobby* lobbies,
                             const ENetPacket* enet_packet, uint32_t* next_player_id) {
   const ShroomLobbyJoinPacket* packet = (const ShroomLobbyJoinPacket*)enet_packet->data;
   ShroomLobby* lobby;
@@ -1294,6 +1373,7 @@ static void HandleLobbyJoin(ENetPeer* peer, ServerSession* session, ShroomLobby*
 
   session->lobby_id = lobby->lobby_id;
   session->spectating = (packet->spectate != 0);
+  session->is_ready = false;
   session->entered_match = false;
 
   if (!session->spectating) {
@@ -1309,9 +1389,16 @@ static void HandleLobbyJoin(ENetPeer* peer, ServerSession* session, ShroomLobby*
   SendLobbyJoined(peer, session, lobby);
   LOG_INFO("lobby join: player_id=%u lobby_id=%u spectating=%d", session->player_id,
            lobby->lobby_id, (int)session->spectating);
+  BroadcastLobbyRoster(host, lobby->lobby_id);
 }
 
-static void HandleLobbyLeave(ServerSession* session) {
+static void HandleLobbyLeave(ENetHost* host, ServerSession* session) {
+  uint32_t lobby_id;
+
+  if (session == NULL) {
+    return;
+  }
+  lobby_id = session->lobby_id;
   if (session->player != NULL) {
     session->player->alive = false;
     session->player->mass = 0.0f;
@@ -1321,8 +1408,10 @@ static void HandleLobbyLeave(ServerSession* session) {
   LOG_INFO("lobby leave: player_id=%u lobby_id=%u", session->player_id, session->lobby_id);
   session->lobby_id = 0;
   session->spectating = false;
+  session->is_ready = false;
   session->entered_match = false;
   session->player_id = 0;
+  BroadcastLobbyRoster(host, lobby_id);
 }
 
 static void HandleLobbyCreate(ENetPeer* peer, const ServerSession* session, ShroomLobby* lobbies,
@@ -1389,11 +1478,14 @@ static void DispatchLobbyListQuery(ServerPacketContext* context) {
 }
 
 static void DispatchLobbyJoin(ServerPacketContext* context) {
-  HandleLobbyJoin(context->peer, context->session, context->lobbies, context->enet_packet,
+  HandleLobbyJoin(context->host, context->peer, context->session, context->lobbies,
+                  context->enet_packet,
                   context->next_player_id);
 }
 
-static void DispatchLobbyLeave(ServerPacketContext* context) { HandleLobbyLeave(context->session); }
+static void DispatchLobbyLeave(ServerPacketContext* context) {
+  HandleLobbyLeave(context->host, context->session);
+}
 
 static void DispatchLobbyCreate(ServerPacketContext* context) {
   HandleLobbyCreate(context->peer, context->session, context->lobbies, context->enet_packet,
@@ -1402,6 +1494,10 @@ static void DispatchLobbyCreate(ServerPacketContext* context) {
 
 static void DispatchReadyState(ServerPacketContext* context) {
   HandleReadyStatePacket(context->host, context->session, context->enet_packet);
+}
+
+static void DispatchEnterMatch(ServerPacketContext* context) {
+  HandleEnterMatchPacket(context->host, context->session, context->enet_packet);
 }
 
 static const ServerPacketDispatchEntry kServerPacketDispatch[] = {
@@ -1415,6 +1511,7 @@ static const ServerPacketDispatchEntry kServerPacketDispatch[] = {
     {SHROOM_PACKET_LOBBY_LEAVE, DispatchLobbyLeave},
     {SHROOM_PACKET_LOBBY_CREATE, DispatchLobbyCreate},
     {SHROOM_PACKET_READY_STATE, DispatchReadyState},
+    {SHROOM_PACKET_ENTER_MATCH, DispatchEnterMatch},
 };
 
 static const ServerPacketDispatchEntry* FindServerPacketDispatchEntry(ShroomPacketType type) {
@@ -1588,9 +1685,16 @@ int main(int argc, char** argv) {
         enet_packet_destroy(event.packet);
         break;
       case ENET_EVENT_TYPE_DISCONNECT:
-        LOG_INFO("peer disconnected: slot=%u", (unsigned)event.peer->incomingPeerID);
-        DisconnectSession((ServerSession*)event.peer->data);
-        event.peer->data = 0;
+        {
+          ServerSession* disconnected_session = (ServerSession*)event.peer->data;
+          const uint32_t disconnected_lobby_id =
+              disconnected_session != NULL ? disconnected_session->lobby_id : 0u;
+
+          LOG_INFO("peer disconnected: slot=%u", (unsigned)event.peer->incomingPeerID);
+          DisconnectSession(disconnected_session);
+          event.peer->data = 0;
+          BroadcastLobbyRoster(host, disconnected_lobby_id);
+        }
         break;
       case ENET_EVENT_TYPE_NONE:
       default:

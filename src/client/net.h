@@ -72,6 +72,9 @@ typedef struct ClientNetState {
   /* Lobby state */
   bool handshake_received; /* set on WELCOME (version ack) */
   bool spectating;
+  bool match_entry_sent;
+  bool lobby_roster_received;
+  bool lobby_match_started;
   uint32_t lobby_id;
   char lobby_name[SHROOM_LOBBY_MAX_NAME_LENGTH];
   uint16_t lobby_max_players;
@@ -79,6 +82,8 @@ typedef struct ClientNetState {
   float world_height;
   uint8_t lobby_count;
   ShroomLobbyEntry lobby_list[SHROOM_MAX_LOBBIES];
+  uint16_t lobby_roster_count;
+  ShroomLobbyRosterEntry lobby_roster[SHROOM_MAX_PLAYERS];
   /* Match timer state */
   uint8_t match_phase;
   float match_time_remaining;
@@ -99,6 +104,7 @@ void ClientNetSendLobbyJoin(ClientNetState* net, uint32_t lobby_id, bool spectat
 void ClientNetSendLobbyLeave(ClientNetState* net);
 void ClientNetSendLobbyCreate(ClientNetState* net, const char* name, uint16_t max_players);
 void ClientNetSendReadyState(ClientNetState* net, bool is_ready);
+void ClientNetSendEnterMatch(ClientNetState* net);
 
 #ifdef TEST_MODE
 bool ClientNetTestCompletePendingPing(ClientNetState* net, uint32_t nonce, uint32_t now_ms);
@@ -107,6 +113,8 @@ void ClientNetTestCheckConnectTimeout(ClientNetState* net, uint32_t now_ms);
 void ClientNetTestHandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet);
 void ClientNetTestHandleSporeState(ClientNetState* net, const ENetPacket* enet_packet);
 void ClientNetTestHandleLobbyList(ClientNetState* net, const ENetPacket* enet_packet);
+void ClientNetTestHandleLobbyRoster(ClientNetState* net, const ENetPacket* enet_packet);
+bool ClientNetTestCanSendGameplayInput(const ClientNetState* net);
 void ClientNetTestHandleMushroomSpeciesCatalog(ClientNetState* net, const ENetPacket* enet_packet);
 #endif
 

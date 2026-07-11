@@ -291,6 +291,47 @@ static void test_client_net_shutdown_clears_session_state(void) {
   TEST_ASSERT_EQUAL_CHAR('\0', net.status_text[0]);
 }
 
+static void test_client_net_accepts_authoritative_lobby_roster(void) {
+  ClientNetState net = {.lobby_id = 9u};
+  ShroomLobbyRosterPacket roster = {0};
+  ENetPacket packet = {0};
+  const size_t packet_size = offsetof(ShroomLobbyRosterPacket, players) +
+                             sizeof(ShroomLobbyRosterEntry);
+  roster.lobby_id = 9u;
+  roster.player_count = 1u;
+  roster.match_started = 1u;
+  roster.players[0] = (ShroomLobbyRosterEntry){.player_id = 42u, .is_ready = 1u};
+  packet.data = (enet_uint8*)&roster;
+  packet.dataLength = packet_size;
+
+  ClientNetTestHandleLobbyRoster(&net, &packet);
+
+  TEST_ASSERT_TRUE(net.lobby_roster_received);
+  TEST_ASSERT_TRUE(net.lobby_match_started);
+  TEST_ASSERT_EQUAL_UINT16(1u, net.lobby_roster_count);
+  TEST_ASSERT_EQUAL_UINT32(42u, net.lobby_roster[0].player_id);
+}
+
+static void test_client_net_rejects_invalid_lobby_roster(void) {
+  ClientNetState net = {.lobby_id = 9u};
+  ShroomLobbyRosterPacket roster = {.lobby_id = 8u, .player_count = 1u};
+  ENetPacket packet = {.data = (enet_uint8*)&roster,
+                       .dataLength = offsetof(ShroomLobbyRosterPacket, players)};
+  ClientNetTestHandleLobbyRoster(&net, &packet);
+  TEST_ASSERT_FALSE(net.lobby_roster_received);
+
+  roster.lobby_id = 9u;
+  ClientNetTestHandleLobbyRoster(&net, &packet);
+  TEST_ASSERT_FALSE(net.lobby_roster_received);
+}
+
+static void test_gameplay_input_requires_explicit_match_entry(void) {
+  ClientNetState net = {.welcome_received = true};
+  TEST_ASSERT_FALSE(ClientNetTestCanSendGameplayInput(&net));
+  net.match_entry_sent = true;
+  TEST_ASSERT_TRUE(ClientNetTestCanSendGameplayInput(&net));
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_client_net_records_fresh_pong);
@@ -309,5 +350,8 @@ int main(void) {
   RUN_TEST(test_client_net_connect_timeout_not_fired_stays_connecting);
   RUN_TEST(test_client_net_connect_timeout_ignores_non_connecting_states);
   RUN_TEST(test_client_net_shutdown_clears_session_state);
+  RUN_TEST(test_client_net_accepts_authoritative_lobby_roster);
+  RUN_TEST(test_client_net_rejects_invalid_lobby_roster);
+  RUN_TEST(test_gameplay_input_requires_explicit_match_entry);
   return UNITY_END();
 }
