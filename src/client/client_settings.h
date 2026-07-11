@@ -70,5 +70,6 @@ const char* ClientSettingsHudDensityLabel(ClientHudDensity density);
 const char* ClientSettingsKeyLabel(int key);
 const char* ClientSettingsKeySlotLabel(int slot_index);
 bool ClientSettingsKeyIsBound(const ClientSettings* settings, int key);
+bool ClientSettingsKeyIsReserved(int key);
 
 #endif

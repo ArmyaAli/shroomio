@@ -9,6 +9,8 @@
 
 static const char* kClientSettingsPath = "client_settings.cfg";
 
+bool ClientSettingsKeyIsReserved(int key) { return (key == KEY_ENTER) || (key == KEY_TAB); }
+
 void ClientSettingsSetDefaults(ClientSettings* settings) {
   if (settings == NULL) {
     return;
@@ -77,20 +79,19 @@ void ClientSettingsValidate(ClientSettings* settings) {
   }
   /* Rebindable keys must be a valid raylib key (> KEY_NULL) and not one of
    * the reserved modal keys (Enter, Tab) — those are bound by UI contexts. */
-  if (settings->key_chat_open <= KEY_NULL || settings->key_chat_open == KEY_ENTER ||
-      settings->key_chat_open == KEY_TAB) {
+  if (settings->key_chat_open <= KEY_NULL || ClientSettingsKeyIsReserved(settings->key_chat_open)) {
     settings->key_chat_open = KEY_T;
   }
-  if (settings->key_hud_toggle <= KEY_NULL || settings->key_hud_toggle == KEY_ENTER ||
-      settings->key_hud_toggle == KEY_TAB) {
+  if (settings->key_hud_toggle <= KEY_NULL ||
+      ClientSettingsKeyIsReserved(settings->key_hud_toggle)) {
     settings->key_hud_toggle = KEY_F2;
   }
-  if (settings->key_pause_menu <= KEY_NULL || settings->key_pause_menu == KEY_ENTER ||
-      settings->key_pause_menu == KEY_TAB) {
+  if (settings->key_pause_menu <= KEY_NULL ||
+      ClientSettingsKeyIsReserved(settings->key_pause_menu)) {
     settings->key_pause_menu = KEY_ESCAPE;
   }
-  if (settings->key_push_to_talk <= KEY_NULL || settings->key_push_to_talk == KEY_ENTER ||
-      settings->key_push_to_talk == KEY_TAB) {
+  if (settings->key_push_to_talk <= KEY_NULL ||
+      ClientSettingsKeyIsReserved(settings->key_push_to_talk)) {
     settings->key_push_to_talk = KEY_V;
   }
 }

@@ -287,6 +287,39 @@ static void Test_SettingsPersistence(ImGuiTestContext* ctx) {
   IM_CHECK(loaded.menu_animations_enabled);
 }
 
+static void Test_SettingsReservedKeyRejectionAndRecovery(ImGuiTestContext* ctx) {
+  ClientSettings loaded;
+
+  ShroomImGuiTestAppReset(true);
+  ShroomTeCtx_SetRef(ctx, "Main Menu");
+  ShroomTeCtx_ItemClick(ctx, "Settings");
+  IM_CHECK(ShroomTeCtx_SetRefWindow(ctx, "//Settings/SettingsContent"));
+  ShroomTestSettingsBeginRebind(0);
+
+  ShroomTestSettingsCaptureKey(KEY_ENTER);
+  ShroomTeCtx_Yield(ctx, 1);
+  IM_CHECK_EQ(ShroomTestSettingsPendingKey(0), KEY_T);
+  IM_CHECK_STR_EQ(ShroomTestGetSettingsRebindError(),
+                  "Enter is reserved for interface controls. Choose another key.");
+
+  ShroomTestSettingsCaptureKey(KEY_TAB);
+  ShroomTeCtx_Yield(ctx, 1);
+  IM_CHECK_EQ(ShroomTestSettingsPendingKey(0), KEY_T);
+  IM_CHECK_STR_EQ(ShroomTestGetSettingsRebindError(),
+                  "Tab is reserved for interface controls. Choose another key.");
+
+  ShroomTestSettingsCaptureKey(KEY_Y);
+  ShroomTeCtx_Yield(ctx, 1);
+  IM_CHECK_EQ(ShroomTestSettingsPendingKey(0), KEY_Y);
+  IM_CHECK_STR_EQ(ShroomTestGetSettingsRebindError(), "");
+
+  ShroomTeCtx_SetRef(ctx, "Settings");
+  ShroomTeCtx_ItemClick(ctx, "Save");
+  IM_CHECK_EQ(g_imgui_test_app.game.settings.key_chat_open, KEY_Y);
+  IM_CHECK(ClientSettingsLoad(&loaded));
+  IM_CHECK_EQ(loaded.key_chat_open, KEY_Y);
+}
+
 static void Test_SettingsDiscardAndEscape(ImGuiTestContext* ctx) {
   ShroomImGuiTestAppReset(true);
   const int original_scale = g_imgui_test_app.game.settings.ui_scale_percent;
@@ -1020,6 +1053,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
   ShroomTeEngine_RegisterTest(engine, "screens", "settings_exposes_controls_and_applies_bounds",
                               Test_SettingsExposesSpecControlsAndAppliesBoundaryValues);
   ShroomTeEngine_RegisterTest(engine, "screens", "settings_persistence", Test_SettingsPersistence);
+  ShroomTeEngine_RegisterTest(engine, "screens", "settings_reserved_key_rejection_and_recovery",
+                              Test_SettingsReservedKeyRejectionAndRecovery);
   ShroomTeEngine_RegisterTest(engine, "screens", "settings_discard_and_escape",
                               Test_SettingsDiscardAndEscape);
   ShroomTeEngine_RegisterTest(engine, "screens", "settings_restore_defaults_requires_save",

@@ -83,6 +83,10 @@ struct Game;
 const char* ShroomTestGetResultsDurationText(const struct Game* game);
 bool ShroomTestMainMenuAnimationsEnabled(const struct Game* game);
 void ShroomTestSettingsEscape(ShroomScreenManager* manager);
+void ShroomTestSettingsBeginRebind(int slot);
+void ShroomTestSettingsCaptureKey(int key);
+int ShroomTestSettingsPendingKey(int slot);
+const char* ShroomTestGetSettingsRebindError(void);
 #endif
 
 #endif
