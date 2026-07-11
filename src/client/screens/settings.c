@@ -21,6 +21,7 @@ typedef struct SettingsScreenState {
   int rebind_slot;
   bool rebind_armed;
   int rebind_conflict_slot; /* -1 if no conflict, else the slot that owns the pressed key */
+  int rebind_reserved_key;  /* KEY_NULL if the last captured key was assignable */
 } SettingsScreenState;
 
 static SettingsScreenState g_settings_screen;
@@ -114,7 +115,59 @@ static bool SettingsInit(ShroomScreenManager* manager) {
   g_settings_screen.rebind_slot = -1;
   g_settings_screen.rebind_armed = false;
   g_settings_screen.rebind_conflict_slot = -1;
+  g_settings_screen.rebind_reserved_key = KEY_NULL;
   return true;
+}
+
+static void SettingsCaptureKey(int pressed) {
+  int conflicted;
+
+  if (!g_settings_screen.rebind_armed || (pressed == KEY_NULL)) {
+    return;
+  }
+  if (pressed == KEY_ESCAPE) {
+    g_settings_screen.rebind_slot = -1;
+    g_settings_screen.rebind_armed = false;
+    g_settings_screen.rebind_conflict_slot = -1;
+    g_settings_screen.rebind_reserved_key = KEY_NULL;
+    return;
+  }
+  if (ClientSettingsKeyIsReserved(pressed)) {
+    g_settings_screen.rebind_conflict_slot = -1;
+    g_settings_screen.rebind_reserved_key = pressed;
+    return;
+  }
+
+  conflicted = SettingsFindConflictSlot(&g_settings_screen.session.pending, pressed,
+                                        g_settings_screen.rebind_slot);
+  if (conflicted >= 0) {
+    g_settings_screen.rebind_conflict_slot = conflicted;
+  } else {
+    int* slot_key =
+        SettingsSlotKeyPtr(&g_settings_screen.session.pending, g_settings_screen.rebind_slot);
+    if (slot_key != NULL) {
+      *slot_key = pressed;
+      ShroomSettingsSessionMarkDirty(&g_settings_screen.session);
+      g_settings_screen.save_succeeded = false;
+      g_settings_screen.save_failed = false;
+    }
+  }
+  g_settings_screen.rebind_reserved_key = KEY_NULL;
+  g_settings_screen.rebind_slot = -1;
+  g_settings_screen.rebind_armed = false;
+}
+
+static const char* SettingsRebindErrorText(void) {
+  if (g_settings_screen.rebind_reserved_key != KEY_NULL) {
+    static char message[128];
+    snprintf(message, sizeof(message), "%s is reserved for interface controls. Choose another key.",
+             ClientSettingsKeyLabel(g_settings_screen.rebind_reserved_key));
+    return message;
+  }
+  if (g_settings_screen.rebind_conflict_slot >= 0) {
+    return "Conflict: that key is bound to another slot.";
+  }
+  return "";
 }
 
 static void SettingsDraw(ShroomScreenManager* manager) {
@@ -236,6 +289,7 @@ static void SettingsDraw(ShroomScreenManager* manager) {
         g_settings_screen.rebind_slot = slot;
         g_settings_screen.rebind_armed = true;
         g_settings_screen.rebind_conflict_slot = -1;
+        g_settings_screen.rebind_reserved_key = KEY_NULL;
       }
       if (is_rebinding) {
         ShroomImGui_PopStyleColor();
@@ -245,38 +299,15 @@ static void SettingsDraw(ShroomScreenManager* manager) {
   }
 
   /* Surface conflict before save so the player fixes it first. */
-  if (g_settings_screen.rebind_conflict_slot >= 0) {
-    ShroomImGui_TextColored((ShroomImGuiColor){1.0f, 0.45f, 0.4f, 1.0f},
-                            "Conflict: that key is bound to another slot.");
+  if (SettingsRebindErrorText()[0] != '\0') {
+    ShroomImGui_TextColored((ShroomImGuiColor){1.0f, 0.45f, 0.4f, 1.0f}, SettingsRebindErrorText());
   }
 
   /* Rebind capture: if armed and not in an ImGui capture context, pull the
    * next queued key. Esc is the cancel key during rebind. */
   if (g_settings_screen.rebind_armed && !ShroomImGui_WantCaptureKeyboard()) {
     const int pressed = GetKeyPressed();
-    if (pressed != 0) {
-      if (pressed == KEY_ESCAPE) {
-        g_settings_screen.rebind_slot = -1;
-        g_settings_screen.rebind_armed = false;
-      } else {
-        const int conflicted = SettingsFindConflictSlot(&g_settings_screen.session.pending, pressed,
-                                                        g_settings_screen.rebind_slot);
-        if (conflicted >= 0) {
-          g_settings_screen.rebind_conflict_slot = conflicted;
-        } else {
-          int* slot_key =
-              SettingsSlotKeyPtr(&g_settings_screen.session.pending, g_settings_screen.rebind_slot);
-          if (slot_key != NULL) {
-            *slot_key = pressed;
-            ShroomSettingsSessionMarkDirty(&g_settings_screen.session);
-            g_settings_screen.save_succeeded = false;
-            g_settings_screen.save_failed = false;
-          }
-        }
-        g_settings_screen.rebind_slot = -1;
-        g_settings_screen.rebind_armed = false;
-      }
-    }
+    SettingsCaptureKey(pressed);
   }
 
   ShroomImGui_EndChild();
@@ -340,8 +371,7 @@ static void SettingsDraw(ShroomScreenManager* manager) {
 
 static void HandleSettingsEscape(ShroomScreenManager* manager) {
   if (g_settings_screen.rebind_armed) {
-    g_settings_screen.rebind_slot = -1;
-    g_settings_screen.rebind_armed = false;
+    SettingsCaptureKey(KEY_ESCAPE);
   } else {
     DiscardAndGoBack(manager);
   }
@@ -349,6 +379,25 @@ static void HandleSettingsEscape(ShroomScreenManager* manager) {
 
 #ifdef TEST_MODE
 void ShroomTestSettingsEscape(ShroomScreenManager* manager) { HandleSettingsEscape(manager); }
+
+void ShroomTestSettingsBeginRebind(int slot) {
+  if (SettingsSlotKeyPtr(&g_settings_screen.session.pending, slot) == NULL) {
+    return;
+  }
+  g_settings_screen.rebind_slot = slot;
+  g_settings_screen.rebind_armed = true;
+  g_settings_screen.rebind_conflict_slot = -1;
+  g_settings_screen.rebind_reserved_key = KEY_NULL;
+}
+
+void ShroomTestSettingsCaptureKey(int key) { SettingsCaptureKey(key); }
+
+int ShroomTestSettingsPendingKey(int slot) {
+  int* key = SettingsSlotKeyPtr(&g_settings_screen.session.pending, slot);
+  return key != NULL ? *key : KEY_NULL;
+}
+
+const char* ShroomTestGetSettingsRebindError(void) { return SettingsRebindErrorText(); }
 #endif
 
 static void SettingsHandleInput(ShroomScreenManager* manager) {
