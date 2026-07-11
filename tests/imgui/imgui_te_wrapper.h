@@ -71,6 +71,7 @@ void ShroomTeCtx_ItemInputValueStr(ImGuiTestContext *ctx, const char *ref, const
 void ShroomTeCtx_ItemInputValueInt(ImGuiTestContext *ctx, const char *ref, int value);
 void ShroomTeCtx_Yield(ImGuiTestContext *ctx, int count);
 bool ShroomTeCtx_ItemExists(ImGuiTestContext *ctx, const char *ref);
+bool ShroomTeCtx_ItemIsFullyVisible(ImGuiTestContext *ctx, const char *ref);
 
 /* -------------------------------------------------------------------------
  * ImGui window queries (hides ImGuiWindow* from C code)
@@ -81,6 +82,9 @@ bool ShroomTeImGui_WindowIsActive(const char *name);
 
 /* Returns true if the given window is the current nav (keyboard-focus) window. */
 bool ShroomTeImGui_WindowIsNavFocused(const char *name);
+
+/* Returns true when the window rectangle is fully inside the display viewport. */
+bool ShroomTeImGui_WindowFitsViewport(const char *name);
 
 /* -------------------------------------------------------------------------
  * Assertion helpers — called by the macros below.

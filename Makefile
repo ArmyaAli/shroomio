@@ -205,6 +205,7 @@ CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/game.c \
 	$(CLIENT_SRC_DIR)/game_mode_availability.c \
 	$(CLIENT_SRC_DIR)/layout.c \
+	$(CLIENT_SRC_DIR)/layout_metrics.c \
 	$(CLIENT_SRC_DIR)/net.c \
 	$(CLIENT_SRC_DIR)/render_lod.c \
 	$(CLIENT_SRC_DIR)/results_summary.c \
@@ -273,6 +274,7 @@ IMGUI_TEST_CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/game.c \
 	$(CLIENT_SRC_DIR)/game_mode_availability.c \
 	$(CLIENT_SRC_DIR)/layout.c \
+	$(CLIENT_SRC_DIR)/layout_metrics.c \
 	$(CLIENT_SRC_DIR)/net.c \
 	$(CLIENT_SRC_DIR)/render_lod.c \
 	$(CLIENT_SRC_DIR)/results_summary.c \
@@ -730,6 +732,9 @@ test_connection) \
 		test_results_summary) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/results_summary.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+		test_layout_metrics) \
+			$(LINUX_CC) $(COVERAGE_CFLAGS) \
+				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/layout_metrics.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_client_net) \
 				$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) \
 					$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c -o $$test_bin $(COVERAGE_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lenet ;; \
@@ -811,6 +816,10 @@ $(TEST_BUILD_DIR)/test_server_browser_model: $(UNIT_TESTS_DIR)/test_server_brows
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
 $(TEST_BUILD_DIR)/test_results_summary: $(UNIT_TESTS_DIR)/test_results_summary.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/results_summary.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_layout_metrics: $(UNIT_TESTS_DIR)/test_layout_metrics.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/layout_metrics.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
