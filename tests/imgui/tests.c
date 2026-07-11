@@ -955,6 +955,11 @@ static void Test_LobbyAutoJoinTransitionsToRoster(ImGuiTestContext* ctx) {
   g_imgui_test_app.game.net.welcome_received = true;
   g_imgui_test_app.game.net.player_id = 7u;
   g_imgui_test_app.game.net.entity_id = 42u;
+  g_imgui_test_app.game.net.lobby_id = 1u;
+  g_imgui_test_app.game.net.lobby_roster_received = true;
+  g_imgui_test_app.game.net.lobby_roster_count = 1u;
+  g_imgui_test_app.game.net.lobby_roster[0] =
+      (ShroomLobbyRosterEntry){.player_id = 7u, .is_ready = 1u};
   ShroomTeCtx_Yield(ctx, 2);
   IM_CHECK_EQ(g_imgui_test_app.game.auto_join_lobby, false);
   IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
@@ -971,6 +976,11 @@ static void Test_FirstLobbyEntryDoesNotOpenDeathCutscene(ImGuiTestContext* ctx) 
   g_imgui_test_app.game.net.welcome_received = true;
   g_imgui_test_app.game.net.player_id = 7u;
   g_imgui_test_app.game.net.entity_id = 42u;
+  g_imgui_test_app.game.net.lobby_id = 1u;
+  g_imgui_test_app.game.net.lobby_roster_received = true;
+  g_imgui_test_app.game.net.lobby_roster_count = 1u;
+  g_imgui_test_app.game.net.lobby_roster[0] =
+      (ShroomLobbyRosterEntry){.player_id = 7u, .is_ready = 1u};
   ShroomTeCtx_Yield(ctx, 2);
 
   ShroomTeCtx_SetRef(ctx, "Lobby Roster");
@@ -980,6 +990,7 @@ static void Test_FirstLobbyEntryDoesNotOpenDeathCutscene(ImGuiTestContext* ctx) 
   IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
               SHROOM_SCREEN_GAME);
   IM_CHECK_EQ(g_imgui_test_app.game.active_mode, SHROOM_SESSION_MODE_LOBBY_PLAY);
+  IM_CHECK_EQ(g_imgui_test_app.game.net.match_entry_sent, true);
   IM_CHECK_EQ(g_imgui_test_app.game.death_cutscene_duration, 0.0f);
   IM_CHECK(!ShroomTeImGui_WindowIsActive("Death Cutscene Actions"));
 }

@@ -9,11 +9,6 @@
 
 #include "raylib.h"
 
-/* Placeholder roster state — the server does not yet broadcast per-lobby
- * rosters, so we approximate with snapshot players (once the first
- * snapshot arrives) and surface local ready state locally. This keeps
- * visibility, leave, and countdown messaging atomic and testable. */
-static bool g_ready_state;
 static float g_status_pulse_timer;
 
 typedef enum LobbyRosterStatus {
@@ -26,14 +21,14 @@ static LobbyRosterStatus LobbyRosterComputeStatus(const Game* game) {
   if (game == NULL) {
     return LOBBY_ROSTER_STATUS_WAITING;
   }
-  /* Once we receive the welcome/snapshot, the match has started. */
-  if (game->net.welcome_received && game->net.last_snapshot_tick != 0ull) {
+  if (game->net.lobby_match_started) {
     return LOBBY_ROSTER_STATUS_IN_PROGRESS;
   }
-  /* Starting-soon placeholder: local ready and at least one peer snapshot
-   * has player data queued. */
-  if (g_ready_state && game->net.snapshot_player_count > 0u) {
-    return LOBBY_ROSTER_STATUS_STARTING_SOON;
+  for (uint16_t i = 0; i < game->net.lobby_roster_count; ++i) {
+    if (game->net.lobby_roster[i].player_id == game->net.player_id &&
+        game->net.lobby_roster[i].is_ready != 0u) {
+      return LOBBY_ROSTER_STATUS_STARTING_SOON;
+    }
   }
   return LOBBY_ROSTER_STATUS_WAITING;
 }
@@ -56,7 +51,6 @@ static bool LobbyRosterInit(ShroomScreenManager* manager) {
   if (game == NULL) {
     return false;
   }
-  g_ready_state = false;
   g_status_pulse_timer = 0.0f;
   return true;
 }
@@ -79,9 +73,16 @@ static void LobbyRosterUpdate(ShroomScreenManager* manager, float delta_time) {
 
 static void LobbyRosterDraw(ShroomScreenManager* manager) {
   Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
+  const ShroomLobbyRosterEntry* local_entry = NULL;
 
   if (game == NULL) {
     return;
+  }
+  for (uint16_t i = 0; i < game->net.lobby_roster_count; ++i) {
+    if (game->net.lobby_roster[i].player_id == game->net.player_id) {
+      local_entry = &game->net.lobby_roster[i];
+      break;
+    }
   }
 
   ShroomScreenDrawFungalBackground(game->settings.menu_animations_enabled);
@@ -103,7 +104,7 @@ static void LobbyRosterDraw(ShroomScreenManager* manager) {
   ShroomImGui_TextDisabled(TextFormat("(id %u)", game->net.lobby_id));
 
   /* Capacity line refreshes every frame from the live snapshot count. */
-  const uint16_t current = game->net.snapshot_player_count;
+  const uint16_t current = game->net.lobby_roster_count;
   const uint16_t capacity = (game->net.lobby_max_players > 0u) ? game->net.lobby_max_players
                                                                : (uint16_t)SHROOM_MAX_PLAYERS;
   ShroomImGui_TextDisabled(TextFormat("%u / %u players in match", current, capacity));
@@ -127,7 +128,8 @@ static void LobbyRosterDraw(ShroomScreenManager* manager) {
     ShroomImGui_TableSetColumnIndex(1);
     ShroomImGui_Text(game->net.spectating ? "Spectator" : "Player");
     ShroomImGui_TableSetColumnIndex(2);
-    ShroomImGui_Text(g_ready_state ? "Ready" : "Not Ready");
+    ShroomImGui_Text(local_entry == NULL ? "Waiting for status"
+                                        : (local_entry->is_ready ? "Ready" : "Not Ready"));
 
     /* Peers sourced from the latest snapshot; the list refreshes every
      * frame as players join and leave. Bots auto-ready so the lobby reads
@@ -145,7 +147,19 @@ static void LobbyRosterDraw(ShroomScreenManager* manager) {
         ShroomImGui_TableSetColumnIndex(1);
         ShroomImGui_Text(peer->is_bot ? "Bot" : "Player");
         ShroomImGui_TableSetColumnIndex(2);
-        ShroomImGui_Text(peer->is_bot ? "Ready" : "Not Ready");
+        if (peer->is_bot) {
+          ShroomImGui_Text("Ready");
+        } else {
+          const ShroomLobbyRosterEntry* roster_entry = NULL;
+          for (uint16_t j = 0; j < game->net.lobby_roster_count; ++j) {
+            if (game->net.lobby_roster[j].player_id == peer->player_id) {
+              roster_entry = &game->net.lobby_roster[j];
+              break;
+            }
+          }
+          ShroomImGui_Text(roster_entry == NULL ? "Waiting for status"
+                                                : (roster_entry->is_ready ? "Ready" : "Not Ready"));
+        }
       }
     } else {
       ShroomImGui_TableNextRow();
@@ -169,9 +183,9 @@ static void LobbyRosterDraw(ShroomScreenManager* manager) {
 
   ShroomImGui_Spacing();
 
-  if (ShroomImGui_Button(g_ready_state ? "Ready" : "Not Ready", ShroomLayoutMetric(140.0f), 0.0f)) {
-    g_ready_state = !g_ready_state;
-    ClientNetSendReadyState(&game->net, g_ready_state);
+  bool desired_ready = local_entry != NULL && local_entry->is_ready != 0u;
+  if (!game->net.spectating && ShroomImGui_Checkbox("Ready to enter", &desired_ready)) {
+    ClientNetSendReadyState(&game->net, desired_ready);
   }
   ShroomImGui_SameLine();
   if (ShroomImGui_Button("Leave Lobby", ShroomLayoutMetric(140.0f), 0.0f)) {
@@ -185,15 +199,19 @@ static void LobbyRosterDraw(ShroomScreenManager* manager) {
   /* Entering the match is explicit — the player stays on the roster until
    * they choose to enter. The server is already sending snapshots, so we
    * just need to flip the session mode and transition. */
-  const bool can_enter = game->net.welcome_received || game->net.spectating;
+  const bool can_enter = game->net.spectating ||
+                         (game->net.welcome_received && game->net.lobby_roster_received &&
+                          local_entry != NULL && local_entry->is_ready != 0u);
   if (can_enter) {
     if (ShroomImGui_Button("Enter Match", ShroomLayoutMetric(140.0f), 0.0f)) {
+      ClientNetSendEnterMatch(&game->net);
       game->selected_mode = SHROOM_SESSION_MODE_LOBBY_PLAY;
       game->active_mode = SHROOM_SESSION_MODE_LOBBY_PLAY;
       ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
     }
   } else {
-    ShroomImGui_TextDisabled("Waiting for server...");
+    ShroomImGui_TextDisabled(game->net.lobby_roster_received ? "Ready up to enter"
+                                                             : "Waiting for server...");
   }
 
   ShroomImGui_End();
@@ -215,7 +233,6 @@ static void LobbyRosterHandleInput(ShroomScreenManager* manager) {
 
 static void LobbyRosterCleanup(ShroomScreenManager* manager) {
   (void)manager;
-  g_ready_state = false;
   g_status_pulse_timer = 0.0f;
 }
 

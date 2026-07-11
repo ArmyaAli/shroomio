@@ -7,7 +7,7 @@
 
 #include "config.h"
 
-#define SHROOM_PROTOCOL_VERSION 5u
+#define SHROOM_PROTOCOL_VERSION 6u
 #define SHROOM_SERVER_PORT 7777u
 #define SHROOM_MAX_UNRELIABLE_PACKET_SIZE 1200u
 #define SHROOM_MAX_PASSWORD_LENGTH 64u
@@ -61,6 +61,8 @@ typedef enum ShroomPacketType {
   SHROOM_PACKET_MUSHROOM_SPECIES_CATALOG = 19,
   SHROOM_PACKET_VOICE_FRAME = 20,
   SHROOM_PACKET_READY_STATE = 21,
+  SHROOM_PACKET_ENTER_MATCH = 22,
+  SHROOM_PACKET_LOBBY_ROSTER = 23,
 } ShroomPacketType;
 
 typedef enum ShroomAuthMethod {
@@ -307,6 +309,28 @@ typedef struct ShroomReadyStatePacket {
   uint8_t reserved[3];
 } ShroomReadyStatePacket;
 
+typedef struct ShroomEnterMatchPacket {
+  ShroomPacketHeader header;
+  uint32_t lobby_id;
+} ShroomEnterMatchPacket;
+
+typedef struct ShroomLobbyRosterEntry {
+  uint32_t player_id;
+  uint8_t is_spectator;
+  uint8_t is_ready;
+  uint8_t entered_match;
+  uint8_t reserved;
+} ShroomLobbyRosterEntry;
+
+typedef struct ShroomLobbyRosterPacket {
+  ShroomPacketHeader header;
+  uint32_t lobby_id;
+  uint16_t player_count;
+  uint8_t match_started;
+  uint8_t reserved;
+  ShroomLobbyRosterEntry players[SHROOM_MAX_PLAYERS];
+} ShroomLobbyRosterPacket;
+
 #define SHROOM_PACKET_METADATA(X)                                                                  \
   X(SHROOM_PACKET_HELLO, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomHelloPacket))             \
   X(SHROOM_PACKET_WELCOME, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomWelcomePacket))         \
@@ -338,7 +362,10 @@ typedef struct ShroomReadyStatePacket {
     offsetof(ShroomPowerupStatePacket, powerups))                                                  \
   X(SHROOM_PACKET_MUSHROOM_SPECIES_CATALOG, SHROOM_ENET_CHANNEL_CONTROL, true,                     \
     offsetof(ShroomMushroomSpeciesCatalogPacket, species))                                         \
-  X(SHROOM_PACKET_READY_STATE, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomReadyStatePacket))
+  X(SHROOM_PACKET_READY_STATE, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomReadyStatePacket))  \
+  X(SHROOM_PACKET_ENTER_MATCH, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomEnterMatchPacket))  \
+  X(SHROOM_PACKET_LOBBY_ROSTER, SHROOM_ENET_CHANNEL_CONTROL, true,                              \
+    offsetof(ShroomLobbyRosterPacket, players))
 
 static inline uint8_t ShroomPacketTypeToChannel(ShroomPacketType type) {
   switch (type) {
