@@ -1,5 +1,6 @@
 #include "game.h"
 #include "imgui_wrapper.h"
+#include "layout.h"
 #include "screen.h"
 #include "shared/lifecycle.h"
 
@@ -81,7 +82,8 @@ int main(void) {
     ShroomScreenManagerUpdate(&g_screen_manager, GetFrameTime());
 
     ShroomImGui_ApplyTheme(g_game.settings.palette_preset == CLIENT_PALETTE_HIGH_CONTRAST);
-    ShroomImGui_SetUiScale((float)g_game.settings.ui_scale_percent / 100.0f);
+    ShroomLayoutSetScale((float)g_game.settings.ui_scale_percent / 100.0f);
+    ShroomImGui_SetUiScale(ShroomLayoutGetScale());
     ShroomImGui_NewFrame();
 
     BeginDrawing();

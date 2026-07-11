@@ -320,6 +320,79 @@ static void Test_SettingsReservedKeyRejectionAndRecovery(ImGuiTestContext* ctx) 
   IM_CHECK_EQ(loaded.key_chat_open, KEY_Y);
 }
 
+static void Test_UiScaleEndpointsKeepPrimaryWindowsUsable(ImGuiTestContext* ctx) {
+  const int scales[] = {80, 100, 160};
+
+  for (size_t index = 0; index < sizeof(scales) / sizeof(scales[0]); ++index) {
+    ShroomImGuiTestAppReset(true);
+    g_imgui_test_app.game.settings.ui_scale_percent = scales[index];
+    ShroomTeCtx_SetRef(ctx, "Main Menu");
+    ShroomTeCtx_Yield(ctx, 2);
+
+    IM_CHECK(ShroomTeImGui_WindowFitsViewport("Main Menu"));
+    IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Settings"));
+    IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Exit"));
+    IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Settings"));
+  }
+
+  ShroomTeCtx_SetRef(ctx, "Main Menu");
+  ShroomTeCtx_ItemClick(ctx, "Settings");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(ShroomTeImGui_WindowFitsViewport("Settings"));
+  IM_CHECK(ShroomTeCtx_SetRefWindow(ctx, "//Settings/SettingsContent"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "UI Scale"));
+  ShroomTeCtx_SetRef(ctx, "Settings");
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Save"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Restore Defaults"));
+  IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Save"));
+  IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Restore Defaults"));
+
+  ShroomImGuiTestAppReset(true);
+  g_imgui_test_app.game.settings.ui_scale_percent = 160;
+  ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_SERVER_BROWSER);
+  ShroomTeCtx_SetRef(ctx, "Server Browser");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(ShroomTeImGui_WindowFitsViewport("Server Browser"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Join Host"));
+  IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Join Host"));
+
+  SetupLobbyBrowser();
+  g_imgui_test_app.game.settings.ui_scale_percent = 160;
+  ShroomTeCtx_SetRef(ctx, "Lobby Browser");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(ShroomTeImGui_WindowFitsViewport("Lobby Browser"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Create"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Back"));
+  IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Create"));
+  IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Back"));
+
+  g_imgui_test_app.game.net.welcome_received = true;
+  g_imgui_test_app.game.net.player_id = 7u;
+  ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_LOBBY_ROSTER);
+  ShroomTeCtx_SetRef(ctx, "Lobby Roster");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(ShroomTeImGui_WindowFitsViewport("Lobby Roster"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Enter Match"));
+  IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Enter Match"));
+
+  SetupResultsScreen(420.0f, 300.0f, 3);
+  g_imgui_test_app.game.settings.ui_scale_percent = 160;
+  ShroomTeCtx_SetRef(ctx, "Match Results");
+  ShroomTeCtx_Yield(ctx, 4);
+  IM_CHECK(ShroomTeImGui_WindowFitsViewport("Match Results"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Play Again"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Main Menu"));
+  IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Play Again"));
+  IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Main Menu"));
+
+  SetupOnlineGame();
+  g_imgui_test_app.game.settings.ui_scale_percent = 160;
+  ShroomTeCtx_Yield(ctx, 3);
+  IM_CHECK(ShroomTeImGui_WindowFitsViewport("HUD Left"));
+  IM_CHECK(ShroomTeImGui_WindowFitsViewport("HUD Right"));
+  IM_CHECK(ShroomTeImGui_WindowFitsViewport("Chat"));
+}
+
 static void Test_SettingsDiscardAndEscape(ImGuiTestContext* ctx) {
   ShroomImGuiTestAppReset(true);
   const int original_scale = g_imgui_test_app.game.settings.ui_scale_percent;
@@ -1055,6 +1128,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
   ShroomTeEngine_RegisterTest(engine, "screens", "settings_persistence", Test_SettingsPersistence);
   ShroomTeEngine_RegisterTest(engine, "screens", "settings_reserved_key_rejection_and_recovery",
                               Test_SettingsReservedKeyRejectionAndRecovery);
+  ShroomTeEngine_RegisterTest(engine, "screens", "ui_scale_endpoints_keep_windows_usable",
+                              Test_UiScaleEndpointsKeepPrimaryWindowsUsable);
   ShroomTeEngine_RegisterTest(engine, "screens", "settings_discard_and_escape",
                               Test_SettingsDiscardAndEscape);
   ShroomTeEngine_RegisterTest(engine, "screens", "settings_restore_defaults_requires_save",

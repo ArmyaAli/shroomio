@@ -58,8 +58,8 @@ static void ResultsDraw(ShroomScreenManager* manager) {
   ShroomImGui_Spacing();
   ShroomImGui_Spacing();
 
-  const float button_width = 200.0f;
-  const float button_height = 40.0f;
+  const float button_width = ShroomLayoutMetric(200.0f);
+  const float button_height = ShroomLayoutMetric(40.0f);
 
   ShroomImGui_SetNextItemWidth(button_width);
   if (ShroomImGui_Button("Play Again", button_width, button_height)) {

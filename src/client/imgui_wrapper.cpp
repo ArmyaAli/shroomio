@@ -99,11 +99,17 @@ void ShroomImGui_Render(void) {
   ImGui_ImplRaylib_RenderDrawData(ImGui::GetDrawData());
 }
 
-void ShroomImGui_SetUiScale(float scale) { ImGui::GetIO().FontGlobalScale = scale; }
+void ShroomImGui_SetUiScale(float scale) {
+  const float clamped_scale = scale < 0.8f ? 0.8f : (scale > 1.6f ? 1.6f : scale);
+  ImGui::GetIO().FontGlobalScale = clamped_scale;
+  ImGui::GetStyle().ScaleAllSizes(clamped_scale);
+}
 
 void ShroomImGui_ApplyTheme(bool high_contrast) {
   ImGuiStyle& style = ImGui::GetStyle();
   ImVec4* colors;
+
+  style = ImGuiStyle();
 
   style.WindowPadding = ImVec2(16.0f, 14.0f);
   style.FramePadding = ImVec2(10.0f, 7.0f);

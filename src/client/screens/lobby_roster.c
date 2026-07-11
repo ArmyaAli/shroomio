@@ -1,5 +1,6 @@
 #include "client/game.h"
 #include "client/imgui_wrapper.h"
+#include "client/layout.h"
 #include "client/net.h"
 #include "client/screen.h"
 #include "client/screens/screen_background.h"
@@ -85,18 +86,11 @@ static void LobbyRosterDraw(ShroomScreenManager* manager) {
 
   ShroomScreenDrawFungalBackground(game->settings.menu_animations_enabled);
 
-  const float w = 560.0f;
-  const float h = 420.0f;
-  ShroomImGui_SetNextWindowPos((GetScreenWidth() - w) * 0.5f, (GetScreenHeight() - h) * 0.5f,
-                               SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowSize(w, h, SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowBgAlpha(0.9f);
-
-  if (!ShroomImGui_Begin("Lobby Roster", NULL,
-                         SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
-                             SHROOM_IMGUI_WINDOW_NO_MOVE | SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
-                             SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS |
-                             SHROOM_IMGUI_WINDOW_NO_SCROLLBAR)) {
+  if (!ShroomLayoutBeginCenteredPanel(
+          "Lobby Roster", 560.0f, 420.0f, 0.9f,
+          SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
+              SHROOM_IMGUI_WINDOW_NO_MOVE | SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
+              SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
     ShroomImGui_End();
     return;
   }
@@ -119,10 +113,10 @@ static void LobbyRosterDraw(ShroomScreenManager* manager) {
   if (ShroomImGui_BeginTable("RosterTable", 3,
                              SHROOM_IMGUI_TABLE_BORDERS | SHROOM_IMGUI_TABLE_ROW_BG |
                                  SHROOM_IMGUI_TABLE_SIZING_FIXED,
-                             530.0f, 220.0f)) {
-    ShroomImGui_TableSetupColumn("Player", 280.0f);
-    ShroomImGui_TableSetupColumn("Role", 120.0f);
-    ShroomImGui_TableSetupColumn("Status", 120.0f);
+                             0.0f, ShroomLayoutMetric(220.0f))) {
+    ShroomImGui_TableSetupColumn("Player", ShroomLayoutMetric(280.0f));
+    ShroomImGui_TableSetupColumn("Role", ShroomLayoutMetric(120.0f));
+    ShroomImGui_TableSetupColumn("Status", ShroomLayoutMetric(120.0f));
     ShroomImGui_TableHeadersRow();
 
     /* Local player row is always first and highlighted. */
@@ -175,12 +169,12 @@ static void LobbyRosterDraw(ShroomScreenManager* manager) {
 
   ShroomImGui_Spacing();
 
-  if (ShroomImGui_Button(g_ready_state ? "Ready" : "Not Ready", 140.0f, 0.0f)) {
+  if (ShroomImGui_Button(g_ready_state ? "Ready" : "Not Ready", ShroomLayoutMetric(140.0f), 0.0f)) {
     g_ready_state = !g_ready_state;
     ClientNetSendReadyState(&game->net, g_ready_state);
   }
   ShroomImGui_SameLine();
-  if (ShroomImGui_Button("Leave Lobby", 140.0f, 0.0f)) {
+  if (ShroomImGui_Button("Leave Lobby", ShroomLayoutMetric(140.0f), 0.0f)) {
     ClientNetSendLobbyLeave(&game->net);
     ClientNetShutdown(&game->net);
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
@@ -193,7 +187,7 @@ static void LobbyRosterDraw(ShroomScreenManager* manager) {
    * just need to flip the session mode and transition. */
   const bool can_enter = game->net.welcome_received || game->net.spectating;
   if (can_enter) {
-    if (ShroomImGui_Button("Enter Match", 140.0f, 0.0f)) {
+    if (ShroomImGui_Button("Enter Match", ShroomLayoutMetric(140.0f), 0.0f)) {
       game->selected_mode = SHROOM_SESSION_MODE_LOBBY_PLAY;
       game->active_mode = SHROOM_SESSION_MODE_LOBBY_PLAY;
       ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);

@@ -3,6 +3,7 @@
 
 #include "client/client_settings.h"
 #include "client/imgui_wrapper.h"
+#include "client/layout.h"
 #include "raylib.h"
 
 #include <stdio.h>
@@ -109,7 +110,8 @@ int main(void) {
 
     ShroomImGui_ApplyTheme(g_imgui_test_app.game.settings.palette_preset ==
                            CLIENT_PALETTE_HIGH_CONTRAST);
-    ShroomImGui_SetUiScale((float)g_imgui_test_app.game.settings.ui_scale_percent / 100.0f);
+    ShroomLayoutSetScale((float)g_imgui_test_app.game.settings.ui_scale_percent / 100.0f);
+    ShroomImGui_SetUiScale(ShroomLayoutGetScale());
     ShroomImGui_NewFrame();
 
     BeginDrawing();

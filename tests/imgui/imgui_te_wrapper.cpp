@@ -134,6 +134,19 @@ bool ShroomTeCtx_ItemExists(ImGuiTestContext *ctx, const char *ref) {
   return ctx->ItemExists(ref);
 }
 
+bool ShroomTeCtx_ItemIsFullyVisible(ImGuiTestContext *ctx, const char *ref) {
+  const ImGuiTestItemInfo info = ctx->ItemInfo(ref, ImGuiTestOpFlags_NoError);
+  const float epsilon = 0.5f;
+
+  if (info.ID == 0 || info.Window == nullptr) {
+    return false;
+  }
+  return info.RectFull.Min.x >= info.RectClipped.Min.x - epsilon &&
+         info.RectFull.Min.y >= info.RectClipped.Min.y - epsilon &&
+         info.RectFull.Max.x <= info.RectClipped.Max.x + epsilon &&
+         info.RectFull.Max.y <= info.RectClipped.Max.y + epsilon;
+}
+
 /* -------------------------------------------------------------------------
  * ImGui window queries
  * ---------------------------------------------------------------------- */
@@ -147,6 +160,19 @@ bool ShroomTeImGui_WindowIsNavFocused(const char *name) {
   ImGuiWindow *w = ImGui::FindWindowByName(name);
   if (w == NULL) return false;
   return ImGui::GetCurrentContext()->NavWindow == w;
+}
+
+bool ShroomTeImGui_WindowFitsViewport(const char *name) {
+  ImGuiWindow *window = ImGui::FindWindowByName(name);
+  const ImVec2 display_size = ImGui::GetIO().DisplaySize;
+  const float epsilon = 0.5f;
+
+  if (window == nullptr || !window->Active) {
+    return false;
+  }
+  return window->Pos.x >= -epsilon && window->Pos.y >= -epsilon &&
+         window->Pos.x + window->Size.x <= display_size.x + epsilon &&
+         window->Pos.y + window->Size.y <= display_size.y + epsilon;
 }
 
 /* -------------------------------------------------------------------------
