@@ -1354,8 +1354,8 @@ static void HandleLobbyListQuery(ENetPeer* peer, const ServerSession* session, S
 }
 
 static void HandleLobbyJoin(ENetHost* host, ENetPeer* peer, ServerSession* session,
-                            ShroomLobby* lobbies,
-                            const ENetPacket* enet_packet, uint32_t* next_player_id) {
+                            ShroomLobby* lobbies, const ENetPacket* enet_packet,
+                            uint32_t* next_player_id) {
   const ShroomLobbyJoinPacket* packet = (const ShroomLobbyJoinPacket*)enet_packet->data;
   ShroomLobby* lobby;
 
@@ -1479,8 +1479,7 @@ static void DispatchLobbyListQuery(ServerPacketContext* context) {
 
 static void DispatchLobbyJoin(ServerPacketContext* context) {
   HandleLobbyJoin(context->host, context->peer, context->session, context->lobbies,
-                  context->enet_packet,
-                  context->next_player_id);
+                  context->enet_packet, context->next_player_id);
 }
 
 static void DispatchLobbyLeave(ServerPacketContext* context) {
@@ -1684,18 +1683,16 @@ int main(int argc, char** argv) {
                      event.packet, event.channelID, &next_player_id, &next_lobby_id, now_ms);
         enet_packet_destroy(event.packet);
         break;
-      case ENET_EVENT_TYPE_DISCONNECT:
-        {
-          ServerSession* disconnected_session = (ServerSession*)event.peer->data;
-          const uint32_t disconnected_lobby_id =
-              disconnected_session != NULL ? disconnected_session->lobby_id : 0u;
+      case ENET_EVENT_TYPE_DISCONNECT: {
+        ServerSession* disconnected_session = (ServerSession*)event.peer->data;
+        const uint32_t disconnected_lobby_id =
+            disconnected_session != NULL ? disconnected_session->lobby_id : 0u;
 
-          LOG_INFO("peer disconnected: slot=%u", (unsigned)event.peer->incomingPeerID);
-          DisconnectSession(disconnected_session);
-          event.peer->data = 0;
-          BroadcastLobbyRoster(host, disconnected_lobby_id);
-        }
-        break;
+        LOG_INFO("peer disconnected: slot=%u", (unsigned)event.peer->incomingPeerID);
+        DisconnectSession(disconnected_session);
+        event.peer->data = 0;
+        BroadcastLobbyRoster(host, disconnected_lobby_id);
+      } break;
       case ENET_EVENT_TYPE_NONE:
       default:
         break;

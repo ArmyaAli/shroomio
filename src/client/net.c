@@ -700,7 +700,8 @@ void ClientNetSendEnterMatch(ClientNetState* net) {
   ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_ENTER_MATCH, sizeof(packet));
   packet.lobby_id = net->lobby_id;
   if (enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CONTROL,
-                     CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_ENTER_MATCH)) == 0) {
+                     CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_ENTER_MATCH)) ==
+      0) {
     net->match_entry_sent = true;
     enet_host_flush(net->host);
   }

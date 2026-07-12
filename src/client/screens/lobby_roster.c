@@ -129,7 +129,7 @@ static void LobbyRosterDraw(ShroomScreenManager* manager) {
     ShroomImGui_Text(game->net.spectating ? "Spectator" : "Player");
     ShroomImGui_TableSetColumnIndex(2);
     ShroomImGui_Text(local_entry == NULL ? "Waiting for status"
-                                        : (local_entry->is_ready ? "Ready" : "Not Ready"));
+                                         : (local_entry->is_ready ? "Ready" : "Not Ready"));
 
     /* Peers sourced from the latest snapshot; the list refreshes every
      * frame as players join and leave. Bots auto-ready so the lobby reads
@@ -199,9 +199,9 @@ static void LobbyRosterDraw(ShroomScreenManager* manager) {
   /* Entering the match is explicit — the player stays on the roster until
    * they choose to enter. The server is already sending snapshots, so we
    * just need to flip the session mode and transition. */
-  const bool can_enter = game->net.spectating ||
-                         (game->net.welcome_received && game->net.lobby_roster_received &&
-                          local_entry != NULL && local_entry->is_ready != 0u);
+  const bool can_enter =
+      game->net.spectating || (game->net.welcome_received && game->net.lobby_roster_received &&
+                               local_entry != NULL && local_entry->is_ready != 0u);
   if (can_enter) {
     if (ShroomImGui_Button("Enter Match", ShroomLayoutMetric(140.0f), 0.0f)) {
       ClientNetSendEnterMatch(&game->net);

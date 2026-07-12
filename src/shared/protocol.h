@@ -364,7 +364,7 @@ typedef struct ShroomLobbyRosterPacket {
     offsetof(ShroomMushroomSpeciesCatalogPacket, species))                                         \
   X(SHROOM_PACKET_READY_STATE, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomReadyStatePacket))  \
   X(SHROOM_PACKET_ENTER_MATCH, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomEnterMatchPacket))  \
-  X(SHROOM_PACKET_LOBBY_ROSTER, SHROOM_ENET_CHANNEL_CONTROL, true,                              \
+  X(SHROOM_PACKET_LOBBY_ROSTER, SHROOM_ENET_CHANNEL_CONTROL, true,                                 \
     offsetof(ShroomLobbyRosterPacket, players))
 
 static inline uint8_t ShroomPacketTypeToChannel(ShroomPacketType type) {
