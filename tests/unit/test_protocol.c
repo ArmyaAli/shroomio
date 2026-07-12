@@ -1,5 +1,6 @@
 #include "unity.h"
 #include "../src/shared/protocol.h"
+#include <limits.h>
 #include <string.h>
 
 void setUp(void) {}
@@ -37,6 +38,20 @@ void test_voice_frame_packet_size(void) {
 
 void test_snapshot_player_state_size(void) {
   TEST_ASSERT_EQUAL(4 + 4 + 4 + 4 + 4 + 4 + 32 + 1 + 1 + 2 + 1 + 3, sizeof(ShroomSnapshotPlayerState));
+}
+
+void test_participant_and_entity_capacities_are_separate_and_bounded(void) {
+  TEST_ASSERT_EQUAL_UINT32(64u, SHROOM_MAX_PARTICIPANTS);
+  TEST_ASSERT_EQUAL_UINT32(4u, SHROOM_MAX_SPLIT_PIECES);
+  TEST_ASSERT_EQUAL_UINT32(256u, SHROOM_MAX_PLAYER_ENTITIES);
+  TEST_ASSERT_EQUAL_UINT32(SHROOM_MAX_PLAYER_ENTITIES, SHROOM_MAX_SNAPSHOT_PLAYERS);
+  TEST_ASSERT_EQUAL_size_t(SHROOM_MAX_PARTICIPANTS,
+                           sizeof(((ShroomLobbyRosterPacket*)0)->players) /
+                               sizeof(ShroomLobbyRosterEntry));
+  TEST_ASSERT_EQUAL_size_t(SHROOM_MAX_PLAYER_ENTITIES,
+                           sizeof(((ShroomSnapshotPacket*)0)->players) /
+                               sizeof(ShroomSnapshotPlayerState));
+  TEST_ASSERT_TRUE(SHROOM_MAX_SNAPSHOT_PACKET_SIZE <= UINT16_MAX);
 }
 
 void test_packet_type_values(void) {
@@ -457,6 +472,7 @@ int main(void) {
   RUN_TEST(test_pong_packet_size);
   RUN_TEST(test_voice_frame_packet_size);
   RUN_TEST(test_snapshot_player_state_size);
+  RUN_TEST(test_participant_and_entity_capacities_are_separate_and_bounded);
   RUN_TEST(test_packet_type_values);
   RUN_TEST(test_protocol_constants);
   RUN_TEST(test_packet_channel_mapping);

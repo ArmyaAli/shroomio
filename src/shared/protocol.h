@@ -2,6 +2,7 @@
 #define SHROOM_PROTOCOL_H
 
 #include <stdbool.h>
+#include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -12,10 +13,13 @@
 #define SHROOM_MAX_UNRELIABLE_PACKET_SIZE 1200u
 #define SHROOM_MAX_PASSWORD_LENGTH 64u
 #define SHROOM_AUTH_TOKEN_LENGTH 64u
-/* Total ENet peers across all lobbies (SHROOM_MAX_LOBBIES * SHROOM_MAX_PLAYERS). */
+/* Includes participant and spectator peers across all lobbies. */
 #define SHROOM_SERVER_MAX_CLIENTS 1024u
 #define SHROOM_SNAPSHOT_RATE 15u
-#define SHROOM_MAX_SNAPSHOT_PLAYERS 256u
+#define SHROOM_MAX_SNAPSHOT_PLAYERS SHROOM_MAX_PLAYER_ENTITIES
+#define SHROOM_MAX_SNAPSHOT_PACKET_SIZE                                                            \
+  (offsetof(ShroomSnapshotPacket, players) +                                                       \
+   (SHROOM_MAX_SNAPSHOT_PLAYERS * sizeof(ShroomSnapshotPlayerState)))
 #define SHROOM_SPORE_STATE_RATE 5u
 #define SHROOM_POWERUP_EFFECT_SPEED 0x0001u
 #define SHROOM_POWERUP_EFFECT_SHIELD 0x0002u
@@ -146,6 +150,14 @@ typedef struct ShroomSnapshotPacket {
   float podium_masses[SHROOM_MATCH_PODIUM_COUNT];
   ShroomSnapshotPlayerState players[SHROOM_MAX_SNAPSHOT_PLAYERS];
 } ShroomSnapshotPacket;
+
+#if defined(__cplusplus)
+static_assert(SHROOM_MAX_SNAPSHOT_PACKET_SIZE <= UINT16_MAX,
+              "maximum snapshot must fit ShroomPacketHeader.size");
+#else
+_Static_assert(SHROOM_MAX_SNAPSHOT_PACKET_SIZE <= UINT16_MAX,
+               "maximum snapshot must fit ShroomPacketHeader.size");
+#endif
 
 typedef struct ShroomPingPacket {
   ShroomPacketHeader header;
@@ -328,7 +340,7 @@ typedef struct ShroomLobbyRosterPacket {
   uint16_t player_count;
   uint8_t match_started;
   uint8_t reserved;
-  ShroomLobbyRosterEntry players[SHROOM_MAX_PLAYERS];
+  ShroomLobbyRosterEntry players[SHROOM_MAX_PARTICIPANTS];
 } ShroomLobbyRosterPacket;
 
 #define SHROOM_PACKET_METADATA(X)                                                                  \
