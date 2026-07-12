@@ -25,6 +25,10 @@ static bool GameplayInit(ShroomScreenManager* manager) {
   if (game == NULL) {
     return false;
   }
+  if ((game->selected_mode == SHROOM_SESSION_MODE_LOBBY_PLAY) &&
+      !ClientNetCanResumeLobbySession(&game->net)) {
+    return false;
+  }
 
   GameInit(game, GetScreenWidth(), GetScreenHeight(), game->selected_mode);
   return true;
@@ -259,7 +263,11 @@ static void GameplayCleanup(ShroomScreenManager* manager) {
     return;
   }
 
-  GameShutdown(game);
+  if (game->show_results) {
+    GameSuspendForResults(game);
+  } else {
+    GameShutdown(game);
+  }
 }
 
 void ShroomScreenRegisterGame(ShroomScreenManager* manager) {

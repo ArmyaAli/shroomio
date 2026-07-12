@@ -102,8 +102,8 @@ static void test_client_net_accepts_chunked_spore_state_packet(void) {
   ClientNetState net = {0};
   ShroomSporeStatePacket spore_state = {0};
   ENetPacket packet = {0};
-  const size_t packet_size = offsetof(ShroomSporeStatePacket, spores) +
-                             (2u * sizeof(ShroomSnapshotSporeState));
+  const size_t packet_size =
+      offsetof(ShroomSporeStatePacket, spores) + (2u * sizeof(ShroomSnapshotSporeState));
 
   ShroomPacketHeaderInit(&spore_state.header, SHROOM_PACKET_SPORE_STATE, (uint16_t)packet_size);
   spore_state.tick = 55u;
@@ -195,8 +195,8 @@ static void test_client_net_accepts_trimmed_mushroom_species_catalog_packet(void
   ClientNetState net = {0};
   ShroomMushroomSpeciesCatalogPacket catalog = {0};
   ENetPacket packet = {0};
-  const size_t packet_size = offsetof(ShroomMushroomSpeciesCatalogPacket, species) +
-                             sizeof(ShroomMushroomSpeciesEntry);
+  const size_t packet_size =
+      offsetof(ShroomMushroomSpeciesCatalogPacket, species) + sizeof(ShroomMushroomSpeciesEntry);
 
   catalog.species_count = 1u;
   catalog.species[0].species_id = 5u;
@@ -295,8 +295,8 @@ static void test_client_net_accepts_authoritative_lobby_roster(void) {
   ClientNetState net = {.lobby_id = 9u};
   ShroomLobbyRosterPacket roster = {0};
   ENetPacket packet = {0};
-  const size_t packet_size = offsetof(ShroomLobbyRosterPacket, players) +
-                             sizeof(ShroomLobbyRosterEntry);
+  const size_t packet_size =
+      offsetof(ShroomLobbyRosterPacket, players) + sizeof(ShroomLobbyRosterEntry);
   roster.lobby_id = 9u;
   roster.player_count = 1u;
   roster.match_started = 1u;
@@ -332,6 +332,49 @@ static void test_gameplay_input_requires_explicit_match_entry(void) {
   TEST_ASSERT_TRUE(ClientNetTestCanSendGameplayInput(&net));
 }
 
+static void test_lobby_session_resume_requires_live_connection_and_identity(void) {
+  ENetHost host = {0};
+  ENetPeer peer = {0};
+  ClientNetState net = {
+      .host = &host,
+      .peer = &peer,
+      .status = CLIENT_NET_CONNECTED,
+      .enet_initialized = true,
+      .welcome_received = true,
+      .match_entry_sent = true,
+      .lobby_id = 9u,
+      .player_id = 42u,
+      .entity_id = 84u,
+  };
+
+  TEST_ASSERT_TRUE(ClientNetCanResumeLobbySession(&net));
+
+  net.peer = NULL;
+  TEST_ASSERT_FALSE(ClientNetCanResumeLobbySession(&net));
+  net.peer = &peer;
+  net.match_entry_sent = false;
+  TEST_ASSERT_FALSE(ClientNetCanResumeLobbySession(&net));
+  net.match_entry_sent = true;
+  net.entity_id = 0u;
+  TEST_ASSERT_FALSE(ClientNetCanResumeLobbySession(&net));
+}
+
+static void test_spectator_lobby_session_can_resume_without_player_identity(void) {
+  ENetHost host = {0};
+  ENetPeer peer = {0};
+  ClientNetState net = {
+      .host = &host,
+      .peer = &peer,
+      .status = CLIENT_NET_CONNECTED,
+      .enet_initialized = true,
+      .spectating = true,
+      .match_entry_sent = true,
+      .lobby_id = 9u,
+  };
+
+  TEST_ASSERT_TRUE(ClientNetCanResumeLobbySession(&net));
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_client_net_records_fresh_pong);
@@ -353,5 +396,7 @@ int main(void) {
   RUN_TEST(test_client_net_accepts_authoritative_lobby_roster);
   RUN_TEST(test_client_net_rejects_invalid_lobby_roster);
   RUN_TEST(test_gameplay_input_requires_explicit_match_entry);
+  RUN_TEST(test_lobby_session_resume_requires_live_connection_and_identity);
+  RUN_TEST(test_spectator_lobby_session_can_resume_without_player_identity);
   return UNITY_END();
 }

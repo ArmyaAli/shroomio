@@ -96,6 +96,7 @@ void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, bool split
                      bool eject_requested, ShroomVec2 split_direction, uint32_t focused_entity_id,
                      float delta_time);
 void ClientNetShutdown(ClientNetState* net);
+bool ClientNetCanResumeLobbySession(const ClientNetState* net);
 const char* ClientNetStatusLabel(const ClientNetState* net);
 bool ClientNetSendChat(ClientNetState* net, uint32_t player_id, const char* sender_name,
                        const char* message);
