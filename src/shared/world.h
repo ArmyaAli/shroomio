@@ -49,6 +49,11 @@ typedef struct ShroomRoundStats {
   uint32_t ejects_used;
 } ShroomRoundStats;
 
+typedef struct ShroomRoundStatsSlot {
+  ShroomPlayerId player_id;
+  ShroomRoundStats stats;
+} ShroomRoundStatsSlot;
+
 typedef struct ShroomPlayerState {
   ShroomPlayerId player_id;
   ShroomEntityId entity_id;
@@ -113,7 +118,7 @@ typedef struct ShroomWorldState {
   ShroomPlayerState players[SHROOM_MAX_PLAYER_ENTITIES];
   ShroomSporeState spores[SHROOM_MAX_SPORES];
   ShroomPowerupState powerups[SHROOM_MAX_POWERUPS];
-  ShroomRoundStats player_round_stats[SHROOM_MAX_PARTICIPANTS + 1u];
+  ShroomRoundStatsSlot round_stats[SHROOM_MAX_PARTICIPANTS];
 } ShroomWorldState;
 
 #endif

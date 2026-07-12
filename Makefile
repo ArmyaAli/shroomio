@@ -236,6 +236,7 @@ SERVER_SOURCES := \
 	$(SERVER_SRC_DIR)/database.c \
 	$(SERVER_SRC_DIR)/auth.c \
 	$(SERVER_SRC_DIR)/session_cleanup.c \
+	$(SERVER_SRC_DIR)/snapshot_stats.c \
 	$(SHARED_SRC_DIR)/sim.c \
 	$(SHARED_SRC_DIR)/intermission.c \
 	$(SHARED_SRC_DIR)/lifecycle.c \
@@ -258,7 +259,8 @@ SHARED_HEADERS := \
 	$(CLIENT_SRC_DIR)/match_feedback.h \
 	$(SERVER_SRC_DIR)/database.h \
 	$(SERVER_SRC_DIR)/auth.h \
-	$(SERVER_SRC_DIR)/session_cleanup.h
+	$(SERVER_SRC_DIR)/session_cleanup.h \
+	$(SERVER_SRC_DIR)/snapshot_stats.h
 
 #Object files
 CLIENT_LINUX_OBJECTS := $(patsubst $(SRC_DIR)/%.c,$(LINUX_BUILD_DIR)/%.o,$(CLIENT_SOURCES))
@@ -761,6 +763,9 @@ test_connection) \
 		test_server_session_cleanup) \
 				$(LINUX_CC) $(COVERAGE_CFLAGS) \
 					$$src $(UNITY_SRC) $(SERVER_SRC_DIR)/session_cleanup.c $(SHARED_SRC_DIR)/sim.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+		test_snapshot_stats) \
+				$(LINUX_CC) $(COVERAGE_CFLAGS) \
+					$$src $(UNITY_SRC) $(SERVER_SRC_DIR)/snapshot_stats.c $(SHARED_SRC_DIR)/sim.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 			test_match_timer) \
 				$(LINUX_CC) $(COVERAGE_CFLAGS) \
 					$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/sim.c -o $$test_bin $(COVERAGE_LIBS) ;; \
@@ -856,6 +861,10 @@ $(TEST_BUILD_DIR)/test_sim: $(UNIT_TESTS_DIR)/test_sim.c $(UNITY_SRC) $(SHARED_S
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
 $(TEST_BUILD_DIR)/test_server_session_cleanup: $(UNIT_TESTS_DIR)/test_server_session_cleanup.c $(UNITY_SRC) $(SERVER_SRC_DIR)/session_cleanup.c $(SHARED_SRC_DIR)/sim.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_snapshot_stats: $(UNIT_TESTS_DIR)/test_snapshot_stats.c $(UNITY_SRC) $(SERVER_SRC_DIR)/snapshot_stats.c $(SHARED_SRC_DIR)/sim.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 

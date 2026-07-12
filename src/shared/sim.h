@@ -10,6 +10,8 @@ void ShroomWorldSetMatchDuration(ShroomWorldState* world, float duration_seconds
 void ShroomWorldResetMatch(ShroomWorldState* world);
 void ShroomComputeMatchPodium(ShroomWorldState* world);
 float ShroomWorldGetColonyMass(const ShroomWorldState* world, ShroomPlayerId player_id);
+const ShroomRoundStats* ShroomWorldGetRoundStats(const ShroomWorldState* world,
+                                                 ShroomPlayerId player_id);
 ShroomBotRiskProfile ShroomBotProfileForPlayer(ShroomPlayerId player_id);
 
 ShroomPlayerState* ShroomWorldSpawnPlayer(ShroomWorldState* world, ShroomPlayerId player_id,
