@@ -342,7 +342,7 @@ help:
 	@echo "  make run            Build and run the Linux client"
 	@echo "  make run-server     Build and run the Linux server"
 	@echo "  make benchmark      Run repeatable local server benchmark scenarios"
-	@echo "  make run-windows    Build and run the Windows client (via WSL)"
+	@echo "  make run-windows    Build and launch Windows client from WSL (bypasses WSLg audio/video)"
 	@echo ""
 	@echo "Quality targets:"
 	@echo "  make test           Run unit tests + ImGui tests"
@@ -421,7 +421,10 @@ run-server: $(SERVER_LINUX_BIN)
 benchmark: $(SERVER_LINUX_BIN)
 	python3 scripts/benchmark.py --server ./$(SERVER_LINUX_BIN)
 
-run-windows: $(CLIENT_WINDOWS_BIN)
+run-windows:
+	@command -v $(WINDOWS_CXX) >/dev/null 2>&1 || (printf '%s\n' 'Error: $(WINDOWS_CXX) not found. Install mingw-w64:' '  Ubuntu/Debian: sudo apt install mingw-w64' '  Fedora:       sudo dnf install mingw64-gcc-c++' '  Arch:         sudo pacman -S mingw-w64-gcc' && exit 1)
+	@test -f $(VCPKG_WINDOWS_STAMP) || (printf '%s\n' 'Error: Windows vcpkg dependencies not installed.' 'Run: make vcpkg-install-windows' && exit 1)
+	$(MAKE) $(CLIENT_WINDOWS_BIN)
 	./$(CLIENT_WINDOWS_BIN)
 
 # =============================================================================

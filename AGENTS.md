@@ -13,6 +13,9 @@
 - Build Linux client: `make client-linux` -> `dist/linux/client/shroomio`.
 - Build Linux server: `make server-linux` or `make server` -> `dist/linux/server/shroomio-server`.
 - Run local client: `make run`; run local server: `make run-server`.
+- Run Windows client from WSL: `make run-windows` builds and launches the native Windows
+  `.exe`; bypasses WSLg PulseAudio/software-rendering limitations for audio/graphics testing.
+  Requires `mingw-w64` and `make vcpkg-install-windows`.
 - Cross-compile Windows: `make client-windows` and `make server-windows` require `mingw-w64`.
 - Full local non-Valgrind gate: `make check` runs `make lint` then `make test`.
 - Fastest local iteration: `make unit-test` runs Unity tests only (no graphics, no ImGui harness).
