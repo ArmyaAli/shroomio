@@ -89,6 +89,8 @@ typedef struct ClientNetState {
   float match_time_remaining;
   uint32_t podium_player_ids[SHROOM_MATCH_PODIUM_COUNT];
   float podium_masses[SHROOM_MATCH_PODIUM_COUNT];
+  ShroomIntermissionStatusPacket intermission;
+  bool intermission_received;
 } ClientNetState;
 
 bool ClientNetInit(ClientNetState* net, const char* host_name, uint16_t port);
@@ -106,6 +108,7 @@ void ClientNetSendLobbyLeave(ClientNetState* net);
 void ClientNetSendLobbyCreate(ClientNetState* net, const char* name, uint16_t max_players);
 void ClientNetSendReadyState(ClientNetState* net, bool is_ready);
 void ClientNetSendEnterMatch(ClientNetState* net);
+void ClientNetSendRematchVote(ClientNetState* net, ShroomRematchVote vote);
 
 #ifdef TEST_MODE
 bool ClientNetTestCompletePendingPing(ClientNetState* net, uint32_t nonce, uint32_t now_ms);
@@ -115,6 +118,7 @@ void ClientNetTestHandleSnapshot(ClientNetState* net, const ENetPacket* enet_pac
 void ClientNetTestHandleSporeState(ClientNetState* net, const ENetPacket* enet_packet);
 void ClientNetTestHandleLobbyList(ClientNetState* net, const ENetPacket* enet_packet);
 void ClientNetTestHandleLobbyRoster(ClientNetState* net, const ENetPacket* enet_packet);
+void ClientNetTestHandleIntermissionStatus(ClientNetState* net, const ENetPacket* enet_packet);
 bool ClientNetTestCanSendGameplayInput(const ClientNetState* net);
 void ClientNetTestHandleMushroomSpeciesCatalog(ClientNetState* net, const ENetPacket* enet_packet);
 #endif

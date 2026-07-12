@@ -225,6 +225,7 @@ CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/screens/gameplay.c \
 	$(CLIENT_SRC_DIR)/screens/results.c \
 	$(SHARED_SRC_DIR)/sim.c \
+	$(SHARED_SRC_DIR)/intermission.c \
 	$(SHARED_SRC_DIR)/lifecycle.c \
 	$(SHARED_SRC_DIR)/connection.c
 
@@ -236,6 +237,7 @@ SERVER_SOURCES := \
 	$(SERVER_SRC_DIR)/auth.c \
 	$(SERVER_SRC_DIR)/session_cleanup.c \
 	$(SHARED_SRC_DIR)/sim.c \
+	$(SHARED_SRC_DIR)/intermission.c \
 	$(SHARED_SRC_DIR)/lifecycle.c \
 	$(SHARED_SRC_DIR)/connection.c
 
@@ -245,6 +247,7 @@ SHARED_HEADERS := \
 	$(SHARED_SRC_DIR)/vec2.h \
 	$(SHARED_SRC_DIR)/world.h \
 	$(SHARED_SRC_DIR)/sim.h \
+	$(SHARED_SRC_DIR)/intermission.h \
 	$(SHARED_SRC_DIR)/protocol.h \
 	$(SHARED_SRC_DIR)/profiler.h \
 	$(SHARED_SRC_DIR)/lifecycle.h \
@@ -742,7 +745,10 @@ test_connection) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/layout_metrics.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_match_feedback) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
-				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/match_feedback.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+					$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/match_feedback.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+		test_intermission) \
+			$(LINUX_CC) $(COVERAGE_CFLAGS) \
+				$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/intermission.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_client_net) \
 				$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) \
 					$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c -o $$test_bin $(COVERAGE_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lenet ;; \
@@ -851,6 +857,10 @@ $(TEST_BUILD_DIR)/test_server_session_cleanup: $(UNIT_TESTS_DIR)/test_server_ses
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
 $(TEST_BUILD_DIR)/test_match_timer: $(UNIT_TESTS_DIR)/test_match_timer.c $(UNITY_SRC) $(SHARED_SRC_DIR)/sim.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_intermission: $(UNIT_TESTS_DIR)/test_intermission.c $(UNITY_SRC) $(SHARED_SRC_DIR)/intermission.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
