@@ -1378,7 +1378,8 @@ static bool IsDecayMassActive(const ShroomWorldState* world, const ShroomPlayerS
 int GetLocalPlayerRank(const Game* game, const LeaderboardEntry* leaderboard,
                        size_t leaderboard_count) {
   for (size_t index = 0; index < leaderboard_count; ++index) {
-    if (&game->world.players[leaderboard[index].index] == game->local_player) {
+    if ((game->local_player != NULL) &&
+        (leaderboard[index].player_id == game->local_player->player_id)) {
       return (int)index + 1;
     }
   }
@@ -1396,7 +1397,7 @@ static int GetPlayerRank(const Game* game, const ShroomPlayerState* target_playe
 
   BuildLeaderboard(game, leaderboard, &leaderboard_count);
   for (size_t index = 0; index < leaderboard_count; ++index) {
-    if (&game->world.players[leaderboard[index].index] == target_player) {
+    if (leaderboard[index].player_id == target_player->player_id) {
       return (int)index + 1;
     }
   }
@@ -1940,18 +1941,37 @@ static int CompareLeaderboardEntries(const void* left, const void* right) {
     return -1;
   }
 
+  if (lhs->player_id < rhs->player_id) {
+    return -1;
+  }
+  if (lhs->player_id > rhs->player_id) {
+    return 1;
+  }
   return 0;
 }
 
 void BuildLeaderboard(const Game* game, LeaderboardEntry* entries, size_t* entry_count) {
-  size_t index;
+  *entry_count = 0;
+  for (size_t index = 0; index < game->world.player_count; ++index) {
+    const ShroomPlayerState* player = &game->world.players[index];
+    bool already_listed = false;
 
-  *entry_count = game->world.player_count;
-  for (index = 0; index < game->world.player_count; ++index) {
-    entries[index] = (LeaderboardEntry){
-        .index = index,
-        .mass = game->world.players[index].mass,
-    };
+    if (!player->alive || (player->player_id == 0)) {
+      continue;
+    }
+    for (size_t entry = 0; entry < *entry_count; ++entry) {
+      if (entries[entry].player_id == player->player_id) {
+        already_listed = true;
+        break;
+      }
+    }
+    if (!already_listed) {
+      entries[(*entry_count)++] = (LeaderboardEntry){
+          .index = index,
+          .player_id = player->player_id,
+          .mass = ShroomWorldGetColonyMass(&game->world, player->player_id),
+      };
+    }
   }
 
   if (*entry_count > 0) {
@@ -4124,8 +4144,11 @@ void GameUpdate(Game* game, float delta_time) {
   }
 
   /* Track peak mass for results screen */
-  if (game->local_player != NULL && game->local_player->mass > game->peak_mass) {
-    game->peak_mass = game->local_player->mass;
+  if (game->local_player != NULL) {
+    const float colony_mass = ShroomWorldGetColonyMass(&game->world, game->local_player->player_id);
+    if (colony_mass > game->peak_mass) {
+      game->peak_mass = colony_mass;
+    }
   }
 
   if (profile_enabled) {

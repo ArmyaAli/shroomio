@@ -9,6 +9,7 @@ void ShroomWorldStep(ShroomWorldState* world, float delta_time);
 void ShroomWorldSetMatchDuration(ShroomWorldState* world, float duration_seconds);
 void ShroomWorldResetMatch(ShroomWorldState* world);
 void ShroomComputeMatchPodium(ShroomWorldState* world);
+float ShroomWorldGetColonyMass(const ShroomWorldState* world, ShroomPlayerId player_id);
 
 ShroomPlayerState* ShroomWorldSpawnPlayer(ShroomWorldState* world, ShroomPlayerId player_id,
                                           bool is_bot);
