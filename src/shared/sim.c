@@ -805,6 +805,9 @@ static void ShroomCollectSpores(ShroomWorldState* world, const ShroomSporeGridCe
             player->mass =
                 ShroomClamp(player->mass + (float)spore->value, 0.0f, SHROOM_MAX_PLAYER_MASS);
             ShroomSpawnOrResetSpore(world, spore);
+            if (player->player_id < SHROOM_MAX_PARTICIPANTS) {
+              world->player_round_stats[player->player_id].spores_collected += 1u;
+            }
           }
         }
       }
@@ -936,6 +939,9 @@ static void ShroomResolveConsumes(ShroomWorldState* world) {
       winner->mass = ShroomClamp(winner->mass + (victim->mass * SHROOM_CONSUME_MASS_GAIN_FACTOR),
                                  0.0f, SHROOM_MAX_PLAYER_MASS);
       victim->alive = false;
+      if (winner->player_id < SHROOM_MAX_PARTICIPANTS) {
+        world->player_round_stats[winner->player_id].kills += 1u;
+      }
       if (victim->piece_index == 0) {
         /* Primary piece consumed: respawn the player and remove any orphaned split pieces. */
         ShroomRespawnPlayer(world, victim);
@@ -1694,6 +1700,30 @@ void ShroomWorldStep(ShroomWorldState* world, float delta_time) {
   ShroomCollectSpores(world, spore_grid, delta_time);
   ShroomCollectPowerups(world);
   ShroomResolveConsumes(world);
+
+  for (index = 0; index < world->player_count; ++index) {
+    const ShroomPlayerState* player = &world->players[index];
+    ShroomRoundStats* stats;
+
+    if (!player->alive || (player->player_id >= SHROOM_MAX_PARTICIPANTS)) {
+      continue;
+    }
+    stats = &world->player_round_stats[player->player_id];
+    if (player->mass > stats->peak_mass) {
+      stats->peak_mass = player->mass;
+    }
+    switch (ShroomGetZoneAtPosition(world, player->position)) {
+    case SHROOM_ZONE_CENTER:
+      stats->center_zone_seconds += delta_time;
+      break;
+    case SHROOM_ZONE_MID:
+      stats->mid_zone_seconds += delta_time;
+      break;
+    case SHROOM_ZONE_OUTER:
+      stats->outer_zone_seconds += delta_time;
+      break;
+    }
+  }
   ShroomApplyMassRules(world, delta_time, step_end_time_ms);
   ShroomApplyForcedSplits(world);
   ShroomResolveMerges(world);

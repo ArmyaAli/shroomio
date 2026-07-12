@@ -136,7 +136,8 @@ typedef struct ShroomSnapshotPlayerState {
   uint8_t is_bot;
   uint16_t effect_flags;
   uint8_t team_id;
-  uint8_t reserved[3];
+  uint16_t round_spores;
+  uint8_t round_kills;
 } ShroomSnapshotPlayerState;
 
 typedef struct ShroomSnapshotPacket {

@@ -856,6 +856,9 @@ static void SendSnapshot(ENetPeer* peer, const ServerSession* session,
         .position_y = player->position.y,
         .mass = player->mass,
         .radius = player->radius,
+        .round_spores = world->player_round_stats[player->player_id].spores_collected,
+        .round_kills = world->player_round_stats[player->player_id].kills,
+
         .alive = 1u,
         .is_bot = player->is_bot ? 1u : 0u,
         .effect_flags =
