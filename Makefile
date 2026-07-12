@@ -206,6 +206,7 @@ CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/game_mode_availability.c \
 	$(CLIENT_SRC_DIR)/layout.c \
 	$(CLIENT_SRC_DIR)/layout_metrics.c \
+	$(CLIENT_SRC_DIR)/match_feedback.c \
 	$(CLIENT_SRC_DIR)/net.c \
 	$(CLIENT_SRC_DIR)/render_lod.c \
 	$(CLIENT_SRC_DIR)/results_summary.c \
@@ -250,6 +251,7 @@ SHARED_HEADERS := \
 	$(CLIENT_SRC_DIR)/audio.h \
 	$(CLIENT_SRC_DIR)/cursor.h \
 	$(CLIENT_SRC_DIR)/layout.h \
+	$(CLIENT_SRC_DIR)/match_feedback.h \
 	$(SERVER_SRC_DIR)/database.h \
 	$(SERVER_SRC_DIR)/auth.h
 
@@ -275,6 +277,7 @@ IMGUI_TEST_CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/game_mode_availability.c \
 	$(CLIENT_SRC_DIR)/layout.c \
 	$(CLIENT_SRC_DIR)/layout_metrics.c \
+	$(CLIENT_SRC_DIR)/match_feedback.c \
 	$(CLIENT_SRC_DIR)/net.c \
 	$(CLIENT_SRC_DIR)/render_lod.c \
 	$(CLIENT_SRC_DIR)/results_summary.c \
@@ -735,6 +738,9 @@ test_connection) \
 		test_layout_metrics) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/layout_metrics.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+		test_match_feedback) \
+			$(LINUX_CC) $(COVERAGE_CFLAGS) \
+				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/match_feedback.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_client_net) \
 				$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) \
 					$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c -o $$test_bin $(COVERAGE_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lenet ;; \
@@ -820,6 +826,10 @@ $(TEST_BUILD_DIR)/test_results_summary: $(UNIT_TESTS_DIR)/test_results_summary.c
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
 $(TEST_BUILD_DIR)/test_layout_metrics: $(UNIT_TESTS_DIR)/test_layout_metrics.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/layout_metrics.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_match_feedback: $(UNIT_TESTS_DIR)/test_match_feedback.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/match_feedback.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
