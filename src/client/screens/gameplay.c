@@ -2,6 +2,7 @@
 #include "imgui_wrapper.h"
 #include "results_summary.h"
 #include "screen.h"
+#include "shared/sim.h"
 
 #include "raylib.h"
 
@@ -48,7 +49,9 @@ static void CaptureAuthoritativeResults(Game* game) {
   LeaderboardEntry leaderboard[SHROOM_MAX_PLAYERS];
   size_t leaderboard_count = 0;
 
-  game->final_mass = game->local_player != NULL ? game->local_player->mass : 0.0f;
+  game->final_mass = game->local_player != NULL
+                         ? ShroomWorldGetColonyMass(&game->world, game->local_player->player_id)
+                         : 0.0f;
   BuildLeaderboard(game, leaderboard, &leaderboard_count);
   game->final_rank = GetLocalPlayerRank(game, leaderboard, leaderboard_count);
   game->session_duration_seconds =
@@ -91,7 +94,9 @@ static void GameplayDraw(ShroomScreenManager* manager) {
   if (game->return_to_menu_requested) {
     game->return_to_menu_requested = false;
     /* Capture final stats for results screen */
-    game->final_mass = game->local_player != NULL ? game->local_player->mass : 0.0f;
+    game->final_mass = game->local_player != NULL
+                           ? ShroomWorldGetColonyMass(&game->world, game->local_player->player_id)
+                           : 0.0f;
     /* Build leaderboard to get final rank */
     LeaderboardEntry leaderboard[SHROOM_MAX_PLAYERS];
     size_t leaderboard_count = 0;

@@ -745,6 +745,39 @@ static void Test_GameplayOverlayStateToggles(ImGuiTestContext* ctx) {
   IM_CHECK_EQ(g_imgui_test_app.game.diagnostics_overlay_open, true);
 }
 
+static void Test_LeaderboardAggregatesSplitColony(ImGuiTestContext* ctx) {
+  LeaderboardEntry before[SHROOM_MAX_PLAYERS];
+  LeaderboardEntry after[SHROOM_MAX_PLAYERS];
+  size_t before_count = 0u;
+  size_t after_count = 0u;
+  float local_mass = 0.0f;
+
+  SetupOnlineGame();
+  BuildLeaderboard(&g_imgui_test_app.game, before, &before_count);
+  IM_CHECK(g_imgui_test_app.game.local_player != NULL);
+  IM_CHECK(g_imgui_test_app.game.world.player_count < SHROOM_MAX_PLAYERS);
+
+  const size_t fragment_index = g_imgui_test_app.game.world.player_count++;
+  g_imgui_test_app.game.world.players[fragment_index] = *g_imgui_test_app.game.local_player;
+  g_imgui_test_app.game.world.players[fragment_index].entity_id = 99999u;
+  g_imgui_test_app.game.world.players[fragment_index].piece_index = 1u;
+  g_imgui_test_app.game.world.players[fragment_index].mass = 25.0f;
+  BuildLeaderboard(&g_imgui_test_app.game, after, &after_count);
+
+  IM_CHECK_EQ(after_count, before_count);
+  for (size_t index = 0; index < after_count; ++index) {
+    if (after[index].player_id == g_imgui_test_app.game.local_player->player_id) {
+      local_mass = after[index].mass;
+      break;
+    }
+  }
+  IM_CHECK_EQ(local_mass, g_imgui_test_app.game.local_player->mass + 25.0f);
+
+  g_imgui_test_app.game.leaderboard_overlay_open = true;
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Leaderboard"));
+}
+
 static void Test_GameplayMenuOverlayActions(ImGuiTestContext* ctx) {
   SetupOnlineGame();
   g_imgui_test_app.game.menu_overlay_open = true;
@@ -1049,13 +1082,18 @@ static void Test_AuthoritativeResultsCompleteTwoRoundCycle(ImGuiTestContext* ctx
 
   InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESULTS, 101u, local_position, 300.0f,
                          opponent_position, 200.0f);
+  g_imgui_test_app.game.net.snapshot_players[2] =
+      g_imgui_test_app.game.net.snapshot_players[0];
+  g_imgui_test_app.game.net.snapshot_players[2].entity_id = 102u;
+  g_imgui_test_app.game.net.snapshot_players[2].mass = 25.0f;
+  g_imgui_test_app.game.net.snapshot_player_count = 3u;
   ShroomTeCtx_Yield(ctx, 2);
   IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
               SHROOM_SCREEN_RESULTS);
   IM_CHECK(ShroomTeImGui_WindowIsActive("Match Results"));
   IM_CHECK(!ShroomTeCtx_ItemExists(ctx, "Play Again"));
   IM_CHECK_EQ(g_imgui_test_app.game.final_rank, 1);
-  IM_CHECK(fabsf(g_imgui_test_app.game.final_mass - 300.0f) < 0.001f);
+  IM_CHECK(fabsf(g_imgui_test_app.game.final_mass - 325.0f) < 0.001f);
 
   InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESET, 101u, local_position, 300.0f,
                          opponent_position, 200.0f);
@@ -1425,6 +1463,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_LobbyEmptyAndFullStatesRender);
   ShroomTeEngine_RegisterTest(engine, "screens", "gameplay_overlay_state_toggles",
                               Test_GameplayOverlayStateToggles);
+  ShroomTeEngine_RegisterTest(engine, "screens", "leaderboard_aggregates_split_colony",
+                              Test_LeaderboardAggregatesSplitColony);
   ShroomTeEngine_RegisterTest(engine, "screens", "gameplay_menu_overlay_actions",
                               Test_GameplayMenuOverlayActions);
   ShroomTeEngine_RegisterTest(engine, "screens", "gameplay_leave_confirmation_stay_and_leave",

@@ -1294,6 +1294,21 @@ void ShroomPlayerSetInput(ShroomPlayerState* player, ShroomVec2 input_direction)
   player->input_direction = input_direction;
 }
 
+float ShroomWorldGetColonyMass(const ShroomWorldState* world, ShroomPlayerId player_id) {
+  float total_mass = 0.0f;
+
+  if ((world == NULL) || (player_id == 0)) {
+    return 0.0f;
+  }
+  for (size_t index = 0; index < world->player_count; ++index) {
+    const ShroomPlayerState* piece = &world->players[index];
+    if (piece->alive && (piece->player_id == player_id) && (piece->mass > 0.0f)) {
+      total_mass += piece->mass;
+    }
+  }
+  return total_mass;
+}
+
 void ShroomComputeMatchPodium(ShroomWorldState* world) {
   size_t i;
   size_t j;
@@ -1309,14 +1324,27 @@ void ShroomComputeMatchPodium(ShroomWorldState* world) {
 
   for (i = 0; i < world->player_count; ++i) {
     const ShroomPlayerState* player = &world->players[i];
+    float colony_mass;
+    bool already_scored = false;
 
     if (!player->alive || (player->mass <= 0.0f)) {
       continue;
     }
+    for (size_t previous = 0; previous < i; ++previous) {
+      if (world->players[previous].alive &&
+          (world->players[previous].player_id == player->player_id)) {
+        already_scored = true;
+        break;
+      }
+    }
+    if (already_scored) {
+      continue;
+    }
+    colony_mass = ShroomWorldGetColonyMass(world, player->player_id);
 
     for (j = 0; j < SHROOM_MATCH_PODIUM_COUNT; ++j) {
-      if ((player->mass > world->podium_masses[j]) ||
-          ((player->mass == world->podium_masses[j]) &&
+      if ((colony_mass > world->podium_masses[j]) ||
+          ((colony_mass == world->podium_masses[j]) &&
            ((world->podium_player_ids[j] == 0) ||
             (player->player_id < world->podium_player_ids[j])))) {
         size_t k;
@@ -1325,7 +1353,7 @@ void ShroomComputeMatchPodium(ShroomWorldState* world) {
           world->podium_masses[k] = world->podium_masses[k - 1];
         }
         world->podium_player_ids[j] = player->player_id;
-        world->podium_masses[j] = player->mass;
+        world->podium_masses[j] = colony_mass;
         break;
       }
     }
