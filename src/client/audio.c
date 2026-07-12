@@ -383,8 +383,38 @@ static void ClearClientAssetHandles(void) {
   g_client_audio_assets_loaded = false;
 }
 
+#ifndef _WIN32
+#include <unistd.h>
+#endif
+
+static bool CanInitAudioDevice(void) {
+  if (getenv("SHROOM_DISABLE_AUDIO") != NULL) {
+    return false;
+  }
+#ifdef _WIN32
+  return true;
+#else
+  const char* pulse_server = getenv("PULSE_SERVER");
+  if (pulse_server != NULL) {
+    return true;
+  }
+  const char* runtime_dir = getenv("XDG_RUNTIME_DIR");
+  if (runtime_dir != NULL) {
+    char socket_path[256];
+    snprintf(socket_path, sizeof(socket_path), "%s/pulse/native", runtime_dir);
+    if (access(socket_path, F_OK) == 0) {
+      return true;
+    }
+  }
+  return false;
+#endif
+}
+
 static bool ProductionInitDevice(void* context) {
   (void)context;
+  if (!CanInitAudioDevice()) {
+    return false;
+  }
   if (!IsAudioDeviceReady()) {
     InitAudioDevice();
   }
@@ -458,7 +488,7 @@ static bool StartClientAudio(const ClientSettings* settings) {
     ClearClientAssetHandles();
     g_client_audio_initialized = false;
     g_client_audio_device_owned = false;
-    SetAudioStatus("Audio device initialization failed. Restart Audio to retry.");
+    SetAudioStatus("Audio device initialization failed. Set SHROOM_DISABLE_AUDIO=1 to suppress.");
     return false;
   }
 

@@ -88,6 +88,7 @@ void ShroomImGui_PopStyleVar(void);
 /* ImGuiCol_* ordinals for the subset we expose. */
 enum {
   SHROOM_IMGUI_COL_WINDOW_BG = 0,
+  SHROOM_IMGUI_COL_CHILD_BG = 3,
   SHROOM_IMGUI_COL_BUTTON = 19,
   SHROOM_IMGUI_COL_BUTTON_HOVERED = 20,
   SHROOM_IMGUI_COL_BUTTON_ACTIVE = 21,
