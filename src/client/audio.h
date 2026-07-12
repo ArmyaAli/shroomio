@@ -36,6 +36,7 @@ typedef struct ShroomClientAudioTestBackend {
   bool (*load_assets)(void* context);
   void (*unload_assets)(void* context);
   void (*apply_settings)(void* context, const ClientSettings* settings);
+  void (*update_music)(void* context, const ClientSettings* settings);
 } ShroomClientAudioTestBackend;
 
 void ShroomClientAudioTestSetBackend(const ShroomClientAudioTestBackend* backend);

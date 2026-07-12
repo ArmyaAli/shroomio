@@ -30,6 +30,7 @@ typedef struct ClientAudioBackend {
   bool (*load_assets)(void* context);
   void (*unload_assets)(void* context);
   void (*apply_settings)(void* context, const ClientSettings* settings);
+  void (*update_music)(void* context, const ClientSettings* settings);
 } ClientAudioBackend;
 
 static bool ProductionInitDevice(void* context);
@@ -38,6 +39,7 @@ static void ProductionCloseDevice(void* context);
 static bool ProductionLoadAssets(void* context);
 static void ProductionUnloadAssets(void* context);
 static void ProductionApplySettings(void* context, const ClientSettings* settings);
+static void ProductionUpdateMusic(void* context, const ClientSettings* settings);
 
 static ClientAudioBackend g_client_audio_backend = {
     .init_device = ProductionInitDevice,
@@ -46,6 +48,7 @@ static ClientAudioBackend g_client_audio_backend = {
     .load_assets = ProductionLoadAssets,
     .unload_assets = ProductionUnloadAssets,
     .apply_settings = ProductionApplySettings,
+    .update_music = ProductionUpdateMusic,
 };
 static bool g_client_audio_uses_production_backend = true;
 
@@ -342,13 +345,11 @@ static void EnsureClientMusicLoaded(void) {
   g_client_music_last_volume = -1.0f;
 }
 
-void ShroomClientAudioUpdateMusic(const ClientSettings* settings) {
+static void ProductionUpdateMusic(void* context, const ClientSettings* settings) {
   float volume;
 
+  (void)context;
   if (settings == NULL) {
-    return;
-  }
-  if (!g_client_audio_initialized || !g_client_audio_uses_production_backend) {
     return;
   }
   EnsureClientMusicLoaded();
@@ -369,6 +370,14 @@ void ShroomClientAudioUpdateMusic(const ClientSettings* settings) {
   if ((volume <= 0.0f) && IsMusicStreamPlaying(g_client_music_loop)) {
     StopMusicStream(g_client_music_loop);
   }
+}
+
+void ShroomClientAudioUpdateMusic(const ClientSettings* settings) {
+  if ((settings == NULL) || !g_client_audio_initialized ||
+      (g_client_audio_backend.update_music == NULL)) {
+    return;
+  }
+  g_client_audio_backend.update_music(g_client_audio_backend.context, settings);
 }
 
 static void ClearClientAssetHandles(void) {
@@ -617,6 +626,7 @@ void ShroomClientAudioTestSetBackend(const ShroomClientAudioTestBackend* backend
         .load_assets = ProductionLoadAssets,
         .unload_assets = ProductionUnloadAssets,
         .apply_settings = ProductionApplySettings,
+        .update_music = ProductionUpdateMusic,
     };
     g_client_audio_uses_production_backend = true;
     return;
@@ -629,6 +639,7 @@ void ShroomClientAudioTestSetBackend(const ShroomClientAudioTestBackend* backend
       .load_assets = backend->load_assets,
       .unload_assets = backend->unload_assets,
       .apply_settings = backend->apply_settings,
+      .update_music = backend->update_music,
   };
   g_client_audio_uses_production_backend = false;
 }

@@ -13,6 +13,7 @@ typedef struct FakeAudioBackend {
   int load_count;
   int unload_count;
   int apply_count;
+  int update_count;
   ClientSettings applied_settings;
 } FakeAudioBackend;
 
@@ -55,6 +56,12 @@ static void FakeApply(void* context, const ClientSettings* settings) {
   backend->applied_settings = *settings;
 }
 
+static void FakeUpdate(void* context, const ClientSettings* settings) {
+  FakeAudioBackend* backend = context;
+  backend->update_count += 1;
+  backend->applied_settings = *settings;
+}
+
 static void InstallFakeBackend(void) {
   const ShroomClientAudioTestBackend backend = {
       .context = &fake,
@@ -64,6 +71,7 @@ static void InstallFakeBackend(void) {
       .load_assets = FakeLoad,
       .unload_assets = FakeUnload,
       .apply_settings = FakeApply,
+      .update_music = FakeUpdate,
   };
   ShroomClientAudioTestSetBackend(&backend);
 }
@@ -280,6 +288,25 @@ static void test_multiple_shutdown_calls_are_idempotent(void) {
   TEST_ASSERT_EQUAL_INT(1, fake.unload_count);
 }
 
+static void test_music_update_is_serviced_once_per_explicit_frame(void) {
+  ClientSettings settings = TestSettings();
+
+  InstallFakeBackend();
+  ShroomClientAudioUpdateMusic(&settings);
+  TEST_ASSERT_EQUAL_INT(0, fake.update_count);
+
+  TEST_ASSERT_TRUE(ShroomClientAudioInit(&settings));
+  for (int frame = 0; frame < 180; ++frame) {
+    ShroomClientAudioUpdateMusic(&settings);
+  }
+  TEST_ASSERT_EQUAL_INT(180, fake.update_count);
+  TEST_ASSERT_EQUAL_INT(settings.music_volume_percent, fake.applied_settings.music_volume_percent);
+
+  ShroomClientAudioShutdown();
+  ShroomClientAudioUpdateMusic(&settings);
+  TEST_ASSERT_EQUAL_INT(180, fake.update_count);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_spore_sfx_is_throttled_during_rapid_growth);
@@ -295,5 +322,6 @@ int main(void) {
   RUN_TEST(test_reinit_reload_cycle_tracks_counters);
   RUN_TEST(test_shutdown_without_init_is_safe);
   RUN_TEST(test_multiple_shutdown_calls_are_idempotent);
+  RUN_TEST(test_music_update_is_serviced_once_per_explicit_frame);
   return UNITY_END();
 }
