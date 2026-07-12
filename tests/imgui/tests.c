@@ -1264,6 +1264,8 @@ static void Test_LobbyAutoJoinTransitionsToRoster(ImGuiTestContext* ctx) {
   IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
               SHROOM_SCREEN_LOBBY_ROSTER);
   IM_CHECK(ShroomTeImGui_WindowIsActive("Lobby Roster"));
+  IM_CHECK_EQ(ShroomLobbyRosterCapacity(&g_imgui_test_app.game),
+              SHROOM_MAX_PLAYABLE_PARTICIPANTS);
 }
 
 static void Test_FirstLobbyEntryDoesNotOpenDeathCutscene(ImGuiTestContext* ctx) {

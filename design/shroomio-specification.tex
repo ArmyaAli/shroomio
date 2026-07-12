@@ -183,7 +183,7 @@ ShroomWorldState {
     uint64_t             tick;
     float                width, height;          // 6000 x 6000
     ShroomEntityId       next_entity_id;
-    size_t               player_count;           // <= SHROOM_MAX_PLAYERS (256)
+    size_t               player_count;           // <= SHROOM_MAX_PLAYER_ENTITIES (256)
     size_t               spore_count;            // <= SHROOM_MAX_SPORES (4096)
     ShroomPlayerState    players[256];
     ShroomSporeState     spores[4096];
