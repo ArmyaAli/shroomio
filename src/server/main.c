@@ -21,6 +21,7 @@
 #include "database.h"
 #include "logger.h"
 #include "session_cleanup.h"
+#include "snapshot_stats.h"
 
 static const char* const kBotNamePrefixes[] = {
     "Mycelium", "Sporecap", "Hyphae", "Spore", "Fungal", "Myco", "Shroom", "Mold",
@@ -849,16 +850,13 @@ static void SendSnapshot(ENetPeer* peer, const ServerSession* session,
       continue;
     }
 
-    packet.players[player_count++] = (ShroomSnapshotPlayerState){
+    packet.players[player_count] = (ShroomSnapshotPlayerState){
         .player_id = player->player_id,
         .entity_id = player->entity_id,
         .position_x = player->position.x,
         .position_y = player->position.y,
         .mass = player->mass,
         .radius = player->radius,
-        .round_spores = world->player_round_stats[player->player_id].spores_collected,
-        .round_kills = world->player_round_stats[player->player_id].kills,
-
         .alive = 1u,
         .is_bot = player->is_bot ? 1u : 0u,
         .effect_flags =
@@ -869,6 +867,8 @@ static void SendSnapshot(ENetPeer* peer, const ServerSession* session,
                             ? SHROOM_POWERUP_EFFECT_DECAY_IMMUNE
                             : 0u)),
     };
+    ShroomServerPopulateSnapshotRoundStats(world, player->player_id, &packet.players[player_count]);
+    player_count += 1u;
     snprintf(packet.players[player_count - 1].name, sizeof(packet.players[player_count - 1].name),
              "%s", player->name);
   }

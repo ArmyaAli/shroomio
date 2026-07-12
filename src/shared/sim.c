@@ -6,6 +6,9 @@
 #include <stdlib.h>
 #include <time.h>
 
+static ShroomRoundStats* ShroomWorldEnsureRoundStats(ShroomWorldState* world,
+                                                     ShroomPlayerId player_id);
+
 static float ShroomClamp(float value, float min_value, float max_value) {
   if (value < min_value) {
     return min_value;
@@ -802,11 +805,14 @@ static void ShroomCollectSpores(ShroomWorldState* world, const ShroomSporeGridCe
 
           if (ShroomDistanceSqr(player->position, spore->position) <=
               (collection_radius * collection_radius)) {
+            ShroomRoundStats* stats;
+
             player->mass =
                 ShroomClamp(player->mass + (float)spore->value, 0.0f, SHROOM_MAX_PLAYER_MASS);
             ShroomSpawnOrResetSpore(world, spore);
-            if (player->player_id < SHROOM_MAX_PARTICIPANTS) {
-              world->player_round_stats[player->player_id].spores_collected += 1u;
+            stats = ShroomWorldEnsureRoundStats(world, player->player_id);
+            if (stats != NULL) {
+              stats->spores_collected += 1u;
             }
           }
         }
@@ -935,12 +941,14 @@ static void ShroomResolveConsumes(ShroomWorldState* world) {
       ShroomPlayerState* victim = &world->players[attacker_index];
       ShroomPlayerState* winner = &world->players[consumed_by[attacker_index]];
       const ShroomPlayerId victim_player_id = victim->player_id;
+      ShroomRoundStats* stats;
 
       winner->mass = ShroomClamp(winner->mass + (victim->mass * SHROOM_CONSUME_MASS_GAIN_FACTOR),
                                  0.0f, SHROOM_MAX_PLAYER_MASS);
       victim->alive = false;
-      if (winner->player_id < SHROOM_MAX_PARTICIPANTS) {
-        world->player_round_stats[winner->player_id].kills += 1u;
+      stats = ShroomWorldEnsureRoundStats(world, winner->player_id);
+      if (stats != NULL) {
+        stats->kills += 1u;
       }
       if (victim->piece_index == 0) {
         /* Primary piece consumed: respawn the player and remove any orphaned split pieces. */
@@ -1088,25 +1096,68 @@ void ShroomWorldInit(ShroomWorldState* world) {
   ShroomWorldInitWithSeed(world, seed);
 }
 
+const ShroomRoundStats* ShroomWorldGetRoundStats(const ShroomWorldState* world,
+                                                 ShroomPlayerId player_id) {
+  size_t index;
+
+  if ((world == NULL) || (player_id == 0u)) {
+    return NULL;
+  }
+  for (index = 0; index < SHROOM_MAX_PARTICIPANTS; ++index) {
+    if (world->round_stats[index].player_id == player_id) {
+      return &world->round_stats[index].stats;
+    }
+  }
+  return NULL;
+}
+
+static ShroomRoundStats* ShroomWorldEnsureRoundStats(ShroomWorldState* world,
+                                                     ShroomPlayerId player_id) {
+  size_t index;
+
+  if ((world == NULL) || (player_id == 0u)) {
+    return NULL;
+  }
+  for (index = 0; index < SHROOM_MAX_PARTICIPANTS; ++index) {
+    if (world->round_stats[index].player_id == player_id) {
+      return &world->round_stats[index].stats;
+    }
+  }
+  for (index = 0; index < SHROOM_MAX_PARTICIPANTS; ++index) {
+    if (world->round_stats[index].player_id == 0u) {
+      world->round_stats[index].player_id = player_id;
+      world->round_stats[index].stats = (ShroomRoundStats){0};
+      return &world->round_stats[index].stats;
+    }
+  }
+  return NULL;
+}
+
 ShroomPlayerState* ShroomWorldSpawnPlayer(ShroomWorldState* world, ShroomPlayerId player_id,
                                           bool is_bot) {
-  ShroomPlayerState* player;
+  ShroomPlayerState* player = NULL;
   size_t index;
+
+  if ((world == NULL) || (player_id == 0u)) {
+    return NULL;
+  }
 
   for (index = 0; index < world->player_count; ++index) {
     if (!world->players[index].alive) {
       player = &world->players[index];
-      goto initialize_player;
+      break;
     }
   }
 
-  if (world->player_count >= SHROOM_MAX_PLAYER_ENTITIES) {
-    return 0;
+  if ((player == NULL) && (world->player_count >= SHROOM_MAX_PLAYER_ENTITIES)) {
+    return NULL;
+  }
+  (void)ShroomWorldEnsureRoundStats(world, player_id);
+
+  if (player == NULL) {
+    player = &world->players[world->player_count++];
   }
 
-  player = &world->players[world->player_count++];
-
-initialize_player:
   *player = (ShroomPlayerState){
       .player_id = player_id,
       .entity_id = world->next_entity_id++,
@@ -1139,6 +1190,15 @@ size_t ShroomWorldRemovePlayer(ShroomWorldState* world, ShroomPlayerId player_id
 
   while ((world->player_count > 0u) && (world->players[world->player_count - 1u].player_id == 0u)) {
     --world->player_count;
+  }
+
+  if (removed > 0u) {
+    for (i = 0; i < SHROOM_MAX_PARTICIPANTS; ++i) {
+      if (world->round_stats[i].player_id == player_id) {
+        world->round_stats[i] = (ShroomRoundStatsSlot){0};
+        break;
+      }
+    }
   }
 
   return removed;
@@ -1705,10 +1765,13 @@ void ShroomWorldStep(ShroomWorldState* world, float delta_time) {
     const ShroomPlayerState* player = &world->players[index];
     ShroomRoundStats* stats;
 
-    if (!player->alive || (player->player_id >= SHROOM_MAX_PARTICIPANTS)) {
+    if (!player->alive) {
       continue;
     }
-    stats = &world->player_round_stats[player->player_id];
+    stats = ShroomWorldEnsureRoundStats(world, player->player_id);
+    if (stats == NULL) {
+      continue;
+    }
     if (player->mass > stats->peak_mass) {
       stats->peak_mass = player->mass;
     }
