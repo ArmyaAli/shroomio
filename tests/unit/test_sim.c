@@ -696,6 +696,54 @@ void test_player_can_voluntarily_split_at_large_colony_threshold(void) {
   TEST_ASSERT_FALSE(piece->ai_controlled);
 }
 
+void test_remove_player_clears_maximum_colony_and_reuses_capacity(void) {
+  ShroomPlayerState* departing;
+  ShroomPlayerState* survivor;
+  ShroomPlayerState* replacement;
+  uint32_t survivor_entity_id;
+  size_t split_count;
+
+  ResetWorldForPlayers();
+  departing = ShroomWorldSpawnPlayer(&world, 41u, false);
+  survivor = ShroomWorldSpawnPlayer(&world, 42u, true);
+  TEST_ASSERT_NOT_NULL(departing);
+  TEST_ASSERT_NOT_NULL(survivor);
+  survivor_entity_id = survivor->entity_id;
+
+  departing->mass = SHROOM_SPLIT_MIN_MASS * 16.0f;
+  departing->radius = ShroomMassToRadius(departing->mass);
+  for (split_count = 1u; split_count < SHROOM_MAX_SPLIT_PIECES; ++split_count) {
+    TEST_ASSERT_TRUE(ShroomWorldSplitPlayer(&world, departing));
+    departing->has_split = false;
+  }
+  TEST_ASSERT_EQUAL_size_t(SHROOM_MAX_SPLIT_PIECES, CountAlivePieces(41u));
+
+  TEST_ASSERT_EQUAL_size_t(SHROOM_MAX_SPLIT_PIECES, ShroomWorldRemovePlayer(&world, 41u));
+  TEST_ASSERT_EQUAL_size_t(0u, CountAlivePieces(41u));
+  TEST_ASSERT_TRUE(survivor->alive);
+  TEST_ASSERT_EQUAL_UINT32(42u, survivor->player_id);
+  TEST_ASSERT_EQUAL_UINT32(survivor_entity_id, survivor->entity_id);
+
+  replacement = ShroomWorldSpawnPlayer(&world, 43u, false);
+  TEST_ASSERT_NOT_NULL(replacement);
+  TEST_ASSERT_TRUE(replacement->alive);
+  TEST_ASSERT_EQUAL_UINT32(43u, replacement->player_id);
+}
+
+void test_remove_player_rejects_invalid_owner_without_mutating_world(void) {
+  ShroomPlayerState* player;
+
+  ResetWorldForPlayers();
+  player = ShroomWorldSpawnPlayer(&world, 7u, false);
+  TEST_ASSERT_NOT_NULL(player);
+
+  TEST_ASSERT_EQUAL_size_t(0u, ShroomWorldRemovePlayer(NULL, 7u));
+  TEST_ASSERT_EQUAL_size_t(0u, ShroomWorldRemovePlayer(&world, 0u));
+  TEST_ASSERT_EQUAL_size_t(0u, ShroomWorldRemovePlayer(&world, 99u));
+  TEST_ASSERT_TRUE(player->alive);
+  TEST_ASSERT_EQUAL_UINT32(7u, player->player_id);
+}
+
 void test_player_split_uses_requested_aim_direction(void) {
   ShroomPlayerState* player;
   ShroomPlayerState* piece;
@@ -1327,6 +1375,8 @@ int main(void) {
   RUN_TEST(test_spawn_player_reuses_inactive_slot);
   RUN_TEST(test_world_step_caps_mass_gain_at_configured_maximum);
   RUN_TEST(test_player_can_voluntarily_split_at_large_colony_threshold);
+  RUN_TEST(test_remove_player_clears_maximum_colony_and_reuses_capacity);
+  RUN_TEST(test_remove_player_rejects_invalid_owner_without_mutating_world);
   RUN_TEST(test_player_split_uses_requested_aim_direction);
   RUN_TEST(test_player_cannot_voluntarily_split_below_large_colony_threshold);
   RUN_TEST(test_split_pieces_wait_to_merge_until_cooldown_and_proximity);

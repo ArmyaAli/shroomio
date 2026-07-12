@@ -958,6 +958,28 @@ initialize_player:
   return player;
 }
 
+size_t ShroomWorldRemovePlayer(ShroomWorldState* world, ShroomPlayerId player_id) {
+  size_t removed = 0;
+  size_t i;
+
+  if ((world == NULL) || (player_id == 0u)) {
+    return 0;
+  }
+
+  for (i = 0; i < world->player_count; ++i) {
+    if (world->players[i].player_id == player_id) {
+      world->players[i] = (ShroomPlayerState){0};
+      ++removed;
+    }
+  }
+
+  while ((world->player_count > 0u) && (world->players[world->player_count - 1u].player_id == 0u)) {
+    --world->player_count;
+  }
+
+  return removed;
+}
+
 static void ShroomCollectPowerups(ShroomWorldState* world) {
   for (size_t player_index = 0; player_index < world->player_count; ++player_index) {
     ShroomPlayerState* player = &world->players[player_index];

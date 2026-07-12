@@ -19,6 +19,7 @@
 #include "auth.h"
 #include "database.h"
 #include "logger.h"
+#include "session_cleanup.h"
 
 static const char* const kBotNamePrefixes[] = {
     "Mycelium", "Sporecap", "Hyphae", "Spore", "Fungal", "Myco", "Shroom", "Mold",
@@ -883,18 +884,26 @@ static void SendPowerupState(ENetPeer* peer, const ShroomWorldState* world) {
                  CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_POWERUP_STATE));
 }
 
-static void DisconnectSession(ServerSession* session) {
+static void RemoveSessionPlayer(ServerSession* session, ShroomLobby* lobbies) {
+  ShroomLobby* lobby = NULL;
+
+  if (session == NULL) {
+    return;
+  }
+
+  if ((lobbies != NULL) && (session->player_id != 0u)) {
+    lobby = FindLobbyById(lobbies, session->lobby_id);
+  }
+  ShroomServerCleanupPlayer(lobby != NULL ? &lobby->world : NULL, session->player_id,
+                            &session->player, &session->focused_entity_id);
+}
+
+static void DisconnectSession(ServerSession* session, ShroomLobby* lobbies) {
   if ((session == NULL) || !session->active) {
     return;
   }
 
-  if (session->player != NULL) {
-    session->player->alive = false;
-    session->player->input_direction = (ShroomVec2){0};
-    session->player->mass = 0.0f;
-    session->player->radius = 0.0f;
-  }
-
+  RemoveSessionPlayer(session, lobbies);
   *session = (ServerSession){0};
 }
 
@@ -1392,19 +1401,14 @@ static void HandleLobbyJoin(ENetHost* host, ENetPeer* peer, ServerSession* sessi
   BroadcastLobbyRoster(host, lobby->lobby_id);
 }
 
-static void HandleLobbyLeave(ENetHost* host, ServerSession* session) {
+static void HandleLobbyLeave(ENetHost* host, ServerSession* session, ShroomLobby* lobbies) {
   uint32_t lobby_id;
 
   if (session == NULL) {
     return;
   }
   lobby_id = session->lobby_id;
-  if (session->player != NULL) {
-    session->player->alive = false;
-    session->player->mass = 0.0f;
-    session->player->radius = 0.0f;
-    session->player = NULL;
-  }
+  RemoveSessionPlayer(session, lobbies);
   LOG_INFO("lobby leave: player_id=%u lobby_id=%u", session->player_id, session->lobby_id);
   session->lobby_id = 0;
   session->spectating = false;
@@ -1483,7 +1487,7 @@ static void DispatchLobbyJoin(ServerPacketContext* context) {
 }
 
 static void DispatchLobbyLeave(ServerPacketContext* context) {
-  HandleLobbyLeave(context->host, context->session);
+  HandleLobbyLeave(context->host, context->session, context->lobbies);
 }
 
 static void DispatchLobbyCreate(ServerPacketContext* context) {
@@ -1689,7 +1693,7 @@ int main(int argc, char** argv) {
             disconnected_session != NULL ? disconnected_session->lobby_id : 0u;
 
         LOG_INFO("peer disconnected: slot=%u", (unsigned)event.peer->incomingPeerID);
-        DisconnectSession(disconnected_session);
+        DisconnectSession(disconnected_session, lobbies);
         event.peer->data = 0;
         BroadcastLobbyRoster(host, disconnected_lobby_id);
       } break;
@@ -1838,6 +1842,10 @@ int main(int argc, char** argv) {
   }
 
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_STOP);
+  for (size_t peer_index = 0; peer_index < host->peerCount; ++peer_index) {
+    DisconnectSession((ServerSession*)host->peers[peer_index].data, lobbies);
+    host->peers[peer_index].data = NULL;
+  }
   enet_host_destroy(host);
   enet_deinitialize();
   ShroomAuthShutdown(&auth_ctx);
