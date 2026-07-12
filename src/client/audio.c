@@ -12,8 +12,9 @@
 static Sound g_client_sfx[SHROOM_CLIENT_SFX_COUNT];
 static bool g_client_sfx_loaded[SHROOM_CLIENT_SFX_COUNT];
 static double g_client_sfx_last_played_at[SHROOM_CLIENT_SFX_COUNT];
-static Sound g_client_music_loop;
+static Music g_client_music_loop;
 static bool g_client_music_loaded;
+static float g_client_music_last_volume;
 static bool g_client_audio_initialized;
 static bool g_client_audio_device_owned;
 static bool g_client_audio_assets_loaded;
@@ -45,6 +46,48 @@ static ClientAudioBackend g_client_audio_backend = {
     .apply_settings = ProductionApplySettings,
 };
 static bool g_client_audio_uses_production_backend = true;
+
+static bool MusicIsUsable(Music music) {
+  return (music.stream.buffer != NULL) && (music.frameCount > 0u);
+}
+
+static unsigned char* WaveToWavData(const Wave* wave, int* out_size) {
+  const int bytes_per_sample = wave->sampleSize / 8;
+  const int data_size = (int)(wave->frameCount * wave->channels * bytes_per_sample);
+  const int file_size = 44 + data_size;
+  const int riff_size = file_size - 8;
+  const int sample_rate = (int)wave->sampleRate;
+  const short fmt_tag = 1;
+  const short channels = (short)wave->channels;
+  const int byte_rate = (int)(wave->sampleRate * wave->channels * bytes_per_sample);
+  const short block_align = (short)(wave->channels * bytes_per_sample);
+  const short bits_per_sample = (short)wave->sampleSize;
+  const int fmt_chunk_size = 16;
+  unsigned char* wav = (unsigned char*)malloc(file_size);
+
+  if (wav == NULL) {
+    *out_size = 0;
+    return NULL;
+  }
+
+  memcpy(wav, "RIFF", 4);
+  memcpy(wav + 4, &riff_size, 4);
+  memcpy(wav + 8, "WAVE", 4);
+  memcpy(wav + 12, "fmt ", 4);
+  memcpy(wav + 16, &fmt_chunk_size, 4);
+  memcpy(wav + 20, &fmt_tag, 2);
+  memcpy(wav + 22, &channels, 2);
+  memcpy(wav + 24, &sample_rate, 4);
+  memcpy(wav + 28, &byte_rate, 4);
+  memcpy(wav + 32, &block_align, 2);
+  memcpy(wav + 34, &bits_per_sample, 2);
+  memcpy(wav + 36, "data", 4);
+  memcpy(wav + 40, &data_size, 4);
+  memcpy(wav + 44, wave->data, data_size);
+
+  *out_size = file_size;
+  return wav;
+}
 
 static bool SoundIsUsable(Sound sound) {
   return (sound.stream.buffer != NULL) && (sound.frameCount > 0u);
@@ -154,69 +197,55 @@ static float NoteToHz(int note) {
   return 440.0f * powf(2.0f, ((float)note - 69.0f) / 12.0f);
 }
 
-static Sound GenerateAmbientLoopSound(void) {
+static Music GenerateAmbientMusicStream(void) {
   const unsigned int sample_rate = 32000u;
-  const float seconds = 48.0f; // 48 seconds for a longer, more immersive loop
+  const float seconds = 16.0f;
   const unsigned int frame_count = (unsigned int)(seconds * (float)sample_rate);
   int16_t* samples = malloc(frame_count * sizeof(int16_t));
   Wave wave = {0};
-  Sound sound = {0};
+  Music music = {0};
+  unsigned char* wav_data = NULL;
+  int wav_size = 0;
 
   if (samples == NULL) {
     free(samples);
-    return sound;
+    return music;
   }
 
-  // Peaceful chord progression in C major: C - G - Am - F
-  // Each chord lasts 4 beats at 60 BPM = 4 seconds per chord
-  // Total progression = 16 seconds, loops 3 times in 48 seconds
-  const int chord_progression[] = {60, 67, 69, 65}; // C4, G4, A4, F4 (root notes)
-  const float chord_duration = 4.0f;                // seconds per chord
-  const float beat_duration = 1.0f;                 // 60 BPM = 1 beat per second
+  const int chord_progression[] = {60, 67, 69, 65};
+  const float chord_duration = 4.0f;
+  const float beat_duration = 1.0f;
 
   for (unsigned int index = 0u; index < frame_count; ++index) {
     const float t = (float)index / (float)sample_rate;
 
-    // Smooth fade in/out for seamless looping
-    const float fade_in = SmoothStep01(t / 2.0f);
-    const float fade_out = SmoothStep01((seconds - t) / 2.0f);
-    const float loop_fade = fade_in * fade_out;
-
-    // Determine current chord
-    const float progression_time = fmodf(t, 16.0f); // 16-second progression
+    const float progression_time = fmodf(t, 16.0f);
     const int chord_index = (int)(progression_time / chord_duration) % 4;
     const int chord_root = chord_progression[chord_index];
     const float chord_time = fmodf(progression_time, chord_duration);
-    const float chord_fade = sinf(PI * (chord_time / chord_duration)); // Smooth chord transitions
+    const float chord_fade = sinf(PI * (chord_time / chord_duration));
 
-    // Bass drone (root note, one octave down)
     const float bass_hz = NoteToHz(chord_root - 12);
     const float bass = sinf(2.0f * PI * bass_hz * t) * 0.25f;
 
-    // Chord pad (root, third, fifth)
     const float root_hz = NoteToHz(chord_root);
-    const float third_hz = NoteToHz(chord_root + 4); // Major third
-    const float fifth_hz = NoteToHz(chord_root + 7); // Perfect fifth
+    const float third_hz = NoteToHz(chord_root + 4);
+    const float fifth_hz = NoteToHz(chord_root + 7);
     const float pad = (sinf(2.0f * PI * root_hz * t) + sinf(2.0f * PI * third_hz * t) * 0.7f +
                        sinf(2.0f * PI * fifth_hz * t) * 0.5f) *
                       0.15f;
 
-    // Gentle melody notes (arpeggiate through chord tones)
     const float melody_time = fmodf(t, beat_duration * 2.0f);
     const int melody_note_index = (int)(melody_time / beat_duration) % 2;
-    const int melody_offset = melody_note_index == 0 ? 0 : 7;          // Alternate root and fifth
-    const float melody_hz = NoteToHz(chord_root + 12 + melody_offset); // One octave up
+    const int melody_offset = melody_note_index == 0 ? 0 : 7;
+    const float melody_hz = NoteToHz(chord_root + 12 + melody_offset);
     const float melody_envelope = sinf(PI * (melody_time / (beat_duration * 2.0f)));
     const float melody = sinf(2.0f * PI * melody_hz * t) * 0.08f * melody_envelope;
 
-    // Subtle shimmer/high harmonics
-    const float shimmer_hz = NoteToHz(chord_root + 24); // Two octaves up
+    const float shimmer_hz = NoteToHz(chord_root + 24);
     const float shimmer = sinf(2.0f * PI * shimmer_hz * t + sinf(2.0f * PI * 0.2f * t)) * 0.03f;
 
-    // Combine all elements
-    const float sample = (bass + pad * chord_fade + melody + shimmer) * loop_fade;
-
-    // Soft clipping to avoid harsh artifacts
+    const float sample = bass + pad * chord_fade + melody + shimmer;
     const float soft_sample = tanhf(sample * 1.2f) * 0.85f;
 
     samples[index] = (int16_t)(Clamp(soft_sample, -1.0f, 1.0f) * 6000.0f);
@@ -227,9 +256,19 @@ static Sound GenerateAmbientLoopSound(void) {
   wave.sampleSize = 16u;
   wave.channels = 1u;
   wave.data = samples;
-  sound = LoadSoundFromWave(wave);
+
+  wav_data = WaveToWavData(&wave, &wav_size);
   free(samples);
-  return sound;
+  if (wav_data == NULL) {
+    return music;
+  }
+
+  music = LoadMusicStreamFromMemory(".wav", wav_data, wav_size);
+  free(wav_data);
+  if (MusicIsUsable(music)) {
+    music.looping = true;
+  }
+  return music;
 }
 
 static void EnsureClientSfxLoaded(ShroomClientSfx sfx) {
@@ -295,8 +334,9 @@ static void EnsureClientMusicLoaded(void) {
   if (g_client_music_loaded || !g_client_audio_uses_production_backend || !IsAudioDeviceReady()) {
     return;
   }
-  g_client_music_loop = GenerateAmbientLoopSound();
-  g_client_music_loaded = SoundIsUsable(g_client_music_loop);
+  g_client_music_loop = GenerateAmbientMusicStream();
+  g_client_music_loaded = MusicIsUsable(g_client_music_loop);
+  g_client_music_last_volume = -1.0f;
 }
 
 void ShroomClientAudioUpdateMusic(const ClientSettings* settings) {
@@ -313,14 +353,18 @@ void ShroomClientAudioUpdateMusic(const ClientSettings* settings) {
     return;
   }
 
+  UpdateMusicStream(g_client_music_loop);
+
   volume = ((float)settings->music_volume_percent / 100.0f) * 0.34f;
-  SetSoundVolume(g_client_music_loop, volume);
-  SetSoundPan(g_client_music_loop, 0.5f);
-  if ((volume > 0.0f) && !IsSoundPlaying(g_client_music_loop)) {
-    PlaySound(g_client_music_loop);
+  if (volume != g_client_music_last_volume) {
+    SetMusicVolume(g_client_music_loop, volume);
+    g_client_music_last_volume = volume;
   }
-  if ((volume <= 0.0f) && IsSoundPlaying(g_client_music_loop)) {
-    StopSound(g_client_music_loop);
+  if ((volume > 0.0f) && !IsMusicStreamPlaying(g_client_music_loop)) {
+    PlayMusicStream(g_client_music_loop);
+  }
+  if ((volume <= 0.0f) && IsMusicStreamPlaying(g_client_music_loop)) {
+    StopMusicStream(g_client_music_loop);
   }
 }
 
@@ -330,6 +374,7 @@ static void ClearClientAssetHandles(void) {
   memset(g_client_sfx_last_played_at, 0, sizeof(g_client_sfx_last_played_at));
   memset(&g_client_music_loop, 0, sizeof(g_client_music_loop));
   g_client_music_loaded = false;
+  g_client_music_last_volume = -1.0f;
   g_client_audio_assets_loaded = false;
 }
 
@@ -374,8 +419,8 @@ static void ProductionUnloadAssets(void* context) {
     }
   }
   if (g_client_music_loaded) {
-    StopSound(g_client_music_loop);
-    UnloadSound(g_client_music_loop);
+    StopMusicStream(g_client_music_loop);
+    UnloadMusicStream(g_client_music_loop);
   }
 }
 
