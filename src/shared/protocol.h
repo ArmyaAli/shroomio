@@ -12,7 +12,8 @@
 #define SHROOM_MAX_UNRELIABLE_PACKET_SIZE 1200u
 #define SHROOM_MAX_PASSWORD_LENGTH 64u
 #define SHROOM_AUTH_TOKEN_LENGTH 64u
-/* Total ENet peers across all lobbies (SHROOM_MAX_LOBBIES * SHROOM_MAX_PLAYERS). */
+/* Total ENet peers across all lobbies (SHROOM_MAX_LOBBIES *
+ * SHROOM_MAX_PLAYERS). */
 #define SHROOM_SERVER_MAX_CLIENTS 1024u
 #define SHROOM_SNAPSHOT_RATE 15u
 #define SHROOM_MAX_SNAPSHOT_PLAYERS 256u
@@ -114,7 +115,8 @@ typedef struct ShroomInputPacket {
   uint8_t split_requested; /* 1 = player pressed split this tick */
   uint8_t eject_requested; /* 1 = player requested mass ejection this tick */
   uint8_t reserved[2];
-  uint32_t focused_entity_id; /* entity_id of the piece being controlled; 0 = primary */
+  uint32_t focused_entity_id; /* entity_id of the piece being controlled; 0 =
+                                 primary */
 } ShroomInputPacket;
 
 typedef struct ShroomSnapshotPlayerState {
@@ -331,46 +333,59 @@ typedef struct ShroomLobbyRosterPacket {
   ShroomLobbyRosterEntry players[SHROOM_MAX_PLAYERS];
 } ShroomLobbyRosterPacket;
 
-#define SHROOM_PACKET_METADATA(X)                                                                  \
-  X(SHROOM_PACKET_HELLO, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomHelloPacket))             \
-  X(SHROOM_PACKET_WELCOME, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomWelcomePacket))         \
-  X(SHROOM_PACKET_INPUT, SHROOM_ENET_CHANNEL_INPUT, false, sizeof(ShroomInputPacket))              \
-  X(SHROOM_PACKET_SNAPSHOT, SHROOM_ENET_CHANNEL_SNAPSHOT, false,                                   \
-    offsetof(ShroomSnapshotPacket, players))                                                       \
-  X(SHROOM_PACKET_PING, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomPingPacket))               \
-  X(SHROOM_PACKET_PONG, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomPongPacket))               \
-  X(SHROOM_PACKET_SPORE_STATE, SHROOM_ENET_CHANNEL_SNAPSHOT, false,                                \
-    offsetof(ShroomSporeStatePacket, spores))                                                      \
-  X(SHROOM_PACKET_AUTH_REQUEST, SHROOM_ENET_CHANNEL_CONTROL, true,                                 \
-    sizeof(ShroomAuthRequestPacket))                                                               \
-  X(SHROOM_PACKET_AUTH_RESPONSE, SHROOM_ENET_CHANNEL_CONTROL, true,                                \
-    sizeof(ShroomAuthResponsePacket))                                                              \
-  X(SHROOM_PACKET_CHAT, SHROOM_ENET_CHANNEL_CHAT, true, sizeof(ShroomChatPacket))                  \
-  X(SHROOM_PACKET_VOICE_FRAME, SHROOM_ENET_CHANNEL_VOICE, false, sizeof(ShroomVoiceFramePacket))   \
-  X(SHROOM_PACKET_LOBBY_LIST_QUERY, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomPacketHeader)) \
-  X(SHROOM_PACKET_LOBBY_LIST, SHROOM_ENET_CHANNEL_CONTROL, true,                                   \
-    offsetof(ShroomLobbyListPacket, lobbies))                                                      \
-  X(SHROOM_PACKET_LOBBY_JOIN, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomLobbyJoinPacket))    \
-  X(SHROOM_PACKET_LOBBY_JOINED, SHROOM_ENET_CHANNEL_CONTROL, true,                                 \
-    sizeof(ShroomLobbyJoinedPacket))                                                               \
-  X(SHROOM_PACKET_LOBBY_LEAVE, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomLobbyLeavePacket))  \
-  X(SHROOM_PACKET_LOBBY_CREATE, SHROOM_ENET_CHANNEL_CONTROL, true,                                 \
-    sizeof(ShroomLobbyCreatePacket))                                                               \
-  X(SHROOM_PACKET_LOBBY_CREATED, SHROOM_ENET_CHANNEL_CONTROL, true,                                \
-    sizeof(ShroomLobbyCreatedPacket))                                                              \
-  X(SHROOM_PACKET_POWERUP_STATE, SHROOM_ENET_CHANNEL_SNAPSHOT, false,                              \
-    offsetof(ShroomPowerupStatePacket, powerups))                                                  \
-  X(SHROOM_PACKET_MUSHROOM_SPECIES_CATALOG, SHROOM_ENET_CHANNEL_CONTROL, true,                     \
-    offsetof(ShroomMushroomSpeciesCatalogPacket, species))                                         \
-  X(SHROOM_PACKET_READY_STATE, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomReadyStatePacket))  \
-  X(SHROOM_PACKET_ENTER_MATCH, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomEnterMatchPacket))  \
-  X(SHROOM_PACKET_LOBBY_ROSTER, SHROOM_ENET_CHANNEL_CONTROL, true,                              \
+#define SHROOM_PACKET_METADATA(X)                                              \
+  X(SHROOM_PACKET_HELLO, SHROOM_ENET_CHANNEL_CONTROL, true,                    \
+    sizeof(ShroomHelloPacket))                                                 \
+  X(SHROOM_PACKET_WELCOME, SHROOM_ENET_CHANNEL_CONTROL, true,                  \
+    sizeof(ShroomWelcomePacket))                                               \
+  X(SHROOM_PACKET_INPUT, SHROOM_ENET_CHANNEL_INPUT, false,                     \
+    sizeof(ShroomInputPacket))                                                 \
+  X(SHROOM_PACKET_SNAPSHOT, SHROOM_ENET_CHANNEL_SNAPSHOT, false,               \
+    offsetof(ShroomSnapshotPacket, players))                                   \
+  X(SHROOM_PACKET_PING, SHROOM_ENET_CHANNEL_CONTROL, true,                     \
+    sizeof(ShroomPingPacket))                                                  \
+  X(SHROOM_PACKET_PONG, SHROOM_ENET_CHANNEL_CONTROL, true,                     \
+    sizeof(ShroomPongPacket))                                                  \
+  X(SHROOM_PACKET_SPORE_STATE, SHROOM_ENET_CHANNEL_SNAPSHOT, false,            \
+    offsetof(ShroomSporeStatePacket, spores))                                  \
+  X(SHROOM_PACKET_AUTH_REQUEST, SHROOM_ENET_CHANNEL_CONTROL, true,             \
+    sizeof(ShroomAuthRequestPacket))                                           \
+  X(SHROOM_PACKET_AUTH_RESPONSE, SHROOM_ENET_CHANNEL_CONTROL, true,            \
+    sizeof(ShroomAuthResponsePacket))                                          \
+  X(SHROOM_PACKET_CHAT, SHROOM_ENET_CHANNEL_CHAT, true,                        \
+    sizeof(ShroomChatPacket))                                                  \
+  X(SHROOM_PACKET_VOICE_FRAME, SHROOM_ENET_CHANNEL_VOICE, false,               \
+    sizeof(ShroomVoiceFramePacket))                                            \
+  X(SHROOM_PACKET_LOBBY_LIST_QUERY, SHROOM_ENET_CHANNEL_CONTROL, true,         \
+    sizeof(ShroomPacketHeader))                                                \
+  X(SHROOM_PACKET_LOBBY_LIST, SHROOM_ENET_CHANNEL_CONTROL, true,               \
+    offsetof(ShroomLobbyListPacket, lobbies))                                  \
+  X(SHROOM_PACKET_LOBBY_JOIN, SHROOM_ENET_CHANNEL_CONTROL, true,               \
+    sizeof(ShroomLobbyJoinPacket))                                             \
+  X(SHROOM_PACKET_LOBBY_JOINED, SHROOM_ENET_CHANNEL_CONTROL, true,             \
+    sizeof(ShroomLobbyJoinedPacket))                                           \
+  X(SHROOM_PACKET_LOBBY_LEAVE, SHROOM_ENET_CHANNEL_CONTROL, true,              \
+    sizeof(ShroomLobbyLeavePacket))                                            \
+  X(SHROOM_PACKET_LOBBY_CREATE, SHROOM_ENET_CHANNEL_CONTROL, true,             \
+    sizeof(ShroomLobbyCreatePacket))                                           \
+  X(SHROOM_PACKET_LOBBY_CREATED, SHROOM_ENET_CHANNEL_CONTROL, true,            \
+    sizeof(ShroomLobbyCreatedPacket))                                          \
+  X(SHROOM_PACKET_POWERUP_STATE, SHROOM_ENET_CHANNEL_SNAPSHOT, false,          \
+    offsetof(ShroomPowerupStatePacket, powerups))                              \
+  X(SHROOM_PACKET_MUSHROOM_SPECIES_CATALOG, SHROOM_ENET_CHANNEL_CONTROL, true, \
+    offsetof(ShroomMushroomSpeciesCatalogPacket, species))                     \
+  X(SHROOM_PACKET_READY_STATE, SHROOM_ENET_CHANNEL_CONTROL, true,              \
+    sizeof(ShroomReadyStatePacket))                                            \
+  X(SHROOM_PACKET_ENTER_MATCH, SHROOM_ENET_CHANNEL_CONTROL, true,              \
+    sizeof(ShroomEnterMatchPacket))                                            \
+  X(SHROOM_PACKET_LOBBY_ROSTER, SHROOM_ENET_CHANNEL_CONTROL, true,             \
     offsetof(ShroomLobbyRosterPacket, players))
 
 static inline uint8_t ShroomPacketTypeToChannel(ShroomPacketType type) {
   switch (type) {
-#define SHROOM_PACKET_CHANNEL_CASE(packet_type, channel, reliable, minimum_size)                   \
-  case packet_type:                                                                                \
+#define SHROOM_PACKET_CHANNEL_CASE(packet_type, channel, reliable,             \
+                                   minimum_size)                               \
+  case packet_type:                                                            \
     return channel;
     SHROOM_PACKET_METADATA(SHROOM_PACKET_CHANNEL_CASE)
 #undef SHROOM_PACKET_CHANNEL_CASE
@@ -381,8 +396,9 @@ static inline uint8_t ShroomPacketTypeToChannel(ShroomPacketType type) {
 
 static inline bool ShroomPacketTypeUsesReliableDelivery(ShroomPacketType type) {
   switch (type) {
-#define SHROOM_PACKET_RELIABLE_CASE(packet_type, channel, reliable, minimum_size)                  \
-  case packet_type:                                                                                \
+#define SHROOM_PACKET_RELIABLE_CASE(packet_type, channel, reliable,            \
+                                    minimum_size)                              \
+  case packet_type:                                                            \
     return reliable;
     SHROOM_PACKET_METADATA(SHROOM_PACKET_RELIABLE_CASE)
 #undef SHROOM_PACKET_RELIABLE_CASE
@@ -393,8 +409,9 @@ static inline bool ShroomPacketTypeUsesReliableDelivery(ShroomPacketType type) {
 
 static inline uint16_t ShroomPacketTypeMinimumSize(ShroomPacketType type) {
   switch (type) {
-#define SHROOM_PACKET_MINIMUM_SIZE_CASE(packet_type, channel, reliable, minimum_size)              \
-  case packet_type:                                                                                \
+#define SHROOM_PACKET_MINIMUM_SIZE_CASE(packet_type, channel, reliable,        \
+                                        minimum_size)                          \
+  case packet_type:                                                            \
     return (uint16_t)(minimum_size);
     SHROOM_PACKET_METADATA(SHROOM_PACKET_MINIMUM_SIZE_CASE)
 #undef SHROOM_PACKET_MINIMUM_SIZE_CASE
@@ -403,7 +420,8 @@ static inline uint16_t ShroomPacketTypeMinimumSize(ShroomPacketType type) {
   }
 }
 
-static inline void ShroomPacketHeaderInit(ShroomPacketHeader* header, ShroomPacketType type,
+static inline void ShroomPacketHeaderInit(ShroomPacketHeader *header,
+                                          ShroomPacketType type,
                                           uint16_t size) {
   if (header == 0) {
     return;
@@ -423,14 +441,16 @@ static inline uint16_t ShroomSporeStatePacketMaxSpores(void) {
   return (uint16_t)(available / sizeof(ShroomSnapshotSporeState));
 }
 
-static inline bool ShroomPacketHeaderUsesExpectedChannel(const ShroomPacketHeader* header,
-                                                         uint8_t actual_channel) {
+static inline bool
+ShroomPacketHeaderUsesExpectedChannel(const ShroomPacketHeader *header,
+                                      uint8_t actual_channel) {
   if (header == 0) {
     return false;
   }
 
   return (header->reserved == actual_channel) &&
-         (header->reserved == ShroomPacketTypeToChannel((ShroomPacketType)header->type));
+         (header->reserved ==
+          ShroomPacketTypeToChannel((ShroomPacketType)header->type));
 }
 
 #endif

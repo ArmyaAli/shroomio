@@ -22,8 +22,10 @@ typedef struct ChatMessage {
  * finish the WELCOME handshake) before showing a friendly error instead of
  * spinning on the connecting modal. */
 #define SHROOM_CLIENT_CONNECT_TIMEOUT_MS 5000u
-/* Friendly message shown when Play Online / Quick Play cannot reach a server. */
-#define SHROOM_NET_CONNECT_UNREACHABLE_MSG "Unable to connect to that server, does it exist?"
+/* Friendly message shown when Play Online / Quick Play cannot reach a server.
+ */
+#define SHROOM_NET_CONNECT_UNREACHABLE_MSG                                     \
+  "Unable to connect to that server, does it exist?"
 #define SHROOM_CLIENT_RTT_SAMPLE_COUNT 10u
 #define SHROOM_CLIENT_CHAT_HISTORY_COUNT 50u
 typedef enum ClientNetStatus {
@@ -34,8 +36,8 @@ typedef enum ClientNetStatus {
 } ClientNetStatus;
 
 typedef struct ClientNetState {
-  ENetHost* host;
-  ENetPeer* peer;
+  ENetHost *host;
+  ENetPeer *peer;
   ClientNetStatus status;
   bool enet_initialized;
   bool welcome_received;
@@ -91,31 +93,40 @@ typedef struct ClientNetState {
   float podium_masses[SHROOM_MATCH_PODIUM_COUNT];
 } ClientNetState;
 
-bool ClientNetInit(ClientNetState* net, const char* host_name, uint16_t port);
-void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, bool split_requested,
-                     bool eject_requested, ShroomVec2 split_direction, uint32_t focused_entity_id,
+bool ClientNetInit(ClientNetState *net, const char *host_name, uint16_t port);
+void ClientNetUpdate(ClientNetState *net, ShroomVec2 input_direction,
+                     bool split_requested, bool eject_requested,
+                     ShroomVec2 split_direction, uint32_t focused_entity_id,
                      float delta_time);
-void ClientNetShutdown(ClientNetState* net);
-const char* ClientNetStatusLabel(const ClientNetState* net);
-bool ClientNetSendChat(ClientNetState* net, uint32_t player_id, const char* sender_name,
-                       const char* message);
-void ClientNetSendLobbyListQuery(ClientNetState* net);
-void ClientNetSendLobbyJoin(ClientNetState* net, uint32_t lobby_id, bool spectate);
-void ClientNetSendLobbyLeave(ClientNetState* net);
-void ClientNetSendLobbyCreate(ClientNetState* net, const char* name, uint16_t max_players);
-void ClientNetSendReadyState(ClientNetState* net, bool is_ready);
-void ClientNetSendEnterMatch(ClientNetState* net);
+void ClientNetShutdown(ClientNetState *net);
+const char *ClientNetStatusLabel(const ClientNetState *net);
+bool ClientNetSendChat(ClientNetState *net, uint32_t player_id,
+                       const char *sender_name, const char *message);
+void ClientNetSendLobbyListQuery(ClientNetState *net);
+void ClientNetSendLobbyJoin(ClientNetState *net, uint32_t lobby_id,
+                            bool spectate);
+void ClientNetSendLobbyLeave(ClientNetState *net);
+void ClientNetSendLobbyCreate(ClientNetState *net, const char *name,
+                              uint16_t max_players);
+void ClientNetSendReadyState(ClientNetState *net, bool is_ready);
+void ClientNetSendEnterMatch(ClientNetState *net);
 
 #ifdef TEST_MODE
-bool ClientNetTestCompletePendingPing(ClientNetState* net, uint32_t nonce, uint32_t now_ms);
-void ClientNetTestClearStalePendingPing(ClientNetState* net, uint32_t now_ms);
-void ClientNetTestCheckConnectTimeout(ClientNetState* net, uint32_t now_ms);
-void ClientNetTestHandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet);
-void ClientNetTestHandleSporeState(ClientNetState* net, const ENetPacket* enet_packet);
-void ClientNetTestHandleLobbyList(ClientNetState* net, const ENetPacket* enet_packet);
-void ClientNetTestHandleLobbyRoster(ClientNetState* net, const ENetPacket* enet_packet);
-bool ClientNetTestCanSendGameplayInput(const ClientNetState* net);
-void ClientNetTestHandleMushroomSpeciesCatalog(ClientNetState* net, const ENetPacket* enet_packet);
+bool ClientNetTestCompletePendingPing(ClientNetState *net, uint32_t nonce,
+                                      uint32_t now_ms);
+void ClientNetTestClearStalePendingPing(ClientNetState *net, uint32_t now_ms);
+void ClientNetTestCheckConnectTimeout(ClientNetState *net, uint32_t now_ms);
+void ClientNetTestHandleSnapshot(ClientNetState *net,
+                                 const ENetPacket *enet_packet);
+void ClientNetTestHandleSporeState(ClientNetState *net,
+                                   const ENetPacket *enet_packet);
+void ClientNetTestHandleLobbyList(ClientNetState *net,
+                                  const ENetPacket *enet_packet);
+void ClientNetTestHandleLobbyRoster(ClientNetState *net,
+                                    const ENetPacket *enet_packet);
+bool ClientNetTestCanSendGameplayInput(const ClientNetState *net);
+void ClientNetTestHandleMushroomSpeciesCatalog(ClientNetState *net,
+                                               const ENetPacket *enet_packet);
 #endif
 
 #endif

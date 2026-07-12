@@ -7,21 +7,26 @@
 
 #include "shared/config.h"
 
-static void SetStatus(ClientNetState* net, ClientNetStatus status, const char* text) {
+static void SetStatus(ClientNetState *net, ClientNetStatus status,
+                      const char *text) {
   net->status = status;
   snprintf(net->status_text, sizeof(net->status_text), "%s", text);
 }
 
-static ENetPacket* CreatePacket(const void* data, size_t size, enet_uint32 flags) {
+static ENetPacket *CreatePacket(const void *data, size_t size,
+                                enet_uint32 flags) {
   return enet_packet_create(data, size, flags);
 }
 
-static ENetPacket* CreateProtocolPacket(const void* data, size_t size, ShroomPacketType type) {
+static ENetPacket *CreateProtocolPacket(const void *data, size_t size,
+                                        ShroomPacketType type) {
   return CreatePacket(data, size,
-                      ShroomPacketTypeUsesReliableDelivery(type) ? ENET_PACKET_FLAG_RELIABLE : 0);
+                      ShroomPacketTypeUsesReliableDelivery(type)
+                          ? ENET_PACKET_FLAG_RELIABLE
+                          : 0);
 }
 
-static void RecordRTTSample(ClientNetState* net, uint32_t rtt_ms) {
+static void RecordRTTSample(ClientNetState *net, uint32_t rtt_ms) {
   uint64_t total = 0;
 
   net->rtt_ms = rtt_ms;
@@ -29,33 +34,41 @@ static void RecordRTTSample(ClientNetState* net, uint32_t rtt_ms) {
   if (net->rtt_sample_count < SHROOM_CLIENT_RTT_SAMPLE_COUNT) {
     net->rtt_sample_count += 1;
   }
-  net->rtt_sample_index = (net->rtt_sample_index + 1u) % SHROOM_CLIENT_RTT_SAMPLE_COUNT;
+  net->rtt_sample_index =
+      (net->rtt_sample_index + 1u) % SHROOM_CLIENT_RTT_SAMPLE_COUNT;
 
   for (uint32_t index = 0; index < net->rtt_sample_count; ++index) {
     total += net->rtt_samples[index];
   }
 
-  net->rtt_average_ms = net->rtt_sample_count > 0 ? (uint32_t)(total / net->rtt_sample_count) : 0;
+  net->rtt_average_ms =
+      net->rtt_sample_count > 0 ? (uint32_t)(total / net->rtt_sample_count) : 0;
 }
 
-static uint32_t ElapsedMs(uint32_t now_ms, uint32_t then_ms) { return now_ms - then_ms; }
+static uint32_t ElapsedMs(uint32_t now_ms, uint32_t then_ms) {
+  return now_ms - then_ms;
+}
 
-static void ClearStalePendingPing(ClientNetState* net, uint32_t now_ms) {
+static void ClearStalePendingPing(ClientNetState *net, uint32_t now_ms) {
   if ((net->pending_ping_nonce != 0) &&
-      (ElapsedMs(now_ms, net->pending_ping_sent_time_ms) >= SHROOM_CLIENT_PING_TIMEOUT_MS)) {
+      (ElapsedMs(now_ms, net->pending_ping_sent_time_ms) >=
+       SHROOM_CLIENT_PING_TIMEOUT_MS)) {
     net->pending_ping_nonce = 0;
   }
 }
 
-static void CheckConnectTimeout(ClientNetState* net, uint32_t now_ms) {
-  if ((net->status == CLIENT_NET_CONNECTING) && (net->connect_started_ms != 0u) &&
-      (ElapsedMs(now_ms, net->connect_started_ms) >= SHROOM_CLIENT_CONNECT_TIMEOUT_MS)) {
+static void CheckConnectTimeout(ClientNetState *net, uint32_t now_ms) {
+  if ((net->status == CLIENT_NET_CONNECTING) &&
+      (net->connect_started_ms != 0u) &&
+      (ElapsedMs(now_ms, net->connect_started_ms) >=
+       SHROOM_CLIENT_CONNECT_TIMEOUT_MS)) {
     SetStatus(net, CLIENT_NET_ERROR, SHROOM_NET_CONNECT_UNREACHABLE_MSG);
     net->connect_started_ms = 0u;
   }
 }
 
-static bool CompletePendingPing(ClientNetState* net, uint32_t nonce, uint32_t now_ms) {
+static bool CompletePendingPing(ClientNetState *net, uint32_t nonce,
+                                uint32_t now_ms) {
   uint32_t rtt_ms;
 
   if ((net->pending_ping_nonce == 0) || (nonce != net->pending_ping_nonce)) {
@@ -72,11 +85,12 @@ static bool CompletePendingPing(ClientNetState* net, uint32_t nonce, uint32_t no
   return true;
 }
 
-static void SendPing(ClientNetState* net) {
+static void SendPing(ClientNetState *net) {
   ShroomPingPacket packet = {0};
 
   if (!net->welcome_received || (net->peer == 0) ||
-      (net->peer->state != ENET_PEER_STATE_CONNECTED) || (net->pending_ping_nonce != 0)) {
+      (net->peer->state != ENET_PEER_STATE_CONNECTED) ||
+      (net->pending_ping_nonce != 0)) {
     return;
   }
 
@@ -85,11 +99,12 @@ static void SendPing(ClientNetState* net) {
   net->pending_ping_nonce = packet.nonce;
   net->pending_ping_sent_time_ms = enet_time_get();
 
-  enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CONTROL,
-                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_PING));
+  enet_peer_send(
+      net->peer, SHROOM_ENET_CHANNEL_CONTROL,
+      CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_PING));
 }
 
-static void SendHello(ClientNetState* net) {
+static void SendHello(ClientNetState *net) {
   ShroomHelloPacket packet = {0};
 
   if ((net->peer == 0) || (net->peer->state != ENET_PEER_STATE_CONNECTED)) {
@@ -100,13 +115,14 @@ static void SendHello(ClientNetState* net) {
   packet.protocol_version = SHROOM_PROTOCOL_VERSION;
   snprintf(packet.name, sizeof(packet.name), "local-client");
 
-  enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CONTROL,
-                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_HELLO));
+  enet_peer_send(
+      net->peer, SHROOM_ENET_CHANNEL_CONTROL,
+      CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_HELLO));
 }
 
-static void SendInput(ClientNetState* net, ShroomVec2 input_direction, bool split_requested,
-                      bool eject_requested, ShroomVec2 split_direction,
-                      uint32_t focused_entity_id) {
+static void SendInput(ClientNetState *net, ShroomVec2 input_direction,
+                      bool split_requested, bool eject_requested,
+                      ShroomVec2 split_direction, uint32_t focused_entity_id) {
   ShroomInputPacket packet = {0};
 
   if (!net->welcome_received || !net->match_entry_sent || (net->peer == 0) ||
@@ -124,12 +140,14 @@ static void SendInput(ClientNetState* net, ShroomVec2 input_direction, bool spli
   packet.eject_requested = eject_requested ? 1u : 0u;
   packet.focused_entity_id = focused_entity_id;
 
-  enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_INPUT,
-                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_INPUT));
+  enet_peer_send(
+      net->peer, SHROOM_ENET_CHANNEL_INPUT,
+      CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_INPUT));
 }
 
-static void HandleWelcome(ClientNetState* net, const ENetPacket* enet_packet) {
-  const ShroomWelcomePacket* packet = (const ShroomWelcomePacket*)enet_packet->data;
+static void HandleWelcome(ClientNetState *net, const ENetPacket *enet_packet) {
+  const ShroomWelcomePacket *packet =
+      (const ShroomWelcomePacket *)enet_packet->data;
 
   if (enet_packet->dataLength < sizeof(*packet)) {
     return;
@@ -145,8 +163,10 @@ static void HandleWelcome(ClientNetState* net, const ENetPacket* enet_packet) {
   SetStatus(net, CLIENT_NET_CONNECTED, "Connected");
 }
 
-static void HandleLobbyList(ClientNetState* net, const ENetPacket* enet_packet) {
-  const ShroomLobbyListPacket* packet = (const ShroomLobbyListPacket*)enet_packet->data;
+static void HandleLobbyList(ClientNetState *net,
+                            const ENetPacket *enet_packet) {
+  const ShroomLobbyListPacket *packet =
+      (const ShroomLobbyListPacket *)enet_packet->data;
   const size_t min_size = offsetof(ShroomLobbyListPacket, lobbies);
   uint8_t count;
 
@@ -158,17 +178,21 @@ static void HandleLobbyList(ClientNetState* net, const ENetPacket* enet_packet) 
   if (count > SHROOM_MAX_LOBBIES) {
     count = SHROOM_MAX_LOBBIES;
   }
-  if (enet_packet->dataLength < min_size + (size_t)count * sizeof(packet->lobbies[0])) {
+  if (enet_packet->dataLength <
+      min_size + (size_t)count * sizeof(packet->lobbies[0])) {
     return;
   }
   net->lobby_count = count;
   if (count > 0) {
-    memcpy(net->lobby_list, packet->lobbies, (size_t)count * sizeof(net->lobby_list[0]));
+    memcpy(net->lobby_list, packet->lobbies,
+           (size_t)count * sizeof(net->lobby_list[0]));
   }
 }
 
-static void HandleLobbyJoined(ClientNetState* net, const ENetPacket* enet_packet) {
-  const ShroomLobbyJoinedPacket* packet = (const ShroomLobbyJoinedPacket*)enet_packet->data;
+static void HandleLobbyJoined(ClientNetState *net,
+                              const ENetPacket *enet_packet) {
+  const ShroomLobbyJoinedPacket *packet =
+      (const ShroomLobbyJoinedPacket *)enet_packet->data;
 
   if (enet_packet->dataLength < sizeof(*packet)) {
     return;
@@ -192,8 +216,10 @@ static void HandleLobbyJoined(ClientNetState* net, const ENetPacket* enet_packet
   }
 }
 
-static void HandleLobbyRoster(ClientNetState* net, const ENetPacket* enet_packet) {
-  const ShroomLobbyRosterPacket* packet = (const ShroomLobbyRosterPacket*)enet_packet->data;
+static void HandleLobbyRoster(ClientNetState *net,
+                              const ENetPacket *enet_packet) {
+  const ShroomLobbyRosterPacket *packet =
+      (const ShroomLobbyRosterPacket *)enet_packet->data;
   const size_t min_size = offsetof(ShroomLobbyRosterPacket, players);
   uint16_t count;
 
@@ -202,19 +228,21 @@ static void HandleLobbyRoster(ClientNetState* net, const ENetPacket* enet_packet
   }
   count = packet->player_count;
   if (count > SHROOM_MAX_PLAYERS ||
-      enet_packet->dataLength < min_size + (size_t)count * sizeof(packet->players[0])) {
+      enet_packet->dataLength <
+          min_size + (size_t)count * sizeof(packet->players[0])) {
     return;
   }
   net->lobby_roster_count = count;
   net->lobby_match_started = packet->match_started != 0;
   net->lobby_roster_received = true;
   if (count > 0) {
-    memcpy(net->lobby_roster, packet->players, (size_t)count * sizeof(net->lobby_roster[0]));
+    memcpy(net->lobby_roster, packet->players,
+           (size_t)count * sizeof(net->lobby_roster[0]));
   }
 }
 
-static void HandlePong(ClientNetState* net, const ENetPacket* enet_packet) {
-  const ShroomPongPacket* packet = (const ShroomPongPacket*)enet_packet->data;
+static void HandlePong(ClientNetState *net, const ENetPacket *enet_packet) {
+  const ShroomPongPacket *packet = (const ShroomPongPacket *)enet_packet->data;
 
   if (enet_packet->dataLength < sizeof(*packet)) {
     return;
@@ -222,8 +250,9 @@ static void HandlePong(ClientNetState* net, const ENetPacket* enet_packet) {
   CompletePendingPing(net, packet->nonce, enet_time_get());
 }
 
-static void HandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet) {
-  const ShroomSnapshotPacket* packet = (const ShroomSnapshotPacket*)enet_packet->data;
+static void HandleSnapshot(ClientNetState *net, const ENetPacket *enet_packet) {
+  const ShroomSnapshotPacket *packet =
+      (const ShroomSnapshotPacket *)enet_packet->data;
   uint16_t player_count;
   const size_t min_size = offsetof(ShroomSnapshotPacket, players);
 
@@ -243,7 +272,8 @@ static void HandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet) {
   if (player_count > SHROOM_MAX_SNAPSHOT_PLAYERS) {
     player_count = SHROOM_MAX_SNAPSHOT_PLAYERS;
   }
-  if (enet_packet->dataLength < min_size + (size_t)player_count * sizeof(packet->players[0])) {
+  if (enet_packet->dataLength <
+      min_size + (size_t)player_count * sizeof(packet->players[0])) {
     return;
   }
   net->snapshot_player_count = player_count;
@@ -253,35 +283,40 @@ static void HandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet) {
   }
 }
 
-static void HandleChat(ClientNetState* net, const ENetPacket* enet_packet) {
-  const ShroomChatPacket* packet;
-  ChatMessage* slot;
+static void HandleChat(ClientNetState *net, const ENetPacket *enet_packet) {
+  const ShroomChatPacket *packet;
+  ChatMessage *slot;
   size_t msg_len;
 
   if (enet_packet->dataLength < sizeof(ShroomChatPacket)) {
     return;
   }
 
-  packet = (const ShroomChatPacket*)enet_packet->data;
+  packet = (const ShroomChatPacket *)enet_packet->data;
 
-  slot = &net->chat_history[net->chat_history_head % SHROOM_CLIENT_CHAT_HISTORY_COUNT];
+  slot = &net->chat_history[net->chat_history_head %
+                            SHROOM_CLIENT_CHAT_HISTORY_COUNT];
   slot->sender_id = packet->sender_id;
   slot->timestamp_sec = (uint32_t)time(NULL);
-  snprintf(slot->sender_name, sizeof(slot->sender_name), "%s", packet->sender_name);
+  snprintf(slot->sender_name, sizeof(slot->sender_name), "%s",
+           packet->sender_name);
 
   msg_len = sizeof(packet->message);
   memcpy(slot->message, packet->message, msg_len);
   slot->message[sizeof(slot->message) - 1u] = '\0';
 
-  net->chat_history_head = (net->chat_history_head + 1u) % SHROOM_CLIENT_CHAT_HISTORY_COUNT;
+  net->chat_history_head =
+      (net->chat_history_head + 1u) % SHROOM_CLIENT_CHAT_HISTORY_COUNT;
   if (net->chat_history_count < SHROOM_CLIENT_CHAT_HISTORY_COUNT) {
     net->chat_history_count += 1u;
   }
   net->chat_unread_count += 1u;
 }
 
-static void HandleSporeState(ClientNetState* net, const ENetPacket* enet_packet) {
-  const ShroomSporeStatePacket* packet = (const ShroomSporeStatePacket*)enet_packet->data;
+static void HandleSporeState(ClientNetState *net,
+                             const ENetPacket *enet_packet) {
+  const ShroomSporeStatePacket *packet =
+      (const ShroomSporeStatePacket *)enet_packet->data;
   uint16_t total_spore_count;
   uint16_t chunk_start_index;
   size_t chunk_count;
@@ -311,7 +346,8 @@ static void HandleSporeState(ClientNetState* net, const ENetPacket* enet_packet)
     memset(net->snapshot_spores, 0, sizeof(net->snapshot_spores));
     return;
   }
-  if ((chunk_start_index >= SHROOM_MAX_SPORES) || (chunk_start_index >= total_spore_count)) {
+  if ((chunk_start_index >= SHROOM_MAX_SPORES) ||
+      (chunk_start_index >= total_spore_count)) {
     return;
   }
   if ((size_t)chunk_start_index + chunk_count > SHROOM_MAX_SPORES) {
@@ -331,8 +367,10 @@ static void HandleSporeState(ClientNetState* net, const ENetPacket* enet_packet)
   }
 }
 
-static void HandlePowerupState(ClientNetState* net, const ENetPacket* enet_packet) {
-  const ShroomPowerupStatePacket* packet = (const ShroomPowerupStatePacket*)enet_packet->data;
+static void HandlePowerupState(ClientNetState *net,
+                               const ENetPacket *enet_packet) {
+  const ShroomPowerupStatePacket *packet =
+      (const ShroomPowerupStatePacket *)enet_packet->data;
   uint16_t powerup_count;
 
   if (enet_packet->dataLength < sizeof(*packet)) {
@@ -351,9 +389,10 @@ static void HandlePowerupState(ClientNetState* net, const ENetPacket* enet_packe
   }
 }
 
-static void HandleMushroomSpeciesCatalog(ClientNetState* net, const ENetPacket* enet_packet) {
-  const ShroomMushroomSpeciesCatalogPacket* packet =
-      (const ShroomMushroomSpeciesCatalogPacket*)enet_packet->data;
+static void HandleMushroomSpeciesCatalog(ClientNetState *net,
+                                         const ENetPacket *enet_packet) {
+  const ShroomMushroomSpeciesCatalogPacket *packet =
+      (const ShroomMushroomSpeciesCatalogPacket *)enet_packet->data;
   const size_t min_size = offsetof(ShroomMushroomSpeciesCatalogPacket, species);
   uint8_t species_count;
 
@@ -365,7 +404,8 @@ static void HandleMushroomSpeciesCatalog(ClientNetState* net, const ENetPacket* 
   if (species_count > SHROOM_MAX_MUSHROOM_SPECIES) {
     species_count = SHROOM_MAX_MUSHROOM_SPECIES;
   }
-  if (enet_packet->dataLength < min_size + (size_t)species_count * sizeof(packet->species[0])) {
+  if (enet_packet->dataLength <
+      min_size + (size_t)species_count * sizeof(packet->species[0])) {
     return;
   }
 
@@ -375,14 +415,16 @@ static void HandleMushroomSpeciesCatalog(ClientNetState* net, const ENetPacket* 
     memcpy(net->mushroom_species, packet->species,
            (size_t)species_count * sizeof(net->mushroom_species[0]));
     for (uint8_t index = 0; index < species_count; ++index) {
-      net->mushroom_species[index].name[sizeof(net->mushroom_species[index].name) - 1u] = '\0';
       net->mushroom_species[index]
-          .description[sizeof(net->mushroom_species[index].description) - 1u] = '\0';
+          .name[sizeof(net->mushroom_species[index].name) - 1u] = '\0';
+      net->mushroom_species[index]
+          .description[sizeof(net->mushroom_species[index].description) - 1u] =
+          '\0';
     }
   }
 }
 
-bool ClientNetInit(ClientNetState* net, const char* host_name, uint16_t port) {
+bool ClientNetInit(ClientNetState *net, const char *host_name, uint16_t port) {
   ENetAddress address = {0};
 
   if ((net->peer != 0) || (net->host != 0) || net->enet_initialized) {
@@ -414,7 +456,8 @@ bool ClientNetInit(ClientNetState* net, const char* host_name, uint16_t port) {
     return false;
   }
 
-  net->peer = enet_host_connect(net->host, &address, SHROOM_ENET_CHANNEL_COUNT, 0);
+  net->peer =
+      enet_host_connect(net->host, &address, SHROOM_ENET_CHANNEL_COUNT, 0);
   if (net->peer == 0) {
     SetStatus(net, CLIENT_NET_ERROR, SHROOM_NET_CONNECT_UNREACHABLE_MSG);
     enet_host_destroy(net->host);
@@ -429,8 +472,9 @@ bool ClientNetInit(ClientNetState* net, const char* host_name, uint16_t port) {
   return true;
 }
 
-void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, bool split_requested,
-                     bool eject_requested, ShroomVec2 split_direction, uint32_t focused_entity_id,
+void ClientNetUpdate(ClientNetState *net, ShroomVec2 input_direction,
+                     bool split_requested, bool eject_requested,
+                     ShroomVec2 split_direction, uint32_t focused_entity_id,
                      float delta_time) {
   ENetEvent event;
 
@@ -446,7 +490,8 @@ void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, bool split
       enet_host_flush(net->host);
       break;
     case ENET_EVENT_TYPE_RECEIVE: {
-      const ShroomPacketHeader* header = (const ShroomPacketHeader*)event.packet->data;
+      const ShroomPacketHeader *header =
+          (const ShroomPacketHeader *)event.packet->data;
 
       if (event.packet->dataLength >= sizeof(ShroomPacketHeader)) {
         switch ((ShroomPacketType)header->type) {
@@ -501,7 +546,8 @@ void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, bool split
           }
           break;
         case SHROOM_PACKET_LOBBY_CREATED:
-          /* Handled by the lobby browser screen via net->lobby_count refresh. */
+          /* Handled by the lobby browser screen via net->lobby_count refresh.
+           */
           break;
         case SHROOM_PACKET_PING:
         case SHROOM_PACKET_HELLO:
@@ -532,9 +578,10 @@ void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, bool split
     ClearStalePendingPing(net, enet_time_get());
     net->input_send_accumulator += delta_time;
     while (net->input_send_accumulator >= (1.0f / SHROOM_SERVER_TICK_RATE)) {
-      SendInput(net, input_direction, split_requested, eject_requested, split_direction,
-                focused_entity_id);
-      /* Action flags are one-shot — clear after the first packet in this update. */
+      SendInput(net, input_direction, split_requested, eject_requested,
+                split_direction, focused_entity_id);
+      /* Action flags are one-shot — clear after the first packet in this
+       * update. */
       split_requested = false;
       eject_requested = false;
       net->input_send_accumulator -= 1.0f / SHROOM_SERVER_TICK_RATE;
@@ -549,44 +596,50 @@ void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, bool split
 }
 
 #ifdef TEST_MODE
-bool ClientNetTestCompletePendingPing(ClientNetState* net, uint32_t nonce, uint32_t now_ms) {
+bool ClientNetTestCompletePendingPing(ClientNetState *net, uint32_t nonce,
+                                      uint32_t now_ms) {
   return CompletePendingPing(net, nonce, now_ms);
 }
 
-void ClientNetTestClearStalePendingPing(ClientNetState* net, uint32_t now_ms) {
+void ClientNetTestClearStalePendingPing(ClientNetState *net, uint32_t now_ms) {
   ClearStalePendingPing(net, now_ms);
 }
 
-void ClientNetTestCheckConnectTimeout(ClientNetState* net, uint32_t now_ms) {
+void ClientNetTestCheckConnectTimeout(ClientNetState *net, uint32_t now_ms) {
   CheckConnectTimeout(net, now_ms);
 }
 
-void ClientNetTestHandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet) {
+void ClientNetTestHandleSnapshot(ClientNetState *net,
+                                 const ENetPacket *enet_packet) {
   HandleSnapshot(net, enet_packet);
 }
 
-void ClientNetTestHandleSporeState(ClientNetState* net, const ENetPacket* enet_packet) {
+void ClientNetTestHandleSporeState(ClientNetState *net,
+                                   const ENetPacket *enet_packet) {
   HandleSporeState(net, enet_packet);
 }
 
-void ClientNetTestHandleLobbyList(ClientNetState* net, const ENetPacket* enet_packet) {
+void ClientNetTestHandleLobbyList(ClientNetState *net,
+                                  const ENetPacket *enet_packet) {
   HandleLobbyList(net, enet_packet);
 }
 
-void ClientNetTestHandleLobbyRoster(ClientNetState* net, const ENetPacket* enet_packet) {
+void ClientNetTestHandleLobbyRoster(ClientNetState *net,
+                                    const ENetPacket *enet_packet) {
   HandleLobbyRoster(net, enet_packet);
 }
 
-bool ClientNetTestCanSendGameplayInput(const ClientNetState* net) {
+bool ClientNetTestCanSendGameplayInput(const ClientNetState *net) {
   return net != NULL && net->welcome_received && net->match_entry_sent;
 }
 
-void ClientNetTestHandleMushroomSpeciesCatalog(ClientNetState* net, const ENetPacket* enet_packet) {
+void ClientNetTestHandleMushroomSpeciesCatalog(ClientNetState *net,
+                                               const ENetPacket *enet_packet) {
   HandleMushroomSpeciesCatalog(net, enet_packet);
 }
 #endif
 
-void ClientNetShutdown(ClientNetState* net) {
+void ClientNetShutdown(ClientNetState *net) {
   if (net->peer != 0) {
     enet_peer_disconnect_now(net->peer, 0);
     net->peer = 0;
@@ -603,47 +656,57 @@ void ClientNetShutdown(ClientNetState* net) {
   *net = (ClientNetState){0};
 }
 
-const char* ClientNetStatusLabel(const ClientNetState* net) {
+const char *ClientNetStatusLabel(const ClientNetState *net) {
   return net->status_text[0] != '\0' ? net->status_text : "Offline";
 }
 
-void ClientNetSendLobbyListQuery(ClientNetState* net) {
+void ClientNetSendLobbyListQuery(ClientNetState *net) {
   ShroomPacketHeader packet = {0};
 
-  if ((net == NULL) || (net->peer == NULL) || (net->peer->state != ENET_PEER_STATE_CONNECTED)) {
+  if ((net == NULL) || (net->peer == NULL) ||
+      (net->peer->state != ENET_PEER_STATE_CONNECTED)) {
     return;
   }
 
-  ShroomPacketHeaderInit(&packet, SHROOM_PACKET_LOBBY_LIST_QUERY, sizeof(packet));
+  ShroomPacketHeaderInit(&packet, SHROOM_PACKET_LOBBY_LIST_QUERY,
+                         sizeof(packet));
   enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CONTROL,
-                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_LOBBY_LIST_QUERY));
+                 CreateProtocolPacket(&packet, sizeof(packet),
+                                      SHROOM_PACKET_LOBBY_LIST_QUERY));
 }
 
-void ClientNetSendLobbyJoin(ClientNetState* net, uint32_t lobby_id, bool spectate) {
+void ClientNetSendLobbyJoin(ClientNetState *net, uint32_t lobby_id,
+                            bool spectate) {
   ShroomLobbyJoinPacket packet = {0};
 
-  if ((net == NULL) || (net->peer == NULL) || (net->peer->state != ENET_PEER_STATE_CONNECTED)) {
+  if ((net == NULL) || (net->peer == NULL) ||
+      (net->peer->state != ENET_PEER_STATE_CONNECTED)) {
     return;
   }
 
-  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_JOIN, sizeof(packet));
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_JOIN,
+                         sizeof(packet));
   packet.lobby_id = lobby_id;
   packet.spectate = spectate ? 1u : 0u;
-  enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CONTROL,
-                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_LOBBY_JOIN));
+  enet_peer_send(
+      net->peer, SHROOM_ENET_CHANNEL_CONTROL,
+      CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_LOBBY_JOIN));
 }
 
-void ClientNetSendLobbyLeave(ClientNetState* net) {
+void ClientNetSendLobbyLeave(ClientNetState *net) {
   ShroomLobbyLeavePacket packet = {0};
 
-  if ((net == NULL) || (net->peer == NULL) || (net->peer->state != ENET_PEER_STATE_CONNECTED)) {
+  if ((net == NULL) || (net->peer == NULL) ||
+      (net->peer->state != ENET_PEER_STATE_CONNECTED)) {
     return;
   }
 
-  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_LEAVE, sizeof(packet));
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_LEAVE,
+                         sizeof(packet));
   packet.lobby_id = net->lobby_id;
-  enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CONTROL,
-                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_LOBBY_LEAVE));
+  enet_peer_send(
+      net->peer, SHROOM_ENET_CHANNEL_CONTROL,
+      CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_LOBBY_LEAVE));
   net->welcome_received = false;
   net->match_entry_sent = false;
   net->lobby_roster_received = false;
@@ -653,41 +716,49 @@ void ClientNetSendLobbyLeave(ClientNetState* net) {
   net->spectating = false;
 }
 
-void ClientNetSendLobbyCreate(ClientNetState* net, const char* name, uint16_t max_players) {
+void ClientNetSendLobbyCreate(ClientNetState *net, const char *name,
+                              uint16_t max_players) {
   ShroomLobbyCreatePacket packet = {0};
 
-  if ((net == NULL) || (net->peer == NULL) || (net->peer->state != ENET_PEER_STATE_CONNECTED)) {
+  if ((net == NULL) || (net->peer == NULL) ||
+      (net->peer->state != ENET_PEER_STATE_CONNECTED)) {
     return;
   }
 
-  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_CREATE, sizeof(packet));
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_CREATE,
+                         sizeof(packet));
   if (name != NULL && name[0] != '\0') {
     snprintf(packet.name, sizeof(packet.name), "%s", name);
   }
   packet.max_players = max_players;
   enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CONTROL,
-                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_LOBBY_CREATE));
+                 CreateProtocolPacket(&packet, sizeof(packet),
+                                      SHROOM_PACKET_LOBBY_CREATE));
 }
 
-void ClientNetSendReadyState(ClientNetState* net, bool is_ready) {
+void ClientNetSendReadyState(ClientNetState *net, bool is_ready) {
   ShroomReadyStatePacket packet = {0};
 
-  if ((net == NULL) || (net->peer == NULL) || (net->peer->state != ENET_PEER_STATE_CONNECTED) ||
+  if ((net == NULL) || (net->peer == NULL) ||
+      (net->peer->state != ENET_PEER_STATE_CONNECTED) ||
       !net->welcome_received) {
     return;
   }
 
-  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_READY_STATE, sizeof(packet));
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_READY_STATE,
+                         sizeof(packet));
   packet.player_id = net->player_id;
   packet.is_ready = is_ready ? 1 : 0;
-  enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CONTROL,
-                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_READY_STATE));
+  enet_peer_send(
+      net->peer, SHROOM_ENET_CHANNEL_CONTROL,
+      CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_READY_STATE));
 }
 
-void ClientNetSendEnterMatch(ClientNetState* net) {
+void ClientNetSendEnterMatch(ClientNetState *net) {
   ShroomEnterMatchPacket packet = {0};
 
-  if (net == NULL || (!net->welcome_received && !net->spectating) || net->lobby_id == 0) {
+  if (net == NULL || (!net->welcome_received && !net->spectating) ||
+      net->lobby_id == 0) {
     return;
   }
   if (net->peer == NULL || net->peer->state != ENET_PEER_STATE_CONNECTED) {
@@ -697,21 +768,24 @@ void ClientNetSendEnterMatch(ClientNetState* net) {
     return;
   }
 
-  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_ENTER_MATCH, sizeof(packet));
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_ENTER_MATCH,
+                         sizeof(packet));
   packet.lobby_id = net->lobby_id;
   if (enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CONTROL,
-                     CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_ENTER_MATCH)) == 0) {
+                     CreateProtocolPacket(&packet, sizeof(packet),
+                                          SHROOM_PACKET_ENTER_MATCH)) == 0) {
     net->match_entry_sent = true;
     enet_host_flush(net->host);
   }
 }
 
-bool ClientNetSendChat(ClientNetState* net, uint32_t player_id, const char* sender_name,
-                       const char* message) {
+bool ClientNetSendChat(ClientNetState *net, uint32_t player_id,
+                       const char *sender_name, const char *message) {
   ShroomChatPacket packet = {0};
 
-  if ((net == NULL) || (message == NULL) || (message[0] == '\0') || !net->welcome_received ||
-      (net->peer == NULL) || (net->peer->state != ENET_PEER_STATE_CONNECTED)) {
+  if ((net == NULL) || (message == NULL) || (message[0] == '\0') ||
+      !net->welcome_received || (net->peer == NULL) ||
+      (net->peer->state != ENET_PEER_STATE_CONNECTED)) {
     return false;
   }
 
@@ -722,5 +796,6 @@ bool ClientNetSendChat(ClientNetState* net, uint32_t player_id, const char* send
   snprintf(packet.message, sizeof(packet.message), "%s", message);
 
   return enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CHAT,
-                        CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_CHAT)) == 0;
+                        CreateProtocolPacket(&packet, sizeof(packet),
+                                             SHROOM_PACKET_CHAT)) == 0;
 }

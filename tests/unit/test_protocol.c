@@ -1,15 +1,18 @@
-#include "unity.h"
 #include "../src/shared/protocol.h"
+#include "unity.h"
 #include <string.h>
 
 void setUp(void) {}
 
 void tearDown(void) {}
 
-void test_packet_header_size(void) { TEST_ASSERT_EQUAL(4, sizeof(ShroomPacketHeader)); }
+void test_packet_header_size(void) {
+  TEST_ASSERT_EQUAL(4, sizeof(ShroomPacketHeader));
+}
 
 void test_hello_packet_size(void) {
-  TEST_ASSERT_EQUAL(sizeof(ShroomPacketHeader) + 4 + 32, sizeof(ShroomHelloPacket));
+  TEST_ASSERT_EQUAL(sizeof(ShroomPacketHeader) + 4 + 32,
+                    sizeof(ShroomHelloPacket));
 }
 
 void test_welcome_packet_size(void) {
@@ -18,7 +21,8 @@ void test_welcome_packet_size(void) {
 }
 
 void test_input_packet_size(void) {
-  /* header + sequence + movement direction + split direction + split flag/reserved + focused id */
+  /* header + sequence + movement direction + split direction + split
+   * flag/reserved + focused id */
   TEST_ASSERT_EQUAL(sizeof(ShroomPacketHeader) + 4 + 4 + 4 + 4 + 4 + 1 + 3 + 4,
                     sizeof(ShroomInputPacket));
 }
@@ -32,11 +36,13 @@ void test_pong_packet_size(void) {
 }
 
 void test_voice_frame_packet_size(void) {
-  TEST_ASSERT_EQUAL(sizeof(ShroomPacketHeader) + 4 + 2 + 2 + 512, sizeof(ShroomVoiceFramePacket));
+  TEST_ASSERT_EQUAL(sizeof(ShroomPacketHeader) + 4 + 2 + 2 + 512,
+                    sizeof(ShroomVoiceFramePacket));
 }
 
 void test_snapshot_player_state_size(void) {
-  TEST_ASSERT_EQUAL(4 + 4 + 4 + 4 + 4 + 4 + 32 + 1 + 1 + 2 + 1 + 3, sizeof(ShroomSnapshotPlayerState));
+  TEST_ASSERT_EQUAL(4 + 4 + 4 + 4 + 4 + 4 + 32 + 1 + 1 + 2 + 1 + 3,
+                    sizeof(ShroomSnapshotPlayerState));
 }
 
 void test_packet_type_values(void) {
@@ -80,13 +86,20 @@ void test_lobby_packet_channel_mapping(void) {
 }
 
 void test_lobby_packet_reliability(void) {
-  TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_LOBBY_LIST_QUERY));
-  TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_LOBBY_LIST));
-  TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_LOBBY_JOIN));
-  TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_LOBBY_JOINED));
-  TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_LOBBY_LEAVE));
-  TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_LOBBY_CREATE));
-  TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_LOBBY_CREATED));
+  TEST_ASSERT_TRUE(
+      ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_LOBBY_LIST_QUERY));
+  TEST_ASSERT_TRUE(
+      ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_LOBBY_LIST));
+  TEST_ASSERT_TRUE(
+      ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_LOBBY_JOIN));
+  TEST_ASSERT_TRUE(
+      ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_LOBBY_JOINED));
+  TEST_ASSERT_TRUE(
+      ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_LOBBY_LEAVE));
+  TEST_ASSERT_TRUE(
+      ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_LOBBY_CREATE));
+  TEST_ASSERT_TRUE(
+      ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_LOBBY_CREATED));
 }
 
 void test_lobby_entry_struct(void) {
@@ -114,7 +127,8 @@ void test_lobby_join_packet_initialization(void) {
   ShroomLobbyJoinPacket packet;
   memset(&packet, 0, sizeof(packet));
 
-  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_JOIN, sizeof(packet));
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_JOIN,
+                         sizeof(packet));
   packet.lobby_id = 2;
   packet.spectate = 1;
 
@@ -128,7 +142,8 @@ void test_lobby_joined_packet_initialization(void) {
   ShroomLobbyJoinedPacket packet;
   memset(&packet, 0, sizeof(packet));
 
-  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_JOINED, sizeof(packet));
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_JOINED,
+                         sizeof(packet));
   packet.lobby_id = 3;
   packet.player_id = 42;
   packet.entity_id = 100;
@@ -153,13 +168,15 @@ void test_lobby_list_packet_capacity(void) {
   ShroomLobbyListPacket packet;
   memset(&packet, 0, sizeof(packet));
 
-  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_LIST, sizeof(packet));
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_LIST,
+                         sizeof(packet));
   packet.lobby_count = SHROOM_MAX_LOBBIES;
 
   TEST_ASSERT_EQUAL(SHROOM_PACKET_LOBBY_LIST, packet.header.type);
   TEST_ASSERT_EQUAL(SHROOM_MAX_LOBBIES, packet.lobby_count);
   /* Verify the lobbies array is within the packet. */
-  TEST_ASSERT_TRUE(sizeof(packet.lobbies) == SHROOM_MAX_LOBBIES * sizeof(ShroomLobbyEntry));
+  TEST_ASSERT_TRUE(sizeof(packet.lobbies) ==
+                   SHROOM_MAX_LOBBIES * sizeof(ShroomLobbyEntry));
 }
 
 void test_lobby_config_constants(void) {
@@ -185,16 +202,20 @@ void test_protocol_constants(void) {
 }
 
 void test_packet_channel_mapping(void) {
-  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CONTROL, ShroomPacketTypeToChannel(SHROOM_PACKET_HELLO));
-  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CONTROL, ShroomPacketTypeToChannel(SHROOM_PACKET_WELCOME));
-  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_INPUT, ShroomPacketTypeToChannel(SHROOM_PACKET_INPUT));
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CONTROL,
+                    ShroomPacketTypeToChannel(SHROOM_PACKET_HELLO));
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CONTROL,
+                    ShroomPacketTypeToChannel(SHROOM_PACKET_WELCOME));
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_INPUT,
+                    ShroomPacketTypeToChannel(SHROOM_PACKET_INPUT));
   TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_SNAPSHOT,
                     ShroomPacketTypeToChannel(SHROOM_PACKET_SNAPSHOT));
   TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_SNAPSHOT,
                     ShroomPacketTypeToChannel(SHROOM_PACKET_SPORE_STATE));
   TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_SNAPSHOT,
                     ShroomPacketTypeToChannel(SHROOM_PACKET_POWERUP_STATE));
-  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CHAT, ShroomPacketTypeToChannel(SHROOM_PACKET_CHAT));
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CHAT,
+                    ShroomPacketTypeToChannel(SHROOM_PACKET_CHAT));
   TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_VOICE,
                     ShroomPacketTypeToChannel(SHROOM_PACKET_VOICE_FRAME));
   TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CONTROL,
@@ -205,35 +226,46 @@ void test_packet_reliability_mapping(void) {
   TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_HELLO));
   TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_WELCOME));
   TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_PING));
-  TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_AUTH_REQUEST));
+  TEST_ASSERT_TRUE(
+      ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_AUTH_REQUEST));
   TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_CHAT));
   TEST_ASSERT_FALSE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_INPUT));
-  TEST_ASSERT_FALSE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_SNAPSHOT));
-  TEST_ASSERT_FALSE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_SPORE_STATE));
-  TEST_ASSERT_FALSE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_POWERUP_STATE));
-  TEST_ASSERT_FALSE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_VOICE_FRAME));
+  TEST_ASSERT_FALSE(
+      ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_SNAPSHOT));
+  TEST_ASSERT_FALSE(
+      ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_SPORE_STATE));
+  TEST_ASSERT_FALSE(
+      ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_POWERUP_STATE));
+  TEST_ASSERT_FALSE(
+      ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_VOICE_FRAME));
 }
 
 void test_packet_minimum_size_mapping(void) {
-  TEST_ASSERT_EQUAL(sizeof(ShroomHelloPacket), ShroomPacketTypeMinimumSize(SHROOM_PACKET_HELLO));
+  TEST_ASSERT_EQUAL(sizeof(ShroomHelloPacket),
+                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_HELLO));
   TEST_ASSERT_EQUAL(sizeof(ShroomWelcomePacket),
                     ShroomPacketTypeMinimumSize(SHROOM_PACKET_WELCOME));
-  TEST_ASSERT_EQUAL(sizeof(ShroomInputPacket), ShroomPacketTypeMinimumSize(SHROOM_PACKET_INPUT));
+  TEST_ASSERT_EQUAL(sizeof(ShroomInputPacket),
+                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_INPUT));
   TEST_ASSERT_EQUAL(offsetof(ShroomSnapshotPacket, players),
                     ShroomPacketTypeMinimumSize(SHROOM_PACKET_SNAPSHOT));
-  TEST_ASSERT_EQUAL(sizeof(ShroomPingPacket), ShroomPacketTypeMinimumSize(SHROOM_PACKET_PING));
-  TEST_ASSERT_EQUAL(sizeof(ShroomPongPacket), ShroomPacketTypeMinimumSize(SHROOM_PACKET_PONG));
+  TEST_ASSERT_EQUAL(sizeof(ShroomPingPacket),
+                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_PING));
+  TEST_ASSERT_EQUAL(sizeof(ShroomPongPacket),
+                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_PONG));
   TEST_ASSERT_EQUAL(offsetof(ShroomSporeStatePacket, spores),
                     ShroomPacketTypeMinimumSize(SHROOM_PACKET_SPORE_STATE));
   TEST_ASSERT_EQUAL(sizeof(ShroomAuthRequestPacket),
                     ShroomPacketTypeMinimumSize(SHROOM_PACKET_AUTH_REQUEST));
   TEST_ASSERT_EQUAL(sizeof(ShroomAuthResponsePacket),
                     ShroomPacketTypeMinimumSize(SHROOM_PACKET_AUTH_RESPONSE));
-  TEST_ASSERT_EQUAL(sizeof(ShroomChatPacket), ShroomPacketTypeMinimumSize(SHROOM_PACKET_CHAT));
+  TEST_ASSERT_EQUAL(sizeof(ShroomChatPacket),
+                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_CHAT));
   TEST_ASSERT_EQUAL(sizeof(ShroomVoiceFramePacket),
                     ShroomPacketTypeMinimumSize(SHROOM_PACKET_VOICE_FRAME));
-  TEST_ASSERT_EQUAL(sizeof(ShroomPacketHeader),
-                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_LOBBY_LIST_QUERY));
+  TEST_ASSERT_EQUAL(
+      sizeof(ShroomPacketHeader),
+      ShroomPacketTypeMinimumSize(SHROOM_PACKET_LOBBY_LIST_QUERY));
   TEST_ASSERT_EQUAL(offsetof(ShroomLobbyListPacket, lobbies),
                     ShroomPacketTypeMinimumSize(SHROOM_PACKET_LOBBY_LIST));
   TEST_ASSERT_EQUAL(sizeof(ShroomLobbyJoinPacket),
@@ -248,8 +280,9 @@ void test_packet_minimum_size_mapping(void) {
                     ShroomPacketTypeMinimumSize(SHROOM_PACKET_LOBBY_CREATED));
   TEST_ASSERT_EQUAL(offsetof(ShroomPowerupStatePacket, powerups),
                     ShroomPacketTypeMinimumSize(SHROOM_PACKET_POWERUP_STATE));
-  TEST_ASSERT_EQUAL(offsetof(ShroomMushroomSpeciesCatalogPacket, species),
-                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_MUSHROOM_SPECIES_CATALOG));
+  TEST_ASSERT_EQUAL(
+      offsetof(ShroomMushroomSpeciesCatalogPacket, species),
+      ShroomPacketTypeMinimumSize(SHROOM_PACKET_MUSHROOM_SPECIES_CATALOG));
   TEST_ASSERT_EQUAL(sizeof(ShroomEnterMatchPacket),
                     ShroomPacketTypeMinimumSize(SHROOM_PACKET_ENTER_MATCH));
   TEST_ASSERT_EQUAL(offsetof(ShroomLobbyRosterPacket, players),
@@ -261,15 +294,18 @@ void test_match_entry_packets_are_reliable_control_messages(void) {
                     ShroomPacketTypeToChannel(SHROOM_PACKET_ENTER_MATCH));
   TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CONTROL,
                     ShroomPacketTypeToChannel(SHROOM_PACKET_LOBBY_ROSTER));
-  TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_ENTER_MATCH));
-  TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_LOBBY_ROSTER));
+  TEST_ASSERT_TRUE(
+      ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_ENTER_MATCH));
+  TEST_ASSERT_TRUE(
+      ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_LOBBY_ROSTER));
 }
 
 void test_voice_packet_initialization(void) {
   ShroomVoiceFramePacket packet;
   memset(&packet, 0, sizeof(packet));
 
-  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_VOICE_FRAME, sizeof(packet));
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_VOICE_FRAME,
+                         sizeof(packet));
   packet.player_id = 4;
   packet.payload_size = 128;
   packet.payload[0] = 0xABu;
@@ -285,7 +321,8 @@ void test_voice_packet_initialization(void) {
 void test_packet_header_initializes_channel_metadata(void) {
   ShroomPacketHeader header = {0};
 
-  ShroomPacketHeaderInit(&header, SHROOM_PACKET_INPUT, sizeof(ShroomInputPacket));
+  ShroomPacketHeaderInit(&header, SHROOM_PACKET_INPUT,
+                         sizeof(ShroomInputPacket));
 
   TEST_ASSERT_EQUAL(SHROOM_PACKET_INPUT, header.type);
   TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_INPUT, header.reserved);
@@ -295,13 +332,17 @@ void test_packet_header_initializes_channel_metadata(void) {
 void test_packet_header_validates_expected_channel(void) {
   ShroomPacketHeader header = {0};
 
-  ShroomPacketHeaderInit(&header, SHROOM_PACKET_SNAPSHOT, sizeof(ShroomSnapshotPacket));
+  ShroomPacketHeaderInit(&header, SHROOM_PACKET_SNAPSHOT,
+                         sizeof(ShroomSnapshotPacket));
 
-  TEST_ASSERT_TRUE(ShroomPacketHeaderUsesExpectedChannel(&header, SHROOM_ENET_CHANNEL_SNAPSHOT));
-  TEST_ASSERT_FALSE(ShroomPacketHeaderUsesExpectedChannel(&header, SHROOM_ENET_CHANNEL_INPUT));
+  TEST_ASSERT_TRUE(ShroomPacketHeaderUsesExpectedChannel(
+      &header, SHROOM_ENET_CHANNEL_SNAPSHOT));
+  TEST_ASSERT_FALSE(ShroomPacketHeaderUsesExpectedChannel(
+      &header, SHROOM_ENET_CHANNEL_INPUT));
 
   header.reserved = SHROOM_ENET_CHANNEL_CONTROL;
-  TEST_ASSERT_FALSE(ShroomPacketHeaderUsesExpectedChannel(&header, SHROOM_ENET_CHANNEL_SNAPSHOT));
+  TEST_ASSERT_FALSE(ShroomPacketHeaderUsesExpectedChannel(
+      &header, SHROOM_ENET_CHANNEL_SNAPSHOT));
 }
 
 void test_snapshot_spore_state_size(void) {
@@ -311,11 +352,13 @@ void test_snapshot_spore_state_size(void) {
 void test_spore_state_packet_initialization(void) {
   ShroomSporeStatePacket packet;
   uint16_t actual_size =
-      (uint16_t)(sizeof(ShroomPacketHeader) + sizeof(uint64_t) + sizeof(uint16_t) +
-                 sizeof(uint16_t) + 3 * sizeof(ShroomSnapshotSporeState));
+      (uint16_t)(sizeof(ShroomPacketHeader) + sizeof(uint64_t) +
+                 sizeof(uint16_t) + sizeof(uint16_t) +
+                 3 * sizeof(ShroomSnapshotSporeState));
   memset(&packet, 0, sizeof(packet));
 
-  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_SPORE_STATE, actual_size);
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_SPORE_STATE,
+                         actual_size);
   packet.tick = 100;
   packet.spore_count = 3;
 
@@ -339,9 +382,11 @@ void test_spore_state_packet_initialization(void) {
 
 void test_spore_state_packet_chunk_size_is_bounded(void) {
   const uint16_t max_spores = ShroomSporeStatePacketMaxSpores();
-  const size_t packet_size = offsetof(ShroomSporeStatePacket, spores) +
-                             ((size_t)max_spores * sizeof(ShroomSnapshotSporeState));
-  const size_t next_packet_size = packet_size + sizeof(ShroomSnapshotSporeState);
+  const size_t packet_size =
+      offsetof(ShroomSporeStatePacket, spores) +
+      ((size_t)max_spores * sizeof(ShroomSnapshotSporeState));
+  const size_t next_packet_size =
+      packet_size + sizeof(ShroomSnapshotSporeState);
 
   TEST_ASSERT_TRUE(max_spores > 0u);
   TEST_ASSERT_TRUE(packet_size <= SHROOM_MAX_UNRELIABLE_PACKET_SIZE);
@@ -357,7 +402,8 @@ void test_powerup_state_packet_initialization(void) {
   ShroomPowerupStatePacket packet;
   memset(&packet, 0, sizeof(packet));
 
-  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_POWERUP_STATE, sizeof(packet));
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_POWERUP_STATE,
+                         sizeof(packet));
   packet.tick = 42;
   packet.powerup_count = 2;
   packet.powerups[0] = (ShroomSnapshotPowerupState){
@@ -390,7 +436,8 @@ void test_hello_packet_initialization(void) {
   ShroomHelloPacket packet;
   memset(&packet, 0, sizeof(packet));
 
-  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_HELLO, sizeof(ShroomHelloPacket));
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_HELLO,
+                         sizeof(ShroomHelloPacket));
   packet.protocol_version = SHROOM_PROTOCOL_VERSION;
   strncpy(packet.name, "TestPlayer", SHROOM_MAX_NAME_LENGTH);
 
@@ -405,7 +452,8 @@ void test_input_packet_initialization(void) {
   ShroomInputPacket packet;
   memset(&packet, 0, sizeof(packet));
 
-  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_INPUT, sizeof(ShroomInputPacket));
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_INPUT,
+                         sizeof(ShroomInputPacket));
   packet.sequence = 42;
   packet.direction_x = 0.5f;
   packet.direction_y = -0.5f;

@@ -34,8 +34,8 @@ static void test_client_net_ignores_stale_pong_sample(void) {
   net.rtt_sample_count = 1u;
   net.rtt_samples[0] = 80u;
 
-  TEST_ASSERT_FALSE(
-      ClientNetTestCompletePendingPing(&net, 7u, 1000u + SHROOM_CLIENT_PING_TIMEOUT_MS));
+  TEST_ASSERT_FALSE(ClientNetTestCompletePendingPing(
+      &net, 7u, 1000u + SHROOM_CLIENT_PING_TIMEOUT_MS));
 
   TEST_ASSERT_EQUAL_UINT32(0u, net.pending_ping_nonce);
   TEST_ASSERT_EQUAL_UINT32(80u, net.rtt_ms);
@@ -46,7 +46,8 @@ static void test_client_net_ignores_stale_pong_sample(void) {
 static void test_client_net_clears_timed_out_pending_ping(void) {
   ClientNetState net = MakePendingPing(9u, 5000u);
 
-  ClientNetTestClearStalePendingPing(&net, 5000u + SHROOM_CLIENT_PING_TIMEOUT_MS);
+  ClientNetTestClearStalePendingPing(&net,
+                                     5000u + SHROOM_CLIENT_PING_TIMEOUT_MS);
 
   TEST_ASSERT_EQUAL_UINT32(0u, net.pending_ping_nonce);
 }
@@ -55,8 +56,8 @@ static void test_client_net_accepts_trimmed_snapshot_packet(void) {
   ClientNetState net = {0};
   ShroomSnapshotPacket snapshot = {0};
   ENetPacket packet = {0};
-  const size_t packet_size =
-      offsetof(ShroomSnapshotPacket, players) + sizeof(ShroomSnapshotPlayerState);
+  const size_t packet_size = offsetof(ShroomSnapshotPacket, players) +
+                             sizeof(ShroomSnapshotPlayerState);
 
   snapshot.tick = 123u;
   snapshot.last_processed_input_sequence = 77u;
@@ -69,7 +70,7 @@ static void test_client_net_accepts_trimmed_snapshot_packet(void) {
   snapshot.players[0].radius = 4.0f;
   snapshot.players[0].alive = 1u;
 
-  packet.data = (enet_uint8*)&snapshot;
+  packet.data = (enet_uint8 *)&snapshot;
   packet.dataLength = packet_size;
 
   ClientNetTestHandleSnapshot(&net, &packet);
@@ -90,7 +91,7 @@ static void test_client_net_ignores_truncated_snapshot_players(void) {
   net.snapshot_player_count = 9u;
   snapshot.tick = 123u;
   snapshot.player_count = 1u;
-  packet.data = (enet_uint8*)&snapshot;
+  packet.data = (enet_uint8 *)&snapshot;
   packet.dataLength = packet_size;
 
   ClientNetTestHandleSnapshot(&net, &packet);
@@ -105,13 +106,16 @@ static void test_client_net_accepts_chunked_spore_state_packet(void) {
   const size_t packet_size = offsetof(ShroomSporeStatePacket, spores) +
                              (2u * sizeof(ShroomSnapshotSporeState));
 
-  ShroomPacketHeaderInit(&spore_state.header, SHROOM_PACKET_SPORE_STATE, (uint16_t)packet_size);
+  ShroomPacketHeaderInit(&spore_state.header, SHROOM_PACKET_SPORE_STATE,
+                         (uint16_t)packet_size);
   spore_state.tick = 55u;
   spore_state.spore_count = 5u;
   spore_state.reserved = 3u;
-  spore_state.spores[0] = (ShroomSnapshotSporeState){.entity_id = 40u, .position_x = 4.0f};
-  spore_state.spores[1] = (ShroomSnapshotSporeState){.entity_id = 50u, .position_x = 5.0f};
-  packet.data = (enet_uint8*)&spore_state;
+  spore_state.spores[0] =
+      (ShroomSnapshotSporeState){.entity_id = 40u, .position_x = 4.0f};
+  spore_state.spores[1] =
+      (ShroomSnapshotSporeState){.entity_id = 50u, .position_x = 5.0f};
+  packet.data = (enet_uint8 *)&spore_state;
   packet.dataLength = packet_size;
 
   ClientNetTestHandleSporeState(&net, &packet);
@@ -129,7 +133,7 @@ static void test_client_net_ignores_misaligned_spore_state_packet(void) {
 
   net.spore_count = 7u;
   spore_state.spore_count = 1u;
-  packet.data = (enet_uint8*)&spore_state;
+  packet.data = (enet_uint8 *)&spore_state;
   packet.dataLength = offsetof(ShroomSporeStatePacket, spores) + 1u;
 
   ClientNetTestHandleSporeState(&net, &packet);
@@ -146,7 +150,7 @@ static void test_client_net_zero_spore_state_clears_stale_spores(void) {
   net.snapshot_spores[0].entity_id = 99u;
   ShroomPacketHeaderInit(&spore_state.header, SHROOM_PACKET_SPORE_STATE,
                          (uint16_t)offsetof(ShroomSporeStatePacket, spores));
-  packet.data = (enet_uint8*)&spore_state;
+  packet.data = (enet_uint8 *)&spore_state;
   packet.dataLength = offsetof(ShroomSporeStatePacket, spores);
 
   ClientNetTestHandleSporeState(&net, &packet);
@@ -159,14 +163,15 @@ static void test_client_net_accepts_trimmed_lobby_list_packet(void) {
   ClientNetState net = {0};
   ShroomLobbyListPacket list = {0};
   ENetPacket packet = {0};
-  const size_t packet_size = offsetof(ShroomLobbyListPacket, lobbies) + sizeof(ShroomLobbyEntry);
+  const size_t packet_size =
+      offsetof(ShroomLobbyListPacket, lobbies) + sizeof(ShroomLobbyEntry);
 
   list.lobby_count = 1u;
   list.lobbies[0].lobby_id = 77u;
   list.lobbies[0].player_count = 3u;
   list.lobbies[0].max_players = 16u;
   strncpy(list.lobbies[0].name, "Loopback", sizeof(list.lobbies[0].name) - 1u);
-  packet.data = (enet_uint8*)&list;
+  packet.data = (enet_uint8 *)&list;
   packet.dataLength = packet_size;
 
   ClientNetTestHandleLobbyList(&net, &packet);
@@ -183,7 +188,7 @@ static void test_client_net_ignores_truncated_lobby_list_entries(void) {
 
   net.lobby_count = 2u;
   list.lobby_count = 1u;
-  packet.data = (enet_uint8*)&list;
+  packet.data = (enet_uint8 *)&list;
   packet.dataLength = offsetof(ShroomLobbyListPacket, lobbies);
 
   ClientNetTestHandleLobbyList(&net, &packet);
@@ -191,18 +196,21 @@ static void test_client_net_ignores_truncated_lobby_list_entries(void) {
   TEST_ASSERT_EQUAL_UINT8(2u, net.lobby_count);
 }
 
-static void test_client_net_accepts_trimmed_mushroom_species_catalog_packet(void) {
+static void
+test_client_net_accepts_trimmed_mushroom_species_catalog_packet(void) {
   ClientNetState net = {0};
   ShroomMushroomSpeciesCatalogPacket catalog = {0};
   ENetPacket packet = {0};
-  const size_t packet_size = offsetof(ShroomMushroomSpeciesCatalogPacket, species) +
-                             sizeof(ShroomMushroomSpeciesEntry);
+  const size_t packet_size =
+      offsetof(ShroomMushroomSpeciesCatalogPacket, species) +
+      sizeof(ShroomMushroomSpeciesEntry);
 
   catalog.species_count = 1u;
   catalog.species[0].species_id = 5u;
   catalog.species[0].pattern_id = 2u;
-  strncpy(catalog.species[0].name, "Amanita", sizeof(catalog.species[0].name) - 1u);
-  packet.data = (enet_uint8*)&catalog;
+  strncpy(catalog.species[0].name, "Amanita",
+          sizeof(catalog.species[0].name) - 1u);
+  packet.data = (enet_uint8 *)&catalog;
   packet.dataLength = packet_size;
 
   ClientNetTestHandleMushroomSpeciesCatalog(&net, &packet);
@@ -220,7 +228,7 @@ static void test_client_net_ignores_truncated_mushroom_species_entries(void) {
 
   net.mushroom_species_count = 3u;
   catalog.species_count = 1u;
-  packet.data = (enet_uint8*)&catalog;
+  packet.data = (enet_uint8 *)&catalog;
   packet.dataLength = offsetof(ShroomMushroomSpeciesCatalogPacket, species);
 
   ClientNetTestHandleMushroomSpeciesCatalog(&net, &packet);
@@ -234,7 +242,8 @@ static void test_client_net_connect_timeout_flips_to_friendly_error(void) {
   net.status = CLIENT_NET_CONNECTING;
   net.connect_started_ms = 1000u;
 
-  ClientNetTestCheckConnectTimeout(&net, 1000u + SHROOM_CLIENT_CONNECT_TIMEOUT_MS);
+  ClientNetTestCheckConnectTimeout(&net,
+                                   1000u + SHROOM_CLIENT_CONNECT_TIMEOUT_MS);
 
   TEST_ASSERT_EQUAL_UINT32(CLIENT_NET_ERROR, net.status);
   TEST_ASSERT_EQUAL_STRING(SHROOM_NET_CONNECT_UNREACHABLE_MSG, net.status_text);
@@ -248,19 +257,22 @@ static void test_client_net_connect_timeout_not_fired_stays_connecting(void) {
   net.connect_started_ms = 1000u;
 
   /* One ms short of the timeout window — still connecting. */
-  ClientNetTestCheckConnectTimeout(&net, 1000u + SHROOM_CLIENT_CONNECT_TIMEOUT_MS - 1u);
+  ClientNetTestCheckConnectTimeout(
+      &net, 1000u + SHROOM_CLIENT_CONNECT_TIMEOUT_MS - 1u);
 
   TEST_ASSERT_EQUAL_UINT32(CLIENT_NET_CONNECTING, net.status);
   TEST_ASSERT_EQUAL_UINT32(1000u, net.connect_started_ms);
 }
 
-static void test_client_net_connect_timeout_ignores_non_connecting_states(void) {
+static void
+test_client_net_connect_timeout_ignores_non_connecting_states(void) {
   ClientNetState net = {0};
   /* An established session must never be flagged as a connect timeout. */
   net.status = CLIENT_NET_CONNECTED;
   net.connect_started_ms = 1000u;
 
-  ClientNetTestCheckConnectTimeout(&net, 1000u + SHROOM_CLIENT_CONNECT_TIMEOUT_MS);
+  ClientNetTestCheckConnectTimeout(&net,
+                                   1000u + SHROOM_CLIENT_CONNECT_TIMEOUT_MS);
 
   TEST_ASSERT_EQUAL_UINT32(CLIENT_NET_CONNECTED, net.status);
 }
@@ -300,8 +312,9 @@ static void test_client_net_accepts_authoritative_lobby_roster(void) {
   roster.lobby_id = 9u;
   roster.player_count = 1u;
   roster.match_started = 1u;
-  roster.players[0] = (ShroomLobbyRosterEntry){.player_id = 42u, .is_ready = 1u};
-  packet.data = (enet_uint8*)&roster;
+  roster.players[0] =
+      (ShroomLobbyRosterEntry){.player_id = 42u, .is_ready = 1u};
+  packet.data = (enet_uint8 *)&roster;
   packet.dataLength = packet_size;
 
   ClientNetTestHandleLobbyRoster(&net, &packet);
@@ -315,8 +328,9 @@ static void test_client_net_accepts_authoritative_lobby_roster(void) {
 static void test_client_net_rejects_invalid_lobby_roster(void) {
   ClientNetState net = {.lobby_id = 9u};
   ShroomLobbyRosterPacket roster = {.lobby_id = 8u, .player_count = 1u};
-  ENetPacket packet = {.data = (enet_uint8*)&roster,
-                       .dataLength = offsetof(ShroomLobbyRosterPacket, players)};
+  ENetPacket packet = {.data = (enet_uint8 *)&roster,
+                       .dataLength =
+                           offsetof(ShroomLobbyRosterPacket, players)};
   ClientNetTestHandleLobbyRoster(&net, &packet);
   TEST_ASSERT_FALSE(net.lobby_roster_received);
 
