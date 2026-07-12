@@ -5,12 +5,21 @@
 #include "client/screens/screen_background.h"
 #include "imgui_wrapper.h"
 #include "raylib.h"
+#include "shared/sim.h"
 
 #include <stdio.h>
 
 static bool ResultsInit(ShroomScreenManager* manager) {
   (void)manager;
   return true;
+}
+
+static void FormatResultsSpores(const Game* game, char* text, size_t text_size) {
+  snprintf(text, text_size, "Spores Collected: %u", game->final_spores_collected);
+}
+
+static void FormatResultsKills(const Game* game, char* text, size_t text_size) {
+  snprintf(text, text_size, "Players Consumed: %u", game->final_kills);
 }
 
 static void ResultsReconnectOnline(ShroomScreenManager* manager, Game* game) {
@@ -58,6 +67,9 @@ static void ResultsUpdate(ShroomScreenManager* manager, float delta_time) {
     game->show_results = false;
     game->session_start_time = (float)GetTime();
     game->session_duration_seconds = 0u;
+    game->peak_mass = game->local_player != NULL
+                          ? ShroomWorldGetColonyMass(&game->world, game->local_player->player_id)
+                          : 0.0f;
     game->authoritative_round_resume_pending = true;
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
   }
@@ -96,6 +108,14 @@ static void ResultsDraw(ShroomScreenManager* manager) {
   char final_mass_text[64];
   snprintf(final_mass_text, sizeof(final_mass_text), "Final Mass: %.0f", game->final_mass);
   ShroomImGui_Text(final_mass_text);
+
+  char spores_text[64];
+  FormatResultsSpores(game, spores_text, sizeof(spores_text));
+  ShroomImGui_Text(spores_text);
+
+  char kills_text[64];
+  FormatResultsKills(game, kills_text, sizeof(kills_text));
+  ShroomImGui_Text(kills_text);
 
   if (game->final_rank > 0) {
     char final_rank_text[64];
@@ -196,6 +216,26 @@ const char* ShroomTestGetResultsDurationText(const Game* game) {
 
   ShroomResultsFormatDuration(game->session_duration_seconds, duration_text, sizeof(duration_text));
   return duration_text;
+}
+
+const char* ShroomTestGetResultsSporesText(const Game* game) {
+  static char spores_text[64];
+
+  if (game == NULL) {
+    return "";
+  }
+  FormatResultsSpores(game, spores_text, sizeof(spores_text));
+  return spores_text;
+}
+
+const char* ShroomTestGetResultsKillsText(const Game* game) {
+  static char kills_text[64];
+
+  if (game == NULL) {
+    return "";
+  }
+  FormatResultsKills(game, kills_text, sizeof(kills_text));
+  return kills_text;
 }
 #endif
 

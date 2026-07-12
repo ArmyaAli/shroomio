@@ -1325,6 +1325,8 @@ static void Test_AuthoritativeResultsCompleteTwoRoundCycle(ImGuiTestContext* ctx
 
   InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESULTS, 101u, local_position, 300.0f,
                          opponent_position, 200.0f);
+  g_imgui_test_app.game.net.snapshot_players[0].round_spores = 17u;
+  g_imgui_test_app.game.net.snapshot_players[0].round_kills = 3u;
   g_imgui_test_app.game.net.snapshot_players[2] = g_imgui_test_app.game.net.snapshot_players[0];
   g_imgui_test_app.game.net.snapshot_players[2].entity_id = 102u;
   g_imgui_test_app.game.net.snapshot_players[2].mass = 25.0f;
@@ -1336,12 +1338,24 @@ static void Test_AuthoritativeResultsCompleteTwoRoundCycle(ImGuiTestContext* ctx
   IM_CHECK(!ShroomTeCtx_ItemExists(ctx, "Play Again"));
   IM_CHECK_EQ(g_imgui_test_app.game.final_rank, 1);
   IM_CHECK(fabsf(g_imgui_test_app.game.final_mass - 325.0f) < 0.001f);
+  IM_CHECK_EQ(g_imgui_test_app.game.final_spores_collected, 17u);
+  IM_CHECK_EQ(g_imgui_test_app.game.final_kills, 3u);
+  IM_CHECK_STR_EQ(ShroomTestGetResultsSporesText(&g_imgui_test_app.game),
+                  "Spores Collected: 17");
+  IM_CHECK_STR_EQ(ShroomTestGetResultsKillsText(&g_imgui_test_app.game), "Players Consumed: 3");
 
   InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESET, 101u, local_position, 300.0f, opponent_position,
                          200.0f);
   ShroomTeCtx_Yield(ctx, 2);
   IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
               SHROOM_SCREEN_RESULTS);
+  IM_CHECK_EQ(g_imgui_test_app.game.net.snapshot_players[0].round_spores, 0u);
+  IM_CHECK_EQ(g_imgui_test_app.game.net.snapshot_players[0].round_kills, 0u);
+  IM_CHECK_EQ(g_imgui_test_app.game.final_spores_collected, 17u);
+  IM_CHECK_EQ(g_imgui_test_app.game.final_kills, 3u);
+  IM_CHECK_STR_EQ(ShroomTestGetResultsSporesText(&g_imgui_test_app.game),
+                  "Spores Collected: 17");
+  IM_CHECK_STR_EQ(ShroomTestGetResultsKillsText(&g_imgui_test_app.game), "Players Consumed: 3");
 
   InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RUNNING, 201u, local_position,
                          SHROOM_DEFAULT_PLAYER_MASS, opponent_position, SHROOM_DEFAULT_PLAYER_MASS);
@@ -1351,13 +1365,21 @@ static void Test_AuthoritativeResultsCompleteTwoRoundCycle(ImGuiTestContext* ctx
   IM_CHECK(g_imgui_test_app.game.net.welcome_received);
   IM_CHECK(g_imgui_test_app.game.net.match_entry_sent);
   IM_CHECK(!g_imgui_test_app.game.show_results);
+  IM_CHECK(fabsf(g_imgui_test_app.game.peak_mass - SHROOM_DEFAULT_PLAYER_MASS) < 0.001f);
 
   InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESULTS, 201u, local_position, 250.0f,
                          opponent_position, 350.0f);
+  g_imgui_test_app.game.net.snapshot_players[0].round_spores = 4u;
+  g_imgui_test_app.game.net.snapshot_players[0].round_kills = 1u;
   ShroomTeCtx_Yield(ctx, 2);
   IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
               SHROOM_SCREEN_RESULTS);
   IM_CHECK_EQ(g_imgui_test_app.game.final_rank, 2);
+  IM_CHECK_EQ(g_imgui_test_app.game.final_spores_collected, 4u);
+  IM_CHECK_EQ(g_imgui_test_app.game.final_kills, 1u);
+  IM_CHECK_STR_EQ(ShroomTestGetResultsSporesText(&g_imgui_test_app.game),
+                  "Spores Collected: 4");
+  IM_CHECK_STR_EQ(ShroomTestGetResultsKillsText(&g_imgui_test_app.game), "Players Consumed: 1");
 
   InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESET, 201u, local_position, 250.0f, opponent_position,
                          350.0f);

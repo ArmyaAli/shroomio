@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 static ShroomRoundStats* ShroomWorldEnsureRoundStats(ShroomWorldState* world,
@@ -1651,6 +1652,8 @@ void ShroomWorldResetMatch(ShroomWorldState* world) {
     world->podium_player_ids[i] = 0;
     world->podium_masses[i] = 0.0f;
   }
+
+  memset(world->round_stats, 0, sizeof(world->round_stats));
 
   world->match_phase = SHROOM_MATCH_PHASE_RUNNING;
   world->match_time_remaining = world->match_duration_seconds;

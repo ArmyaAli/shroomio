@@ -49,6 +49,17 @@ static void CaptureAuthoritativeResults(Game* game) {
   LeaderboardEntry leaderboard[SHROOM_MAX_PLAYER_ENTITIES];
   size_t leaderboard_count = 0;
 
+  game->final_spores_collected = 0u;
+  game->final_kills = 0u;
+  for (size_t index = 0; index < game->net.snapshot_player_count; ++index) {
+    const ShroomSnapshotPlayerState* player = &game->net.snapshot_players[index];
+    if (player->player_id == game->net.player_id) {
+      game->final_spores_collected = player->round_spores;
+      game->final_kills = player->round_kills;
+      break;
+    }
+  }
+
   game->final_mass = game->local_player != NULL
                          ? ShroomWorldGetColonyMass(&game->world, game->local_player->player_id)
                          : 0.0f;

@@ -70,10 +70,8 @@ void test_results_phase_freezes_all_gameplay_state(void) {
   player->eject_cooldown_timer = 2.0f;
   opponent->position = player->position;
   opponent->mass = 100.0f;
-  world.spores[0] = (ShroomSporeState){.entity_id = 50u,
-                                      .position = player->position,
-                                      .value = 10u,
-                                      .active = true};
+  world.spores[0] = (ShroomSporeState){
+      .entity_id = 50u, .position = player->position, .value = 10u, .active = true};
   world.spore_count = 1u;
   world.powerups[0] = (ShroomPowerupState){.entity_id = 60u,
                                            .position = player->position,
@@ -306,6 +304,57 @@ void test_reset_match_clears_podium(void) {
   TEST_ASSERT_EQUAL_UINT32(0, world.podium_player_ids[2]);
 }
 
+void test_reset_match_starts_round_two_with_fresh_colony_statistics(void) {
+  ResetWorldForPlayers();
+  ShroomPlayerState* player = ShroomWorldSpawnPlayer(&world, 1u, false);
+  ShroomRoundStats* stats = &world.round_stats[0].stats;
+
+  TEST_ASSERT_EQUAL_UINT32(1u, world.round_stats[0].player_id);
+
+  *stats = (ShroomRoundStats){
+      .peak_mass = 640.0f,
+      .kills = 4u,
+      .spores_collected = 23u,
+      .powerups_collected = 3u,
+      .center_zone_seconds = 12.0f,
+      .mid_zone_seconds = 8.0f,
+      .outer_zone_seconds = 5.0f,
+      .splits_used = 2u,
+      .ejects_used = 7u,
+  };
+  world.match_phase = SHROOM_MATCH_PHASE_RESULTS;
+  world.match_results_time_remaining = 2.0f;
+
+  ShroomWorldStep(&world, 1.0f);
+
+  TEST_ASSERT_EQUAL_UINT32(23u, stats->spores_collected);
+  TEST_ASSERT_EQUAL_UINT32(4u, stats->kills);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 640.0f, stats->peak_mass);
+
+  ShroomWorldResetMatch(&world);
+
+  TEST_ASSERT_EQUAL_UINT32(0u, world.round_stats[0].player_id);
+  TEST_ASSERT_EQUAL_UINT32(0u, stats->kills);
+  TEST_ASSERT_EQUAL_UINT32(0u, stats->spores_collected);
+  TEST_ASSERT_EQUAL_UINT32(0u, stats->powerups_collected);
+  TEST_ASSERT_EQUAL_UINT32(0u, stats->splits_used);
+  TEST_ASSERT_EQUAL_UINT32(0u, stats->ejects_used);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, stats->peak_mass);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, stats->center_zone_seconds);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, stats->mid_zone_seconds);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, stats->outer_zone_seconds);
+
+  player->position = (ShroomVec2){world.width * 0.5f, world.height * 0.5f};
+  ShroomWorldStep(&world, 1.0f / SHROOM_SERVER_TICK_RATE);
+  stats = &world.round_stats[0].stats;
+
+  TEST_ASSERT_EQUAL_UINT32(1u, world.round_stats[0].player_id);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_DEFAULT_PLAYER_MASS, stats->peak_mass);
+  TEST_ASSERT_TRUE(stats->center_zone_seconds > 0.0f);
+  TEST_ASSERT_EQUAL_UINT32(0u, stats->kills);
+  TEST_ASSERT_EQUAL_UINT32(0u, stats->spores_collected);
+}
+
 void test_set_match_duration_clamps_minimum(void) {
   ShroomWorldSetMatchDuration(&world, 0.5f);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, world.match_duration_seconds);
@@ -343,6 +392,7 @@ int main(void) {
   RUN_TEST(test_reset_match_removes_every_supported_split_fragment_count);
   RUN_TEST(test_repeated_split_reset_cycles_reuse_fragment_slots);
   RUN_TEST(test_reset_match_clears_podium);
+  RUN_TEST(test_reset_match_starts_round_two_with_fresh_colony_statistics);
   RUN_TEST(test_set_match_duration_clamps_minimum);
   RUN_TEST(test_post_reset_timer_restarts);
   return UNITY_END();

@@ -206,6 +206,8 @@ typedef struct Game {
   float peak_mass;
   float final_mass;
   int final_rank;
+  uint32_t final_spores_collected;
+  uint32_t final_kills;
   bool show_results;
   bool authoritative_round_resume_pending;
   bool eject_requested;
