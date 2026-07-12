@@ -9,6 +9,7 @@
 #include "audio.h"
 #include "cursor.h"
 #include "imgui_wrapper.h"
+#include "match_feedback.h"
 #include "raymath.h"
 #include "render_lod.h"
 #include "shared/config.h"
@@ -873,6 +874,59 @@ static void CaptureParticleBaselines(Game* game) {
   game->particle_baseline_ready = true;
 }
 
+static void RebaselineMatchPresentation(Game* game) {
+  memset(game->particles, 0, sizeof(game->particles));
+  game->particle_cursor = 0u;
+
+  memset(game->notifications, 0, sizeof(game->notifications));
+  game->notification_head = 0u;
+  game->notification_count = 0u;
+  memset(game->kill_feed, 0, sizeof(game->kill_feed));
+  game->kill_feed_head = 0u;
+  game->kill_feed_count = 0u;
+  memset(game->gameplay_events, 0, sizeof(game->gameplay_events));
+  game->gameplay_event_head = 0u;
+  game->gameplay_event_count = 0u;
+
+  game->screen_flash_timer = 0.0f;
+  game->screen_flash_color = (Color){0};
+  game->death_cutscene_timer = 0.0f;
+  game->death_cutscene_duration = 0.0f;
+  game->death_cutscene_final_mass = 0.0f;
+  game->death_cutscene_survival_time = 0.0f;
+  game->death_cutscene_final_rank = 0;
+  game->death_cutscene_killer_name[0] = '\0';
+  game->death_camera_hold_timer = 0.0f;
+  game->death_camera_hold_pos = (Vector2){0};
+  game->zone_callout_timer = 0.0f;
+  game->respawn_banner_timer = 0.0f;
+  game->combat_feedback_cooldown = 0.0f;
+  game->previous_local_rank = 0;
+
+  memset(game->render_positions, 0, sizeof(game->render_positions));
+  memset(game->render_position_initialized, 0, sizeof(game->render_position_initialized));
+  game->focused_piece_entity_id = 0u;
+  game->piece_focus_changed = false;
+  game->local_has_split = false;
+  game->local_piece_count = game->local_player != NULL ? 1 : 0;
+  game->split_requested = false;
+  game->eject_requested = false;
+  game->split_hold_timer = 0.0f;
+
+  game->pending_input_count = 0u;
+  game->tracked_input_sequence = game->net.last_processed_input_sequence;
+  if (game->local_player != NULL) {
+    game->previous_local_position = game->local_player->position;
+    game->previous_local_mass = game->local_player->mass;
+    game->current_zone = ShroomGetZoneAtPosition(&game->world, game->local_player->position);
+  } else {
+    game->previous_local_position = (ShroomVec2){0};
+    game->previous_local_mass = 0.0f;
+  }
+
+  CaptureParticleBaselines(game);
+}
+
 static void EmitGameplayEventParticles(Game* game) {
   size_t index;
   const ShroomPlayerId local_player_id =
@@ -1658,8 +1712,14 @@ static void SyncRenderPositions(Game* game, float delta_time) {
 
 static void ApplyNetworkSnapshot(Game* game) {
   size_t index;
+  const ShroomMatchPhase previous_match_phase = game->world.match_phase;
+  const ShroomMatchPhase current_match_phase = (ShroomMatchPhase)game->net.match_phase;
+  const bool reset_snapshot =
+      ShroomMatchFeedbackNeedsRebaseline(previous_match_phase, current_match_phase);
 
   game->world.tick = game->net.last_snapshot_tick;
+  game->world.match_phase = current_match_phase;
+  game->world.match_time_remaining = game->net.match_time_remaining;
   game->world.player_count = game->net.snapshot_player_count;
   game->world.spore_count = game->net.spore_count;
   game->world.powerup_count = game->net.powerup_count;
@@ -1733,6 +1793,15 @@ static void ApplyNetworkSnapshot(Game* game) {
 
   for (; index < SHROOM_MAX_POWERUPS; ++index) {
     game->world.powerups[index].active = false;
+  }
+
+  for (index = 0; index < SHROOM_MATCH_PODIUM_COUNT; ++index) {
+    game->world.podium_player_ids[index] = game->net.podium_player_ids[index];
+    game->world.podium_masses[index] = game->net.podium_masses[index];
+  }
+
+  if (reset_snapshot) {
+    RebaselineMatchPresentation(game);
   }
 
   DiscardAcknowledgedInputs(game);

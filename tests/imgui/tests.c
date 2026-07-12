@@ -60,6 +60,38 @@ static void SetupOnlineGame(void) {
            "Connected");
 }
 
+static void InjectFeedbackSnapshot(ShroomMatchPhase phase, uint32_t local_entity_id,
+                                   ShroomVec2 local_position, float local_mass,
+                                   ShroomVec2 opponent_position, float opponent_mass) {
+  ClientNetState* net = &g_imgui_test_app.game.net;
+
+  net->last_snapshot_tick += 1u;
+  net->match_phase = (uint8_t)phase;
+  net->match_time_remaining = phase == SHROOM_MATCH_PHASE_RUNNING ? 120.0f : 0.0f;
+  net->snapshot_player_count = 2u;
+  net->snapshot_players[0] = (ShroomSnapshotPlayerState){
+      .player_id = 1u,
+      .entity_id = local_entity_id,
+      .position_x = local_position.x,
+      .position_y = local_position.y,
+      .mass = local_mass,
+      .radius = 20.0f,
+      .alive = 1u,
+  };
+  snprintf(net->snapshot_players[0].name, sizeof(net->snapshot_players[0].name), "Local");
+  net->snapshot_players[1] = (ShroomSnapshotPlayerState){
+      .player_id = 2u,
+      .entity_id = 301u,
+      .position_x = opponent_position.x,
+      .position_y = opponent_position.y,
+      .mass = opponent_mass,
+      .radius = 24.0f,
+      .alive = 1u,
+      .is_bot = 1u,
+  };
+  snprintf(net->snapshot_players[1].name, sizeof(net->snapshot_players[1].name), "Opponent");
+}
+
 static void SetupResultsScreen(float peak_mass, float final_mass, int final_rank) {
   ShroomImGuiTestAppReset(false);
   g_imgui_test_app.game.selected_mode = SHROOM_SESSION_MODE_OFFLINE_PRACTICE;
@@ -876,6 +908,65 @@ static void Test_DeathCutscenePlayAgainResumesOnlineMatch(ImGuiTestContext* ctx)
   IM_CHECK_EQ(g_imgui_test_app.game.local_player, original_player);
 }
 
+static void Test_MatchResetRebaselinesFeedback(ImGuiTestContext* ctx) {
+  const ShroomVec2 opening_local_position = {120.0f, 140.0f};
+  const ShroomVec2 opening_opponent_position = {1800.0f, 1800.0f};
+  const ShroomVec2 reset_local_position = {1100.0f, 1000.0f};
+  const ShroomVec2 reset_opponent_position = {1700.0f, 1700.0f};
+
+  SetupOnlineGame();
+  g_imgui_test_app.game.particle_baseline_ready = false;
+  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RUNNING, 101u, opening_local_position, 800.0f,
+                         opening_opponent_position, 900.0f);
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_EQ(g_imgui_test_app.game.world.match_phase, SHROOM_MATCH_PHASE_RUNNING);
+
+  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESULTS, 101u, opening_local_position, 800.0f,
+                         opening_opponent_position, 900.0f);
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_EQ(g_imgui_test_app.game.world.match_phase, SHROOM_MATCH_PHASE_RESULTS);
+
+  g_imgui_test_app.game.death_cutscene_duration = 2.8f;
+  g_imgui_test_app.game.death_cutscene_timer = 2.8f;
+  g_imgui_test_app.game.death_camera_hold_timer = 1.0f;
+  g_imgui_test_app.game.screen_flash_timer = 1.0f;
+  g_imgui_test_app.game.notification_count = 1u;
+  g_imgui_test_app.game.notifications[0].active = true;
+  g_imgui_test_app.game.kill_feed_count = 1u;
+  g_imgui_test_app.game.kill_feed[0].active = true;
+  g_imgui_test_app.game.particle_cursor = 1u;
+  g_imgui_test_app.game.particles[0].active = true;
+
+  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RUNNING, 101u, reset_local_position,
+                         SHROOM_DEFAULT_PLAYER_MASS, reset_opponent_position,
+                         SHROOM_DEFAULT_PLAYER_MASS);
+  ShroomTeCtx_Yield(ctx, 2);
+
+  IM_CHECK_EQ(g_imgui_test_app.game.world.match_phase, SHROOM_MATCH_PHASE_RUNNING);
+  IM_CHECK_EQ(g_imgui_test_app.game.death_cutscene_duration, 0.0f);
+  IM_CHECK_EQ(g_imgui_test_app.game.death_camera_hold_timer, 0.0f);
+  IM_CHECK_EQ(g_imgui_test_app.game.screen_flash_timer, 0.0f);
+  IM_CHECK_EQ(g_imgui_test_app.game.notification_count, 0u);
+  IM_CHECK_EQ(g_imgui_test_app.game.kill_feed_count, 0u);
+  IM_CHECK_EQ(g_imgui_test_app.game.particle_cursor, 0u);
+  IM_CHECK_EQ(g_imgui_test_app.game.gameplay_event_count, 0u);
+  IM_CHECK(!ShroomTeImGui_WindowIsActive("Death Cutscene Actions"));
+
+  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RUNNING, 202u, reset_local_position,
+                         SHROOM_DEFAULT_PLAYER_MASS, reset_opponent_position,
+                         SHROOM_DEFAULT_PLAYER_MASS + 64.0f);
+  ShroomTeCtx_Yield(ctx, 2);
+
+  IM_CHECK(g_imgui_test_app.game.death_cutscene_duration > 0.0f);
+  IM_CHECK(g_imgui_test_app.game.notification_count > 0u);
+  IM_CHECK(g_imgui_test_app.game.kill_feed_count > 0u);
+  IM_CHECK(g_imgui_test_app.game.screen_flash_timer > 0.0f);
+
+  g_imgui_test_app.game.death_cutscene_timer = g_imgui_test_app.game.death_cutscene_duration;
+  ShroomTeCtx_Yield(ctx, 1);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Death Cutscene Actions"));
+}
+
 /* chat: Chat dock is active in online mode. */
 static void Test_ChatDockVisibleOnline(ImGuiTestContext* ctx) {
   SetupOnlineGame();
@@ -1214,6 +1305,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_ResultsDurationStaysFrozen);
   ShroomTeEngine_RegisterTest(engine, "screens", "death_cutscene_play_again_resumes_online_match",
                               Test_DeathCutscenePlayAgainResumesOnlineMatch);
+  ShroomTeEngine_RegisterTest(engine, "screens", "match_reset_rebaselines_feedback",
+                              Test_MatchResetRebaselinesFeedback);
   ShroomTeEngine_RegisterTest(engine, "chat", "dock_visible_in_online_mode",
                               Test_ChatDockVisibleOnline);
   ShroomTeEngine_RegisterTest(engine, "chat", "dock_hidden_in_offline_mode",
