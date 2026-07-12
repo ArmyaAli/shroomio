@@ -103,8 +103,11 @@ int main(void) {
   ShroomTeEngine_QueueAll(engine);
 
   while (!WindowShouldClose()) {
+    const float frame_delta = g_imgui_test_app.frame_delta_override > 0.0f
+                                  ? g_imgui_test_app.frame_delta_override
+                                  : GetFrameTime();
     ShroomScreenManagerHandleInput(&g_imgui_test_app.screen_manager);
-    ShroomScreenManagerUpdate(&g_imgui_test_app.screen_manager, GetFrameTime());
+    ShroomScreenManagerUpdate(&g_imgui_test_app.screen_manager, frame_delta);
     ShroomClientAudioUpdateMusic(&g_imgui_test_app.game.settings);
 
     ShroomImGui_ApplyTheme(g_imgui_test_app.game.settings.palette_preset ==

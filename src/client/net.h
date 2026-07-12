@@ -54,6 +54,7 @@ typedef struct ClientNetState {
   uint32_t rtt_sample_count;
   uint32_t rtt_sample_index;
   uint64_t last_snapshot_tick;
+  bool snapshot_received;
   uint16_t snapshot_player_count;
   uint16_t spore_count;
   uint16_t powerup_count;
