@@ -38,7 +38,9 @@ typedef enum ShroomBotRiskProfile {
 } ShroomBotRiskProfile;
 
 typedef struct ShroomRoundStats {
+  float colony_mass;
   float peak_mass;
+  float survival_seconds;
   uint32_t kills;
   uint32_t spores_collected;
   uint32_t powerups_collected;

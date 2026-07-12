@@ -510,14 +510,14 @@ static void Test_AudioSurvivesMultiRoundGameplayCycle(ImGuiTestContext* ctx) {
   for (int round = 0; round < 3; ++round) {
     uint32_t base_entity = (uint32_t)((round * 100) + 1);
 
-    InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RUNNING, base_entity, local_pos, 300.0f,
-                           opponent_pos, 200.0f);
+    InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RUNNING, base_entity, local_pos, 300.0f, opponent_pos,
+                           200.0f);
     ShroomTeCtx_Yield(ctx, 2);
     IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
                 SHROOM_SCREEN_GAME);
 
-    InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESULTS, base_entity, local_pos, 300.0f,
-                           opponent_pos, 200.0f);
+    InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESULTS, base_entity, local_pos, 300.0f, opponent_pos,
+                           200.0f);
     ShroomTeCtx_Yield(ctx, 2);
     IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
                 SHROOM_SCREEN_RESULTS);
@@ -1343,6 +1343,7 @@ static void Test_AuthoritativeResultsCompleteTwoRoundCycle(ImGuiTestContext* ctx
   IM_CHECK_STR_EQ(ShroomTestGetResultsSporesText(&g_imgui_test_app.game),
                   "Spores Collected: 17");
   IM_CHECK_STR_EQ(ShroomTestGetResultsKillsText(&g_imgui_test_app.game), "Players Consumed: 3");
+  IM_CHECK(fabsf(g_imgui_test_app.game.peak_mass - 325.0f) < 0.001f);
 
   InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESET, 101u, local_position, 300.0f, opponent_position,
                          200.0f);
@@ -1566,8 +1567,7 @@ static void Test_LobbyAutoJoinTransitionsToRoster(ImGuiTestContext* ctx) {
   IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
               SHROOM_SCREEN_LOBBY_ROSTER);
   IM_CHECK(ShroomTeImGui_WindowIsActive("Lobby Roster"));
-  IM_CHECK_EQ(ShroomLobbyRosterCapacity(&g_imgui_test_app.game),
-              SHROOM_MAX_PLAYABLE_PARTICIPANTS);
+  IM_CHECK_EQ(ShroomLobbyRosterCapacity(&g_imgui_test_app.game), SHROOM_MAX_PLAYABLE_PARTICIPANTS);
 }
 
 static void Test_FirstLobbyEntryDoesNotOpenDeathCutscene(ImGuiTestContext* ctx) {
@@ -1745,9 +1745,9 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
   ShroomTeEngine_RegisterTest(engine, "screens", "settings_exposes_controls_and_applies_bounds",
                               Test_SettingsExposesSpecControlsAndAppliesBoundaryValues);
   ShroomTeEngine_RegisterTest(engine, "screens", "audio_lifecycle_soak_and_restart",
-                               Test_AudioSurvivesMatchTransitionsAndRestartsFromSettings);
+                              Test_AudioSurvivesMatchTransitionsAndRestartsFromSettings);
   ShroomTeEngine_RegisterTest(engine, "screens", "audio_multi_round_gameplay_cycle",
-                               Test_AudioSurvivesMultiRoundGameplayCycle);
+                              Test_AudioSurvivesMultiRoundGameplayCycle);
   ShroomTeEngine_RegisterTest(engine, "screens", "audio_updates_on_non_gameplay_screens",
                               Test_AudioUpdatesOnNonGameplayScreens);
   ShroomTeEngine_RegisterTest(engine, "screens", "settings_persistence", Test_SettingsPersistence);
