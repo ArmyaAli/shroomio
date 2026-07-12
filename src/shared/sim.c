@@ -1660,6 +1660,74 @@ void ShroomWorldResetMatch(ShroomWorldState* world) {
   world->match_results_time_remaining = 0.0f;
 }
 
+static const ShroomPlayerState* ShroomFindStatsRepresentative(const ShroomWorldState* world,
+                                                              ShroomPlayerId player_id) {
+  const ShroomPlayerState* representative = NULL;
+  size_t index;
+
+  for (index = 0; index < world->player_count; ++index) {
+    const ShroomPlayerState* player = &world->players[index];
+
+    if (!player->alive || (player->player_id != player_id)) {
+      continue;
+    }
+    if (player->piece_index == 0u) {
+      return player;
+    }
+    if ((representative == NULL) || (player->piece_index < representative->piece_index) ||
+        ((player->piece_index == representative->piece_index) &&
+         (player->entity_id < representative->entity_id))) {
+      representative = player;
+    }
+  }
+  return representative;
+}
+
+static void ShroomUpdateColonyRoundStats(ShroomWorldState* world, float delta_time) {
+  size_t index;
+
+  for (index = 0; index < world->player_count; ++index) {
+    const ShroomPlayerState* player = &world->players[index];
+
+    if (player->alive) {
+      (void)ShroomWorldEnsureRoundStats(world, player->player_id);
+    }
+  }
+
+  for (index = 0; index < SHROOM_MAX_PARTICIPANTS; ++index) {
+    ShroomRoundStatsSlot* slot = &world->round_stats[index];
+    const ShroomPlayerState* representative;
+
+    if (slot->player_id == 0u) {
+      continue;
+    }
+    representative = ShroomFindStatsRepresentative(world, slot->player_id);
+    if (representative == NULL) {
+      slot->stats.colony_mass = 0.0f;
+      continue;
+    }
+
+    slot->stats.colony_mass = ShroomWorldGetColonyMass(world, slot->player_id);
+    if (slot->stats.colony_mass > slot->stats.peak_mass) {
+      slot->stats.peak_mass = slot->stats.colony_mass;
+    }
+    slot->stats.survival_seconds += delta_time;
+
+    /* A split colony occupies one zone per tick, attributed to its primary piece. */
+    switch (ShroomGetZoneAtPosition(world, representative->position)) {
+    case SHROOM_ZONE_CENTER:
+      slot->stats.center_zone_seconds += delta_time;
+      break;
+    case SHROOM_ZONE_MID:
+      slot->stats.mid_zone_seconds += delta_time;
+      break;
+    case SHROOM_ZONE_OUTER:
+      slot->stats.outer_zone_seconds += delta_time;
+      break;
+    }
+  }
+}
+
 void ShroomWorldStep(ShroomWorldState* world, float delta_time) {
   size_t index;
   ShroomSporeGridCell spore_grid[SHROOM_SPORE_GRID_CELLS];
@@ -1764,32 +1832,7 @@ void ShroomWorldStep(ShroomWorldState* world, float delta_time) {
   ShroomCollectPowerups(world);
   ShroomResolveConsumes(world);
 
-  for (index = 0; index < world->player_count; ++index) {
-    const ShroomPlayerState* player = &world->players[index];
-    ShroomRoundStats* stats;
-
-    if (!player->alive) {
-      continue;
-    }
-    stats = ShroomWorldEnsureRoundStats(world, player->player_id);
-    if (stats == NULL) {
-      continue;
-    }
-    if (player->mass > stats->peak_mass) {
-      stats->peak_mass = player->mass;
-    }
-    switch (ShroomGetZoneAtPosition(world, player->position)) {
-    case SHROOM_ZONE_CENTER:
-      stats->center_zone_seconds += delta_time;
-      break;
-    case SHROOM_ZONE_MID:
-      stats->mid_zone_seconds += delta_time;
-      break;
-    case SHROOM_ZONE_OUTER:
-      stats->outer_zone_seconds += delta_time;
-      break;
-    }
-  }
+  ShroomUpdateColonyRoundStats(world, delta_time);
   ShroomApplyMassRules(world, delta_time, step_end_time_ms);
   ShroomApplyForcedSplits(world);
   ShroomResolveMerges(world);

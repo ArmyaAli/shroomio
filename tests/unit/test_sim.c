@@ -1553,6 +1553,124 @@ void test_full_participant_lobby_supports_maximum_split_pieces(void) {
   TEST_ASSERT_NULL(ShroomWorldSpawnPlayer(&world, SHROOM_MAX_PARTICIPANTS + 1u, false));
 }
 
+void test_split_colony_stats_aggregate_mass_and_use_primary_zone_once(void) {
+  const ShroomVec2 center = {SHROOM_WORLD_WIDTH * 0.5f, SHROOM_WORLD_HEIGHT * 0.5f};
+  ShroomPlayerState* primary;
+  ShroomPlayerState* piece;
+  const ShroomRoundStats* stats;
+  float expected_mass;
+
+  ResetWorldForPlayers();
+  primary = ShroomWorldSpawnPlayer(&world, 65u, false);
+  TEST_ASSERT_NOT_NULL(primary);
+  primary->mass = SHROOM_SPLIT_MIN_MASS;
+  primary->radius = ShroomMassToRadius(primary->mass);
+  TEST_ASSERT_TRUE(ShroomWorldSplitPlayer(&world, primary));
+  piece = FindSplitPiece(primary->player_id);
+  TEST_ASSERT_NOT_NULL(piece);
+
+  primary->position = center;
+  piece->position = (ShroomVec2){center.x + SHROOM_ZONE_MID_RADIUS + 200.0f, center.y};
+  primary->split_velocity = (ShroomVec2){0};
+  piece->split_velocity = (ShroomVec2){0};
+  expected_mass = primary->mass + piece->mass;
+  world.spore_count = 0u;
+  world.powerup_count = 0u;
+
+  ShroomWorldStep(&world, 1.0f);
+
+  stats = ShroomWorldGetRoundStats(&world, primary->player_id);
+  TEST_ASSERT_NOT_NULL(stats);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, expected_mass, stats->colony_mass);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, expected_mass, stats->peak_mass);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, stats->survival_seconds);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, stats->center_zone_seconds);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, stats->mid_zone_seconds);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, stats->outer_zone_seconds);
+}
+
+void test_colony_stats_remain_single_counted_across_merge(void) {
+  const ShroomVec2 center = {SHROOM_WORLD_WIDTH * 0.5f, SHROOM_WORLD_HEIGHT * 0.5f};
+  ShroomPlayerState* primary;
+  ShroomPlayerState* piece;
+  const ShroomRoundStats* stats;
+  float expected_mass;
+
+  ResetWorldForPlayers();
+  primary = ShroomWorldSpawnPlayer(&world, 66u, false);
+  TEST_ASSERT_NOT_NULL(primary);
+  primary->mass = SHROOM_SPLIT_MIN_MASS;
+  primary->radius = ShroomMassToRadius(primary->mass);
+  TEST_ASSERT_TRUE(ShroomWorldSplitPlayer(&world, primary));
+  piece = FindSplitPiece(primary->player_id);
+  TEST_ASSERT_NOT_NULL(piece);
+  primary->position = center;
+  piece->position = center;
+  primary->split_velocity = (ShroomVec2){0};
+  piece->split_velocity = (ShroomVec2){0};
+  primary->merge_timer = 0.0f;
+  piece->merge_timer = 0.0f;
+  expected_mass = primary->mass + piece->mass;
+  world.spore_count = 0u;
+  world.powerup_count = 0u;
+
+  ShroomWorldStep(&world, 0.25f);
+  TEST_ASSERT_EQUAL_size_t(1u, CountAlivePieces(primary->player_id));
+  ShroomWorldStep(&world, 0.25f);
+
+  stats = ShroomWorldGetRoundStats(&world, primary->player_id);
+  TEST_ASSERT_NOT_NULL(stats);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, expected_mass, stats->peak_mass);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.5f, stats->survival_seconds);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.5f, stats->center_zone_seconds);
+}
+
+void test_split_attacker_consume_updates_colony_stats_once(void) {
+  const ShroomVec2 center = {SHROOM_WORLD_WIDTH * 0.5f, SHROOM_WORLD_HEIGHT * 0.5f};
+  ShroomPlayerState* attacker;
+  ShroomPlayerState* piece;
+  ShroomPlayerState* victim;
+  const ShroomRoundStats* stats;
+  float expected_mass;
+
+  ResetWorldForPlayers();
+  attacker = ShroomWorldSpawnPlayer(&world, 67u, false);
+  victim = ShroomWorldSpawnPlayer(&world, 68u, false);
+  TEST_ASSERT_NOT_NULL(attacker);
+  TEST_ASSERT_NOT_NULL(victim);
+  attacker->mass = SHROOM_SPLIT_MIN_MASS;
+  attacker->radius = ShroomMassToRadius(attacker->mass);
+  TEST_ASSERT_TRUE(ShroomWorldSplitPlayer(&world, attacker));
+  piece = FindSplitPiece(attacker->player_id);
+  TEST_ASSERT_NOT_NULL(piece);
+
+  attacker->mass = 300.0f;
+  attacker->radius = ShroomMassToRadius(attacker->mass);
+  attacker->position = center;
+  attacker->split_velocity = (ShroomVec2){0};
+  piece->mass = 100.0f;
+  piece->radius = ShroomMassToRadius(piece->mass);
+  piece->position = (ShroomVec2){center.x + 1000.0f, center.y};
+  piece->split_velocity = (ShroomVec2){0};
+  victim->mass = 100.0f;
+  victim->radius = ShroomMassToRadius(victim->mass);
+  victim->position = center;
+  victim->spawn_protection_timer = 0.0f;
+  world.spore_count = 0u;
+  world.powerup_count = 0u;
+  expected_mass = 400.0f + (100.0f * SHROOM_CONSUME_MASS_GAIN_FACTOR);
+
+  ShroomWorldStep(&world, 0.1f);
+
+  stats = ShroomWorldGetRoundStats(&world, attacker->player_id);
+  TEST_ASSERT_NOT_NULL(stats);
+  TEST_ASSERT_EQUAL_UINT32(1u, stats->kills);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, expected_mass, stats->colony_mass);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, expected_mass, stats->peak_mass);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.1f, stats->survival_seconds);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.1f, stats->center_zone_seconds);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_world_init_sets_expected_defaults);
@@ -1613,5 +1731,8 @@ int main(void) {
   RUN_TEST(test_split_spawn_protection_expires_before_merge_timer);
   RUN_TEST(test_center_zone_max_players_stress_remains_bounded);
   RUN_TEST(test_full_participant_lobby_supports_maximum_split_pieces);
+  RUN_TEST(test_split_colony_stats_aggregate_mass_and_use_primary_zone_once);
+  RUN_TEST(test_colony_stats_remain_single_counted_across_merge);
+  RUN_TEST(test_split_attacker_consume_updates_colony_stats_once);
   return UNITY_END();
 }
