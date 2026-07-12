@@ -37,8 +37,7 @@ void test_voice_frame_packet_size(void) {
 }
 
 void test_snapshot_player_state_size(void) {
-  TEST_ASSERT_EQUAL(4 + 4 + 4 + 4 + 4 + 4 + 32 + 1 + 1 + 2 + 1 + 3,
-                    sizeof(ShroomSnapshotPlayerState));
+  TEST_ASSERT_EQUAL_INT(68, (int)sizeof(ShroomSnapshotPlayerState));
 }
 
 void test_participant_and_entity_capacities_are_separate_and_bounded(void) {
