@@ -91,6 +91,47 @@ void test_podium_handles_fewer_players_than_slots(void) {
   TEST_ASSERT_EQUAL_UINT32(0, world.podium_player_ids[2]);
 }
 
+void test_podium_aggregates_colonies_and_ignores_inactive_slots(void) {
+  ResetWorldForPlayers();
+
+  ShroomPlayerState* first = ShroomWorldSpawnPlayer(&world, 20u, false);
+  ShroomPlayerState* tied = ShroomWorldSpawnPlayer(&world, 10u, false);
+  first->mass = 60.0f;
+  tied->mass = 100.0f;
+  world.players[2] = *first;
+  world.players[2].entity_id = world.next_entity_id++;
+  world.players[2].piece_index = 1u;
+  world.players[2].mass = 40.0f;
+  world.players[3] = (ShroomPlayerState){.player_id = 5u, .mass = 1000.0f, .alive = false};
+  world.player_count = 4u;
+
+  ShroomComputeMatchPodium(&world);
+
+  TEST_ASSERT_EQUAL_UINT32(10u, world.podium_player_ids[0]);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 100.0f, world.podium_masses[0]);
+  TEST_ASSERT_EQUAL_UINT32(20u, world.podium_player_ids[1]);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 100.0f, world.podium_masses[1]);
+  TEST_ASSERT_EQUAL_UINT32(0u, world.podium_player_ids[2]);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 100.0f, ShroomWorldGetColonyMass(&world, 20u));
+}
+
+void test_colony_score_is_stable_when_fragments_merge(void) {
+  ResetWorldForPlayers();
+  ShroomPlayerState* primary = ShroomWorldSpawnPlayer(&world, 30u, false);
+  primary->mass = SHROOM_SPLIT_MIN_MASS * 2.0f;
+  TEST_ASSERT_TRUE(ShroomWorldSplitPlayerToward(&world, primary, (ShroomVec2){1.0f, 0.0f}));
+  ShroomPlayerState* fragment = &world.players[1];
+  const float split_total = ShroomWorldGetColonyMass(&world, 30u);
+  primary->merge_timer = 0.0f;
+  fragment->merge_timer = 0.0f;
+  fragment->position = primary->position;
+  fragment->split_velocity = (ShroomVec2){0};
+
+  ShroomWorldStep(&world, 1.0f / SHROOM_SERVER_TICK_RATE);
+
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, split_total, ShroomWorldGetColonyMass(&world, 30u));
+}
+
 void test_reset_match_restores_players_to_default_mass(void) {
   ResetWorldForPlayers();
 
@@ -227,6 +268,8 @@ int main(void) {
   RUN_TEST(test_match_timer_transitions_to_reset_after_results);
   RUN_TEST(test_podium_sorted_by_mass_with_stable_tiebreak);
   RUN_TEST(test_podium_handles_fewer_players_than_slots);
+  RUN_TEST(test_podium_aggregates_colonies_and_ignores_inactive_slots);
+  RUN_TEST(test_colony_score_is_stable_when_fragments_merge);
   RUN_TEST(test_reset_match_restores_players_to_default_mass);
   RUN_TEST(test_reset_match_removes_every_supported_split_fragment_count);
   RUN_TEST(test_repeated_split_reset_cycles_reuse_fragment_slots);

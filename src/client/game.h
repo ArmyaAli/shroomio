@@ -40,6 +40,7 @@ typedef enum GameSessionMode {
 
 typedef struct LeaderboardEntry {
   size_t index;
+  ShroomPlayerId player_id;
   float mass;
 } LeaderboardEntry;
 
