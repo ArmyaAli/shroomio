@@ -3839,7 +3839,6 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
     game->show_results = false;
     ShroomWorldInit(&game->world);
     CaptureParticleBaselines(game);
-    ShroomClientAudioEnsureAllSfxLoaded();
     ShroomCursorHideSystem();
     /* local_player is NULL until first snapshot from server. */
     return;
@@ -3897,7 +3896,6 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
     game->start_in_spectator_mode = false;
     GameEnterSpectatorMode(game);
   }
-  ShroomClientAudioEnsureAllSfxLoaded();
   ShroomCursorHideSystem();
 }
 
@@ -4222,6 +4220,5 @@ void GameShutdown(Game* game) {
   if (IsOnlineMode(game->active_mode)) {
     ClientNetShutdown(&game->net);
   }
-  ShroomClientAudioShutdown();
   ShroomCursorShowSystem();
 }

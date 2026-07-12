@@ -1,3 +1,4 @@
+#include "audio.h"
 #include "game.h"
 #include "imgui_wrapper.h"
 #include "layout.h"
@@ -45,13 +46,12 @@ int main(void) {
 
   SetConfigFlags(FLAG_WINDOW_RESIZABLE);
   InitWindow(screen_width, screen_height, "shroomio");
-  InitAudioDevice();
   SetExitKey(KEY_NULL);
   SetTargetFPS(60);
 
   ShroomImGui_Init();
   ClientSettingsLoad(&g_game.settings);
-  SetMasterVolume((float)g_game.settings.master_volume_percent / 100.0f);
+  ShroomClientAudioInit(&g_game.settings);
   snprintf(g_game.selected_server_host, sizeof(g_game.selected_server_host), "%s", "127.0.0.1");
   g_game.selected_server_port = 7777;
   g_game.selected_mode = SHROOM_SESSION_MODE_QUICK_PLAY;
@@ -94,10 +94,8 @@ int main(void) {
 
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_STOP);
   ShroomScreenManagerShutdown(&g_screen_manager);
+  ShroomClientAudioShutdown();
   ShroomImGui_Shutdown();
-  if (IsAudioDeviceReady()) {
-    CloseAudioDevice();
-  }
   CloseWindow();
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_SHUTDOWN);
   return 0;
