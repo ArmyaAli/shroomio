@@ -80,6 +80,7 @@ int main(void) {
 
     ShroomScreenManagerHandleInput(&g_screen_manager);
     ShroomScreenManagerUpdate(&g_screen_manager, GetFrameTime());
+    ShroomClientAudioUpdateMusic(&g_game.settings);
 
     ShroomImGui_ApplyTheme(g_game.settings.palette_preset == CLIENT_PALETTE_HIGH_CONTRAST);
     ShroomLayoutSetScale((float)g_game.settings.ui_scale_percent / 100.0f);

@@ -103,6 +103,7 @@ int main(void) {
   while (!WindowShouldClose()) {
     ShroomScreenManagerHandleInput(&g_imgui_test_app.screen_manager);
     ShroomScreenManagerUpdate(&g_imgui_test_app.screen_manager, GetFrameTime());
+    ShroomClientAudioUpdateMusic(&g_imgui_test_app.game.settings);
 
     ShroomImGui_ApplyTheme(g_imgui_test_app.game.settings.palette_preset ==
                            CLIENT_PALETTE_HIGH_CONTRAST);

@@ -3928,7 +3928,6 @@ void GameUpdate(Game* game, float delta_time) {
   const uint64_t update_start_nanos = profile_enabled ? ClientProfileNowNanos() : 0ull;
 
   GameHandleResize(game, GetScreenWidth(), GetScreenHeight());
-  ShroomClientAudioUpdateMusic(&game->settings);
 
   if (!game->spectator_mode && !IsOverlayBlockingGameplay(game) && !game->chat_open) {
     const uint32_t hovered_piece = FindHoveredLocalPieceEntity(game);
