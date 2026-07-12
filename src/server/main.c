@@ -610,6 +610,7 @@ static void SendLobbyList(ENetPeer* peer, ShroomLobby* lobbies, const ENetHost* 
         .max_players = (uint16_t)SHROOM_MAX_PLAYABLE_PARTICIPANTS,
         .spectator_count = CountLobbySpectators(host, lobby->lobby_id),
         .is_dynamic = lobby->is_dynamic ? 1u : 0u,
+        .game_mode = (uint8_t)lobby->world.game_mode,
     };
     snprintf(packet.lobbies[count].name, sizeof(packet.lobbies[count].name), "%s", lobby->name);
     ++count;
@@ -629,6 +630,7 @@ static void SendLobbyJoined(ENetPeer* peer, const ServerSession* session,
   ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_JOINED, sizeof(packet));
   packet.lobby_id = lobby->lobby_id;
   packet.spectating = session->spectating ? 1u : 0u;
+  packet.game_mode = (uint8_t)lobby->world.game_mode;
   packet.player_id = session->player_id;
   packet.entity_id = session->player != NULL ? session->player->entity_id : 0u;
   packet.server_tick_rate = (uint16_t)SHROOM_SERVER_TICK_RATE;
@@ -834,7 +836,11 @@ static void SendSnapshot(ENetPeer* peer, const ServerSession* session,
       .player_id = session->player_id,
       .entity_id = (session->player != NULL) ? session->player->entity_id : 0u,
       .match_phase = (uint8_t)world->match_phase,
+      .game_mode = (uint8_t)world->game_mode,
       .match_time_remaining = world->match_time_remaining,
+      .objective_target_score = world->objective_target_score,
+      .objective_controller_id = world->objective_controller_id,
+      .objective_contested = world->objective_contested ? 1u : 0u,
   };
 
   for (uint32_t pi = 0; pi < SHROOM_MATCH_PODIUM_COUNT; ++pi) {
@@ -857,6 +863,7 @@ static void SendSnapshot(ENetPeer* peer, const ServerSession* session,
         .position_y = player->position.y,
         .mass = player->mass,
         .radius = player->radius,
+        .objective_score = ShroomWorldGetObjectiveScore(world, player->player_id),
         .alive = 1u,
         .is_bot = player->is_bot ? 1u : 0u,
         .effect_flags =
@@ -1429,7 +1436,8 @@ static void AdjustLobbyBots(ShroomLobby* lobby, const ENetHost* host, uint32_t* 
 }
 
 static ShroomLobby* CreateLobby(ShroomLobby* lobbies, uint32_t lobby_id, const char* name,
-                                bool is_dynamic, uint32_t* next_player_id) {
+                                bool is_dynamic, ShroomGameMode game_mode,
+                                uint32_t* next_player_id) {
   size_t i;
 
   for (i = 0; i < SHROOM_MAX_LOBBIES; ++i) {
@@ -1446,6 +1454,7 @@ static ShroomLobby* CreateLobby(ShroomLobby* lobbies, uint32_t lobby_id, const c
         snprintf(lobby->name, sizeof(lobby->name), "Arena %u", lobby_id);
       }
       ShroomWorldInit(&lobby->world);
+      ShroomWorldSetGameMode(&lobby->world, game_mode);
       ShroomWorldSetMatchDuration(&lobby->world, g_match_duration_seconds);
       InitializeLobbyBots(lobby, next_player_id);
       LOG_INFO("lobby created: id=%u name=%.31s dynamic=%d", lobby_id, lobby->name,
@@ -1553,7 +1562,12 @@ static void HandleLobbyCreate(ENetPeer* peer, const ServerSession* session, Shro
     return;
   }
 
-  lobby = CreateLobby(lobbies, (*next_lobby_id)++, packet->name, true, next_player_id);
+  if ((packet->game_mode != SHROOM_GAME_MODE_FFA) &&
+      (packet->game_mode != SHROOM_GAME_MODE_KING_OF_HILL)) {
+    return;
+  }
+  lobby = CreateLobby(lobbies, (*next_lobby_id)++, packet->name, true,
+                      (ShroomGameMode)packet->game_mode, next_player_id);
   if (lobby == NULL) {
     return;
   }
@@ -1782,7 +1796,10 @@ int main(int argc, char** argv) {
     uint32_t li;
 
     for (li = 0; li < SHROOM_LOBBY_DEFAULT_COUNT; ++li) {
-      CreateLobby(lobbies, next_lobby_id++, NULL, false, &next_player_id);
+      const ShroomGameMode mode = li < (SHROOM_LOBBY_DEFAULT_COUNT / 2u)
+                                      ? SHROOM_GAME_MODE_FFA
+                                      : SHROOM_GAME_MODE_KING_OF_HILL;
+      CreateLobby(lobbies, next_lobby_id++, NULL, false, mode, &next_player_id);
     }
   }
 

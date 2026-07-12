@@ -12,7 +12,7 @@ static const ShroomGameModeCapability GAME_MODE_CAPABILITIES[] = {
     {SHROOM_GAME_MODE_BATTLE_ROYALE, "Battle Royale",
      "Survive a shrinking arena until one colony remains.", false},
     {SHROOM_GAME_MODE_KING_OF_HILL, "King of the Hill",
-     "Hold the center zone to build a winning score.", false},
+     "Hold the center zone to build a winning score.", true},
     {SHROOM_GAME_MODE_MASS_RACE, "Mass Race", "Be the first colony to reach the mass target.",
      false},
 };

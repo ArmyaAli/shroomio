@@ -125,6 +125,12 @@ static void ResultsDraw(ShroomScreenManager* manager) {
     ShroomImGui_Text("Final Rank: N/A");
   }
 
+  if (game->world.game_mode == SHROOM_GAME_MODE_KING_OF_HILL) {
+    ShroomImGui_Text(TextFormat("Hill Score: %.1f / %.0f",
+                                ShroomWorldGetObjectiveScore(&game->world, game->net.player_id),
+                                game->world.objective_target_score));
+  }
+
   ShroomImGui_Spacing();
   ShroomImGui_Spacing();
 

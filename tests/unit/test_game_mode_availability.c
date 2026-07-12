@@ -22,11 +22,14 @@ void test_capabilities_cover_every_game_mode_once(void) {
   }
 }
 
-void test_only_ffa_is_currently_available(void) {
+void test_supported_modes_match_server_implementations(void) {
   TEST_ASSERT_TRUE(ShroomGameModeIsAvailable(SHROOM_GAME_MODE_FFA));
-  for (int mode = SHROOM_GAME_MODE_TEAMS_2V2; mode < SHROOM_GAME_MODE_COUNT; ++mode) {
-    TEST_ASSERT_FALSE(ShroomGameModeIsAvailable((ShroomGameMode)mode));
-  }
+  TEST_ASSERT_TRUE(ShroomGameModeIsAvailable(SHROOM_GAME_MODE_KING_OF_HILL));
+  TEST_ASSERT_FALSE(ShroomGameModeIsAvailable(SHROOM_GAME_MODE_TEAMS_2V2));
+  TEST_ASSERT_FALSE(ShroomGameModeIsAvailable(SHROOM_GAME_MODE_TEAMS_3V3));
+  TEST_ASSERT_FALSE(ShroomGameModeIsAvailable(SHROOM_GAME_MODE_TEAMS_4V4));
+  TEST_ASSERT_FALSE(ShroomGameModeIsAvailable(SHROOM_GAME_MODE_BATTLE_ROYALE));
+  TEST_ASSERT_FALSE(ShroomGameModeIsAvailable(SHROOM_GAME_MODE_MASS_RACE));
   TEST_ASSERT_FALSE(ShroomGameModeIsAvailable((ShroomGameMode)-1));
   TEST_ASSERT_FALSE(ShroomGameModeIsAvailable(SHROOM_GAME_MODE_COUNT));
 }
@@ -34,6 +37,6 @@ void test_only_ffa_is_currently_available(void) {
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_capabilities_cover_every_game_mode_once);
-  RUN_TEST(test_only_ffa_is_currently_available);
+  RUN_TEST(test_supported_modes_match_server_implementations);
   return UNITY_END();
 }

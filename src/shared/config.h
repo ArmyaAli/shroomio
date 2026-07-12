@@ -118,6 +118,10 @@ typedef enum ShroomGameMode {
 #define SHROOM_MATCH_RESULTS_SECONDS 30.0f
 #define SHROOM_MATCH_PODIUM_COUNT 3u
 
+/* King of the Hill: one colony scores per second regardless of its piece count. */
+#define SHROOM_KOTH_SCORE_PER_SECOND 1.0f
+#define SHROOM_KOTH_TARGET_SCORE 100.0f
+
 /* Lobby configuration */
 #define SHROOM_MAX_LOBBIES 8u
 #define SHROOM_LOBBY_DEFAULT_COUNT 4u

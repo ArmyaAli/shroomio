@@ -268,7 +268,7 @@ static void Test_HelpContentMatchesCurrentGameplay(ImGuiTestContext* ctx) {
   ShroomTeCtx_Yield(ctx, 1);
   IM_CHECK(ShroomTestHelpRenderedTextContains("Free-for-All (FFA) - Available"));
   IM_CHECK(ShroomTestHelpRenderedTextContains("Teams 2v2 - Unavailable"));
-  IM_CHECK(ShroomTestHelpRenderedTextContains("King of the Hill - Unavailable"));
+  IM_CHECK(ShroomTestHelpRenderedTextContains("King of the Hill - Available"));
 }
 
 static void Test_MainMenuExposesPrimaryActions(ImGuiTestContext* ctx) {
@@ -299,6 +299,7 @@ static void Test_GameModeAvailabilityAndNavigation(ImGuiTestContext* ctx) {
   IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Free-for-All (FFA)"));
   IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Teams 2v2 - Unavailable"));
   IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Battle Royale - Unavailable"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "King of the Hill"));
   IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Mass Race - Unavailable"));
 
   ShroomTeCtx_ItemClick(ctx, "Teams 2v2 - Unavailable");
@@ -314,6 +315,53 @@ static void Test_GameModeAvailabilityAndNavigation(ImGuiTestContext* ctx) {
   ShroomTeCtx_SetRef(ctx, "Select Game Mode");
   ShroomTeCtx_ItemClick(ctx, "Free-for-All (FFA)");
   IM_CHECK_EQ(g_imgui_test_app.game.selected_game_mode, SHROOM_GAME_MODE_FFA);
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_SERVER_BROWSER);
+}
+
+static void Test_KingOfHillCompleteMatchHudAndResults(ImGuiTestContext* ctx) {
+  const ShroomVec2 local_position = {SHROOM_WORLD_WIDTH * 0.5f, SHROOM_WORLD_HEIGHT * 0.5f};
+  const ShroomVec2 opponent_position = {100.0f, 100.0f};
+
+  SetupOnlineGame();
+  g_imgui_test_app.game.net.match_entry_sent = true;
+  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RUNNING, 101u, local_position, 300.0f,
+                         opponent_position, 200.0f);
+  g_imgui_test_app.game.net.game_mode = SHROOM_GAME_MODE_KING_OF_HILL;
+  g_imgui_test_app.game.net.objective_target_score = SHROOM_KOTH_TARGET_SCORE;
+  g_imgui_test_app.game.net.objective_controller_id = 1u;
+  g_imgui_test_app.game.net.snapshot_players[0].objective_score = 99.0f;
+  ShroomTeCtx_Yield(ctx, 2);
+
+  IM_CHECK(ShroomTeImGui_WindowIsActive("King of the Hill Objective"));
+  IM_CHECK_EQ(g_imgui_test_app.game.world.objective_controller_id, 1u);
+  IM_CHECK(fabsf(ShroomWorldGetObjectiveScore(&g_imgui_test_app.game.world, 1u) - 99.0f) < 0.001f);
+
+  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESULTS, 101u, local_position, 300.0f,
+                         opponent_position, 200.0f);
+  g_imgui_test_app.game.net.game_mode = SHROOM_GAME_MODE_KING_OF_HILL;
+  g_imgui_test_app.game.net.objective_target_score = SHROOM_KOTH_TARGET_SCORE;
+  g_imgui_test_app.game.net.snapshot_players[0].objective_score = SHROOM_KOTH_TARGET_SCORE;
+  g_imgui_test_app.game.net.podium_player_ids[0] = 1u;
+  g_imgui_test_app.game.net.podium_masses[0] = SHROOM_KOTH_TARGET_SCORE;
+  ShroomTeCtx_Yield(ctx, 2);
+
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_RESULTS);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Match Results"));
+  IM_CHECK(fabsf(ShroomWorldGetObjectiveScore(&g_imgui_test_app.game.world, 1u) -
+                 SHROOM_KOTH_TARGET_SCORE) < 0.001f);
+  IM_CHECK_EQ(g_imgui_test_app.game.final_rank, 1);
+}
+
+static void Test_KingOfHillModeSelection(ImGuiTestContext* ctx) {
+  ShroomImGuiTestAppReset(true);
+  ShroomTeCtx_SetRef(ctx, "Main Menu");
+  ShroomTeCtx_ItemClick(ctx, "Game Modes");
+  ShroomTeCtx_SetRef(ctx, "Select Game Mode");
+  ShroomTeCtx_ItemClick(ctx, "King of the Hill");
+
+  IM_CHECK_EQ(g_imgui_test_app.game.selected_game_mode, SHROOM_GAME_MODE_KING_OF_HILL);
   IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
               SHROOM_SCREEN_SERVER_BROWSER);
 }
@@ -1836,6 +1884,10 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_MatchResetRebaselinesFeedback);
   ShroomTeEngine_RegisterTest(engine, "screens", "authoritative_results_two_round_cycle",
                               Test_AuthoritativeResultsCompleteTwoRoundCycle);
+  ShroomTeEngine_RegisterTest(engine, "screens", "king_of_hill_complete_match_hud_and_results",
+                              Test_KingOfHillCompleteMatchHudAndResults);
+  ShroomTeEngine_RegisterTest(engine, "screens", "king_of_hill_mode_selection",
+                              Test_KingOfHillModeSelection);
   ShroomTeEngine_RegisterTest(engine, "screens", "authoritative_intermission_multi_client_state",
                               Test_AuthoritativeIntermissionMultiClientState);
   ShroomTeEngine_RegisterTest(engine, "chat", "dock_visible_in_online_mode",

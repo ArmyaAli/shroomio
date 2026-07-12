@@ -61,6 +61,10 @@ static void test_client_net_accepts_trimmed_snapshot_packet(void) {
   snapshot.tick = 123u;
   snapshot.last_processed_input_sequence = 77u;
   snapshot.player_count = 1u;
+  snapshot.game_mode = SHROOM_GAME_MODE_KING_OF_HILL;
+  snapshot.objective_target_score = SHROOM_KOTH_TARGET_SCORE;
+  snapshot.objective_controller_id = 42u;
+  snapshot.objective_contested = 0u;
   snapshot.players[0].player_id = 42u;
   snapshot.players[0].entity_id = 43u;
   snapshot.players[0].position_x = 10.0f;
@@ -68,6 +72,7 @@ static void test_client_net_accepts_trimmed_snapshot_packet(void) {
   snapshot.players[0].mass = 30.0f;
   snapshot.players[0].radius = 4.0f;
   snapshot.players[0].alive = 1u;
+  snapshot.players[0].objective_score = 12.5f;
 
   packet.data = (enet_uint8*)&snapshot;
   packet.dataLength = packet_size;
@@ -79,6 +84,11 @@ static void test_client_net_accepts_trimmed_snapshot_packet(void) {
   TEST_ASSERT_EQUAL_UINT16(1u, net.snapshot_player_count);
   TEST_ASSERT_EQUAL_UINT32(42u, net.snapshot_players[0].player_id);
   TEST_ASSERT_EQUAL_FLOAT(10.0f, net.snapshot_players[0].position_x);
+  TEST_ASSERT_EQUAL_UINT8(SHROOM_GAME_MODE_KING_OF_HILL, net.game_mode);
+  TEST_ASSERT_EQUAL_FLOAT(SHROOM_KOTH_TARGET_SCORE, net.objective_target_score);
+  TEST_ASSERT_EQUAL_UINT32(42u, net.objective_controller_id);
+  TEST_ASSERT_FALSE(net.objective_contested);
+  TEST_ASSERT_EQUAL_FLOAT(12.5f, net.snapshot_players[0].objective_score);
 }
 
 static void test_client_net_ignores_truncated_snapshot_players(void) {
