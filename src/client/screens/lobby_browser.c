@@ -131,7 +131,8 @@ static void DrawConnectionStateModal(ShroomScreenManager* manager, Game* game) {
     if (game->net.status == CLIENT_NET_ERROR || game->net.status == CLIENT_NET_DISCONNECTED) {
       if (ShroomImGui_Button("Retry", 120.0f, 0.0f)) {
         ClientNetShutdown(&game->net);
-        ClientNetInit(&game->net, game->selected_server_host, game->selected_server_port);
+        ClientNetInit(&game->net, game->selected_server_host, game->selected_server_port,
+                      game->settings.player_name);
       }
       ShroomImGui_SameLine();
       if (ShroomImGui_Button("Back", 120.0f, 0.0f)) {

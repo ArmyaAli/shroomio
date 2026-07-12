@@ -13,6 +13,7 @@
 #endif
 
 #include "shared/lifecycle.h"
+#include "shared/player_identity.h"
 #include "shared/intermission.h"
 #include "shared/protocol.h"
 #include "shared/profiler.h"
@@ -1051,9 +1052,13 @@ static void HandleHelloPacket(ENetPeer* peer, ServerSession* session, sqlite3* d
     return;
   }
 
+  char raw_name[SHROOM_MAX_NAME_LENGTH];
+  memcpy(raw_name, packet->name, sizeof(raw_name));
+  raw_name[sizeof(raw_name) - 1u] = '\0';
+  ShroomSanitizePlayerName(session->display_name, raw_name);
+
   session->active = true;
   session->handshake_received = true;
-  snprintf(session->display_name, sizeof(session->display_name), "%s", packet->name);
   if (session->display_name[0] == '\0') {
     snprintf(session->display_name, sizeof(session->display_name), "Player");
   }

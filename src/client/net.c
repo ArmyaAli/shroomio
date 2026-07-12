@@ -1,4 +1,5 @@
 #include "net.h"
+#include "shared/player_identity.h"
 
 #include <stddef.h>
 #include <stdio.h>
@@ -90,16 +91,24 @@ static void SendPing(ClientNetState* net) {
                  CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_PING));
 }
 
+static void BuildHelloPacket(const ClientNetState* net, ShroomHelloPacket* packet) {
+  char sanitized_name[SHROOM_MAX_NAME_LENGTH];
+  *packet = (ShroomHelloPacket){0};
+  ShroomPacketHeaderInit(&packet->header, SHROOM_PACKET_HELLO, sizeof(*packet));
+  packet->protocol_version = SHROOM_PROTOCOL_VERSION;
+  ShroomSanitizePlayerName(sanitized_name, net->player_name);
+  snprintf(packet->name, sizeof(packet->name), "%s",
+           sanitized_name[0] != '\0' ? sanitized_name : "Player");
+}
+
 static void SendHello(ClientNetState* net) {
-  ShroomHelloPacket packet = {0};
+  ShroomHelloPacket packet;
 
   if ((net->peer == 0) || (net->peer->state != ENET_PEER_STATE_CONNECTED)) {
     return;
   }
 
-  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_HELLO, sizeof(packet));
-  packet.protocol_version = SHROOM_PROTOCOL_VERSION;
-  snprintf(packet.name, sizeof(packet.name), "local-client");
+  BuildHelloPacket(net, &packet);
 
   enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CONTROL,
                  CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_HELLO));
@@ -400,13 +409,18 @@ static void HandleMushroomSpeciesCatalog(ClientNetState* net, const ENetPacket* 
   }
 }
 
-bool ClientNetInit(ClientNetState* net, const char* host_name, uint16_t port) {
+bool ClientNetInit(ClientNetState* net, const char* host_name, uint16_t port,
+                   const char* player_name) {
   ENetAddress address = {0};
 
   if ((net->peer != 0) || (net->host != 0) || net->enet_initialized) {
     ClientNetShutdown(net);
   }
   *net = (ClientNetState){0};
+  ShroomSanitizePlayerName(net->player_name, player_name);
+  if (net->player_name[0] == '\0') {
+    snprintf(net->player_name, sizeof(net->player_name), "%s", "Player");
+  }
 
   if (enet_initialize() != 0) {
     SetStatus(net, CLIENT_NET_ERROR, "ENet init failed");
@@ -586,6 +600,11 @@ void ClientNetSendRematchVote(ClientNetState* net, ShroomRematchVote vote) {
 }
 
 #ifdef TEST_MODE
+void ClientNetTestBuildHello(const ClientNetState* net, ShroomHelloPacket* packet) {
+  if ((net != NULL) && (packet != NULL)) {
+    BuildHelloPacket(net, packet);
+  }
+}
 bool ClientNetTestCompletePendingPing(ClientNetState* net, uint32_t nonce, uint32_t now_ms) {
   return CompletePendingPing(net, nonce, now_ms);
 }

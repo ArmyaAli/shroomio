@@ -253,6 +253,7 @@ SHARED_HEADERS := \
 	$(SHARED_SRC_DIR)/profiler.h \
 	$(SHARED_SRC_DIR)/lifecycle.h \
 	$(SHARED_SRC_DIR)/connection.h \
+	$(SHARED_SRC_DIR)/player_identity.h \
 	$(CLIENT_SRC_DIR)/audio.h \
 	$(CLIENT_SRC_DIR)/cursor.h \
 	$(CLIENT_SRC_DIR)/layout.h \

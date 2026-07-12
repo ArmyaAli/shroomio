@@ -47,6 +47,8 @@ void ShroomImGuiTestAppReset(bool reset_files) {
 
   memset(&g_imgui_test_app.game, 0, sizeof(g_imgui_test_app.game));
   ClientSettingsSetDefaults(&g_imgui_test_app.game.settings);
+  snprintf(g_imgui_test_app.game.settings.player_name,
+           sizeof(g_imgui_test_app.game.settings.player_name), "%s", "Test Player");
   snprintf(g_imgui_test_app.game.selected_server_host,
            sizeof(g_imgui_test_app.game.selected_server_host), "%s", "127.0.0.1");
   g_imgui_test_app.game.selected_server_port = SHROOM_SERVER_PORT;

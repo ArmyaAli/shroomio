@@ -3,6 +3,8 @@
 
 #include <stdbool.h>
 
+#include "shared/config.h"
+
 typedef enum ClientPalettePreset {
   CLIENT_PALETTE_CLASSIC = 0,
   CLIENT_PALETTE_HIGH_CONTRAST,
@@ -36,6 +38,7 @@ typedef enum ClientMushroomSpecies {
 } ClientMushroomSpecies;
 
 typedef struct ClientSettings {
+  char player_name[SHROOM_MAX_NAME_LENGTH];
   int ui_scale_percent;
   int master_volume_percent;
   int music_volume_percent;
@@ -71,5 +74,6 @@ const char* ClientSettingsKeyLabel(int key);
 const char* ClientSettingsKeySlotLabel(int slot_index);
 bool ClientSettingsKeyIsBound(const ClientSettings* settings, int key);
 bool ClientSettingsKeyIsReserved(int key);
+void ClientSettingsSanitizePlayerName(char destination[SHROOM_MAX_NAME_LENGTH], const char* source);
 
 #endif

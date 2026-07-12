@@ -6,6 +6,11 @@
 #include "imgui_wrapper.h"
 #include "raylib.h"
 
+#include <stdio.h>
+#include <string.h>
+
+static char g_player_name_input[SHROOM_MAX_NAME_LENGTH];
+
 typedef enum MainMenuAction {
   MAIN_MENU_ACTION_NONE = 0,
   MAIN_MENU_ACTION_PLAY_ONLINE,
@@ -32,8 +37,10 @@ bool ShroomTestMainMenuAnimationsEnabled(const Game* game) {
 #endif
 
 static bool MainMenuInit(ShroomScreenManager* manager) {
-  (void)manager;
+  const Game* game = manager != NULL ? (const Game*)manager->user_data : NULL;
   ShroomScreenResetFungalBackground();
+  snprintf(g_player_name_input, sizeof(g_player_name_input), "%s",
+           game != NULL ? game->settings.player_name : "");
   return true;
 }
 
@@ -50,6 +57,29 @@ static void MainMenuDraw(ShroomScreenManager* manager) {
   MainMenuAction action = MAIN_MENU_ACTION_NONE;
 
   ShroomScreenDrawFungalBackground(animate);
+
+  if ((game != NULL) && (game->settings.player_name[0] == '\0')) {
+    char sanitized[SHROOM_MAX_NAME_LENGTH];
+    ClientSettingsSanitizePlayerName(sanitized, g_player_name_input);
+    if (!ShroomLayoutBeginCenteredPanel(
+            "Player Identity", 360.0f, 180.0f, 0.9f,
+            SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
+                SHROOM_IMGUI_WINDOW_NO_COLLAPSE | SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
+      ShroomImGui_End();
+      return;
+    }
+    ShroomLayoutHeading("Choose Player Name");
+    ShroomImGui_SetNextItemWidth(-1.0f);
+    ShroomImGui_InputText("Player Name", g_player_name_input, sizeof(g_player_name_input));
+    ShroomImGui_BeginDisabled(sanitized[0] == '\0');
+    if (ShroomLayoutButtonFullWidth("Continue", 38.0f)) {
+      snprintf(game->settings.player_name, sizeof(game->settings.player_name), "%s", sanitized);
+      ClientSettingsSave(&game->settings);
+    }
+    ShroomImGui_EndDisabled();
+    ShroomImGui_End();
+    return;
+  }
 
   if (!ShroomLayoutBeginCenteredPanel("Main Menu", panel_width, panel_height, 0.85f,
                                       SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
@@ -106,7 +136,8 @@ static void MainMenuDraw(ShroomScreenManager* manager) {
              game != NULL ? (unsigned int)game->selected_server_port : 0u);
     if (game != NULL) {
       TraceLog(LOG_INFO, "MENU: Play Online ClientNetInit begin");
-      ClientNetInit(&game->net, game->selected_server_host, game->selected_server_port);
+      ClientNetInit(&game->net, game->selected_server_host, game->selected_server_port,
+                    game->settings.player_name);
       TraceLog(LOG_INFO, "MENU: Play Online ClientNetInit end status=%d host=%p peer=%p",
                (int)game->net.status, (void*)game->net.host, (void*)game->net.peer);
       game->auto_join_lobby = true;

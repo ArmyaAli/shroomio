@@ -31,7 +31,7 @@ static void ResultsReconnectOnline(ShroomScreenManager* manager, Game* game) {
     return;
   }
 
-  ClientNetInit(&game->net, host, port);
+  ClientNetInit(&game->net, host, port, game->settings.player_name);
   game->auto_join_lobby = true;
 }
 
