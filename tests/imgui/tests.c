@@ -287,6 +287,63 @@ static void Test_OfflinePracticeEntryInitializesGame(ImGuiTestContext* ctx) {
   IM_CHECK(g_imgui_test_app.game.local_player != NULL);
 }
 
+static void Test_OfflinePracticeBotsExerciseTacticalSplit(ImGuiTestContext* ctx) {
+  ShroomPlayerState* aggressive_bot = NULL;
+  size_t bot_piece_count = 0u;
+
+  ShroomImGuiTestAppReset(true);
+  ShroomTeCtx_SetRef(ctx, "Main Menu");
+  ShroomTeCtx_ItemClick(ctx, "Offline Practice");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_GAME);
+  IM_CHECK(g_imgui_test_app.game.local_player != NULL);
+
+  for (size_t index = 0; index < g_imgui_test_app.game.world.player_count; ++index) {
+    ShroomPlayerState* player = &g_imgui_test_app.game.world.players[index];
+
+    if (player->is_bot &&
+        (ShroomBotProfileForPlayer(player->player_id) == SHROOM_BOT_PROFILE_AGGRESSIVE)) {
+      aggressive_bot = player;
+      break;
+    }
+  }
+  IM_CHECK(aggressive_bot != NULL);
+  if (aggressive_bot == NULL) {
+    return;
+  }
+
+  for (size_t index = 0; index < g_imgui_test_app.game.world.player_count; ++index) {
+    ShroomPlayerState* player = &g_imgui_test_app.game.world.players[index];
+
+    if ((player != aggressive_bot) && (player != g_imgui_test_app.game.local_player)) {
+      player->alive = false;
+    }
+  }
+  aggressive_bot->position = (ShroomVec2){2000.0f, 2000.0f};
+  aggressive_bot->mass = 800.0f;
+  aggressive_bot->radius = ShroomMassToRadius(aggressive_bot->mass);
+  aggressive_bot->bot_tactical_cooldown_timer = 0.0f;
+  g_imgui_test_app.game.local_player->position = (ShroomVec2){2200.0f, 2000.0f};
+  g_imgui_test_app.game.local_player->mass = 200.0f;
+  g_imgui_test_app.game.local_player->radius =
+      ShroomMassToRadius(g_imgui_test_app.game.local_player->mass);
+  g_imgui_test_app.game.local_player->spawn_protection_timer = 0.0f;
+  g_imgui_test_app.game.world.spore_count = 0u;
+  g_imgui_test_app.game.world.powerup_count = 0u;
+
+  ShroomTeCtx_Yield(ctx, 2);
+  for (size_t index = 0; index < g_imgui_test_app.game.world.player_count; ++index) {
+    const ShroomPlayerState* player = &g_imgui_test_app.game.world.players[index];
+    if (player->alive && (player->player_id == aggressive_bot->player_id)) {
+      bot_piece_count += 1u;
+    }
+  }
+
+  IM_CHECK(bot_piece_count >= 2u);
+  IM_CHECK(ShroomScreenManagerIsRunning(&g_imgui_test_app.screen_manager));
+}
+
 /* screens: Offline Practice should not inherit the menu spin regression into
  * gameplay camera state, even with persisted settings from the WSL repro. */
 static void Test_OfflinePracticePersistedSettingsCameraStaysStable(ImGuiTestContext* ctx) {
@@ -1618,6 +1675,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_GameModeAvailabilityAndNavigation);
   ShroomTeEngine_RegisterTest(engine, "screens", "offline_practice_entry_initializes_game",
                               Test_OfflinePracticeEntryInitializesGame);
+  ShroomTeEngine_RegisterTest(engine, "screens", "offline_practice_bots_tactical_split",
+                              Test_OfflinePracticeBotsExerciseTacticalSplit);
   ShroomTeEngine_RegisterTest(engine, "screens",
                               "offline_practice_persisted_settings_camera_stays_stable",
                               Test_OfflinePracticePersistedSettingsCameraStaysStable);
