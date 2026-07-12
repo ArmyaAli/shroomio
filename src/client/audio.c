@@ -15,6 +15,8 @@ static double g_client_sfx_last_played_at[SHROOM_CLIENT_SFX_COUNT];
 static Music g_client_music_loop;
 static bool g_client_music_loaded;
 static float g_client_music_last_volume;
+static unsigned char* g_client_music_wav_data;
+static int g_client_music_wav_size;
 static bool g_client_audio_initialized;
 static bool g_client_audio_device_owned;
 static bool g_client_audio_assets_loaded;
@@ -263,8 +265,9 @@ static Music GenerateAmbientMusicStream(void) {
     return music;
   }
 
-  music = LoadMusicStreamFromMemory(".wav", wav_data, wav_size);
-  free(wav_data);
+  g_client_music_wav_data = wav_data;
+  g_client_music_wav_size = wav_size;
+  music = LoadMusicStreamFromMemory(".wav", g_client_music_wav_data, g_client_music_wav_size);
   if (MusicIsUsable(music)) {
     music.looping = true;
   }
@@ -375,6 +378,8 @@ static void ClearClientAssetHandles(void) {
   memset(&g_client_music_loop, 0, sizeof(g_client_music_loop));
   g_client_music_loaded = false;
   g_client_music_last_volume = -1.0f;
+  g_client_music_wav_data = NULL;
+  g_client_music_wav_size = 0;
   g_client_audio_assets_loaded = false;
 }
 
@@ -421,6 +426,11 @@ static void ProductionUnloadAssets(void* context) {
   if (g_client_music_loaded) {
     StopMusicStream(g_client_music_loop);
     UnloadMusicStream(g_client_music_loop);
+  }
+  if (g_client_music_wav_data != NULL) {
+    free(g_client_music_wav_data);
+    g_client_music_wav_data = NULL;
+    g_client_music_wav_size = 0;
   }
 }
 
