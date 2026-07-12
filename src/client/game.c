@@ -1720,7 +1720,11 @@ static void ApplyNetworkSnapshot(Game* game) {
 
   game->world.tick = game->net.last_snapshot_tick;
   game->world.match_phase = current_match_phase;
+  game->world.game_mode = (ShroomGameMode)game->net.game_mode;
   game->world.match_time_remaining = game->net.match_time_remaining;
+  game->world.objective_target_score = game->net.objective_target_score;
+  game->world.objective_controller_id = game->net.objective_controller_id;
+  game->world.objective_contested = game->net.objective_contested;
   game->world.player_count = game->net.snapshot_player_count;
   game->world.spore_count = game->net.spore_count;
   game->world.powerup_count = game->net.powerup_count;
@@ -1749,6 +1753,8 @@ static void ApplyNetworkSnapshot(Game* game) {
                                                                                        : 0.0f,
     };
     snprintf(player->name, sizeof(player->name), "%s", snapshot_player->name);
+    ShroomWorldSetObjectiveScore(&game->world, snapshot_player->player_id,
+                                 snapshot_player->objective_score);
 
     if (player->player_id == game->net.player_id) {
       /* Prefer the piece that matches our original entity_id (the primary).
@@ -1934,6 +1940,13 @@ static int CompareLeaderboardEntries(const void* left, const void* right) {
   const LeaderboardEntry* lhs = left;
   const LeaderboardEntry* rhs = right;
 
+  if (lhs->objective_score < rhs->objective_score) {
+    return 1;
+  }
+  if (lhs->objective_score > rhs->objective_score) {
+    return -1;
+  }
+
   if (lhs->mass < rhs->mass) {
     return 1;
   }
@@ -1970,6 +1983,9 @@ void BuildLeaderboard(const Game* game, LeaderboardEntry* entries, size_t* entry
           .index = index,
           .player_id = player->player_id,
           .mass = ShroomWorldGetColonyMass(&game->world, player->player_id),
+          .objective_score = game->world.game_mode == SHROOM_GAME_MODE_KING_OF_HILL
+                                 ? ShroomWorldGetObjectiveScore(&game->world, player->player_id)
+                                 : 0.0f,
       };
     }
   }
@@ -2814,8 +2830,12 @@ static void DrawLeaderboardOverlay(Game* game, const LeaderboardEntry* leaderboa
     const Color color =
         player == game->local_player ? RAYWHITE : GetThreatOutlineColor(threat_state);
 
-    ShroomImGui_TextColored(ToImGuiColor(color), TextFormat("%d. %s   %.0f mass", (int)(index + 1),
-                                                            label, player->mass));
+    ShroomImGui_TextColored(
+        ToImGuiColor(color),
+        game->world.game_mode == SHROOM_GAME_MODE_KING_OF_HILL
+            ? TextFormat("%d. %s   %.1f pts", (int)(index + 1), label,
+                         leaderboard[index].objective_score)
+            : TextFormat("%d. %s   %.0f mass", (int)(index + 1), label, player->mass));
   }
 
   if (ShroomImGui_Button("Close", 120.0f, 0.0f)) {
@@ -3329,6 +3349,36 @@ static void DrawGameplayHud(const Game* game, int local_rank, size_t leaderboard
     }
     ShroomImGui_Spacing();
     ShroomImGui_Text(TextFormat("Players %d", (int)game->world.player_count));
+  }
+  ShroomImGui_End();
+}
+
+static void DrawKingOfHillHud(const Game* game) {
+  float score = 0.0f;
+  const char* status = "Hill open";
+
+  if ((game->world.game_mode != SHROOM_GAME_MODE_KING_OF_HILL) || (game->local_player == NULL)) {
+    return;
+  }
+  score = ShroomWorldGetObjectiveScore(&game->world, game->local_player->player_id);
+  if (game->world.objective_contested) {
+    status = "Hill contested - scoring paused";
+  } else if (game->world.objective_controller_id == game->local_player->player_id) {
+    status = "Your colony controls the hill";
+  } else if (game->world.objective_controller_id != 0u) {
+    status = "Another colony controls the hill";
+  }
+
+  ShroomImGui_SetNextWindowPos((game->screen_width - 330.0f) * 0.5f, 104.0f,
+                               SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowSize(330.0f, 76.0f, SHROOM_IMGUI_COND_ALWAYS);
+  if (ShroomImGui_Begin("King of the Hill Objective", NULL,
+                        SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
+                            SHROOM_IMGUI_WINDOW_NO_MOVE | SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
+                            SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS |
+                            SHROOM_IMGUI_WINDOW_NO_SCROLLBAR)) {
+    ShroomImGui_Text(TextFormat("KOTH  %.1f / %.0f", score, game->world.objective_target_score));
+    ShroomImGui_Text(status);
   }
   ShroomImGui_End();
 }
@@ -4187,6 +4237,7 @@ void GameDraw(Game* game) {
   DrawOffscreenIndicators(game);
   DrawProximityMap(game);
   DrawGameplayHud(game, local_rank, leaderboard_count, zone);
+  DrawKingOfHillHud(game);
   DrawSpectatorOverlay(game, leaderboard, shown_count);
   DrawInspectPrompt(game);
   DrawStatusBanners(game);

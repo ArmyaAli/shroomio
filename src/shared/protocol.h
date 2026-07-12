@@ -9,7 +9,7 @@
 #include "config.h"
 #include "intermission.h"
 
-#define SHROOM_PROTOCOL_VERSION 7u
+#define SHROOM_PROTOCOL_VERSION 8u
 #define SHROOM_SERVER_PORT 7777u
 #define SHROOM_MAX_UNRELIABLE_PACKET_SIZE 1200u
 #define SHROOM_MAX_PASSWORD_LENGTH 64u
@@ -138,6 +138,7 @@ typedef struct ShroomSnapshotPlayerState {
   uint8_t team_id;
   uint16_t round_spores;
   uint8_t round_kills;
+  float objective_score;
 } ShroomSnapshotPlayerState;
 
 typedef struct ShroomSnapshotPacket {
@@ -150,6 +151,10 @@ typedef struct ShroomSnapshotPacket {
   uint8_t match_phase;
   uint8_t game_mode;
   float match_time_remaining;
+  float objective_target_score;
+  uint32_t objective_controller_id;
+  uint8_t objective_contested;
+  uint8_t objective_reserved[3];
   uint32_t podium_player_ids[SHROOM_MATCH_PODIUM_COUNT];
   float podium_masses[SHROOM_MATCH_PODIUM_COUNT];
   ShroomSnapshotPlayerState players[SHROOM_MAX_SNAPSHOT_PLAYERS];
@@ -251,7 +256,8 @@ typedef struct ShroomLobbyEntry {
   uint16_t max_players;
   uint16_t spectator_count;
   uint8_t is_dynamic;
-  uint8_t reserved[3];
+  uint8_t game_mode;
+  uint8_t reserved[2];
 } ShroomLobbyEntry;
 
 typedef struct ShroomLobbyListPacket {
@@ -274,7 +280,8 @@ typedef struct ShroomLobbyJoinedPacket {
   uint32_t player_id;
   uint32_t entity_id;
   uint8_t spectating;
-  uint8_t reserved[3];
+  uint8_t game_mode;
+  uint8_t reserved[2];
   char lobby_name[SHROOM_LOBBY_MAX_NAME_LENGTH];
   uint16_t server_tick_rate;
   uint16_t snapshot_rate;
@@ -293,7 +300,8 @@ typedef struct ShroomLobbyCreatePacket {
   ShroomPacketHeader header;
   char name[SHROOM_LOBBY_MAX_NAME_LENGTH]; /* empty = auto-name */
   uint16_t max_players;
-  uint16_t reserved;
+  uint8_t game_mode;
+  uint8_t reserved;
 } ShroomLobbyCreatePacket;
 
 typedef struct ShroomLobbyCreatedPacket {

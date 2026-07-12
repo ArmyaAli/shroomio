@@ -629,6 +629,13 @@ static void ShroomUpdateBotInput(ShroomWorldState* world, ShroomPlayerState* bot
     return;
   }
 
+  if ((world->game_mode == SHROOM_GAME_MODE_KING_OF_HILL) &&
+      (profile == SHROOM_BOT_PROFILE_OBJECTIVE) && (current_zone != SHROOM_ZONE_CENTER)) {
+    bot->input_direction =
+        ShroomNormalizeOrZero(ShroomVec2Sub(ShroomWorldCenter(world), bot->position));
+    return;
+  }
+
   if ((best_powerup != NULL) && ((profile == SHROOM_BOT_PROFILE_OBJECTIVE) || (best_prey == NULL) ||
                                  (best_powerup_score > best_prey_score * 1.25f))) {
     bot->input_direction =
@@ -1080,6 +1087,8 @@ void ShroomWorldInitWithSeed(ShroomWorldState* world, uint32_t seed) {
   world->match_duration_seconds = SHROOM_MATCH_DURATION_SECONDS;
   world->match_time_remaining = SHROOM_MATCH_DURATION_SECONDS;
   world->match_results_time_remaining = 0.0f;
+  world->game_mode = SHROOM_GAME_MODE_FFA;
+  world->objective_target_score = SHROOM_KOTH_TARGET_SCORE;
   ShroomInitializeSpores(world);
   ShroomInitializePowerups(world);
 }
@@ -1192,8 +1201,14 @@ size_t ShroomWorldRemovePlayer(ShroomWorldState* world, ShroomPlayerId player_id
   while ((world->player_count > 0u) && (world->players[world->player_count - 1u].player_id == 0u)) {
     --world->player_count;
   }
-
   if (removed > 0u) {
+    for (i = 0; i < SHROOM_MAX_PARTICIPANTS; ++i) {
+      if (world->objective_player_ids[i] == player_id) {
+        world->objective_player_ids[i] = 0u;
+        world->objective_scores[i] = 0.0f;
+        break;
+      }
+    }
     for (i = 0; i < SHROOM_MAX_PARTICIPANTS; ++i) {
       if (world->round_stats[i].player_id == player_id) {
         world->round_stats[i] = (ShroomRoundStatsSlot){0};
@@ -1565,13 +1580,23 @@ void ShroomComputeMatchPodium(ShroomWorldState* world) {
     if (already_scored) {
       continue;
     }
-    colony_mass = ShroomWorldGetColonyMass(world, player->player_id);
+    colony_mass = world->game_mode == SHROOM_GAME_MODE_KING_OF_HILL
+                      ? ShroomWorldGetObjectiveScore(world, player->player_id)
+                      : ShroomWorldGetColonyMass(world, player->player_id);
 
     for (j = 0; j < SHROOM_MATCH_PODIUM_COUNT; ++j) {
+      const float candidate_tiebreak_mass = ShroomWorldGetColonyMass(world, player->player_id);
+      const float placed_tiebreak_mass =
+          ShroomWorldGetColonyMass(world, world->podium_player_ids[j]);
       if ((colony_mass > world->podium_masses[j]) ||
           ((colony_mass == world->podium_masses[j]) &&
            ((world->podium_player_ids[j] == 0) ||
-            (player->player_id < world->podium_player_ids[j])))) {
+            ((world->game_mode == SHROOM_GAME_MODE_KING_OF_HILL) &&
+             ((candidate_tiebreak_mass > placed_tiebreak_mass) ||
+              ((candidate_tiebreak_mass == placed_tiebreak_mass) &&
+               (player->player_id < world->podium_player_ids[j])))) ||
+            ((world->game_mode != SHROOM_GAME_MODE_KING_OF_HILL) &&
+             (player->player_id < world->podium_player_ids[j]))))) {
         size_t k;
         for (k = SHROOM_MATCH_PODIUM_COUNT - 1; k > j; --k) {
           world->podium_player_ids[k] = world->podium_player_ids[k - 1];
@@ -1583,6 +1608,19 @@ void ShroomComputeMatchPodium(ShroomWorldState* world) {
       }
     }
   }
+}
+
+void ShroomWorldSetGameMode(ShroomWorldState* world, ShroomGameMode game_mode) {
+  if ((world == NULL) || (game_mode < SHROOM_GAME_MODE_FFA) ||
+      (game_mode >= SHROOM_GAME_MODE_COUNT)) {
+    return;
+  }
+  world->game_mode = game_mode;
+  world->objective_target_score = SHROOM_KOTH_TARGET_SCORE;
+  world->objective_controller_id = 0u;
+  world->objective_contested = false;
+  memset(world->objective_player_ids, 0, sizeof(world->objective_player_ids));
+  memset(world->objective_scores, 0, sizeof(world->objective_scores));
 }
 
 void ShroomWorldSetMatchDuration(ShroomWorldState* world, float duration_seconds) {
@@ -1658,6 +1696,95 @@ void ShroomWorldResetMatch(ShroomWorldState* world) {
   world->match_phase = SHROOM_MATCH_PHASE_RUNNING;
   world->match_time_remaining = world->match_duration_seconds;
   world->match_results_time_remaining = 0.0f;
+  world->objective_controller_id = 0u;
+  world->objective_contested = false;
+  memset(world->objective_player_ids, 0, sizeof(world->objective_player_ids));
+  memset(world->objective_scores, 0, sizeof(world->objective_scores));
+}
+
+float ShroomWorldGetObjectiveScore(const ShroomWorldState* world, ShroomPlayerId player_id) {
+  if ((world == NULL) || (player_id == 0u)) {
+    return 0.0f;
+  }
+  for (size_t index = 0; index < SHROOM_MAX_PARTICIPANTS; ++index) {
+    if (world->objective_player_ids[index] == player_id) {
+      return world->objective_scores[index];
+    }
+  }
+  return 0.0f;
+}
+
+bool ShroomWorldSetObjectiveScore(ShroomWorldState* world, ShroomPlayerId player_id, float score) {
+  size_t free_slot = SHROOM_MAX_PARTICIPANTS;
+
+  if ((world == NULL) || (player_id == 0u)) {
+    return false;
+  }
+  for (size_t index = 0; index < SHROOM_MAX_PARTICIPANTS; ++index) {
+    if (world->objective_player_ids[index] == player_id) {
+      world->objective_scores[index] = score;
+      return true;
+    }
+    if ((free_slot == SHROOM_MAX_PARTICIPANTS) && (world->objective_player_ids[index] == 0u)) {
+      free_slot = index;
+    }
+  }
+  if (free_slot == SHROOM_MAX_PARTICIPANTS) {
+    return false;
+  }
+  world->objective_player_ids[free_slot] = player_id;
+  world->objective_scores[free_slot] = score;
+  return true;
+}
+
+static bool ShroomUpdateKingOfHill(ShroomWorldState* world, float delta_time) {
+  ShroomPlayerId present[SHROOM_MAX_PARTICIPANTS] = {0};
+  ShroomPlayerId controller = 0u;
+  size_t colony_count = 0u;
+
+  if (world->game_mode != SHROOM_GAME_MODE_KING_OF_HILL) {
+    world->objective_controller_id = 0u;
+    world->objective_contested = false;
+    return false;
+  }
+
+  for (size_t index = 0; index < world->player_count; ++index) {
+    const ShroomPlayerState* piece = &world->players[index];
+    if (!piece->alive || (piece->mass <= 0.0f) || (piece->spawn_protection_timer > 0.0f) ||
+        (piece->player_id == 0u) ||
+        (ShroomGetZoneAtPosition(world, piece->position) != SHROOM_ZONE_CENTER)) {
+      continue;
+    }
+    bool seen = false;
+    for (size_t colony = 0; colony < colony_count; ++colony) {
+      if (present[colony] == piece->player_id) {
+        seen = true;
+        break;
+      }
+    }
+    if (!seen && (colony_count < SHROOM_MAX_PARTICIPANTS)) {
+      present[colony_count++] = piece->player_id;
+    }
+  }
+
+  if (colony_count == 1u) {
+    controller = present[0];
+  }
+
+  world->objective_contested = colony_count > 1u;
+  world->objective_controller_id = colony_count == 1u ? controller : 0u;
+  if (world->objective_controller_id == 0u) {
+    return false;
+  }
+
+  float score =
+      ShroomWorldGetObjectiveScore(world, controller) + (SHROOM_KOTH_SCORE_PER_SECOND * delta_time);
+  if (score >= world->objective_target_score) {
+    ShroomWorldSetObjectiveScore(world, controller, world->objective_target_score);
+    return true;
+  }
+  ShroomWorldSetObjectiveScore(world, controller, score);
+  return false;
 }
 
 static const ShroomPlayerState* ShroomFindStatsRepresentative(const ShroomWorldState* world,
@@ -1832,6 +1959,7 @@ void ShroomWorldStep(ShroomWorldState* world, float delta_time) {
   ShroomCollectPowerups(world);
   ShroomResolveConsumes(world);
 
+  const bool objective_won = ShroomUpdateKingOfHill(world, delta_time);
   ShroomUpdateColonyRoundStats(world, delta_time);
   ShroomApplyMassRules(world, delta_time, step_end_time_ms);
   ShroomApplyForcedSplits(world);
@@ -1839,7 +1967,7 @@ void ShroomWorldStep(ShroomWorldState* world, float delta_time) {
   ShroomUpdatePowerups(world, delta_time);
 
   world->match_time_remaining -= delta_time;
-  if (world->match_time_remaining <= 0.0f) {
+  if (objective_won || (world->match_time_remaining <= 0.0f)) {
     world->match_time_remaining = 0.0f;
     ShroomComputeMatchPodium(world);
     world->match_phase = SHROOM_MATCH_PHASE_RESULTS;

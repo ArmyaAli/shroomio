@@ -86,7 +86,11 @@ typedef struct ClientNetState {
   ShroomLobbyRosterEntry lobby_roster[SHROOM_MAX_PARTICIPANTS];
   /* Match timer state */
   uint8_t match_phase;
+  uint8_t game_mode;
   float match_time_remaining;
+  float objective_target_score;
+  uint32_t objective_controller_id;
+  bool objective_contested;
   uint32_t podium_player_ids[SHROOM_MATCH_PODIUM_COUNT];
   float podium_masses[SHROOM_MATCH_PODIUM_COUNT];
   ShroomIntermissionStatusPacket intermission;
@@ -105,7 +109,8 @@ bool ClientNetSendChat(ClientNetState* net, uint32_t player_id, const char* send
 void ClientNetSendLobbyListQuery(ClientNetState* net);
 void ClientNetSendLobbyJoin(ClientNetState* net, uint32_t lobby_id, bool spectate);
 void ClientNetSendLobbyLeave(ClientNetState* net);
-void ClientNetSendLobbyCreate(ClientNetState* net, const char* name, uint16_t max_players);
+void ClientNetSendLobbyCreate(ClientNetState* net, const char* name, uint16_t max_players,
+                              ShroomGameMode game_mode);
 void ClientNetSendReadyState(ClientNetState* net, bool is_ready);
 void ClientNetSendEnterMatch(ClientNetState* net);
 void ClientNetSendRematchVote(ClientNetState* net, ShroomRematchVote vote);

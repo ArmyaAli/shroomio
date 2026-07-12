@@ -178,6 +178,7 @@ static void HandleLobbyJoined(ClientNetState* net, const ENetPacket* enet_packet
 
   net->lobby_id = packet->lobby_id;
   net->spectating = (packet->spectating != 0);
+  net->game_mode = packet->game_mode;
   net->world_width = packet->world_width;
   net->world_height = packet->world_height;
   net->lobby_max_players = packet->max_players;
@@ -247,7 +248,11 @@ static void HandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet) {
   net->last_snapshot_tick = packet->tick;
   net->last_processed_input_sequence = packet->last_processed_input_sequence;
   net->match_phase = packet->match_phase;
+  net->game_mode = packet->game_mode;
   net->match_time_remaining = packet->match_time_remaining;
+  net->objective_target_score = packet->objective_target_score;
+  net->objective_controller_id = packet->objective_controller_id;
+  net->objective_contested = packet->objective_contested != 0u;
   for (uint32_t i = 0; i < SHROOM_MATCH_PODIUM_COUNT; ++i) {
     net->podium_player_ids[i] = packet->podium_player_ids[i];
     net->podium_masses[i] = packet->podium_masses[i];
@@ -702,7 +707,8 @@ void ClientNetSendLobbyLeave(ClientNetState* net) {
   net->spectating = false;
 }
 
-void ClientNetSendLobbyCreate(ClientNetState* net, const char* name, uint16_t max_players) {
+void ClientNetSendLobbyCreate(ClientNetState* net, const char* name, uint16_t max_players,
+                              ShroomGameMode game_mode) {
   ShroomLobbyCreatePacket packet = {0};
 
   if ((net == NULL) || (net->peer == NULL) || (net->peer->state != ENET_PEER_STATE_CONNECTED)) {
@@ -714,6 +720,7 @@ void ClientNetSendLobbyCreate(ClientNetState* net, const char* name, uint16_t ma
     snprintf(packet.name, sizeof(packet.name), "%s", name);
   }
   packet.max_players = max_players;
+  packet.game_mode = (uint8_t)game_mode;
   enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CONTROL,
                  CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_LOBBY_CREATE));
 }

@@ -7,11 +7,14 @@ void ShroomWorldInit(ShroomWorldState* world);
 void ShroomWorldInitWithSeed(ShroomWorldState* world, uint32_t seed);
 void ShroomWorldStep(ShroomWorldState* world, float delta_time);
 void ShroomWorldSetMatchDuration(ShroomWorldState* world, float duration_seconds);
+void ShroomWorldSetGameMode(ShroomWorldState* world, ShroomGameMode game_mode);
 void ShroomWorldResetMatch(ShroomWorldState* world);
 void ShroomComputeMatchPodium(ShroomWorldState* world);
 float ShroomWorldGetColonyMass(const ShroomWorldState* world, ShroomPlayerId player_id);
 const ShroomRoundStats* ShroomWorldGetRoundStats(const ShroomWorldState* world,
                                                  ShroomPlayerId player_id);
+float ShroomWorldGetObjectiveScore(const ShroomWorldState* world, ShroomPlayerId player_id);
+bool ShroomWorldSetObjectiveScore(ShroomWorldState* world, ShroomPlayerId player_id, float score);
 ShroomBotRiskProfile ShroomBotProfileForPlayer(ShroomPlayerId player_id);
 
 ShroomPlayerState* ShroomWorldSpawnPlayer(ShroomWorldState* world, ShroomPlayerId player_id,

@@ -65,16 +65,19 @@ static void LobbyBrowserUpdate(ShroomScreenManager* manager, float delta_time) {
 
   /* Auto-join: pick the least-populated available lobby on first list. */
   if (game->auto_join_lobby && game->net.lobby_count > 0) {
-    uint8_t best = 0;
+    uint8_t best = UINT8_MAX;
     uint8_t i;
 
-    for (i = 1; i < game->net.lobby_count; ++i) {
-      if (game->net.lobby_list[i].player_count < game->net.lobby_list[best].player_count) {
+    for (i = 0; i < game->net.lobby_count; ++i) {
+      if ((game->net.lobby_list[i].game_mode == game->selected_game_mode) &&
+          ((best == UINT8_MAX) ||
+           (game->net.lobby_list[i].player_count < game->net.lobby_list[best].player_count))) {
         best = i;
       }
     }
     game->auto_join_lobby = false;
-    if (game->net.lobby_list[best].player_count < game->net.lobby_list[best].max_players) {
+    if ((best != UINT8_MAX) &&
+        (game->net.lobby_list[best].player_count < game->net.lobby_list[best].max_players)) {
       ClientNetSendLobbyJoin(&game->net, game->net.lobby_list[best].lobby_id, false);
     }
   }
@@ -181,11 +184,12 @@ static void LobbyBrowserDraw(ShroomScreenManager* manager) {
 
   if (game->net.lobby_count == 0) {
     ShroomImGui_Text("No lobbies found.");
-  } else if (ShroomImGui_BeginTable("LobbyTable", 5,
+  } else if (ShroomImGui_BeginTable("LobbyTable", 6,
                                     SHROOM_IMGUI_TABLE_BORDERS | SHROOM_IMGUI_TABLE_ROW_BG |
                                         SHROOM_IMGUI_TABLE_SIZING_FIXED,
                                     570.0f, 220.0f)) {
-    ShroomImGui_TableSetupColumn("Name", 180.0f);
+    ShroomImGui_TableSetupColumn("Name", 130.0f);
+    ShroomImGui_TableSetupColumn("Mode", 80.0f);
     ShroomImGui_TableSetupColumn("Players", 80.0f);
     ShroomImGui_TableSetupColumn("Bots", 60.0f);
     ShroomImGui_TableSetupColumn("Status", 80.0f);
@@ -199,12 +203,14 @@ static void LobbyBrowserDraw(ShroomScreenManager* manager) {
       ShroomImGui_TableSetColumnIndex(0);
       ShroomImGui_Text(entry->name);
       ShroomImGui_TableSetColumnIndex(1);
-      ShroomImGui_Text(TextFormat("%u / %u", entry->player_count, entry->max_players));
+      ShroomImGui_Text(entry->game_mode == SHROOM_GAME_MODE_KING_OF_HILL ? "KOTH" : "FFA");
       ShroomImGui_TableSetColumnIndex(2);
-      ShroomImGui_Text(TextFormat("%u", entry->bot_count));
+      ShroomImGui_Text(TextFormat("%u / %u", entry->player_count, entry->max_players));
       ShroomImGui_TableSetColumnIndex(3);
-      ShroomImGui_Text(LobbyStatusLabel(entry));
+      ShroomImGui_Text(TextFormat("%u", entry->bot_count));
       ShroomImGui_TableSetColumnIndex(4);
+      ShroomImGui_Text(LobbyStatusLabel(entry));
+      ShroomImGui_TableSetColumnIndex(5);
       if (entry->player_count < entry->max_players) {
         if (ShroomImGui_Button(TextFormat("Join##%u", entry->lobby_id), 56.0f, 0.0f)) {
           ClientNetSendLobbyJoin(&game->net, entry->lobby_id, false);
@@ -224,7 +230,7 @@ static void LobbyBrowserDraw(ShroomScreenManager* manager) {
   ShroomImGui_InputText("##lobbyname", g_create_name_buf, sizeof(g_create_name_buf));
   ShroomImGui_SameLine();
   if (ShroomImGui_Button("Create", 70.0f, 0.0f)) {
-    ClientNetSendLobbyCreate(&game->net, g_create_name_buf, 0);
+    ClientNetSendLobbyCreate(&game->net, g_create_name_buf, 0, game->selected_game_mode);
     g_create_name_buf[0] = '\0';
     g_refresh_timer = LOBBY_REFRESH_INTERVAL;
   }

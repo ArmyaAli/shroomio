@@ -42,6 +42,7 @@ typedef struct LeaderboardEntry {
   size_t index;
   ShroomPlayerId player_id;
   float mass;
+  float objective_score;
 } LeaderboardEntry;
 
 typedef struct ShroomPendingInput {

@@ -114,6 +114,9 @@ static void LobbyRosterDraw(ShroomScreenManager* manager) {
   const uint16_t current = game->net.lobby_roster_count;
   const uint16_t capacity = ShroomLobbyRosterCapacity(game);
   ShroomImGui_TextDisabled(TextFormat("%u / %u players in match", current, capacity));
+  ShroomImGui_TextDisabled(game->net.game_mode == SHROOM_GAME_MODE_KING_OF_HILL
+                               ? "Mode: King of the Hill - first to 100 points"
+                               : "Mode: Free-for-All");
 
   ShroomImGui_Separator();
 

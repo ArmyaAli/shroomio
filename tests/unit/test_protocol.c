@@ -37,7 +37,7 @@ void test_voice_frame_packet_size(void) {
 }
 
 void test_snapshot_player_state_size(void) {
-  TEST_ASSERT_EQUAL_INT(68, (int)sizeof(ShroomSnapshotPlayerState));
+  TEST_ASSERT_EQUAL_INT(72, (int)sizeof(ShroomSnapshotPlayerState));
 }
 
 void test_participant_and_entity_capacities_are_separate_and_bounded(void) {
@@ -45,12 +45,10 @@ void test_participant_and_entity_capacities_are_separate_and_bounded(void) {
   TEST_ASSERT_EQUAL_UINT32(4u, SHROOM_MAX_SPLIT_PIECES);
   TEST_ASSERT_EQUAL_UINT32(256u, SHROOM_MAX_PLAYER_ENTITIES);
   TEST_ASSERT_EQUAL_UINT32(SHROOM_MAX_PLAYER_ENTITIES, SHROOM_MAX_SNAPSHOT_PLAYERS);
-  TEST_ASSERT_EQUAL_size_t(SHROOM_MAX_PARTICIPANTS,
-                           sizeof(((ShroomLobbyRosterPacket*)0)->players) /
-                               sizeof(ShroomLobbyRosterEntry));
-  TEST_ASSERT_EQUAL_size_t(SHROOM_MAX_PLAYER_ENTITIES,
-                           sizeof(((ShroomSnapshotPacket*)0)->players) /
-                               sizeof(ShroomSnapshotPlayerState));
+  TEST_ASSERT_EQUAL_size_t(SHROOM_MAX_PARTICIPANTS, sizeof(((ShroomLobbyRosterPacket*)0)->players) /
+                                                        sizeof(ShroomLobbyRosterEntry));
+  TEST_ASSERT_EQUAL_size_t(SHROOM_MAX_PLAYER_ENTITIES, sizeof(((ShroomSnapshotPacket*)0)->players) /
+                                                           sizeof(ShroomSnapshotPlayerState));
   TEST_ASSERT_TRUE(SHROOM_MAX_SNAPSHOT_PACKET_SIZE <= UINT16_MAX);
 }
 
@@ -117,6 +115,7 @@ void test_lobby_entry_struct(void) {
   entry.max_players = 28;
   entry.spectator_count = 1;
   entry.is_dynamic = 0;
+  entry.game_mode = SHROOM_GAME_MODE_KING_OF_HILL;
 
   TEST_ASSERT_EQUAL(1, entry.lobby_id);
   TEST_ASSERT_EQUAL_STRING("Arena 1", entry.name);
@@ -125,6 +124,7 @@ void test_lobby_entry_struct(void) {
   TEST_ASSERT_EQUAL(28, entry.max_players);
   TEST_ASSERT_EQUAL(1, entry.spectator_count);
   TEST_ASSERT_EQUAL(0, entry.is_dynamic);
+  TEST_ASSERT_EQUAL(SHROOM_GAME_MODE_KING_OF_HILL, entry.game_mode);
 }
 
 void test_lobby_join_packet_initialization(void) {
@@ -150,6 +150,7 @@ void test_lobby_joined_packet_initialization(void) {
   packet.player_id = 42;
   packet.entity_id = 100;
   packet.spectating = 0;
+  packet.game_mode = SHROOM_GAME_MODE_KING_OF_HILL;
   strncpy(packet.lobby_name, "Arena 3", SHROOM_LOBBY_MAX_NAME_LENGTH);
   packet.server_tick_rate = 30;
   packet.snapshot_rate = 15;
@@ -161,6 +162,7 @@ void test_lobby_joined_packet_initialization(void) {
   TEST_ASSERT_EQUAL(3, packet.lobby_id);
   TEST_ASSERT_EQUAL(42, packet.player_id);
   TEST_ASSERT_EQUAL(0, packet.spectating);
+  TEST_ASSERT_EQUAL(SHROOM_GAME_MODE_KING_OF_HILL, packet.game_mode);
   TEST_ASSERT_EQUAL_STRING("Arena 3", packet.lobby_name);
   TEST_ASSERT_EQUAL(30, packet.server_tick_rate);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 6000.0f, packet.world_width);
@@ -188,7 +190,7 @@ void test_lobby_config_constants(void) {
 
 void test_protocol_constants(void) {
   TEST_ASSERT_EQUAL(7777, SHROOM_SERVER_PORT);
-  TEST_ASSERT_EQUAL(7, SHROOM_PROTOCOL_VERSION);
+  TEST_ASSERT_EQUAL(8, SHROOM_PROTOCOL_VERSION);
   TEST_ASSERT_EQUAL(32, SHROOM_MAX_NAME_LENGTH);
   TEST_ASSERT_EQUAL(15, SHROOM_SNAPSHOT_RATE);
   TEST_ASSERT_EQUAL(256, SHROOM_MAX_SNAPSHOT_PLAYERS);
@@ -452,6 +454,7 @@ void test_snapshot_player_state_initialization(void) {
   strncpy(state.name, "ArenaScout", SHROOM_MAX_NAME_LENGTH);
   state.alive = 1;
   state.is_bot = 0;
+  state.objective_score = 42.5f;
 
   TEST_ASSERT_EQUAL(1, state.player_id);
   TEST_ASSERT_EQUAL(100, state.entity_id);
@@ -462,6 +465,7 @@ void test_snapshot_player_state_initialization(void) {
   TEST_ASSERT_EQUAL_STRING("ArenaScout", state.name);
   TEST_ASSERT_EQUAL(1, state.alive);
   TEST_ASSERT_EQUAL(0, state.is_bot);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 42.5f, state.objective_score);
 }
 
 void test_intermission_packets_are_reliable_control_messages(void) {
