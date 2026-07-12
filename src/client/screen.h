@@ -85,6 +85,8 @@ void ShroomTestCompleteServerBrowserRefresh(bool demo_mode);
 
 struct Game;
 const char* ShroomTestGetResultsDurationText(const struct Game* game);
+const char* ShroomTestGetResultsSporesText(const struct Game* game);
+const char* ShroomTestGetResultsKillsText(const struct Game* game);
 bool ShroomTestMainMenuAnimationsEnabled(const struct Game* game);
 void ShroomTestSettingsEscape(ShroomScreenManager* manager);
 void ShroomTestSettingsBeginRebind(int slot);
