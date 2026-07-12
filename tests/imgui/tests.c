@@ -406,6 +406,66 @@ static void Test_AudioSurvivesMatchTransitionsAndRestartsFromSettings(ImGuiTestC
   IM_CHECK_EQ(g_imgui_audio_backend.applied_settings.effects_volume_percent, 79);
 }
 
+static void Test_AudioSurvivesMultiRoundGameplayCycle(ImGuiTestContext* ctx) {
+  ShroomClientAudioTestBackend backend;
+  ShroomVec2 local_pos = {500.0f, 600.0f};
+  ShroomVec2 opponent_pos = {900.0f, 1000.0f};
+
+  ShroomImGuiTestAppReset(false);
+  ShroomClientAudioTestSetBackend(NULL);
+  memset(&g_imgui_audio_backend, 0, sizeof(g_imgui_audio_backend));
+  backend = (ShroomClientAudioTestBackend){
+      .context = &g_imgui_audio_backend,
+      .init_device = ImGuiAudioInit,
+      .device_ready = ImGuiAudioReady,
+      .close_device = ImGuiAudioClose,
+      .load_assets = ImGuiAudioLoad,
+      .unload_assets = ImGuiAudioUnload,
+      .apply_settings = ImGuiAudioApply,
+  };
+  ShroomClientAudioTestSetBackend(&backend);
+  IM_CHECK(ShroomClientAudioInit(&g_imgui_test_app.game.settings));
+
+  g_imgui_test_app.game.selected_mode = SHROOM_SESSION_MODE_OFFLINE_PRACTICE;
+  ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_GAME);
+  g_imgui_test_app.game.active_mode = SHROOM_SESSION_MODE_QUICK_PLAY;
+  g_imgui_test_app.game.net.status = CLIENT_NET_CONNECTED;
+  g_imgui_test_app.game.net.welcome_received = true;
+  g_imgui_test_app.game.net.player_id = 1;
+  snprintf(g_imgui_test_app.game.net.status_text, sizeof(g_imgui_test_app.game.net.status_text),
+           "Connected");
+  IM_CHECK_EQ(g_imgui_audio_backend.init_count, 1);
+  IM_CHECK_EQ(g_imgui_audio_backend.load_count, 1);
+  IM_CHECK_EQ(g_imgui_audio_backend.unload_count, 0);
+  IM_CHECK_EQ(g_imgui_audio_backend.close_count, 0);
+
+  for (int round = 0; round < 3; ++round) {
+    uint32_t base_entity = (uint32_t)((round * 100) + 1);
+
+    InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RUNNING, base_entity, local_pos, 300.0f,
+                           opponent_pos, 200.0f);
+    ShroomTeCtx_Yield(ctx, 2);
+    IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+                SHROOM_SCREEN_GAME);
+
+    InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESULTS, base_entity, local_pos, 300.0f,
+                           opponent_pos, 200.0f);
+    ShroomTeCtx_Yield(ctx, 2);
+    IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+                SHROOM_SCREEN_RESULTS);
+
+    InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESET, base_entity, local_pos, 300.0f, opponent_pos,
+                           200.0f);
+    ShroomTeCtx_Yield(ctx, 2);
+
+    IM_CHECK(ShroomClientAudioIsReady());
+    IM_CHECK_EQ(g_imgui_audio_backend.init_count, 1);
+    IM_CHECK_EQ(g_imgui_audio_backend.load_count, 1);
+    IM_CHECK_EQ(g_imgui_audio_backend.unload_count, 0);
+    IM_CHECK_EQ(g_imgui_audio_backend.close_count, 0);
+  }
+}
+
 static void Test_SettingsPersistence(ImGuiTestContext* ctx) {
   ClientSettings loaded;
   memset(&loaded, 0, sizeof(loaded));
@@ -1564,7 +1624,9 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
   ShroomTeEngine_RegisterTest(engine, "screens", "settings_exposes_controls_and_applies_bounds",
                               Test_SettingsExposesSpecControlsAndAppliesBoundaryValues);
   ShroomTeEngine_RegisterTest(engine, "screens", "audio_lifecycle_soak_and_restart",
-                              Test_AudioSurvivesMatchTransitionsAndRestartsFromSettings);
+                               Test_AudioSurvivesMatchTransitionsAndRestartsFromSettings);
+  ShroomTeEngine_RegisterTest(engine, "screens", "audio_multi_round_gameplay_cycle",
+                               Test_AudioSurvivesMultiRoundGameplayCycle);
   ShroomTeEngine_RegisterTest(engine, "screens", "settings_persistence", Test_SettingsPersistence);
   ShroomTeEngine_RegisterTest(engine, "screens", "settings_reserved_key_rejection_and_recovery",
                               Test_SettingsReservedKeyRejectionAndRecovery);
