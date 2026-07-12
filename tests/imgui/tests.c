@@ -235,6 +235,42 @@ static void Test_HelpAndCreditsBackNavigation(ImGuiTestContext* ctx) {
               SHROOM_SCREEN_MAIN_MENU);
 }
 
+static void Test_HelpContentMatchesCurrentGameplay(ImGuiTestContext* ctx) {
+  ShroomImGuiTestAppReset(true);
+  g_imgui_test_app.game.settings.key_chat_open = KEY_Y;
+  g_imgui_test_app.game.settings.key_hud_toggle = KEY_F6;
+  g_imgui_test_app.game.settings.key_pause_menu = KEY_P;
+
+  ShroomTeCtx_SetRef(ctx, "Main Menu");
+  ShroomTeCtx_ItemClick(ctx, "Help");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(ShroomTestHelpRenderedTextContains("[Mouse] Move toward the cursor"));
+  IM_CHECK(ShroomTestHelpRenderedTextContains("[Space] Hold 0.6s to split (mass 384+)"));
+  IM_CHECK(ShroomTestHelpRenderedTextContains("[E / RMB] Eject mass (mass 168+)"));
+  IM_CHECK(ShroomTestHelpRenderedTextContains("[Y / Enter] Open online chat"));
+  IM_CHECK(ShroomTestHelpRenderedTextContains("[F6] Cycle HUD density"));
+  IM_CHECK(ShroomTestHelpRenderedTextContains("[P] Pause / match menu"));
+
+  ShroomTeCtx_SetRef(ctx, "How To Play");
+  ShroomTeCtx_ItemClick(ctx, "Gameplay");
+  ShroomTeCtx_Yield(ctx, 1);
+  IM_CHECK(ShroomTestHelpRenderedTextContains("18% heavier (8% in center)"));
+  IM_CHECK(ShroomTestHelpRenderedTextContains("gain 58% of consumed mass"));
+  IM_CHECK(!ShroomTestHelpRenderedTextContains("%%"));
+
+  ShroomTeCtx_ItemClick(ctx, "Zones");
+  ShroomTeCtx_Yield(ctx, 1);
+  IM_CHECK(ShroomTestHelpRenderedTextContains("Center: consume at 8% advantage"));
+  IM_CHECK(ShroomTestHelpRenderedTextContains("Mid: consume at 18% advantage"));
+  IM_CHECK(!ShroomTestHelpRenderedTextContains("%%"));
+
+  ShroomTeCtx_ItemClick(ctx, "Modes");
+  ShroomTeCtx_Yield(ctx, 1);
+  IM_CHECK(ShroomTestHelpRenderedTextContains("Free-for-All (FFA) - Available"));
+  IM_CHECK(ShroomTestHelpRenderedTextContains("Teams 2v2 - Unavailable"));
+  IM_CHECK(ShroomTestHelpRenderedTextContains("King of the Hill - Unavailable"));
+}
+
 static void Test_MainMenuExposesPrimaryActions(ImGuiTestContext* ctx) {
   ShroomImGuiTestAppReset(true);
   ShroomTeCtx_SetRef(ctx, "Main Menu");
@@ -1340,8 +1376,7 @@ static void Test_AuthoritativeResultsCompleteTwoRoundCycle(ImGuiTestContext* ctx
   IM_CHECK(fabsf(g_imgui_test_app.game.final_mass - 325.0f) < 0.001f);
   IM_CHECK_EQ(g_imgui_test_app.game.final_spores_collected, 17u);
   IM_CHECK_EQ(g_imgui_test_app.game.final_kills, 3u);
-  IM_CHECK_STR_EQ(ShroomTestGetResultsSporesText(&g_imgui_test_app.game),
-                  "Spores Collected: 17");
+  IM_CHECK_STR_EQ(ShroomTestGetResultsSporesText(&g_imgui_test_app.game), "Spores Collected: 17");
   IM_CHECK_STR_EQ(ShroomTestGetResultsKillsText(&g_imgui_test_app.game), "Players Consumed: 3");
   IM_CHECK(fabsf(g_imgui_test_app.game.peak_mass - 325.0f) < 0.001f);
 
@@ -1354,8 +1389,7 @@ static void Test_AuthoritativeResultsCompleteTwoRoundCycle(ImGuiTestContext* ctx
   IM_CHECK_EQ(g_imgui_test_app.game.net.snapshot_players[0].round_kills, 0u);
   IM_CHECK_EQ(g_imgui_test_app.game.final_spores_collected, 17u);
   IM_CHECK_EQ(g_imgui_test_app.game.final_kills, 3u);
-  IM_CHECK_STR_EQ(ShroomTestGetResultsSporesText(&g_imgui_test_app.game),
-                  "Spores Collected: 17");
+  IM_CHECK_STR_EQ(ShroomTestGetResultsSporesText(&g_imgui_test_app.game), "Spores Collected: 17");
   IM_CHECK_STR_EQ(ShroomTestGetResultsKillsText(&g_imgui_test_app.game), "Players Consumed: 3");
 
   InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RUNNING, 201u, local_position,
@@ -1378,8 +1412,7 @@ static void Test_AuthoritativeResultsCompleteTwoRoundCycle(ImGuiTestContext* ctx
   IM_CHECK_EQ(g_imgui_test_app.game.final_rank, 2);
   IM_CHECK_EQ(g_imgui_test_app.game.final_spores_collected, 4u);
   IM_CHECK_EQ(g_imgui_test_app.game.final_kills, 1u);
-  IM_CHECK_STR_EQ(ShroomTestGetResultsSporesText(&g_imgui_test_app.game),
-                  "Spores Collected: 4");
+  IM_CHECK_STR_EQ(ShroomTestGetResultsSporesText(&g_imgui_test_app.game), "Spores Collected: 4");
   IM_CHECK_STR_EQ(ShroomTestGetResultsKillsText(&g_imgui_test_app.game), "Players Consumed: 1");
 
   InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESET, 201u, local_position, 250.0f, opponent_position,
@@ -1731,6 +1764,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
   ShroomTeEngine_RegisterTest(engine, "screens", "main_menu_navigation", Test_MainMenuNavigation);
   ShroomTeEngine_RegisterTest(engine, "screens", "help_and_credits_back_navigation",
                               Test_HelpAndCreditsBackNavigation);
+  ShroomTeEngine_RegisterTest(engine, "screens", "help_content_matches_current_gameplay",
+                              Test_HelpContentMatchesCurrentGameplay);
   ShroomTeEngine_RegisterTest(engine, "screens", "main_menu_exposes_primary_actions",
                               Test_MainMenuExposesPrimaryActions);
   ShroomTeEngine_RegisterTest(engine, "screens", "game_mode_availability_and_navigation",
