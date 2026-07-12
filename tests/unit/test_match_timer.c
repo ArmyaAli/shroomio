@@ -113,6 +113,76 @@ void test_reset_match_restores_players_to_default_mass(void) {
   TEST_ASSERT_FLOAT_WITHIN(0.001f, world.match_duration_seconds, world.match_time_remaining);
 }
 
+void test_reset_match_removes_every_supported_split_fragment_count(void) {
+  for (uint8_t fragment_count = 1u; fragment_count < SHROOM_MAX_SPLIT_PIECES; ++fragment_count) {
+    ResetWorldForPlayers();
+    ShroomPlayerState* primary = ShroomWorldSpawnPlayer(&world, 77u, false);
+    const size_t expected_slots = 1u + fragment_count;
+
+    primary->has_split = true;
+    primary->ai_controlled = true;
+    primary->split_velocity = (ShroomVec2){10.0f, -5.0f};
+    primary->merge_timer = 2.0f;
+    primary->speed_powerup_timer = 2.0f;
+    primary->shield_powerup_timer = 2.0f;
+    primary->magnet_powerup_timer = 2.0f;
+    primary->decay_immune_powerup_timer = 2.0f;
+    primary->eject_cooldown_timer = 2.0f;
+    for (uint8_t index = 1u; index <= fragment_count; ++index) {
+      world.players[index] = *primary;
+      world.players[index].entity_id = world.next_entity_id++;
+      world.players[index].piece_index = index;
+      world.players[index].ai_controlled = true;
+    }
+    world.player_count = expected_slots;
+
+    ShroomWorldResetMatch(&world);
+
+    TEST_ASSERT_EQUAL_size_t(expected_slots, world.player_count);
+    TEST_ASSERT_TRUE(primary->alive);
+    TEST_ASSERT_EQUAL_UINT32(77u, primary->player_id);
+    TEST_ASSERT_EQUAL_UINT8(0u, primary->piece_index);
+    TEST_ASSERT_FALSE(primary->has_split);
+    TEST_ASSERT_FALSE(primary->ai_controlled);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, primary->split_velocity.x);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, primary->merge_timer);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, primary->speed_powerup_timer);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, primary->shield_powerup_timer);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, primary->magnet_powerup_timer);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, primary->decay_immune_powerup_timer);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, primary->eject_cooldown_timer);
+    for (uint8_t index = 1u; index <= fragment_count; ++index) {
+      TEST_ASSERT_FALSE(world.players[index].alive);
+      TEST_ASSERT_EQUAL_UINT32(0u, world.players[index].player_id);
+      TEST_ASSERT_EQUAL_UINT32(0u, world.players[index].entity_id);
+    }
+  }
+}
+
+void test_repeated_split_reset_cycles_reuse_fragment_slots(void) {
+  ResetWorldForPlayers();
+  ShroomPlayerState* primary = ShroomWorldSpawnPlayer(&world, 88u, true);
+
+  for (int cycle = 0; cycle < 8; ++cycle) {
+    primary->mass = SHROOM_SPLIT_MIN_MASS * 8.0f;
+    for (uint8_t piece = 1u; piece < SHROOM_MAX_SPLIT_PIECES; ++piece) {
+      TEST_ASSERT_TRUE(ShroomWorldSplitPlayerToward(&world, primary, (ShroomVec2){1.0f, 0.0f}));
+    }
+    TEST_ASSERT_EQUAL_size_t(SHROOM_MAX_SPLIT_PIECES, world.player_count);
+
+    ShroomWorldResetMatch(&world);
+
+    size_t live_identity_count = 0u;
+    for (size_t index = 0; index < world.player_count; ++index) {
+      if (world.players[index].alive && (world.players[index].player_id == 88u)) {
+        ++live_identity_count;
+        TEST_ASSERT_EQUAL_UINT8(0u, world.players[index].piece_index);
+      }
+    }
+    TEST_ASSERT_EQUAL_size_t(1u, live_identity_count);
+  }
+}
+
 void test_reset_match_clears_podium(void) {
   ResetWorldForPlayers();
 
@@ -158,6 +228,8 @@ int main(void) {
   RUN_TEST(test_podium_sorted_by_mass_with_stable_tiebreak);
   RUN_TEST(test_podium_handles_fewer_players_than_slots);
   RUN_TEST(test_reset_match_restores_players_to_default_mass);
+  RUN_TEST(test_reset_match_removes_every_supported_split_fragment_count);
+  RUN_TEST(test_repeated_split_reset_cycles_reuse_fragment_slots);
   RUN_TEST(test_reset_match_clears_podium);
   RUN_TEST(test_set_match_duration_clamps_minimum);
   RUN_TEST(test_post_reset_timer_restarts);

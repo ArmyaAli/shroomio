@@ -1332,11 +1332,27 @@ void ShroomWorldResetMatch(ShroomWorldState* world) {
     ShroomPlayerState* player = &world->players[i];
 
     if (player->alive) {
+      bool primary_already_seen = false;
+
+      for (size_t previous = 0; previous < i; ++previous) {
+        const ShroomPlayerState* candidate = &world->players[previous];
+        if (candidate->alive && (candidate->player_id == player->player_id) &&
+            (candidate->piece_index == 0)) {
+          primary_already_seen = true;
+          break;
+        }
+      }
+      if ((player->piece_index != 0) || primary_already_seen) {
+        *player = (ShroomPlayerState){0};
+        continue;
+      }
+
       player->position = ShroomRandomSpawnPosition(world, true);
       player->mass = SHROOM_DEFAULT_PLAYER_MASS;
       player->radius = ShroomMassToRadius(player->mass);
       player->input_direction = (ShroomVec2){0};
       player->split_velocity = (ShroomVec2){0};
+      player->ai_controlled = false;
       player->has_split = false;
       player->piece_index = 0;
       player->merge_timer = 0.0f;
