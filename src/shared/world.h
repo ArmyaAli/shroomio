@@ -37,6 +37,18 @@ typedef enum ShroomBotRiskProfile {
   SHROOM_BOT_PROFILE_COUNT
 } ShroomBotRiskProfile;
 
+typedef struct ShroomRoundStats {
+  float peak_mass;
+  uint32_t kills;
+  uint32_t spores_collected;
+  uint32_t powerups_collected;
+  float center_zone_seconds;
+  float mid_zone_seconds;
+  float outer_zone_seconds;
+  uint32_t splits_used;
+  uint32_t ejects_used;
+} ShroomRoundStats;
+
 typedef struct ShroomPlayerState {
   ShroomPlayerId player_id;
   ShroomEntityId entity_id;
@@ -101,6 +113,7 @@ typedef struct ShroomWorldState {
   ShroomPlayerState players[SHROOM_MAX_PLAYER_ENTITIES];
   ShroomSporeState spores[SHROOM_MAX_SPORES];
   ShroomPowerupState powerups[SHROOM_MAX_POWERUPS];
+  ShroomRoundStats player_round_stats[SHROOM_MAX_PARTICIPANTS + 1u];
 } ShroomWorldState;
 
 #endif
