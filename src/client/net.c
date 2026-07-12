@@ -203,7 +203,7 @@ static void HandleLobbyRoster(ClientNetState* net, const ENetPacket* enet_packet
     return;
   }
   count = packet->player_count;
-  if (count > SHROOM_MAX_PLAYERS ||
+  if (count > SHROOM_MAX_PARTICIPANTS ||
       enet_packet->dataLength < min_size + (size_t)count * sizeof(packet->players[0])) {
     return;
   }

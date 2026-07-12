@@ -1301,7 +1301,7 @@ void test_center_zone_max_players_stress_remains_bounded(void) {
 
   ResetWorldForPlayers();
 
-  for (size_t index = 0; index < SHROOM_MAX_PLAYERS; ++index) {
+  for (size_t index = 0; index < SHROOM_MAX_PLAYER_ENTITIES; ++index) {
     ShroomPlayerState* player = ShroomWorldSpawnPlayer(&world, (ShroomPlayerId)(index + 1u), false);
     const int column = (int)(index % (size_t)columns);
     const int row = (int)(index / (size_t)columns);
@@ -1318,7 +1318,7 @@ void test_center_zone_max_players_stress_remains_bounded(void) {
     player->ai_controlled = false;
   }
 
-  TEST_ASSERT_EQUAL_size_t(SHROOM_MAX_PLAYERS, world.player_count);
+  TEST_ASSERT_EQUAL_size_t(SHROOM_MAX_PLAYER_ENTITIES, world.player_count);
 
   start_time = clock();
   for (int step = 0; step < steps; ++step) {
@@ -1326,7 +1326,7 @@ void test_center_zone_max_players_stress_remains_bounded(void) {
   }
   elapsed_seconds = (double)(clock() - start_time) / (double)CLOCKS_PER_SEC;
 
-  TEST_ASSERT_EQUAL_size_t(SHROOM_MAX_PLAYERS, world.player_count);
+  TEST_ASSERT_EQUAL_size_t(SHROOM_MAX_PLAYER_ENTITIES, world.player_count);
   TEST_ASSERT_EQUAL_UINT64((uint64_t)steps, world.tick);
   if (getenv("SHROOM_VALGRIND") == NULL) {
     TEST_ASSERT_TRUE(elapsed_seconds < 5.0);
@@ -1343,6 +1343,39 @@ void test_center_zone_max_players_stress_remains_bounded(void) {
     TEST_ASSERT_TRUE(player->position.y >= player->radius);
     TEST_ASSERT_TRUE(player->position.y <= world.height - player->radius);
   }
+}
+
+void test_full_participant_lobby_supports_maximum_split_pieces(void) {
+  ResetWorldForPlayers();
+
+  for (size_t participant = 0u; participant < SHROOM_MAX_PARTICIPANTS - 1u; ++participant) {
+    ShroomPlayerState* primary =
+        ShroomWorldSpawnPlayer(&world, (ShroomPlayerId)(participant + 1u), true);
+
+    TEST_ASSERT_NOT_NULL(primary);
+    for (size_t piece = 1u; piece < SHROOM_MAX_SPLIT_PIECES; ++piece) {
+      primary->mass = SHROOM_MAX_PLAYER_MASS;
+      primary->radius = ShroomMassToRadius(primary->mass);
+      TEST_ASSERT_TRUE(ShroomWorldSplitPlayer(&world, primary));
+    }
+  }
+
+  TEST_ASSERT_EQUAL_size_t((SHROOM_MAX_PARTICIPANTS - 1u) * SHROOM_MAX_SPLIT_PIECES,
+                           world.player_count);
+
+  {
+    ShroomPlayerState* final_participant =
+        ShroomWorldSpawnPlayer(&world, SHROOM_MAX_PARTICIPANTS, true);
+    TEST_ASSERT_NOT_NULL(final_participant);
+    for (size_t piece = 1u; piece < SHROOM_MAX_SPLIT_PIECES; ++piece) {
+      final_participant->mass = SHROOM_MAX_PLAYER_MASS;
+      final_participant->radius = ShroomMassToRadius(final_participant->mass);
+      TEST_ASSERT_TRUE(ShroomWorldSplitPlayer(&world, final_participant));
+    }
+  }
+
+  TEST_ASSERT_EQUAL_size_t(SHROOM_MAX_PLAYER_ENTITIES, world.player_count);
+  TEST_ASSERT_NULL(ShroomWorldSpawnPlayer(&world, SHROOM_MAX_PARTICIPANTS + 1u, false));
 }
 
 int main(void) {
@@ -1397,5 +1430,6 @@ int main(void) {
   RUN_TEST(test_split_spawn_protection_blocks_larger_player_consumption);
   RUN_TEST(test_split_spawn_protection_expires_before_merge_timer);
   RUN_TEST(test_center_zone_max_players_stress_remains_bounded);
+  RUN_TEST(test_full_participant_lobby_supports_maximum_split_pieces);
   return UNITY_END();
 }

@@ -11,6 +11,13 @@
 
 static float g_status_pulse_timer;
 
+uint16_t ShroomLobbyRosterCapacity(const Game* game) {
+  if ((game != NULL) && (game->net.lobby_max_players > 0u)) {
+    return game->net.lobby_max_players;
+  }
+  return (uint16_t)SHROOM_MAX_PLAYABLE_PARTICIPANTS;
+}
+
 typedef enum LobbyRosterStatus {
   LOBBY_ROSTER_STATUS_WAITING = 0,
   LOBBY_ROSTER_STATUS_STARTING_SOON,
@@ -105,8 +112,7 @@ static void LobbyRosterDraw(ShroomScreenManager* manager) {
 
   /* Capacity line refreshes every frame from the live snapshot count. */
   const uint16_t current = game->net.lobby_roster_count;
-  const uint16_t capacity = (game->net.lobby_max_players > 0u) ? game->net.lobby_max_players
-                                                               : (uint16_t)SHROOM_MAX_PLAYERS;
+  const uint16_t capacity = ShroomLobbyRosterCapacity(game);
   ShroomImGui_TextDisabled(TextFormat("%u / %u players in match", current, capacity));
 
   ShroomImGui_Separator();

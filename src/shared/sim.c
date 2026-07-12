@@ -90,7 +90,7 @@ static float ShroomSpawnDensity(const ShroomWorldState* world) {
     return 0.0f;
   }
 
-  return ShroomClamp((float)(population - 1u) / (float)(SHROOM_MAX_PLAYERS - 1u), 0.0f, 1.0f);
+  return ShroomClamp((float)(population - 1u) / (float)(SHROOM_MAX_PARTICIPANTS - 1u), 0.0f, 1.0f);
 }
 
 static float ShroomSpawnSafeDistance(const ShroomWorldState* world) {
@@ -108,7 +108,7 @@ static float ShroomSpawnSafeDistance(const ShroomWorldState* world) {
   }
 
   t = (float)(population - SHROOM_SPAWN_MEDIUM_LOBBY_PLAYERS) /
-      (float)(SHROOM_MAX_PLAYERS - SHROOM_SPAWN_MEDIUM_LOBBY_PLAYERS);
+      (float)(SHROOM_MAX_PARTICIPANTS - SHROOM_SPAWN_MEDIUM_LOBBY_PLAYERS);
   return ShroomLerp(SHROOM_SPAWN_MEDIUM_SAFE_DISTANCE, SHROOM_SPAWN_MIN_SAFE_DISTANCE,
                     ShroomClamp(t, 0.0f, 1.0f));
 }
@@ -744,8 +744,8 @@ bool ShroomPlayerCanDecay(const ShroomWorldState* world, const ShroomPlayerState
 
 static void ShroomResolveConsumes(ShroomWorldState* world) {
   size_t attacker_index;
-  bool consumed[SHROOM_MAX_PLAYERS] = {0};
-  size_t consumed_by[SHROOM_MAX_PLAYERS] = {0};
+  bool consumed[SHROOM_MAX_PLAYER_ENTITIES] = {0};
+  size_t consumed_by[SHROOM_MAX_PLAYER_ENTITIES] = {0};
 
   for (attacker_index = 0; attacker_index < world->player_count; ++attacker_index) {
     size_t target_index;
@@ -936,7 +936,7 @@ ShroomPlayerState* ShroomWorldSpawnPlayer(ShroomWorldState* world, ShroomPlayerI
     }
   }
 
-  if (world->player_count >= SHROOM_MAX_PLAYERS) {
+  if (world->player_count >= SHROOM_MAX_PLAYER_ENTITIES) {
     return 0;
   }
 
@@ -1132,7 +1132,7 @@ bool ShroomWorldSplitPlayerToward(ShroomWorldState* world, ShroomPlayerState* pl
     }
   }
   if (new_piece == NULL) {
-    if (world->player_count >= SHROOM_MAX_PLAYERS) {
+    if (world->player_count >= SHROOM_MAX_PLAYER_ENTITIES) {
       return false;
     }
     new_piece = &world->players[world->player_count++];
