@@ -13,17 +13,6 @@ static bool ResultsInit(ShroomScreenManager* manager) {
   return true;
 }
 
-static void ResultsUpdate(ShroomScreenManager* manager, float delta_time) {
-  Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
-  const ShroomVec2 no_input = {0};
-
-  if ((game == NULL) || (game->net.host == NULL)) {
-    return;
-  }
-
-  ClientNetUpdate(&game->net, no_input, false, false, no_input, 0u, delta_time);
-}
-
 static void ResultsReconnectOnline(ShroomScreenManager* manager, Game* game) {
   char host[sizeof(game->selected_server_host)];
   const uint16_t port = game->selected_server_port;
@@ -35,6 +24,28 @@ static void ResultsReconnectOnline(ShroomScreenManager* manager, Game* game) {
 
   ClientNetInit(&game->net, host, port);
   game->auto_join_lobby = true;
+}
+
+static bool IsAuthoritativeOnlineResults(const Game* game) {
+  return game->net.welcome_received && ((game->active_mode == SHROOM_SESSION_MODE_QUICK_PLAY) ||
+                                        (game->active_mode == SHROOM_SESSION_MODE_LOBBY_PLAY));
+}
+
+static void ResultsUpdate(ShroomScreenManager* manager, float delta_time) {
+  Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
+
+  if ((game == NULL) || !IsAuthoritativeOnlineResults(game)) {
+    return;
+  }
+
+  GameUpdate(game, delta_time);
+  if (game->world.match_phase == SHROOM_MATCH_PHASE_RUNNING) {
+    game->show_results = false;
+    game->session_start_time = (float)GetTime();
+    game->session_duration_seconds = 0u;
+    game->authoritative_round_resume_pending = true;
+    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
+  }
 }
 
 static void ResultsDraw(ShroomScreenManager* manager) {
@@ -85,26 +96,30 @@ static void ResultsDraw(ShroomScreenManager* manager) {
   const float button_width = ShroomLayoutMetric(200.0f);
   const float button_height = ShroomLayoutMetric(40.0f);
 
-  ShroomImGui_SetNextItemWidth(button_width);
-  if (ShroomImGui_Button("Play Again", button_width, button_height)) {
-    GamePlayUiClickSound(game);
-    game->show_results = false;
-    if ((game->active_mode == SHROOM_SESSION_MODE_LOBBY_PLAY) &&
-        ClientNetCanResumeLobbySession(&game->net)) {
-      game->resume_online_session_requested = true;
-      ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
-    } else if (game->active_mode == SHROOM_SESSION_MODE_OFFLINE_PRACTICE) {
-      ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
-    } else {
-      ResultsReconnectOnline(manager, game);
+  if (IsAuthoritativeOnlineResults(game)) {
+    ShroomImGui_Text("Waiting for the next round...");
+  } else {
+    ShroomImGui_SetNextItemWidth(button_width);
+    if (ShroomImGui_Button("Play Again", button_width, button_height)) {
+      GamePlayUiClickSound(game);
+      game->show_results = false;
+      if (game->active_mode == SHROOM_SESSION_MODE_OFFLINE_PRACTICE) {
+        ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
+      } else {
+        ResultsReconnectOnline(manager, game);
+      }
     }
+    ShroomImGui_SameLine();
   }
 
-  ShroomImGui_SameLine();
   ShroomImGui_SetNextItemWidth(button_width);
   if (ShroomImGui_Button("Main Menu", button_width, button_height)) {
     GamePlayUiClickSound(game);
     game->show_results = false;
+    if (IsAuthoritativeOnlineResults(game)) {
+      game->authoritative_round_resume_pending = false;
+      GameShutdown(game);
+    }
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_MAIN_MENU);
   }
 
@@ -117,6 +132,9 @@ static void ResultsCleanup(ShroomScreenManager* manager) {
   Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
 
   if (game == NULL) {
+    return;
+  }
+  if (game->authoritative_round_resume_pending) {
     return;
   }
   if (game->resume_online_session_requested) {
