@@ -4120,6 +4120,11 @@ void GameDraw(Game* game) {
   }
 }
 
+void GameSuspendForResults(Game* game) {
+  (void)game;
+  ShroomCursorShowSystem();
+}
+
 void GameShutdown(Game* game) {
   if (IsOnlineMode(game->active_mode)) {
     ClientNetShutdown(&game->net);

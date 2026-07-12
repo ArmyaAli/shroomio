@@ -603,6 +603,19 @@ void ClientNetShutdown(ClientNetState* net) {
   *net = (ClientNetState){0};
 }
 
+bool ClientNetCanResumeLobbySession(const ClientNetState* net) {
+  if ((net == NULL) || !net->enet_initialized || (net->host == NULL) || (net->peer == NULL) ||
+      (net->status != CLIENT_NET_CONNECTED) || (net->lobby_id == 0u) || !net->match_entry_sent) {
+    return false;
+  }
+
+  if (net->spectating) {
+    return true;
+  }
+
+  return net->welcome_received && (net->player_id != 0u) && (net->entity_id != 0u);
+}
+
 const char* ClientNetStatusLabel(const ClientNetState* net) {
   return net->status_text[0] != '\0' ? net->status_text : "Offline";
 }

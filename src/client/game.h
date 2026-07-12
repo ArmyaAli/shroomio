@@ -155,6 +155,7 @@ typedef struct Game {
   bool start_in_spectator_mode;
   bool return_to_menu_requested;
   bool play_again_requested;
+  bool resume_online_session_requested;
   float camera_zoom_target;
   bool split_requested;
   float split_hold_timer; /* seconds Space held; fires at SHROOM_SPLIT_HOLD_SECONDS */
@@ -212,6 +213,7 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
 void GameHandleResize(Game* game, int screen_width, int screen_height);
 void GameUpdate(Game* game, float delta_time);
 void GameDraw(Game* game);
+void GameSuspendForResults(Game* game);
 void GameShutdown(Game* game);
 void GamePlayUiClickSound(const Game* game);
 void GamePlayUiErrorSound(const Game* game);

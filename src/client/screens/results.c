@@ -13,6 +13,30 @@ static bool ResultsInit(ShroomScreenManager* manager) {
   return true;
 }
 
+static void ResultsUpdate(ShroomScreenManager* manager, float delta_time) {
+  Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
+  const ShroomVec2 no_input = {0};
+
+  if ((game == NULL) || (game->net.host == NULL)) {
+    return;
+  }
+
+  ClientNetUpdate(&game->net, no_input, false, false, no_input, 0u, delta_time);
+}
+
+static void ResultsReconnectOnline(ShroomScreenManager* manager, Game* game) {
+  char host[sizeof(game->selected_server_host)];
+  const uint16_t port = game->selected_server_port;
+
+  snprintf(host, sizeof(host), "%s", game->selected_server_host);
+  if (!ShroomScreenManagerTransition(manager, SHROOM_SCREEN_LOBBY)) {
+    return;
+  }
+
+  ClientNetInit(&game->net, host, port);
+  game->auto_join_lobby = true;
+}
+
 static void ResultsDraw(ShroomScreenManager* manager) {
   Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
 
@@ -65,7 +89,15 @@ static void ResultsDraw(ShroomScreenManager* manager) {
   if (ShroomImGui_Button("Play Again", button_width, button_height)) {
     GamePlayUiClickSound(game);
     game->show_results = false;
-    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
+    if ((game->active_mode == SHROOM_SESSION_MODE_LOBBY_PLAY) &&
+        ClientNetCanResumeLobbySession(&game->net)) {
+      game->resume_online_session_requested = true;
+      ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
+    } else if (game->active_mode == SHROOM_SESSION_MODE_OFFLINE_PRACTICE) {
+      ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
+    } else {
+      ResultsReconnectOnline(manager, game);
+    }
   }
 
   ShroomImGui_SameLine();
@@ -80,6 +112,20 @@ static void ResultsDraw(ShroomScreenManager* manager) {
 }
 
 static void ResultsHandleInput(ShroomScreenManager* manager) { (void)manager; }
+
+static void ResultsCleanup(ShroomScreenManager* manager) {
+  Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
+
+  if (game == NULL) {
+    return;
+  }
+  if (game->resume_online_session_requested) {
+    game->resume_online_session_requested = false;
+    return;
+  }
+
+  GameShutdown(game);
+}
 
 #ifdef TEST_MODE
 const char* ShroomTestGetResultsDurationText(const Game* game) {
@@ -105,6 +151,8 @@ void ShroomScreenRegisterResults(ShroomScreenManager* manager) {
   screen->type = SHROOM_SCREEN_RESULTS;
   screen->name = "Results";
   screen->init = ResultsInit;
+  screen->update = ResultsUpdate;
   screen->draw = ResultsDraw;
   screen->handle_input = ResultsHandleInput;
+  screen->cleanup = ResultsCleanup;
 }
