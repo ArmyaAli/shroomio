@@ -20,6 +20,7 @@ typedef struct ShroomImGuiTestApp {
   Game game;
   char temp_dir[PATH_MAX];
   bool screen_manager_initialized;
+  float frame_delta_override;
 } ShroomImGuiTestApp;
 
 extern ShroomImGuiTestApp g_imgui_test_app;

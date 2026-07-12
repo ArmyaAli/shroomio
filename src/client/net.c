@@ -253,8 +253,19 @@ static void HandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet) {
   if (enet_packet->dataLength < min_size) {
     return;
   }
+  player_count = packet->player_count;
+  if (player_count > SHROOM_MAX_SNAPSHOT_PLAYERS) {
+    player_count = SHROOM_MAX_SNAPSHOT_PLAYERS;
+  }
+  if (enet_packet->dataLength < min_size + (size_t)player_count * sizeof(packet->players[0])) {
+    return;
+  }
+  if (net->snapshot_received && (packet->tick <= net->last_snapshot_tick)) {
+    return;
+  }
 
   net->last_snapshot_tick = packet->tick;
+  net->snapshot_received = true;
   net->last_processed_input_sequence = packet->last_processed_input_sequence;
   net->match_phase = packet->match_phase;
   net->game_mode = packet->game_mode;
@@ -265,13 +276,6 @@ static void HandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet) {
   for (uint32_t i = 0; i < SHROOM_MATCH_PODIUM_COUNT; ++i) {
     net->podium_player_ids[i] = packet->podium_player_ids[i];
     net->podium_masses[i] = packet->podium_masses[i];
-  }
-  player_count = packet->player_count;
-  if (player_count > SHROOM_MAX_SNAPSHOT_PLAYERS) {
-    player_count = SHROOM_MAX_SNAPSHOT_PLAYERS;
-  }
-  if (enet_packet->dataLength < min_size + (size_t)player_count * sizeof(packet->players[0])) {
-    return;
   }
   net->snapshot_player_count = player_count;
   if (player_count > 0) {

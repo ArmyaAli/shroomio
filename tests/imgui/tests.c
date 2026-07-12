@@ -1426,6 +1426,59 @@ static void Test_MatchResetRebaselinesFeedback(ImGuiTestContext* ctx) {
   IM_CHECK(ShroomTeImGui_WindowIsActive("Death Cutscene Actions"));
 }
 
+static void Test_OnlinePredictionMovesImmediatelyAndReconciles(ImGuiTestContext* ctx) {
+  const ShroomVec2 start = {SHROOM_WORLD_WIDTH * 0.5f, SHROOM_WORLD_HEIGHT * 0.5f};
+  const ShroomVec2 opponent = {start.x + 1000.0f, start.y + 1000.0f};
+  float before_input_x;
+  float before_input_y;
+
+  SetupOnlineGame();
+  g_imgui_test_app.game.net.match_entry_sent = true;
+  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RUNNING, 101u, start, SHROOM_DEFAULT_PLAYER_MASS,
+                         opponent, SHROOM_DEFAULT_PLAYER_MASS);
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(g_imgui_test_app.game.local_player != NULL);
+  IM_CHECK(g_imgui_test_app.game.snapshot_applied);
+
+  before_input_x = g_imgui_test_app.game.local_player->position.x;
+  before_input_y = g_imgui_test_app.game.local_player->position.y;
+  g_imgui_test_app.game.death_cutscene_duration = 0.0f;
+  g_imgui_test_app.game.menu_overlay_open = false;
+  g_imgui_test_app.game.leaderboard_overlay_open = false;
+  g_imgui_test_app.game.leave_confirmation_open = false;
+  g_imgui_test_app.game.chat_open = false;
+  g_imgui_test_app.frame_delta_override = 1.0f / 60.0f;
+  GameTestSetMovementInput((ShroomVec2){1.0f, 0.0f});
+  ShroomTeCtx_Yield(ctx, 8);
+  IM_CHECK(ShroomDistanceSqr((ShroomVec2){before_input_x, before_input_y},
+                             g_imgui_test_app.game.local_player->position) > 0.0001f);
+  IM_CHECK(ShroomDistanceSqr((ShroomVec2){before_input_x, before_input_y},
+                             g_imgui_test_app.game.render_positions[0]) > 0.0001f);
+  GameTestSetMovementInput((ShroomVec2){0});
+  g_imgui_test_app.frame_delta_override = 0.0f;
+
+  SetMousePosition(640, 360);
+  ShroomVec2 small_correction = g_imgui_test_app.game.local_player->position;
+  small_correction.x -= 20.0f;
+  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RUNNING, 101u, small_correction,
+                         SHROOM_DEFAULT_PLAYER_MASS, opponent, SHROOM_DEFAULT_PLAYER_MASS);
+  ShroomTeCtx_Yield(ctx, 1);
+  IM_CHECK(fabsf(g_imgui_test_app.game.render_positions[0].x -
+                 g_imgui_test_app.game.local_player->position.x) > 0.01f);
+  IM_CHECK(fabsf(g_imgui_test_app.game.render_positions[0].x -
+                 g_imgui_test_app.game.local_player->position.x) < SHROOM_PREDICTION_SNAP_DISTANCE);
+
+  ShroomVec2 large_correction = g_imgui_test_app.game.local_player->position;
+  large_correction.x += SHROOM_PREDICTION_SNAP_DISTANCE * 2.0f;
+  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RUNNING, 101u, large_correction,
+                         SHROOM_DEFAULT_PLAYER_MASS, opponent, SHROOM_DEFAULT_PLAYER_MASS);
+  ShroomTeCtx_Yield(ctx, 1);
+  IM_CHECK(fabsf(g_imgui_test_app.game.render_positions[0].x -
+                 g_imgui_test_app.game.local_player->position.x) < 0.01f);
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_GAME);
+}
+
 static void Test_AuthoritativeResultsCompleteTwoRoundCycle(ImGuiTestContext* ctx) {
   const ShroomVec2 local_position = {500.0f, 600.0f};
   const ShroomVec2 opponent_position = {900.0f, 1000.0f};
@@ -1916,6 +1969,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_DeathCutscenePlayAgainResumesOnlineMatch);
   ShroomTeEngine_RegisterTest(engine, "screens", "match_reset_rebaselines_feedback",
                               Test_MatchResetRebaselinesFeedback);
+  ShroomTeEngine_RegisterTest(engine, "screens", "online_prediction_moves_and_reconciles",
+                              Test_OnlinePredictionMovesImmediatelyAndReconciles);
   ShroomTeEngine_RegisterTest(engine, "screens", "authoritative_results_two_round_cycle",
                               Test_AuthoritativeResultsCompleteTwoRoundCycle);
   ShroomTeEngine_RegisterTest(engine, "screens", "king_of_hill_complete_match_hud_and_results",

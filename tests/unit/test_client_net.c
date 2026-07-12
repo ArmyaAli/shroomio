@@ -120,6 +120,33 @@ static void test_client_net_ignores_truncated_snapshot_players(void) {
   TEST_ASSERT_EQUAL_UINT16(9u, net.snapshot_player_count);
 }
 
+static void test_client_net_ignores_duplicate_and_out_of_order_snapshots(void) {
+  ClientNetState net = {0};
+  ShroomSnapshotPacket snapshot = {0};
+  ENetPacket packet = {
+      .data = (enet_uint8*)&snapshot,
+      .dataLength = offsetof(ShroomSnapshotPacket, players) + sizeof(snapshot.players[0]),
+  };
+
+  snapshot.tick = 20u;
+  snapshot.player_count = 1u;
+  snapshot.players[0].position_x = 200.0f;
+  ClientNetTestHandleSnapshot(&net, &packet);
+  TEST_ASSERT_TRUE(net.snapshot_received);
+  TEST_ASSERT_EQUAL_FLOAT(200.0f, net.snapshot_players[0].position_x);
+
+  snapshot.tick = 19u;
+  snapshot.players[0].position_x = 19.0f;
+  ClientNetTestHandleSnapshot(&net, &packet);
+  TEST_ASSERT_EQUAL_UINT64(20u, net.last_snapshot_tick);
+  TEST_ASSERT_EQUAL_FLOAT(200.0f, net.snapshot_players[0].position_x);
+
+  snapshot.tick = 20u;
+  snapshot.players[0].position_x = 20.0f;
+  ClientNetTestHandleSnapshot(&net, &packet);
+  TEST_ASSERT_EQUAL_FLOAT(200.0f, net.snapshot_players[0].position_x);
+}
+
 static void test_client_net_accepts_chunked_spore_state_packet(void) {
   ClientNetState net = {0};
   ShroomSporeStatePacket spore_state = {0};
@@ -431,6 +458,7 @@ int main(void) {
   RUN_TEST(test_client_net_accepts_trimmed_snapshot_packet);
   RUN_TEST(test_hello_uses_configured_player_name);
   RUN_TEST(test_client_net_ignores_truncated_snapshot_players);
+  RUN_TEST(test_client_net_ignores_duplicate_and_out_of_order_snapshots);
   RUN_TEST(test_client_net_accepts_chunked_spore_state_packet);
   RUN_TEST(test_client_net_ignores_misaligned_spore_state_packet);
   RUN_TEST(test_client_net_zero_spore_state_clears_stale_spores);

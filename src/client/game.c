@@ -28,6 +28,16 @@ static const float kProximityMapRadius = 74.0f;
 static const float kProximityMapRange = 1400.0f;
 static const float kRenderCullMargin = 96.0f;
 
+#ifdef TEST_MODE
+static bool g_test_movement_input_enabled;
+static ShroomVec2 g_test_movement_input;
+
+void GameTestSetMovementInput(ShroomVec2 direction) {
+  g_test_movement_input = direction;
+  g_test_movement_input_enabled = ShroomVec2LengthSqr(direction) > 0.0f;
+}
+#endif
+
 static const char* GetPlayerDisplayName(const Game* game, const ShroomPlayerState* player);
 static int GetPlayerRank(const Game* game, const ShroomPlayerState* target_player);
 static Color GetPowerupColor(ShroomPowerupType type);
@@ -1601,43 +1611,24 @@ static const char* GetInspectFlavorText(const ShroomPlayerState* selected_player
   return "Player profile: live colony snapshot from the current match.";
 }
 
-static ShroomVec2 ClampPlayerPosition(const ShroomWorldState* world, float radius,
-                                      ShroomVec2 position) {
-  const float min_x = radius;
-  const float min_y = radius;
-  const float max_x = world->width - radius;
-  const float max_y = world->height - radius;
-
-  if (position.x < min_x) {
-    position.x = min_x;
-  }
-  if (position.x > max_x) {
-    position.x = max_x;
-  }
-  if (position.y < min_y) {
-    position.y = min_y;
-  }
-  if (position.y > max_y) {
-    position.y = max_y;
-  }
-
-  return position;
-}
-
-static void ApplyPredictedInputToPlayer(const ShroomWorldState* world, ShroomPlayerState* player,
-                                        ShroomVec2 input_direction, float delta_time) {
+static ShroomVec2 ApplyPredictedInputToPlayer(const ShroomWorldState* world,
+                                              ShroomPlayerState* player, ShroomVec2 input_direction,
+                                              float delta_time) {
+  ShroomVec2 previous_position;
   float speed;
 
   if ((player == NULL) || !player->alive) {
-    return;
+    return (ShroomVec2){0};
   }
 
+  previous_position = player->position;
   speed = ShroomMassToSpeed(player->mass);
   player->input_direction = input_direction;
-  player->position = ClampPlayerPosition(
-      world, player->radius,
-      (ShroomVec2){player->position.x + (input_direction.x * speed * delta_time),
-                   player->position.y + (input_direction.y * speed * delta_time)});
+  player->position =
+      ShroomPredictionApplyInput(player->position, input_direction, speed, delta_time,
+                                 player->radius, world->width, world->height);
+  return (ShroomVec2){player->position.x - previous_position.x,
+                      player->position.y - previous_position.y};
 }
 
 static void AppendPendingInput(Game* game, uint32_t sequence, ShroomVec2 direction) {
@@ -1657,15 +1648,8 @@ static void AppendPendingInput(Game* game, uint32_t sequence, ShroomVec2 directi
 }
 
 static void DiscardAcknowledgedInputs(Game* game) {
-  uint32_t keep_index = 0;
-
-  for (uint32_t index = 0; index < game->pending_input_count; ++index) {
-    if (game->pending_inputs[index].sequence > game->net.last_processed_input_sequence) {
-      game->pending_inputs[keep_index++] = game->pending_inputs[index];
-    }
-  }
-
-  game->pending_input_count = keep_index;
+  ShroomPredictionDiscardAcknowledged(game->pending_inputs, &game->pending_input_count,
+                                      game->net.last_processed_input_sequence);
 }
 
 static void ReapplyPendingInputs(Game* game) {
@@ -1675,10 +1659,10 @@ static void ReapplyPendingInputs(Game* game) {
     return;
   }
 
-  for (uint32_t index = 0; index < game->pending_input_count; ++index) {
-    ApplyPredictedInputToPlayer(&game->world, game->local_player,
-                                game->pending_inputs[index].direction, input_delta_time);
-  }
+  game->local_player->position = ShroomPredictionReplay(
+      game->local_player->position, game->pending_inputs, game->pending_input_count,
+      ShroomMassToSpeed(game->local_player->mass), input_delta_time, game->local_player->radius,
+      game->world.width, game->world.height);
 }
 
 static void SyncRenderPositions(Game* game, float delta_time) {
@@ -1693,8 +1677,12 @@ static void SyncRenderPositions(Game* game, float delta_time) {
     }
 
     if (IsLocalPlayerPiece(game, player) || !game->net.welcome_received) {
-      game->render_positions[index] = player->position;
-      game->render_position_initialized[index] = true;
+      if (!game->render_position_initialized[index]) {
+        game->render_positions[index] = player->position;
+        game->render_position_initialized[index] = true;
+      } else {
+        ShroomPredictionSmoothRender(&game->render_positions[index], player->position, delta_time);
+      }
       continue;
     }
 
@@ -1813,6 +1801,12 @@ static void ApplyNetworkSnapshot(Game* game) {
 
   DiscardAcknowledgedInputs(game);
   ReapplyPendingInputs(game);
+  for (index = 0; index < game->world.player_count; ++index) {
+    const ShroomPlayerState* player = &game->world.players[index];
+    if (IsLocalPlayerPiece(game, player) && game->render_position_initialized[index]) {
+      ShroomPredictionReconcileRender(&game->render_positions[index], player->position);
+    }
+  }
 }
 
 static Color GetPlayerFillColor(const Game* game, const ShroomPlayerState* player) {
@@ -3670,6 +3664,11 @@ static const ShroomPlayerState* GetInputReferencePlayer(const Game* game) {
 }
 
 static ShroomVec2 GetMovementInput(const Game* game) {
+#ifdef TEST_MODE
+  if (g_test_movement_input_enabled) {
+    return g_test_movement_input;
+  }
+#endif
   const Vector2 mouse_screen = GetMousePosition();
   const Vector2 mouse_world = GetScreenToWorld2D(mouse_screen, game->camera);
   /* Use the focused piece as the movement origin so that after Tab-switching
@@ -4088,22 +4087,37 @@ void GameUpdate(Game* game, float delta_time) {
   if (IsOnlineMode(game->active_mode) && game->net.welcome_received &&
       (game->net.snapshot_player_count > 0)) {
     const uint64_t snapshot_start_nanos = profile_enabled ? ClientProfileNowNanos() : 0ull;
-    ApplyNetworkSnapshot(game);
+    if (!game->snapshot_applied ||
+        (game->net.last_snapshot_tick > game->last_applied_snapshot_tick)) {
+      ApplyNetworkSnapshot(game);
+      game->last_applied_snapshot_tick = game->net.last_snapshot_tick;
+      game->snapshot_applied = true;
+    }
     /* Apply prediction to the focused piece, not necessarily local_player. */
     {
       ShroomPlayerState* predicted = game->local_player;
+      size_t predicted_index = 0u;
       if (game->focused_piece_entity_id != 0) {
         size_t pi;
         for (pi = 0; pi < game->world.player_count; ++pi) {
           ShroomPlayerState* p = &game->world.players[pi];
           if (p->alive && (p->entity_id == game->focused_piece_entity_id)) {
             predicted = p;
+            predicted_index = pi;
             break;
           }
         }
+      } else if (predicted != NULL) {
+        predicted_index = (size_t)(predicted - game->world.players);
       }
       if (!game->spectator_mode && (predicted != NULL)) {
-        ApplyPredictedInputToPlayer(&game->world, predicted, input_direction, delta_time);
+        const ShroomVec2 movement =
+            ApplyPredictedInputToPlayer(&game->world, predicted, input_direction, delta_time);
+        if ((predicted_index < game->world.player_count) &&
+            game->render_position_initialized[predicted_index]) {
+          game->render_positions[predicted_index].x += movement.x;
+          game->render_positions[predicted_index].y += movement.y;
+        }
       }
     }
     if (profile_enabled) {

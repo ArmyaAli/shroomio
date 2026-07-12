@@ -208,6 +208,7 @@ CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/layout_metrics.c \
 	$(CLIENT_SRC_DIR)/match_feedback.c \
 	$(CLIENT_SRC_DIR)/net.c \
+	$(CLIENT_SRC_DIR)/prediction.c \
 	$(CLIENT_SRC_DIR)/render_lod.c \
 	$(CLIENT_SRC_DIR)/results_summary.c \
 	$(CLIENT_SRC_DIR)/screen.c \
@@ -287,6 +288,7 @@ IMGUI_TEST_CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/layout_metrics.c \
 	$(CLIENT_SRC_DIR)/match_feedback.c \
 	$(CLIENT_SRC_DIR)/net.c \
+	$(CLIENT_SRC_DIR)/prediction.c \
 	$(CLIENT_SRC_DIR)/render_lod.c \
 	$(CLIENT_SRC_DIR)/results_summary.c \
 	$(CLIENT_SRC_DIR)/screen.c \
@@ -752,6 +754,9 @@ test_connection) \
 		test_match_feedback) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 					$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/match_feedback.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+		test_prediction) \
+			$(LINUX_CC) $(COVERAGE_CFLAGS) \
+				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/prediction.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_intermission) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/intermission.c -o $$test_bin $(COVERAGE_LIBS) ;; \
@@ -850,6 +855,10 @@ $(TEST_BUILD_DIR)/test_layout_metrics: $(UNIT_TESTS_DIR)/test_layout_metrics.c $
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
 $(TEST_BUILD_DIR)/test_match_feedback: $(UNIT_TESTS_DIR)/test_match_feedback.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/match_feedback.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_prediction: $(UNIT_TESTS_DIR)/test_prediction.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/prediction.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 

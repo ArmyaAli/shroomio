@@ -9,6 +9,7 @@
 
 #include "client_settings.h"
 #include "net.h"
+#include "prediction.h"
 #include "shared/world.h"
 
 #define SHROOM_CLIENT_PENDING_INPUT_CAPACITY 128u
@@ -44,11 +45,6 @@ typedef struct LeaderboardEntry {
   float mass;
   float objective_score;
 } LeaderboardEntry;
-
-typedef struct ShroomPendingInput {
-  uint32_t sequence;
-  ShroomVec2 direction;
-} ShroomPendingInput;
 
 typedef struct GameplayParticle {
   Vector2 position;
@@ -120,6 +116,8 @@ typedef struct Game {
   ShroomPendingInput pending_inputs[SHROOM_CLIENT_PENDING_INPUT_CAPACITY];
   uint32_t pending_input_count;
   uint32_t tracked_input_sequence;
+  uint64_t last_applied_snapshot_tick;
+  bool snapshot_applied;
   uint32_t particle_cursor;
   uint32_t notification_head;
   uint32_t notification_count;
@@ -225,6 +223,10 @@ void GamePlayUiErrorSound(const Game* game);
 void GameEnterSpectatorMode(Game* game);
 void GameExitSpectatorMode(Game* game);
 void GameCycleSpectatorTarget(Game* game, int direction);
+
+#ifdef TEST_MODE
+void GameTestSetMovementInput(ShroomVec2 direction);
+#endif
 
 /* Leaderboard and ranking functions */
 void BuildLeaderboard(const Game* game, LeaderboardEntry* entries, size_t* entry_count);
