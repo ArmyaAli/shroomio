@@ -12,6 +12,7 @@ void ShroomComputeMatchPodium(ShroomWorldState* world);
 
 ShroomPlayerState* ShroomWorldSpawnPlayer(ShroomWorldState* world, ShroomPlayerId player_id,
                                           bool is_bot);
+size_t ShroomWorldRemovePlayer(ShroomWorldState* world, ShroomPlayerId player_id);
 
 void ShroomPlayerSetInput(ShroomPlayerState* player, ShroomVec2 input_direction);
 bool ShroomPlayerHasConsumeProtection(const ShroomPlayerState* player);
