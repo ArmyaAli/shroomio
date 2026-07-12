@@ -1,6 +1,7 @@
 #include "client_settings.h"
 
 #include "raylib.h"
+#include "shared/player_identity.h"
 
 #include <fcntl.h>
 #include <stdio.h>
@@ -8,6 +9,11 @@
 #include <unistd.h>
 
 static const char* kClientSettingsPath = "client_settings.cfg";
+
+void ClientSettingsSanitizePlayerName(char destination[SHROOM_MAX_NAME_LENGTH],
+                                      const char* source) {
+  ShroomSanitizePlayerName(destination, source);
+}
 
 bool ClientSettingsKeyIsReserved(int key) { return (key == KEY_ENTER) || (key == KEY_TAB); }
 
@@ -40,9 +46,13 @@ void ClientSettingsSetDefaults(ClientSettings* settings) {
 }
 
 void ClientSettingsValidate(ClientSettings* settings) {
+  char sanitized_name[SHROOM_MAX_NAME_LENGTH];
   if (settings == NULL) {
     return;
   }
+
+  ClientSettingsSanitizePlayerName(sanitized_name, settings->player_name);
+  snprintf(settings->player_name, sizeof(settings->player_name), "%s", sanitized_name);
 
   if ((settings->ui_scale_percent < 80) || (settings->ui_scale_percent > 160)) {
     settings->ui_scale_percent = 100;
@@ -115,6 +125,12 @@ bool ClientSettingsLoad(ClientSettings* settings) {
     char key[48] = {0};
     int value = 0;
 
+    if (strncmp(line, "player_name=", 12u) == 0) {
+      char* name = line + 12u;
+      name[strcspn(name, "\r\n")] = '\0';
+      ClientSettingsSanitizePlayerName(settings->player_name, name);
+      continue;
+    }
     if (sscanf(line, "%47[^=]=%d", key, &value) != 2) {
       continue;
     }
@@ -185,6 +201,7 @@ bool ClientSettingsSave(const ClientSettings* settings) {
   }
 
   fprintf(file, "ui_scale_percent=%d\n", settings->ui_scale_percent);
+  fprintf(file, "player_name=%s\n", settings->player_name);
   fprintf(file, "master_volume_percent=%d\n", settings->master_volume_percent);
   fprintf(file, "music_volume_percent=%d\n", settings->music_volume_percent);
   fprintf(file, "effects_volume_percent=%d\n", settings->effects_volume_percent);

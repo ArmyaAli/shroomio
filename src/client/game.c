@@ -2027,7 +2027,8 @@ static void RetryConnection(Game* game) {
   ClientNetShutdown(&game->net);
   ClientNetInit(&game->net,
                 game->selected_server_host[0] != '\0' ? game->selected_server_host : "127.0.0.1",
-                game->selected_server_port != 0 ? game->selected_server_port : SHROOM_SERVER_PORT);
+                game->selected_server_port != 0 ? game->selected_server_port : SHROOM_SERVER_PORT,
+                game->settings.player_name);
 }
 
 static void DrawArenaZones(const ShroomWorldState* world, Rectangle view_bounds) {
@@ -3908,7 +3909,8 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
   game->session_duration_seconds = 0u;
 
   if (mode == SHROOM_SESSION_MODE_QUICK_PLAY) {
-    ClientNetInit(&game->net, game->selected_server_host, game->selected_server_port);
+    ClientNetInit(&game->net, game->selected_server_host, game->selected_server_port,
+                  game->settings.player_name);
   } else {
     game->net.status = CLIENT_NET_CONNECTED;
     snprintf(game->net.status_text, sizeof(game->net.status_text), "%s", "Offline");
@@ -3917,7 +3919,7 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
   game->local_player = ShroomWorldSpawnPlayer(&game->world, 1, false);
   if (game->local_player != NULL) {
     snprintf(game->local_player->name, sizeof(game->local_player->name), "%s",
-             (mode == SHROOM_SESSION_MODE_QUICK_PLAY) ? "local-client" : "You");
+             game->settings.player_name[0] != '\0' ? game->settings.player_name : "Player");
   }
   for (bot_index = 0; bot_index < SHROOM_BOT_COUNT; ++bot_index) {
     ShroomPlayerState* bot =

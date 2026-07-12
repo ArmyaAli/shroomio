@@ -39,6 +39,7 @@ typedef struct ClientNetState {
   ClientNetStatus status;
   bool enet_initialized;
   bool welcome_received;
+  char player_name[SHROOM_MAX_NAME_LENGTH];
   uint32_t player_id;
   uint32_t entity_id;
   uint32_t last_input_sequence;
@@ -97,7 +98,8 @@ typedef struct ClientNetState {
   bool intermission_received;
 } ClientNetState;
 
-bool ClientNetInit(ClientNetState* net, const char* host_name, uint16_t port);
+bool ClientNetInit(ClientNetState* net, const char* host_name, uint16_t port,
+                   const char* player_name);
 void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, bool split_requested,
                      bool eject_requested, ShroomVec2 split_direction, uint32_t focused_entity_id,
                      float delta_time);
@@ -116,6 +118,7 @@ void ClientNetSendEnterMatch(ClientNetState* net);
 void ClientNetSendRematchVote(ClientNetState* net, ShroomRematchVote vote);
 
 #ifdef TEST_MODE
+void ClientNetTestBuildHello(const ClientNetState* net, ShroomHelloPacket* packet);
 bool ClientNetTestCompletePendingPing(ClientNetState* net, uint32_t nonce, uint32_t now_ms);
 void ClientNetTestClearStalePendingPing(ClientNetState* net, uint32_t now_ms);
 void ClientNetTestCheckConnectTimeout(ClientNetState* net, uint32_t now_ms);

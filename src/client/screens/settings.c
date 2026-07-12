@@ -210,6 +210,11 @@ static void SettingsDraw(ShroomScreenManager* manager) {
   }
 
   ShroomImGui_BeginChild("SettingsContent", 0.0f, (float)screen_height * 0.8f - 150.0f, false);
+  ShroomImGui_Text("Identity");
+  changed |= ShroomImGui_InputText("Player Name", g_settings_screen.session.pending.player_name,
+                                   sizeof(g_settings_screen.session.pending.player_name));
+
+  ShroomImGui_Separator();
   ShroomImGui_Text("Interface");
   changed |= ShroomImGui_SliderInt("UI Scale", &g_settings_screen.session.pending.ui_scale_percent,
                                    80, 160, "%d%%");

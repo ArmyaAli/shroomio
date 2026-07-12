@@ -142,7 +142,8 @@ static void SetupLiveLobbyGame(void) {
   ShroomSnapshotPlayerState* player;
 
   SetupOfflineGame();
-  ClientNetInit(&g_imgui_test_app.game.net, "127.0.0.1", 37779u);
+  ClientNetInit(&g_imgui_test_app.game.net, "127.0.0.1", 37779u,
+                g_imgui_test_app.game.settings.player_name);
   g_imgui_test_app.game.net.status = CLIENT_NET_CONNECTED;
   g_imgui_test_app.game.net.handshake_received = true;
   g_imgui_test_app.game.net.welcome_received = true;
@@ -284,6 +285,36 @@ static void Test_MainMenuExposesPrimaryActions(ImGuiTestContext* ctx) {
   IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Help"));
   IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Credits"));
   IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Exit"));
+}
+
+static void Test_PlayerIdentityOnboardingPersistsAndStartsSession(ImGuiTestContext* ctx) {
+  ClientSettings loaded;
+
+  ShroomImGuiTestAppReset(true);
+  g_imgui_test_app.game.settings.player_name[0] = '\0';
+  ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_HELP);
+  ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_MAIN_MENU);
+  ShroomTeCtx_SetRef(ctx, "Player Identity");
+  ShroomTeCtx_Yield(ctx, 2);
+
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Player Identity"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Player Name"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Continue"));
+  ShroomTeCtx_ItemInputValueStr(ctx, "Player Name", "  Moss@@   Runner!!  ");
+  ShroomTeCtx_ItemClick(ctx, "Continue");
+  ShroomTeCtx_Yield(ctx, 2);
+
+  IM_CHECK_STR_EQ(g_imgui_test_app.game.settings.player_name, "Moss Runner");
+  IM_CHECK(ClientSettingsLoad(&loaded));
+  IM_CHECK_STR_EQ(loaded.player_name, "Moss Runner");
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Main Menu"));
+
+  ShroomTeCtx_SetRef(ctx, "Main Menu");
+  ShroomTeCtx_ItemClick(ctx, "Play Online");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_STR_EQ(g_imgui_test_app.game.net.player_name, "Moss Runner");
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_LOBBY);
 }
 
 static void Test_GameModeAvailabilityAndNavigation(ImGuiTestContext* ctx) {
@@ -1653,7 +1684,8 @@ static void Test_LobbyAutoJoinTransitionsToRoster(ImGuiTestContext* ctx) {
 
 static void Test_FirstLobbyEntryDoesNotOpenDeathCutscene(ImGuiTestContext* ctx) {
   SetupLobbyBrowser();
-  ClientNetInit(&g_imgui_test_app.game.net, "127.0.0.1", 37779u);
+  ClientNetInit(&g_imgui_test_app.game.net, "127.0.0.1", 37779u,
+                g_imgui_test_app.game.settings.player_name);
   g_imgui_test_app.game.net.status = CLIENT_NET_CONNECTED;
   g_imgui_test_app.game.net.handshake_received = true;
   InjectFakeLobbies(1);
@@ -1816,6 +1848,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_HelpContentMatchesCurrentGameplay);
   ShroomTeEngine_RegisterTest(engine, "screens", "main_menu_exposes_primary_actions",
                               Test_MainMenuExposesPrimaryActions);
+  ShroomTeEngine_RegisterTest(engine, "screens", "player_identity_onboarding_persists_session",
+                              Test_PlayerIdentityOnboardingPersistsAndStartsSession);
   ShroomTeEngine_RegisterTest(engine, "screens", "game_mode_availability_and_navigation",
                               Test_GameModeAvailabilityAndNavigation);
   ShroomTeEngine_RegisterTest(engine, "screens", "offline_practice_entry_initializes_game",

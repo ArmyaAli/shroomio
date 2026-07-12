@@ -393,7 +393,8 @@ static void JoinServer(ShroomScreenManager* manager, Game* game, const ServerBro
     CopyText(game->selected_server_host, sizeof(game->selected_server_host), entry->host);
     game->selected_server_port = (uint16_t)entry->port;
     /* Establish connection now; lobby browser will wait for handshake. */
-    ClientNetInit(&game->net, game->selected_server_host, game->selected_server_port);
+    ClientNetInit(&game->net, game->selected_server_host, game->selected_server_port,
+                  game->settings.player_name);
   }
 
   AddRecentServer(entry);

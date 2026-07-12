@@ -91,6 +91,18 @@ static void test_client_net_accepts_trimmed_snapshot_packet(void) {
   TEST_ASSERT_EQUAL_FLOAT(12.5f, net.snapshot_players[0].objective_score);
 }
 
+static void test_hello_uses_configured_player_name(void) {
+  ClientNetState net = {0};
+  ShroomHelloPacket hello = {0};
+  snprintf(net.player_name, sizeof(net.player_name), "%s", "  Moss@@  Runner!! ");
+
+  ClientNetTestBuildHello(&net, &hello);
+
+  TEST_ASSERT_EQUAL_UINT8(SHROOM_PACKET_HELLO, hello.header.type);
+  TEST_ASSERT_EQUAL_UINT16(sizeof(hello), hello.header.size);
+  TEST_ASSERT_EQUAL_STRING("Moss Runner", hello.name);
+}
+
 static void test_client_net_ignores_truncated_snapshot_players(void) {
   ClientNetState net = {0};
   ShroomSnapshotPacket snapshot = {0};
@@ -417,6 +429,7 @@ int main(void) {
   RUN_TEST(test_client_net_ignores_stale_pong_sample);
   RUN_TEST(test_client_net_clears_timed_out_pending_ping);
   RUN_TEST(test_client_net_accepts_trimmed_snapshot_packet);
+  RUN_TEST(test_hello_uses_configured_player_name);
   RUN_TEST(test_client_net_ignores_truncated_snapshot_players);
   RUN_TEST(test_client_net_accepts_chunked_spore_state_packet);
   RUN_TEST(test_client_net_ignores_misaligned_spore_state_packet);

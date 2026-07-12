@@ -3,6 +3,10 @@
 #include "client/settings_session.h"
 #include "raylib.h"
 
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+
 static ClientSettings current;
 static ShroomSettingsSession session;
 
@@ -12,7 +16,24 @@ void setUp(void) {
   ShroomSettingsSessionInit(&session, &current);
 }
 
-void tearDown(void) {}
+void tearDown(void) { unlink("client_settings.cfg"); }
+
+void test_player_name_sanitization_trims_collapses_and_filters(void) {
+  char sanitized[SHROOM_MAX_NAME_LENGTH];
+
+  ClientSettingsSanitizePlayerName(sanitized, "  Moss@@   Runner!!  ");
+
+  TEST_ASSERT_EQUAL_STRING("Moss Runner", sanitized);
+}
+
+void test_player_name_persists_through_settings_file(void) {
+  ClientSettings loaded;
+  snprintf(current.player_name, sizeof(current.player_name), "%s", "Spore Scout");
+
+  TEST_ASSERT_TRUE(ClientSettingsSave(&current));
+  TEST_ASSERT_TRUE(ClientSettingsLoad(&loaded));
+  TEST_ASSERT_EQUAL_STRING("Spore Scout", loaded.player_name);
+}
 
 void test_discard_restores_original_settings(void) {
   session.pending.ui_scale_percent = 160;
@@ -74,5 +95,7 @@ int main(void) {
   RUN_TEST(test_restore_defaults_changes_pending_values_only);
   RUN_TEST(test_reserved_key_policy_identifies_interface_keys);
   RUN_TEST(test_validation_replaces_reserved_bindings_with_slot_defaults);
+  RUN_TEST(test_player_name_sanitization_trims_collapses_and_filters);
+  RUN_TEST(test_player_name_persists_through_settings_file);
   return UNITY_END();
 }
