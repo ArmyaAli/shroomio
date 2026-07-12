@@ -90,7 +90,7 @@ typedef struct ShroomWorldState {
   size_t player_count;
   size_t spore_count;
   size_t powerup_count;
-  ShroomPlayerState players[SHROOM_MAX_PLAYERS];
+  ShroomPlayerState players[SHROOM_MAX_PLAYER_ENTITIES];
   ShroomSporeState spores[SHROOM_MAX_SPORES];
   ShroomPowerupState powerups[SHROOM_MAX_POWERUPS];
 } ShroomWorldState;

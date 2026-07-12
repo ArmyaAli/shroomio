@@ -249,7 +249,7 @@ static bool LoadServerConfig(ServerConfig* config, int argc, char** argv) {
       }
       ++i;
       if (!ParseUint32(argv[i], &config->benchmark_bots) ||
-          (config->benchmark_bots > SHROOM_MAX_PLAYERS)) {
+          (config->benchmark_bots > SHROOM_MAX_PARTICIPANTS)) {
         fprintf(stderr, "Invalid --benchmark-bots: %s\n", argv[i]);
         return false;
       }
@@ -529,7 +529,7 @@ static uint16_t CountLobbyAliveBots(const ShroomLobby* lobby) {
   for (i = 0; i < lobby->world.player_count; ++i) {
     const ShroomPlayerState* player = &lobby->world.players[i];
 
-    if (player->alive && player->is_bot) {
+    if (player->alive && player->is_bot && (player->piece_index == 0u)) {
       ++count;
     }
   }
@@ -543,9 +543,10 @@ static uint16_t GetLobbyBotTarget(uint16_t real_player_count) {
   uint32_t target = weighted_real_players >= SHROOM_BOT_TARGET_TOTAL
                         ? SHROOM_BOT_FLOOR
                         : SHROOM_BOT_TARGET_TOTAL - weighted_real_players;
-  const uint32_t max_bots_for_capacity = real_player_count >= SHROOM_MAX_PLAYERS
-                                             ? 0u
-                                             : (uint32_t)SHROOM_MAX_PLAYERS - real_player_count;
+  const uint32_t max_bots_for_capacity =
+      real_player_count >= SHROOM_MAX_PARTICIPANTS
+          ? 0u
+          : (uint32_t)SHROOM_MAX_PARTICIPANTS - real_player_count;
 
   if (target < SHROOM_BOT_FLOOR && max_bots_for_capacity >= SHROOM_BOT_FLOOR) {
     target = SHROOM_BOT_FLOOR;
@@ -600,7 +601,7 @@ static void SendLobbyList(ENetPeer* peer, ShroomLobby* lobbies, const ENetHost* 
         .lobby_id = lobby->lobby_id,
         .player_count = real_count,
         .bot_count = bot_count,
-        .max_players = (uint16_t)(SHROOM_MAX_PLAYERS - SHROOM_BOT_FLOOR),
+        .max_players = (uint16_t)SHROOM_MAX_PLAYABLE_PARTICIPANTS,
         .spectator_count = CountLobbySpectators(host, lobby->lobby_id),
         .is_dynamic = lobby->is_dynamic ? 1u : 0u,
     };
@@ -626,7 +627,7 @@ static void SendLobbyJoined(ENetPeer* peer, const ServerSession* session,
   packet.entity_id = session->player != NULL ? session->player->entity_id : 0u;
   packet.server_tick_rate = (uint16_t)SHROOM_SERVER_TICK_RATE;
   packet.snapshot_rate = SHROOM_SNAPSHOT_RATE;
-  packet.max_players = (uint16_t)(SHROOM_MAX_PLAYERS - SHROOM_BOT_FLOOR);
+  packet.max_players = (uint16_t)SHROOM_MAX_PLAYABLE_PARTICIPANTS;
   packet.world_width = lobby->world.width;
   packet.world_height = lobby->world.height;
   snprintf(packet.lobby_name, sizeof(packet.lobby_name), "%s", lobby->name);
@@ -644,7 +645,8 @@ static void BroadcastLobbyRoster(ENetHost* host, uint32_t lobby_id) {
   }
 
   packet.lobby_id = lobby_id;
-  for (index = 0; index < host->peerCount && packet.player_count < SHROOM_MAX_PLAYERS; ++index) {
+  for (index = 0; index < host->peerCount && packet.player_count < SHROOM_MAX_PARTICIPANTS;
+       ++index) {
     const ENetPeer* peer = &host->peers[index];
     const ServerSession* session = (const ServerSession*)peer->data;
     ShroomLobbyRosterEntry* entry;
@@ -1254,26 +1256,33 @@ static bool AddLobbyBot(ShroomLobby* lobby, uint32_t* next_player_id) {
 
 static bool RemoveLobbyBot(ShroomLobby* lobby) {
   size_t i;
+  ShroomPlayerId removed_player_id = 0u;
 
   if (lobby == NULL) {
     return false;
   }
 
   for (i = lobby->world.player_count; i > 0; --i) {
-    ShroomPlayerState* player = &lobby->world.players[i - 1u];
+    const ShroomPlayerState* player = &lobby->world.players[i - 1u];
 
-    if (!player->alive || !player->is_bot) {
+    if (!player->alive || !player->is_bot || (player->piece_index != 0u)) {
       continue;
     }
-
-    player->alive = false;
-    player->mass = 0.0f;
-    player->radius = 0.0f;
-    player->input_direction = (ShroomVec2){0};
-    return true;
+    removed_player_id = player->player_id;
+    break;
   }
 
-  return false;
+  if (removed_player_id == 0u) {
+    return false;
+  }
+  for (i = 0u; i < lobby->world.player_count; ++i) {
+    ShroomPlayerState* player = &lobby->world.players[i];
+
+    if (player->player_id == removed_player_id) {
+      *player = (ShroomPlayerState){0};
+    }
+  }
+  return true;
 }
 
 static void InitializeLobbyBots(ShroomLobby* lobby, uint32_t* next_player_id) {
@@ -1369,6 +1378,19 @@ static void HandleLobbyJoin(ENetHost* host, ENetPeer* peer, ServerSession* sessi
   lobby = FindLobbyById(lobbies, packet->lobby_id);
   if (lobby == NULL) {
     return;
+  }
+
+  if (!packet->spectate) {
+    const uint16_t real_player_count = CountLobbyRealPlayers(host, lobby->lobby_id);
+
+    if (real_player_count >= SHROOM_MAX_PLAYABLE_PARTICIPANTS) {
+      return;
+    }
+    while (((uint32_t)real_player_count + CountLobbyAliveBots(lobby)) >= SHROOM_MAX_PARTICIPANTS) {
+      if (!RemoveLobbyBot(lobby)) {
+        return;
+      }
+    }
   }
 
   session->lobby_id = lobby->lobby_id;

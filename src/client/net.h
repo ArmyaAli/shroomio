@@ -83,7 +83,7 @@ typedef struct ClientNetState {
   uint8_t lobby_count;
   ShroomLobbyEntry lobby_list[SHROOM_MAX_LOBBIES];
   uint16_t lobby_roster_count;
-  ShroomLobbyRosterEntry lobby_roster[SHROOM_MAX_PLAYERS];
+  ShroomLobbyRosterEntry lobby_roster[SHROOM_MAX_PARTICIPANTS];
   /* Match timer state */
   uint8_t match_phase;
   float match_time_remaining;

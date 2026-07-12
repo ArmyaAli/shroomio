@@ -380,7 +380,7 @@ static const ShroomPlayerState* FindLargestMassGainer(const Game* game, float* m
     float previous_mass = 0.0f;
     bool had_same_entity = false;
 
-    for (size_t previous_index = 0; previous_index < SHROOM_MAX_PLAYERS; ++previous_index) {
+    for (size_t previous_index = 0; previous_index < SHROOM_MAX_PLAYER_ENTITIES; ++previous_index) {
       if (game->previous_player_alive[previous_index] &&
           (game->previous_player_entity_ids[previous_index] == player->entity_id)) {
         previous_mass = game->previous_player_masses[previous_index];
@@ -410,7 +410,7 @@ static bool FindPreviousPlayerMassByEntityId(const Game* game, ShroomEntityId en
   if (entity_id == 0u) {
     return false;
   }
-  for (size_t index = 0; index < SHROOM_MAX_PLAYERS; ++index) {
+  for (size_t index = 0; index < SHROOM_MAX_PLAYER_ENTITIES; ++index) {
     if (game->previous_player_alive[index] &&
         (game->previous_player_entity_ids[index] == entity_id)) {
       if (previous_mass != NULL) {
@@ -486,10 +486,10 @@ static const ShroomPlayerState* InferConsumeKiller(const Game* game, size_t prev
 
 static size_t FindPreviousLocalPrimaryIndex(const Game* game, ShroomPlayerId local_player_id) {
   if (local_player_id == 0u) {
-    return SHROOM_MAX_PLAYERS;
+    return SHROOM_MAX_PLAYER_ENTITIES;
   }
 
-  for (size_t index = 0; index < SHROOM_MAX_PLAYERS; ++index) {
+  for (size_t index = 0; index < SHROOM_MAX_PLAYER_ENTITIES; ++index) {
     if (game->previous_player_alive[index] &&
         (game->previous_player_ids[index] == local_player_id) &&
         (game->previous_player_piece_indices[index] == 0u)) {
@@ -497,7 +497,7 @@ static size_t FindPreviousLocalPrimaryIndex(const Game* game, ShroomPlayerId loc
     }
   }
 
-  return SHROOM_MAX_PLAYERS;
+  return SHROOM_MAX_PLAYER_ENTITIES;
 }
 
 static const ShroomPlayerState* FindCurrentLocalPrimary(const Game* game,
@@ -705,7 +705,7 @@ static void GameSwitchSpectatorLobby(Game* game, int direction) {
 }
 
 void GameCycleSpectatorTarget(Game* game, int direction) {
-  uint32_t targets[SHROOM_MAX_PLAYERS];
+  uint32_t targets[SHROOM_MAX_PLAYER_ENTITIES];
   int target_count = 0;
   int current_index = -1;
 
@@ -717,7 +717,7 @@ void GameCycleSpectatorTarget(Game* game, int direction) {
     if (!player->alive || (player == game->local_player)) {
       continue;
     }
-    if (target_count < SHROOM_MAX_PLAYERS) {
+    if (target_count < (int)SHROOM_MAX_PLAYER_ENTITIES) {
       if (player->entity_id == game->spectated_entity_id) {
         current_index = target_count;
       }
@@ -854,7 +854,7 @@ static void CaptureParticleBaselines(Game* game) {
     game->previous_spore_entity_ids[index] = spore->entity_id;
     game->previous_spore_positions[index] = spore->position;
   }
-  for (index = 0; index < SHROOM_MAX_PLAYERS; ++index) {
+  for (index = 0; index < SHROOM_MAX_PLAYER_ENTITIES; ++index) {
     const ShroomPlayerState* player = &game->world.players[index];
     game->previous_player_entity_ids[index] = player->entity_id;
     game->previous_player_ids[index] = player->player_id;
@@ -937,7 +937,7 @@ static void EmitGameplayEventParticles(Game* game) {
   const ShroomPlayerState* largest_gainer = FindLargestMassGainer(game, &largest_gain);
   const size_t previous_local_primary_index = FindPreviousLocalPrimaryIndex(game, local_player_id);
   const ShroomPlayerState* current_local_primary = FindCurrentLocalPrimary(game, local_player_id);
-  const bool had_previous_local_primary = previous_local_primary_index < SHROOM_MAX_PLAYERS;
+  const bool had_previous_local_primary = previous_local_primary_index < SHROOM_MAX_PLAYER_ENTITIES;
   const bool local_primary_missing = had_previous_local_primary && (current_local_primary == NULL);
   const bool local_primary_entity_changed =
       had_previous_local_primary && (current_local_primary != NULL) &&
@@ -1019,7 +1019,7 @@ static void EmitGameplayEventParticles(Game* game) {
     local_death_reported = true;
   }
 
-  for (index = 0; index < SHROOM_MAX_PLAYERS; ++index) {
+  for (index = 0; index < SHROOM_MAX_PLAYER_ENTITIES; ++index) {
     const ShroomPlayerState* current_player;
     const ShroomPlayerState* inferred_killer;
     float inferred_gain = 0.0f;
@@ -1386,7 +1386,7 @@ int GetLocalPlayerRank(const Game* game, const LeaderboardEntry* leaderboard,
 }
 
 static int GetPlayerRank(const Game* game, const ShroomPlayerState* target_player) {
-  LeaderboardEntry leaderboard[SHROOM_MAX_PLAYERS];
+  LeaderboardEntry leaderboard[SHROOM_MAX_PLAYER_ENTITIES];
   size_t leaderboard_count = 0;
 
   if ((game == NULL) || (target_player == NULL)) {
@@ -1465,11 +1465,11 @@ static int GatherInspectCandidates(const Game* game, InspectCandidate* candidate
 }
 
 static const ShroomPlayerState* GetSelectedInspectTarget(const Game* game) {
-  InspectCandidate candidates[SHROOM_MAX_PLAYERS];
+  InspectCandidate candidates[SHROOM_MAX_PLAYER_ENTITIES];
   int selected_index;
   int candidate_count;
 
-  candidate_count = GatherInspectCandidates(game, candidates, SHROOM_MAX_PLAYERS);
+  candidate_count = GatherInspectCandidates(game, candidates, SHROOM_MAX_PLAYER_ENTITIES);
   if (candidate_count <= 0) {
     return NULL;
   }
@@ -1486,7 +1486,7 @@ static const ShroomPlayerState* GetSelectedInspectTarget(const Game* game) {
 }
 
 static void UpdateInspectOverlay(Game* game, float delta_time) {
-  InspectCandidate candidates[SHROOM_MAX_PLAYERS];
+  InspectCandidate candidates[SHROOM_MAX_PLAYER_ENTITIES];
   const ShroomPlayerState* target_player;
   const bool can_show_overlay = (game != NULL) && !game->leaderboard_overlay_open &&
                                 !game->menu_overlay_open && !game->leave_confirmation_open &&
@@ -1500,7 +1500,7 @@ static void UpdateInspectOverlay(Game* game, float delta_time) {
   }
 
   game->inspect_prompt_timer += delta_time;
-  candidate_count = GatherInspectCandidates(game, candidates, SHROOM_MAX_PLAYERS);
+  candidate_count = GatherInspectCandidates(game, candidates, SHROOM_MAX_PLAYER_ENTITIES);
   game->inspect_target_count = candidate_count;
 
   if (!inspect_held) {
@@ -1758,7 +1758,7 @@ static void ApplyNetworkSnapshot(Game* game) {
     }
   }
 
-  for (; index < SHROOM_MAX_PLAYERS; ++index) {
+  for (; index < SHROOM_MAX_PLAYER_ENTITIES; ++index) {
     game->render_position_initialized[index] = false;
   }
 
@@ -2704,7 +2704,7 @@ static void DrawStatusBanners(const Game* game) {
 }
 
 static void UpdateCombatFeedback(Game* game) {
-  LeaderboardEntry leaderboard[SHROOM_MAX_PLAYERS];
+  LeaderboardEntry leaderboard[SHROOM_MAX_PLAYER_ENTITIES];
   size_t leaderboard_count = 0;
   int local_rank;
 
@@ -4135,7 +4135,7 @@ void GameUpdate(Game* game, float delta_time) {
 }
 
 void GameDraw(Game* game) {
-  LeaderboardEntry leaderboard[SHROOM_MAX_PLAYERS];
+  LeaderboardEntry leaderboard[SHROOM_MAX_PLAYER_ENTITIES];
   size_t leaderboard_count = 0;
   size_t shown_count;
   const Rectangle view_bounds = GetCameraWorldBounds(game->camera);

@@ -2,6 +2,9 @@
 #define SHROOM_SCREEN_H
 
 #include <stdbool.h>
+#include <stdint.h>
+
+typedef struct Game Game;
 
 typedef enum ShroomScreenType {
   SHROOM_SCREEN_NONE = 0,
@@ -65,6 +68,7 @@ void ShroomScreenRegisterGameModeSelect(ShroomScreenManager* manager);
 void ShroomScreenRegisterServerBrowser(ShroomScreenManager* manager);
 void ShroomScreenRegisterLobbyBrowser(ShroomScreenManager* manager);
 void ShroomScreenRegisterLobbyRoster(ShroomScreenManager* manager);
+uint16_t ShroomLobbyRosterCapacity(const Game* game);
 void ShroomScreenRegisterGame(ShroomScreenManager* manager);
 void ShroomScreenRegisterResults(ShroomScreenManager* manager);
 

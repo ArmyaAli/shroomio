@@ -60,7 +60,7 @@ static void GameplayDraw(ShroomScreenManager* manager) {
     /* Capture final stats for results screen */
     game->final_mass = game->local_player != NULL ? game->local_player->mass : 0.0f;
     /* Build leaderboard to get final rank */
-    LeaderboardEntry leaderboard[SHROOM_MAX_PLAYERS];
+    LeaderboardEntry leaderboard[SHROOM_MAX_PLAYER_ENTITIES];
     size_t leaderboard_count = 0;
     BuildLeaderboard(game, leaderboard, &leaderboard_count);
     game->final_rank = GetLocalPlayerRank(game, leaderboard, leaderboard_count);
