@@ -26,8 +26,30 @@ static bool GameplayInit(ShroomScreenManager* manager) {
     return false;
   }
 
+  if (game->authoritative_round_resume_pending) {
+    game->authoritative_round_resume_pending = false;
+    return true;
+  }
+
   GameInit(game, GetScreenWidth(), GetScreenHeight(), game->selected_mode);
   return true;
+}
+
+static bool IsOnlineSession(const Game* game) {
+  return (game->active_mode == SHROOM_SESSION_MODE_QUICK_PLAY) ||
+         (game->active_mode == SHROOM_SESSION_MODE_LOBBY_PLAY);
+}
+
+static void CaptureAuthoritativeResults(Game* game) {
+  LeaderboardEntry leaderboard[SHROOM_MAX_PLAYERS];
+  size_t leaderboard_count = 0;
+
+  game->final_mass = game->local_player != NULL ? game->local_player->mass : 0.0f;
+  BuildLeaderboard(game, leaderboard, &leaderboard_count);
+  game->final_rank = GetLocalPlayerRank(game, leaderboard, leaderboard_count);
+  game->session_duration_seconds =
+      ShroomResultsElapsedSeconds(game->session_start_time, (float)GetTime());
+  game->show_results = true;
 }
 
 static void GameplayUpdate(ShroomScreenManager* manager, float delta_time) {
@@ -38,6 +60,13 @@ static void GameplayUpdate(ShroomScreenManager* manager, float delta_time) {
   }
 
   GameUpdate(game, delta_time);
+
+  if (IsOnlineSession(game) && game->net.welcome_received &&
+      (game->world.match_phase == SHROOM_MATCH_PHASE_RESULTS)) {
+    CaptureAuthoritativeResults(game);
+    game->authoritative_round_resume_pending = true;
+    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_RESULTS);
+  }
 }
 
 static void GameplayDraw(ShroomScreenManager* manager) {
@@ -256,6 +285,10 @@ static void GameplayCleanup(ShroomScreenManager* manager) {
   Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
 
   if (game == NULL) {
+    return;
+  }
+
+  if (game->authoritative_round_resume_pending) {
     return;
   }
 

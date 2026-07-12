@@ -13,6 +13,28 @@ static bool ResultsInit(ShroomScreenManager* manager) {
   return true;
 }
 
+static bool IsAuthoritativeOnlineResults(const Game* game) {
+  return game->net.welcome_received && ((game->active_mode == SHROOM_SESSION_MODE_QUICK_PLAY) ||
+                                        (game->active_mode == SHROOM_SESSION_MODE_LOBBY_PLAY));
+}
+
+static void ResultsUpdate(ShroomScreenManager* manager, float delta_time) {
+  Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
+
+  if ((game == NULL) || !IsAuthoritativeOnlineResults(game)) {
+    return;
+  }
+
+  GameUpdate(game, delta_time);
+  if (game->world.match_phase == SHROOM_MATCH_PHASE_RUNNING) {
+    game->show_results = false;
+    game->session_start_time = (float)GetTime();
+    game->session_duration_seconds = 0u;
+    game->authoritative_round_resume_pending = true;
+    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
+  }
+}
+
 static void ResultsDraw(ShroomScreenManager* manager) {
   Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
 
@@ -61,18 +83,26 @@ static void ResultsDraw(ShroomScreenManager* manager) {
   const float button_width = ShroomLayoutMetric(200.0f);
   const float button_height = ShroomLayoutMetric(40.0f);
 
-  ShroomImGui_SetNextItemWidth(button_width);
-  if (ShroomImGui_Button("Play Again", button_width, button_height)) {
-    GamePlayUiClickSound(game);
-    game->show_results = false;
-    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
+  if (IsAuthoritativeOnlineResults(game)) {
+    ShroomImGui_Text("Waiting for the next round...");
+  } else {
+    ShroomImGui_SetNextItemWidth(button_width);
+    if (ShroomImGui_Button("Play Again", button_width, button_height)) {
+      GamePlayUiClickSound(game);
+      game->show_results = false;
+      ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
+    }
+    ShroomImGui_SameLine();
   }
 
-  ShroomImGui_SameLine();
   ShroomImGui_SetNextItemWidth(button_width);
   if (ShroomImGui_Button("Main Menu", button_width, button_height)) {
     GamePlayUiClickSound(game);
     game->show_results = false;
+    if (IsAuthoritativeOnlineResults(game)) {
+      game->authoritative_round_resume_pending = false;
+      GameShutdown(game);
+    }
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_MAIN_MENU);
   }
 
@@ -105,6 +135,7 @@ void ShroomScreenRegisterResults(ShroomScreenManager* manager) {
   screen->type = SHROOM_SCREEN_RESULTS;
   screen->name = "Results";
   screen->init = ResultsInit;
+  screen->update = ResultsUpdate;
   screen->draw = ResultsDraw;
   screen->handle_input = ResultsHandleInput;
 }

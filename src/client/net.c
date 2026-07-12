@@ -6,6 +6,7 @@
 #include <time.h>
 
 #include "shared/config.h"
+#include "shared/world.h"
 
 static void SetStatus(ClientNetState* net, ClientNetStatus status, const char* text) {
   net->status = status;
@@ -109,7 +110,8 @@ static void SendInput(ClientNetState* net, ShroomVec2 input_direction, bool spli
                       uint32_t focused_entity_id) {
   ShroomInputPacket packet = {0};
 
-  if (!net->welcome_received || !net->match_entry_sent || (net->peer == 0) ||
+  if (!net->welcome_received || !net->match_entry_sent ||
+      (net->match_phase != SHROOM_MATCH_PHASE_RUNNING) || (net->peer == 0) ||
       (net->peer->state != ENET_PEER_STATE_CONNECTED)) {
     return;
   }
