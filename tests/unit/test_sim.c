@@ -1035,6 +1035,181 @@ void test_bot_ignores_spore_beyond_search_radius(void) {
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, bot->input_direction.y);
 }
 
+void test_bot_risk_profiles_are_stable_by_player_id(void) {
+  TEST_ASSERT_EQUAL(SHROOM_BOT_PROFILE_CONSERVATIVE, ShroomBotProfileForPlayer(1u));
+  TEST_ASSERT_EQUAL(SHROOM_BOT_PROFILE_AGGRESSIVE, ShroomBotProfileForPlayer(2u));
+  TEST_ASSERT_EQUAL(SHROOM_BOT_PROFILE_OBJECTIVE, ShroomBotProfileForPlayer(3u));
+  TEST_ASSERT_EQUAL(SHROOM_BOT_PROFILE_CONSERVATIVE, ShroomBotProfileForPlayer(4u));
+}
+
+void test_aggressive_bot_splits_to_catch_safe_unprotected_prey(void) {
+  ShroomPlayerState* bot;
+  ShroomPlayerState* prey;
+
+  ResetWorldForPlayers();
+  bot = ShroomWorldSpawnPlayer(&world, 2u, true);
+  prey = ShroomWorldSpawnPlayer(&world, 20u, false);
+  TEST_ASSERT_NOT_NULL(bot);
+  TEST_ASSERT_NOT_NULL(prey);
+  bot->position = (ShroomVec2){2000.0f, 2000.0f};
+  bot->mass = 800.0f;
+  bot->radius = ShroomMassToRadius(bot->mass);
+  prey->position = (ShroomVec2){2200.0f, 2000.0f};
+  prey->mass = 200.0f;
+  prey->radius = ShroomMassToRadius(prey->mass);
+  prey->spawn_protection_timer = 0.0f;
+
+  ShroomWorldStep(&world, 0.0f);
+
+  TEST_ASSERT_EQUAL_size_t(2u, CountAlivePieces(bot->player_id));
+  TEST_ASSERT_TRUE(bot->bot_tactical_cooldown_timer > 0.0f);
+}
+
+void test_conservative_bot_rejects_unshielded_split_and_protected_prey(void) {
+  ShroomPlayerState* bot;
+  ShroomPlayerState* prey;
+
+  ResetWorldForPlayers();
+  bot = ShroomWorldSpawnPlayer(&world, 1u, true);
+  prey = ShroomWorldSpawnPlayer(&world, 20u, false);
+  TEST_ASSERT_NOT_NULL(bot);
+  TEST_ASSERT_NOT_NULL(prey);
+  bot->position = (ShroomVec2){2000.0f, 2000.0f};
+  bot->mass = 800.0f;
+  bot->radius = ShroomMassToRadius(bot->mass);
+  prey->position = (ShroomVec2){2200.0f, 2000.0f};
+  prey->mass = 160.0f;
+  prey->radius = ShroomMassToRadius(prey->mass);
+  prey->spawn_protection_timer = SHROOM_PLAYER_SPAWN_PROTECTION_SECONDS;
+
+  ShroomWorldStep(&world, 0.0f);
+
+  TEST_ASSERT_EQUAL_size_t(1u, CountAlivePieces(bot->player_id));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 800.0f, bot->mass);
+}
+
+void test_aggressive_bot_ejects_pressure_mass_with_cooldown_bounds(void) {
+  ShroomPlayerState* bot;
+  ShroomPlayerState* prey;
+  float mass_after_first_step;
+  size_t spores_after_first_step;
+
+  ResetWorldForPlayers();
+  bot = ShroomWorldSpawnPlayer(&world, 2u, true);
+  prey = ShroomWorldSpawnPlayer(&world, 20u, false);
+  TEST_ASSERT_NOT_NULL(bot);
+  TEST_ASSERT_NOT_NULL(prey);
+  bot->position = (ShroomVec2){2000.0f, 2000.0f};
+  bot->mass = 300.0f;
+  bot->radius = ShroomMassToRadius(bot->mass);
+  prey->position = (ShroomVec2){2450.0f, 2000.0f};
+  prey->mass = 150.0f;
+  prey->radius = ShroomMassToRadius(prey->mass);
+  prey->spawn_protection_timer = 0.0f;
+
+  ShroomWorldStep(&world, 0.0f);
+  mass_after_first_step = bot->mass;
+  spores_after_first_step = world.spore_count;
+  ShroomWorldStep(&world, 0.1f);
+
+  TEST_ASSERT_TRUE(mass_after_first_step < 300.0f);
+  TEST_ASSERT_EQUAL_size_t(1u, spores_after_first_step);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, mass_after_first_step, bot->mass);
+  TEST_ASSERT_EQUAL_size_t(spores_after_first_step, world.spore_count);
+}
+
+void test_bot_tactics_respect_mass_floor_and_split_piece_cap(void) {
+  ShroomPlayerState* bot;
+  ShroomPlayerState* prey;
+
+  ResetWorldForPlayers();
+  bot = ShroomWorldSpawnPlayer(&world, 2u, true);
+  prey = ShroomWorldSpawnPlayer(&world, 20u, false);
+  TEST_ASSERT_NOT_NULL(bot);
+  TEST_ASSERT_NOT_NULL(prey);
+  bot->position = (ShroomVec2){2000.0f, 2000.0f};
+  bot->mass = SHROOM_EJECT_MIN_MASS - 1.0f;
+  bot->radius = ShroomMassToRadius(bot->mass);
+  prey->position = (ShroomVec2){2200.0f, 2000.0f};
+  prey->mass = SHROOM_DEFAULT_PLAYER_MASS;
+  prey->radius = ShroomMassToRadius(prey->mass);
+  prey->spawn_protection_timer = 0.0f;
+
+  ShroomWorldStep(&world, 0.0f);
+  TEST_ASSERT_EQUAL_size_t(1u, CountAlivePieces(bot->player_id));
+  TEST_ASSERT_EQUAL_size_t(0u, world.spore_count);
+
+  while (CountAlivePieces(bot->player_id) < SHROOM_MAX_SPLIT_PIECES) {
+    bot->mass = SHROOM_MAX_PLAYER_MASS;
+    bot->radius = ShroomMassToRadius(bot->mass);
+    TEST_ASSERT_TRUE(ShroomWorldSplitPlayerToward(&world, bot, (ShroomVec2){1.0f, 0.0f}));
+  }
+  bot->mass = SHROOM_MAX_PLAYER_MASS - 1.0f;
+  bot->radius = ShroomMassToRadius(bot->mass);
+  ShroomWorldStep(&world, 0.0f);
+
+  TEST_ASSERT_EQUAL_size_t(SHROOM_MAX_SPLIT_PIECES, CountAlivePieces(bot->player_id));
+}
+
+void test_objective_bot_prioritizes_and_sheds_mass_away_from_powerup(void) {
+  ShroomPlayerState* bot;
+
+  ResetWorldForPlayers();
+  bot = ShroomWorldSpawnPlayer(&world, 3u, true);
+  TEST_ASSERT_NOT_NULL(bot);
+  bot->position = (ShroomVec2){2000.0f, 2000.0f};
+  bot->mass = 300.0f;
+  bot->radius = ShroomMassToRadius(bot->mass);
+  world.powerup_count = 1u;
+  world.powerups[0] = (ShroomPowerupState){
+      .entity_id = world.next_entity_id++,
+      .position = {2400.0f, 2000.0f},
+      .type = SHROOM_POWERUP_MAGNET,
+      .active = true,
+  };
+
+  ShroomWorldStep(&world, 0.0f);
+
+  TEST_ASSERT_TRUE(bot->input_direction.x > 0.0f);
+  TEST_ASSERT_TRUE(bot->mass < 300.0f);
+  TEST_ASSERT_EQUAL_size_t(1u, world.spore_count);
+  TEST_ASSERT_TRUE(world.spores[0].position.x < bot->position.x);
+}
+
+void test_bot_tactical_decisions_repeat_for_identical_seed_and_state(void) {
+  ShroomWorldState first;
+  ShroomWorldState second;
+  ShroomPlayerState* first_bot;
+  ShroomPlayerState* second_bot;
+
+  ShroomWorldInitWithSeed(&first, 442u);
+  ShroomWorldInitWithSeed(&second, 442u);
+  first.player_count = second.player_count = 0u;
+  first.spore_count = second.spore_count = 0u;
+  first.powerup_count = second.powerup_count = 0u;
+  first_bot = ShroomWorldSpawnPlayer(&first, 3u, true);
+  second_bot = ShroomWorldSpawnPlayer(&second, 3u, true);
+  TEST_ASSERT_NOT_NULL(first_bot);
+  TEST_ASSERT_NOT_NULL(second_bot);
+  first_bot->mass = second_bot->mass = 300.0f;
+  first.powerup_count = second.powerup_count = 1u;
+  first.powerups[0] = second.powerups[0] = (ShroomPowerupState){
+      .entity_id = 900u,
+      .position = {2500.0f, 2500.0f},
+      .type = SHROOM_POWERUP_SPEED,
+      .active = true,
+  };
+
+  ShroomWorldStep(&first, 0.1f);
+  ShroomWorldStep(&second, 0.1f);
+
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, first_bot->mass, second_bot->mass);
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, first_bot->position.x, second_bot->position.x);
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, first_bot->position.y, second_bot->position.y);
+  TEST_ASSERT_EQUAL_size_t(first.spore_count, second.spore_count);
+  TEST_ASSERT_EQUAL_UINT32(first.random_state, second.random_state);
+}
+
 void test_corner_consume_works_near_boundaries(void) {
   ShroomPlayerState* attacker;
   ShroomPlayerState* victim;
@@ -1422,6 +1597,13 @@ int main(void) {
   RUN_TEST(test_bot_flees_nearby_threat_even_with_available_prey);
   RUN_TEST(test_bot_pursues_nearby_spore_within_search_radius);
   RUN_TEST(test_bot_ignores_spore_beyond_search_radius);
+  RUN_TEST(test_bot_risk_profiles_are_stable_by_player_id);
+  RUN_TEST(test_aggressive_bot_splits_to_catch_safe_unprotected_prey);
+  RUN_TEST(test_conservative_bot_rejects_unshielded_split_and_protected_prey);
+  RUN_TEST(test_aggressive_bot_ejects_pressure_mass_with_cooldown_bounds);
+  RUN_TEST(test_bot_tactics_respect_mass_floor_and_split_piece_cap);
+  RUN_TEST(test_objective_bot_prioritizes_and_sheds_mass_away_from_powerup);
+  RUN_TEST(test_bot_tactical_decisions_repeat_for_identical_seed_and_state);
   RUN_TEST(test_corner_consume_works_near_boundaries);
   RUN_TEST(test_edge_consume_works_when_target_pinned_against_wall);
   RUN_TEST(test_corner_consume_works_with_movement_clamping);

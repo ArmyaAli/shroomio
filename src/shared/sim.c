@@ -371,6 +371,133 @@ static float ShroomBotCenterPressureWeight(float bot_mass, ShroomZone zone) {
   return zone == SHROOM_ZONE_OUTER ? 1.2f : 0.8f;
 }
 
+ShroomBotRiskProfile ShroomBotProfileForPlayer(ShroomPlayerId player_id) {
+  if (player_id == 0u) {
+    return SHROOM_BOT_PROFILE_CONSERVATIVE;
+  }
+  return (ShroomBotRiskProfile)((player_id - 1u) % (uint32_t)SHROOM_BOT_PROFILE_COUNT);
+}
+
+static float ShroomBotPowerupUtility(const ShroomPlayerState* bot,
+                                     const ShroomPowerupState* powerup,
+                                     ShroomBotRiskProfile profile) {
+  float utility = 1.0f;
+
+  switch (powerup->type) {
+  case SHROOM_POWERUP_SPEED:
+    utility = profile == SHROOM_BOT_PROFILE_AGGRESSIVE ? 1.45f : 1.1f;
+    if (bot->speed_powerup_timer > 1.0f) {
+      utility *= 0.25f;
+    }
+    break;
+  case SHROOM_POWERUP_SHIELD:
+    utility = profile == SHROOM_BOT_PROFILE_CONSERVATIVE ? 1.7f : 1.2f;
+    if (bot->shield_powerup_timer > 1.0f) {
+      utility *= 0.25f;
+    }
+    break;
+  case SHROOM_POWERUP_MAGNET:
+    utility = profile == SHROOM_BOT_PROFILE_OBJECTIVE ? 1.65f : 1.05f;
+    if (bot->magnet_powerup_timer > 1.0f) {
+      utility *= 0.25f;
+    }
+    break;
+  case SHROOM_POWERUP_DECAY_IMMUNE:
+    utility = bot->mass >= SHROOM_DECAY_MASS_THRESHOLD ? 1.4f : 0.8f;
+    if (bot->decay_immune_powerup_timer > 1.0f) {
+      utility *= 0.25f;
+    }
+    break;
+  default:
+    return 0.0f;
+  }
+
+  if (profile == SHROOM_BOT_PROFILE_OBJECTIVE) {
+    utility *= 1.5f;
+  }
+  return utility;
+}
+
+static float ShroomBotTacticalCooldown(ShroomBotRiskProfile profile) {
+  switch (profile) {
+  case SHROOM_BOT_PROFILE_AGGRESSIVE:
+    return SHROOM_BOT_TACTICAL_COOLDOWN_AGGRESSIVE;
+  case SHROOM_BOT_PROFILE_OBJECTIVE:
+    return SHROOM_BOT_TACTICAL_COOLDOWN_OBJECTIVE;
+  case SHROOM_BOT_PROFILE_CONSERVATIVE:
+  case SHROOM_BOT_PROFILE_COUNT:
+    return SHROOM_BOT_TACTICAL_COOLDOWN_CONSERVATIVE;
+  }
+  return SHROOM_BOT_TACTICAL_COOLDOWN_CONSERVATIVE;
+}
+
+static bool ShroomBotTryTacticalAction(ShroomWorldState* world, ShroomPlayerState* bot,
+                                       const ShroomPlayerState* prey, float prey_distance_sqr,
+                                       const ShroomPlayerState* threat, float threat_distance_sqr,
+                                       const ShroomPowerupState* objective) {
+  const ShroomBotRiskProfile profile = ShroomBotProfileForPlayer(bot->player_id);
+  const bool threat_close = (threat != NULL) && (threat_distance_sqr < (700.0f * 700.0f));
+  ShroomVec2 direction;
+
+  if ((bot->piece_index != 0u) || (bot->bot_tactical_cooldown_timer > 0.0f)) {
+    return false;
+  }
+
+  if ((prey != NULL) && !ShroomPlayerHasConsumeProtection(prey) && !threat_close &&
+      (prey_distance_sqr <= (SHROOM_BOT_SPLIT_REACH * SHROOM_BOT_SPLIT_REACH)) &&
+      ShroomPlayerCanSplit(world, bot)) {
+    const float post_split_mass = bot->mass * (1.0f - SHROOM_SPLIT_MASS_LOSS_FRACTION) * 0.5f;
+    float safety_margin = 1.2f;
+    bool profile_allows_split = true;
+
+    if (profile == SHROOM_BOT_PROFILE_CONSERVATIVE) {
+      safety_margin = 1.45f;
+      profile_allows_split = bot->shield_powerup_timer > 0.0f;
+    } else if (profile == SHROOM_BOT_PROFILE_AGGRESSIVE) {
+      safety_margin = 1.03f;
+    } else {
+      safety_margin = 1.18f;
+    }
+
+    if (profile_allows_split &&
+        (post_split_mass >= prey->mass *
+                                ShroomGetConsumeMassAdvantageAtPosition(world, prey->position) *
+                                safety_margin)) {
+      direction = ShroomVec2Sub(prey->position, bot->position);
+      if (ShroomWorldSplitPlayerToward(world, bot, direction)) {
+        bot->bot_tactical_cooldown_timer = ShroomBotTacticalCooldown(profile);
+        return true;
+      }
+    }
+  }
+
+  if (profile == SHROOM_BOT_PROFILE_AGGRESSIVE && (prey != NULL) &&
+      !ShroomPlayerHasConsumeProtection(prey) && !threat_close &&
+      (prey_distance_sqr <= (SHROOM_BOT_EJECT_PRESSURE_RANGE * SHROOM_BOT_EJECT_PRESSURE_RANGE))) {
+    const float post_eject_mass =
+        bot->mass - SHROOM_EJECT_MASS_VALUE * (1.0f + SHROOM_EJECT_COST_FRACTION);
+    if (post_eject_mass >=
+        prey->mass * ShroomGetConsumeMassAdvantageAtPosition(world, prey->position) * 1.1f) {
+      direction = ShroomVec2Sub(prey->position, bot->position);
+      if (ShroomWorldEjectMass(world, bot, direction)) {
+        bot->bot_tactical_cooldown_timer = ShroomBotTacticalCooldown(profile);
+        return true;
+      }
+    }
+  }
+
+  if ((profile == SHROOM_BOT_PROFILE_OBJECTIVE) && (objective != NULL) && !threat_close &&
+      (bot->mass >= SHROOM_EJECT_MIN_MASS * 1.15f)) {
+    direction = ShroomVec2Sub(bot->position, objective->position);
+    if (ShroomWorldEjectMass(world, bot, direction)) {
+      bot->bot_tactical_cooldown_timer = ShroomBotTacticalCooldown(profile);
+      return true;
+    }
+  }
+
+  return false;
+}
+
 #define SHROOM_SPORE_GRID_CELL_SIZE 200.0f
 #define SHROOM_SPORE_GRID_COLS (((int)(SHROOM_WORLD_WIDTH / SHROOM_SPORE_GRID_CELL_SIZE)) + 1)
 #define SHROOM_SPORE_GRID_ROWS (((int)(SHROOM_WORLD_HEIGHT / SHROOM_SPORE_GRID_CELL_SIZE)) + 1)
@@ -427,10 +554,14 @@ static void ShroomUpdateBotInput(ShroomWorldState* world, ShroomPlayerState* bot
   const ShroomPlayerState* best_threat = 0;
   const ShroomPlayerState* best_prey = 0;
   const ShroomSporeState* best_spore = 0;
+  const ShroomPowerupState* best_powerup = 0;
   float best_threat_score = 0.0f;
   float best_prey_score = 0.0f;
   float best_spore_score = 0.0f;
   float best_threat_distance = 0.0f;
+  float best_prey_distance = 0.0f;
+  float best_powerup_score = 0.0f;
+  const ShroomBotRiskProfile profile = ShroomBotProfileForPlayer(bot->player_id);
   const ShroomZone current_zone = ShroomGetZoneAtPosition(world, bot->position);
 
   for (index = 0; index < world->player_count; ++index) {
@@ -457,9 +588,29 @@ static void ShroomUpdateBotInput(ShroomWorldState* world, ShroomPlayerState* bot
       if ((best_prey == 0) || (prey_score > best_prey_score)) {
         best_prey = other;
         best_prey_score = prey_score;
+        best_prey_distance = distance_sqr;
       }
     }
   }
+
+  for (index = 0; index < world->powerup_count; ++index) {
+    const ShroomPowerupState* powerup = &world->powerups[index];
+    const float distance_sqr = ShroomDistanceSqr(bot->position, powerup->position);
+    float score;
+
+    if (!powerup->active ||
+        (distance_sqr > (SHROOM_BOT_POWERUP_SEARCH_RADIUS * SHROOM_BOT_POWERUP_SEARCH_RADIUS))) {
+      continue;
+    }
+    score = ShroomBotPowerupUtility(bot, powerup, profile) * 1100000.0f / (distance_sqr + 1600.0f);
+    if ((best_powerup == NULL) || (score > best_powerup_score)) {
+      best_powerup = powerup;
+      best_powerup_score = score;
+    }
+  }
+
+  ShroomBotTryTacticalAction(world, bot, best_prey, best_prey_distance, best_threat,
+                             best_threat_distance, best_powerup);
 
   if ((best_threat != 0) && (best_threat_distance < (1150.0f * 1150.0f))) {
     ShroomVec2 flee_direction = ShroomVec2Sub(bot->position, best_threat->position);
@@ -471,6 +622,13 @@ static void ShroomUpdateBotInput(ShroomWorldState* world, ShroomPlayerState* bot
     }
 
     bot->input_direction = ShroomNormalizeOrZero(flee_direction);
+    return;
+  }
+
+  if ((best_powerup != NULL) && ((profile == SHROOM_BOT_PROFILE_OBJECTIVE) || (best_prey == NULL) ||
+                                 (best_powerup_score > best_prey_score * 1.25f))) {
+    bot->input_direction =
+        ShroomNormalizeOrZero(ShroomVec2Sub(best_powerup->position, bot->position));
     return;
   }
 
@@ -1279,7 +1437,7 @@ static void ShroomApplyForcedSplits(ShroomWorldState* world) {
     if (!player->is_bot) {
       continue;
     }
-    if (!ShroomPlayerCanSplit(world, player) || (player->mass < SHROOM_SPLIT_MASS_THRESHOLD)) {
+    if (!ShroomPlayerCanSplit(world, player) || (player->mass < SHROOM_MAX_PLAYER_MASS)) {
       continue;
     }
     ShroomWorldSplitPlayer(world, player);
@@ -1522,6 +1680,12 @@ void ShroomWorldStep(ShroomWorldState* world, float delta_time) {
       player->eject_cooldown_timer -= delta_time;
       if (player->eject_cooldown_timer < 0.0f) {
         player->eject_cooldown_timer = 0.0f;
+      }
+    }
+    if (player->bot_tactical_cooldown_timer > 0.0f) {
+      player->bot_tactical_cooldown_timer -= delta_time;
+      if (player->bot_tactical_cooldown_timer < 0.0f) {
+        player->bot_tactical_cooldown_timer = 0.0f;
       }
     }
   }

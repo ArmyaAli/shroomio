@@ -30,6 +30,13 @@ typedef enum ShroomMatchPhase {
   SHROOM_MATCH_PHASE_RESET = 2,
 } ShroomMatchPhase;
 
+typedef enum ShroomBotRiskProfile {
+  SHROOM_BOT_PROFILE_CONSERVATIVE = 0,
+  SHROOM_BOT_PROFILE_AGGRESSIVE = 1,
+  SHROOM_BOT_PROFILE_OBJECTIVE = 2,
+  SHROOM_BOT_PROFILE_COUNT
+} ShroomBotRiskProfile;
+
 typedef struct ShroomPlayerState {
   ShroomPlayerId player_id;
   ShroomEntityId entity_id;
@@ -52,6 +59,7 @@ typedef struct ShroomPlayerState {
   float magnet_powerup_timer;
   float decay_immune_powerup_timer;
   float eject_cooldown_timer;
+  float bot_tactical_cooldown_timer;
   uint8_t piece_index; /* 0 = primary; 1-3 = split fragment */
   uint8_t team_id;     /* 0 = no team (FFA), 1-8 = team number */
 } ShroomPlayerState;
