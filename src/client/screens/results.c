@@ -27,8 +27,9 @@ static void ResultsReconnectOnline(ShroomScreenManager* manager, Game* game) {
 }
 
 static bool IsAuthoritativeOnlineResults(const Game* game) {
-  return game->net.welcome_received && ((game->active_mode == SHROOM_SESSION_MODE_QUICK_PLAY) ||
-                                        (game->active_mode == SHROOM_SESSION_MODE_LOBBY_PLAY));
+  return game->authoritative_round_resume_pending && game->net.welcome_received &&
+         ((game->active_mode == SHROOM_SESSION_MODE_QUICK_PLAY) ||
+          (game->active_mode == SHROOM_SESSION_MODE_LOBBY_PLAY));
 }
 
 static void ResultsUpdate(ShroomScreenManager* manager, float delta_time) {
@@ -103,7 +104,11 @@ static void ResultsDraw(ShroomScreenManager* manager) {
     if (ShroomImGui_Button("Play Again", button_width, button_height)) {
       GamePlayUiClickSound(game);
       game->show_results = false;
-      if (game->active_mode == SHROOM_SESSION_MODE_OFFLINE_PRACTICE) {
+      if ((game->active_mode == SHROOM_SESSION_MODE_LOBBY_PLAY) &&
+          ClientNetCanResumeLobbySession(&game->net)) {
+        game->resume_online_session_requested = true;
+        ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
+      } else if (game->active_mode == SHROOM_SESSION_MODE_OFFLINE_PRACTICE) {
         ShroomScreenManagerTransition(manager, SHROOM_SCREEN_GAME);
       } else {
         ResultsReconnectOnline(manager, game);
