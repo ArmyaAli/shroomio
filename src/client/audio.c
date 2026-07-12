@@ -2,6 +2,7 @@
 
 #include <math.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -13,6 +14,37 @@ static bool g_client_sfx_loaded[SHROOM_CLIENT_SFX_COUNT];
 static double g_client_sfx_last_played_at[SHROOM_CLIENT_SFX_COUNT];
 static Sound g_client_music_loop;
 static bool g_client_music_loaded;
+static bool g_client_audio_initialized;
+static bool g_client_audio_device_owned;
+static bool g_client_audio_assets_loaded;
+static char g_client_audio_status[128] = "Audio is not initialized.";
+
+typedef struct ClientAudioBackend {
+  void* context;
+  bool (*init_device)(void* context);
+  bool (*device_ready)(void* context);
+  void (*close_device)(void* context);
+  bool (*load_assets)(void* context);
+  void (*unload_assets)(void* context);
+  void (*apply_settings)(void* context, const ClientSettings* settings);
+} ClientAudioBackend;
+
+static bool ProductionInitDevice(void* context);
+static bool ProductionDeviceReady(void* context);
+static void ProductionCloseDevice(void* context);
+static bool ProductionLoadAssets(void* context);
+static void ProductionUnloadAssets(void* context);
+static void ProductionApplySettings(void* context, const ClientSettings* settings);
+
+static ClientAudioBackend g_client_audio_backend = {
+    .init_device = ProductionInitDevice,
+    .device_ready = ProductionDeviceReady,
+    .close_device = ProductionCloseDevice,
+    .load_assets = ProductionLoadAssets,
+    .unload_assets = ProductionUnloadAssets,
+    .apply_settings = ProductionApplySettings,
+};
+static bool g_client_audio_uses_production_backend = true;
 
 static bool SoundIsUsable(Sound sound) {
   return (sound.stream.buffer != NULL) && (sound.frameCount > 0u);
@@ -202,7 +234,7 @@ static Sound GenerateAmbientLoopSound(void) {
 
 static void EnsureClientSfxLoaded(ShroomClientSfx sfx) {
   if ((sfx < 0) || (sfx >= SHROOM_CLIENT_SFX_COUNT) || g_client_sfx_loaded[sfx] ||
-      !IsAudioDeviceReady()) {
+      !g_client_audio_uses_production_backend || !IsAudioDeviceReady()) {
     return;
   }
 
@@ -250,14 +282,17 @@ static void EnsureClientSfxLoaded(ShroomClientSfx sfx) {
   g_client_sfx_loaded[sfx] = SoundIsUsable(g_client_sfx[sfx]);
 }
 
-void ShroomClientAudioEnsureAllSfxLoaded(void) {
+static void EnsureAllClientSfxLoaded(void) {
+  if (!g_client_audio_initialized || !g_client_audio_uses_production_backend) {
+    return;
+  }
   for (int index = 0; index < SHROOM_CLIENT_SFX_COUNT; ++index) {
     EnsureClientSfxLoaded((ShroomClientSfx)index);
   }
 }
 
 static void EnsureClientMusicLoaded(void) {
-  if (g_client_music_loaded || !IsAudioDeviceReady()) {
+  if (g_client_music_loaded || !g_client_audio_uses_production_backend || !IsAudioDeviceReady()) {
     return;
   }
   g_client_music_loop = GenerateAmbientLoopSound();
@@ -268,6 +303,9 @@ void ShroomClientAudioUpdateMusic(const ClientSettings* settings) {
   float volume;
 
   if (settings == NULL) {
+    return;
+  }
+  if (!g_client_audio_initialized || !g_client_audio_uses_production_backend) {
     return;
   }
   EnsureClientMusicLoaded();
@@ -286,23 +324,155 @@ void ShroomClientAudioUpdateMusic(const ClientSettings* settings) {
   }
 }
 
-void ShroomClientAudioShutdown(void) {
+static void ClearClientAssetHandles(void) {
+  memset(g_client_sfx, 0, sizeof(g_client_sfx));
+  memset(g_client_sfx_loaded, 0, sizeof(g_client_sfx_loaded));
+  memset(g_client_sfx_last_played_at, 0, sizeof(g_client_sfx_last_played_at));
+  memset(&g_client_music_loop, 0, sizeof(g_client_music_loop));
+  g_client_music_loaded = false;
+  g_client_audio_assets_loaded = false;
+}
+
+static bool ProductionInitDevice(void* context) {
+  (void)context;
   if (!IsAudioDeviceReady()) {
-    return;
+    InitAudioDevice();
   }
+  return IsAudioDeviceReady();
+}
+
+static bool ProductionDeviceReady(void* context) {
+  (void)context;
+  return IsAudioDeviceReady();
+}
+
+static void ProductionCloseDevice(void* context) {
+  (void)context;
+  CloseAudioDevice();
+}
+
+static bool ProductionLoadAssets(void* context) {
+  (void)context;
+  EnsureAllClientSfxLoaded();
+  EnsureClientMusicLoaded();
+  if (!g_client_music_loaded) {
+    return false;
+  }
+  for (int index = 0; index < SHROOM_CLIENT_SFX_COUNT; ++index) {
+    if (!g_client_sfx_loaded[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+static void ProductionUnloadAssets(void* context) {
+  (void)context;
   for (int index = 0; index < SHROOM_CLIENT_SFX_COUNT; ++index) {
     if (g_client_sfx_loaded[index]) {
       UnloadSound(g_client_sfx[index]);
     }
   }
-  memset(g_client_sfx, 0, sizeof(g_client_sfx));
-  memset(g_client_sfx_loaded, 0, sizeof(g_client_sfx_loaded));
-  memset(g_client_sfx_last_played_at, 0, sizeof(g_client_sfx_last_played_at));
   if (g_client_music_loaded) {
+    StopSound(g_client_music_loop);
     UnloadSound(g_client_music_loop);
   }
-  memset(&g_client_music_loop, 0, sizeof(g_client_music_loop));
-  g_client_music_loaded = false;
+}
+
+static void ProductionApplySettings(void* context, const ClientSettings* settings) {
+  (void)context;
+  if (settings == NULL) {
+    return;
+  }
+  SetMasterVolume((float)settings->master_volume_percent / 100.0f);
+  ShroomClientAudioUpdateMusic(settings);
+}
+
+static bool AudioBackendReady(void) {
+  return (g_client_audio_backend.device_ready != NULL) &&
+         g_client_audio_backend.device_ready(g_client_audio_backend.context);
+}
+
+static void SetAudioStatus(const char* status) {
+  snprintf(g_client_audio_status, sizeof(g_client_audio_status), "%s", status);
+}
+
+static bool StartClientAudio(const ClientSettings* settings) {
+  if ((settings == NULL) || (g_client_audio_backend.init_device == NULL) ||
+      !g_client_audio_backend.init_device(g_client_audio_backend.context)) {
+    ClearClientAssetHandles();
+    g_client_audio_initialized = false;
+    g_client_audio_device_owned = false;
+    SetAudioStatus("Audio device initialization failed. Restart Audio to retry.");
+    return false;
+  }
+
+  g_client_audio_device_owned = true;
+  g_client_audio_initialized = true;
+  if ((g_client_audio_backend.load_assets == NULL) ||
+      !g_client_audio_backend.load_assets(g_client_audio_backend.context)) {
+    if (AudioBackendReady() && (g_client_audio_backend.unload_assets != NULL)) {
+      g_client_audio_backend.unload_assets(g_client_audio_backend.context);
+    }
+    ClearClientAssetHandles();
+    g_client_audio_initialized = false;
+    SetAudioStatus("Audio assets failed to load. Restart Audio to retry.");
+    return false;
+  }
+
+  g_client_audio_assets_loaded = true;
+  if (g_client_audio_backend.apply_settings != NULL) {
+    g_client_audio_backend.apply_settings(g_client_audio_backend.context, settings);
+  }
+  SetAudioStatus("Audio ready.");
+  return true;
+}
+
+bool ShroomClientAudioInit(const ClientSettings* settings) {
+  if (g_client_audio_initialized && g_client_audio_assets_loaded && AudioBackendReady()) {
+    if (g_client_audio_backend.apply_settings != NULL) {
+      g_client_audio_backend.apply_settings(g_client_audio_backend.context, settings);
+    }
+    return true;
+  }
+  if (g_client_audio_device_owned) {
+    return ShroomClientAudioRestart(settings);
+  }
+  return StartClientAudio(settings);
+}
+
+bool ShroomClientAudioRestart(const ClientSettings* settings) {
+  if (AudioBackendReady() && g_client_audio_assets_loaded &&
+      (g_client_audio_backend.unload_assets != NULL)) {
+    g_client_audio_backend.unload_assets(g_client_audio_backend.context);
+  }
+  ClearClientAssetHandles();
+  g_client_audio_initialized = false;
+  if (g_client_audio_device_owned && (g_client_audio_backend.close_device != NULL)) {
+    g_client_audio_backend.close_device(g_client_audio_backend.context);
+  }
+  g_client_audio_device_owned = false;
+  return StartClientAudio(settings);
+}
+
+bool ShroomClientAudioIsReady(void) {
+  return g_client_audio_initialized && g_client_audio_assets_loaded && AudioBackendReady();
+}
+
+const char* ShroomClientAudioGetStatus(void) { return g_client_audio_status; }
+
+void ShroomClientAudioShutdown(void) {
+  if (AudioBackendReady() && g_client_audio_assets_loaded &&
+      (g_client_audio_backend.unload_assets != NULL)) {
+    g_client_audio_backend.unload_assets(g_client_audio_backend.context);
+  }
+  ClearClientAssetHandles();
+  g_client_audio_initialized = false;
+  if (g_client_audio_device_owned && (g_client_audio_backend.close_device != NULL)) {
+    g_client_audio_backend.close_device(g_client_audio_backend.context);
+  }
+  g_client_audio_device_owned = false;
+  SetAudioStatus("Audio is not initialized.");
 }
 
 void ShroomClientAudioPlaySfx(const ClientSettings* settings, ShroomClientSfx sfx,
@@ -311,6 +481,9 @@ void ShroomClientAudioPlaySfx(const ClientSettings* settings, ShroomClientSfx sf
   int active_sounds = 0;
 
   if ((settings == NULL) || (sfx < 0) || (sfx >= SHROOM_CLIENT_SFX_COUNT)) {
+    return;
+  }
+  if (!ShroomClientAudioIsReady() || !g_client_audio_uses_production_backend) {
     return;
   }
   if (!CanPlaySfxNow(sfx, GetTime())) {
@@ -349,6 +522,34 @@ void ShroomClientAudioPlaySfx(const ClientSettings* settings, ShroomClientSfx sf
 }
 
 #ifdef TEST_MODE
+void ShroomClientAudioTestSetBackend(const ShroomClientAudioTestBackend* backend) {
+  ShroomClientAudioShutdown();
+  if (backend == NULL) {
+    g_client_audio_backend = (ClientAudioBackend){
+        .init_device = ProductionInitDevice,
+        .device_ready = ProductionDeviceReady,
+        .close_device = ProductionCloseDevice,
+        .load_assets = ProductionLoadAssets,
+        .unload_assets = ProductionUnloadAssets,
+        .apply_settings = ProductionApplySettings,
+    };
+    g_client_audio_uses_production_backend = true;
+    return;
+  }
+  g_client_audio_backend = (ClientAudioBackend){
+      .context = backend->context,
+      .init_device = backend->init_device,
+      .device_ready = backend->device_ready,
+      .close_device = backend->close_device,
+      .load_assets = backend->load_assets,
+      .unload_assets = backend->unload_assets,
+      .apply_settings = backend->apply_settings,
+  };
+  g_client_audio_uses_production_backend = false;
+}
+
+bool ShroomClientAudioTestAssetsLoaded(void) { return g_client_audio_assets_loaded; }
+
 void ShroomClientAudioTestResetThrottleState(void) {
   memset(g_client_sfx_last_played_at, 0, sizeof(g_client_sfx_last_played_at));
 }

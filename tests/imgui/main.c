@@ -2,6 +2,7 @@
 #include "imgui_te_wrapper.h"
 
 #include "client/client_settings.h"
+#include "client/audio.h"
 #include "client/imgui_wrapper.h"
 #include "client/layout.h"
 #include "raylib.h"
@@ -13,9 +14,9 @@
 
 ShroomImGuiTestApp g_imgui_test_app;
 
-extern void ShroomRegisterImGuiTests(ImGuiTestEngine *engine);
+extern void ShroomRegisterImGuiTests(ImGuiTestEngine* engine);
 
-static void RegisterScreens(ShroomScreenManager *manager) {
+static void RegisterScreens(ShroomScreenManager* manager) {
   ShroomScreenRegisterMainMenu(manager);
   ShroomScreenRegisterSettings(manager);
   ShroomScreenRegisterHelp(manager);
@@ -46,7 +47,6 @@ void ShroomImGuiTestAppReset(bool reset_files) {
 
   memset(&g_imgui_test_app.game, 0, sizeof(g_imgui_test_app.game));
   ClientSettingsSetDefaults(&g_imgui_test_app.game.settings);
-  SetMasterVolume((float)g_imgui_test_app.game.settings.master_volume_percent / 100.0f);
   snprintf(g_imgui_test_app.game.selected_server_host,
            sizeof(g_imgui_test_app.game.selected_server_host), "%s", "127.0.0.1");
   g_imgui_test_app.game.selected_server_port = SHROOM_SERVER_PORT;
@@ -61,7 +61,7 @@ void ShroomImGuiTestAppReset(bool reset_files) {
 
 static bool SetupWorkingDirectory(void) {
   char template_path[] = "/tmp/shroomio-imgui-tests-XXXXXX";
-  char *temp_dir = mkdtemp(template_path);
+  char* temp_dir = mkdtemp(template_path);
 
   if (temp_dir == NULL) {
     perror("mkdtemp");
@@ -78,7 +78,7 @@ static bool SetupWorkingDirectory(void) {
 }
 
 int main(void) {
-  ImGuiTestEngine *engine;
+  ImGuiTestEngine* engine;
   int tested = 0;
   int success = 0;
   int queued = 0;
@@ -92,13 +92,9 @@ int main(void) {
   SetExitKey(KEY_NULL);
   SetTargetFPS(60);
 
-  /* InitAudioDevice mirrors src/client/main.c — without it, the test
-   * harness was skipping every audio code path. That hid a Play Online
-   * click segfault that lived in the SFX lazy-load path. */
-  InitAudioDevice();
-
   ShroomImGui_Init();
   ShroomImGuiTestAppReset(true);
+  ShroomClientAudioInit(&g_imgui_test_app.game.settings);
 
   engine = ShroomTeEngine_Create();
   ShroomRegisterImGuiTests(engine);
@@ -134,10 +130,8 @@ int main(void) {
   }
 
   ShroomScreenManagerShutdown(&g_imgui_test_app.screen_manager);
+  ShroomClientAudioShutdown();
   ShroomImGui_Shutdown();
-  if (IsAudioDeviceReady()) {
-    CloseAudioDevice();
-  }
   CloseWindow();
   ShroomTeEngine_Destroy(engine);
   return exit_code;
