@@ -23,7 +23,8 @@
 #define SHROOM_MAX_PLAYER_MASS (SHROOM_DEFAULT_PLAYER_MASS * 20.0f)
 #define SHROOM_IDLE_PENALTY_GRACE_SECONDS 8.0f
 #define SHROOM_IDLE_PENALTY_BLEED_PER_SECOND (SHROOM_DEFAULT_PLAYER_MASS * 0.5f / 60.0f)
-#define SHROOM_IDLE_PENALTY_MOVEMENT_THRESHOLD_SQR 1.0f
+/* Inputs are normalized by the server. Keep this above analog noise and safely below length 1. */
+#define SHROOM_IDLE_PENALTY_MOVEMENT_THRESHOLD_SQR 0.01f
 #define SHROOM_SPEED_FLOOR_FACTOR 0.60f
 
 // Game modes

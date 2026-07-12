@@ -34,14 +34,23 @@ void test_stationary_high_mass_player_bleeds_after_grace(void) {
   TEST_ASSERT_GREATER_THAN_FLOAT(0.0f, player->decay_spore_accumulator);
 }
 
-void test_moving_player_does_not_bleed_after_grace(void) {
-  ShroomPlayerState* player = SpawnIdleTestPlayer(SHROOM_DEFAULT_PLAYER_MASS * 4.0f);
-  const float before_mass = player->mass;
+void test_normalized_movement_does_not_bleed_after_grace(void) {
+  const ShroomVec2 normalized_inputs[] = {
+      {1.0f, 0.0f},
+      {0.0f, 1.0f},
+      {0.70710677f, 0.70710677f},
+  };
 
-  ShroomPlayerSetInput(player, (ShroomVec2){2.0f, 0.0f});
-  ShroomWorldStep(&world, SHROOM_IDLE_PENALTY_GRACE_SECONDS + 1.0f);
+  for (size_t index = 0; index < sizeof(normalized_inputs) / sizeof(normalized_inputs[0]);
+       ++index) {
+    ShroomPlayerState* player = SpawnIdleTestPlayer(SHROOM_DEFAULT_PLAYER_MASS * 4.0f);
+    const float before_mass = player->mass;
 
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, before_mass, player->mass);
+    ShroomPlayerSetInput(player, normalized_inputs[index]);
+    ShroomWorldStep(&world, SHROOM_IDLE_PENALTY_GRACE_SECONDS + 1.0f);
+
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, before_mass, player->mass);
+  }
 }
 
 void test_penalty_stops_when_motion_resumes(void) {
@@ -50,10 +59,20 @@ void test_penalty_stops_when_motion_resumes(void) {
 
   ShroomWorldStep(&world, SHROOM_IDLE_PENALTY_GRACE_SECONDS + 1.0f);
   after_idle_mass = player->mass;
-  ShroomPlayerSetInput(player, (ShroomVec2){2.0f, 0.0f});
+  ShroomPlayerSetInput(player, (ShroomVec2){1.0f, 0.0f});
   ShroomWorldStep(&world, 1.0f);
 
   TEST_ASSERT_FLOAT_WITHIN(0.001f, after_idle_mass, player->mass);
+}
+
+void test_below_threshold_input_still_bleeds_after_grace(void) {
+  ShroomPlayerState* player = SpawnIdleTestPlayer(SHROOM_DEFAULT_PLAYER_MASS * 4.0f);
+  const float before_mass = player->mass;
+
+  ShroomPlayerSetInput(player, (ShroomVec2){0.05f, 0.05f});
+  ShroomWorldStep(&world, SHROOM_IDLE_PENALTY_GRACE_SECONDS + 1.0f);
+
+  TEST_ASSERT_LESS_THAN_FLOAT(before_mass, player->mass);
 }
 
 void test_idle_penalty_applies_below_decay_threshold(void) {
@@ -68,8 +87,9 @@ void test_idle_penalty_applies_below_decay_threshold(void) {
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_stationary_high_mass_player_bleeds_after_grace);
-  RUN_TEST(test_moving_player_does_not_bleed_after_grace);
+  RUN_TEST(test_normalized_movement_does_not_bleed_after_grace);
   RUN_TEST(test_penalty_stops_when_motion_resumes);
+  RUN_TEST(test_below_threshold_input_still_bleeds_after_grace);
   RUN_TEST(test_idle_penalty_applies_below_decay_threshold);
   return UNITY_END();
 }
