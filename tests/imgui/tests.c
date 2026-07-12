@@ -4,6 +4,7 @@
 #include "client/screens/screen_background.h"
 #include "client/server_browser_model.h"
 #include "shared/protocol.h"
+#include "shared/sim.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -92,9 +93,40 @@ static void InjectFeedbackSnapshot(ShroomMatchPhase phase, uint32_t local_entity
   snprintf(net->snapshot_players[1].name, sizeof(net->snapshot_players[1].name), "Opponent");
 }
 
+static void SetupLiveLobbyGame(void) {
+  ShroomSnapshotPlayerState* player;
+
+  SetupOfflineGame();
+  ClientNetInit(&g_imgui_test_app.game.net, "127.0.0.1", 37779u);
+  g_imgui_test_app.game.net.status = CLIENT_NET_CONNECTED;
+  g_imgui_test_app.game.net.handshake_received = true;
+  g_imgui_test_app.game.net.welcome_received = true;
+  g_imgui_test_app.game.net.match_entry_sent = true;
+  g_imgui_test_app.game.net.lobby_id = 3u;
+  g_imgui_test_app.game.net.player_id = 7u;
+  g_imgui_test_app.game.net.entity_id = 42u;
+  g_imgui_test_app.game.net.world_width = SHROOM_WORLD_WIDTH;
+  g_imgui_test_app.game.net.world_height = SHROOM_WORLD_HEIGHT;
+  g_imgui_test_app.game.net.snapshot_player_count = 1u;
+  player = &g_imgui_test_app.game.net.snapshot_players[0];
+  *player = (ShroomSnapshotPlayerState){
+      .player_id = 7u,
+      .entity_id = 42u,
+      .position_x = 1200.0f,
+      .position_y = 1400.0f,
+      .mass = SHROOM_DEFAULT_PLAYER_MASS,
+      .radius = ShroomMassToRadius(SHROOM_DEFAULT_PLAYER_MASS),
+      .alive = 1u,
+  };
+  snprintf(player->name, sizeof(player->name), "%s", "Replay Tester");
+  g_imgui_test_app.game.selected_mode = SHROOM_SESSION_MODE_LOBBY_PLAY;
+  g_imgui_test_app.game.active_mode = SHROOM_SESSION_MODE_LOBBY_PLAY;
+}
+
 static void SetupResultsScreen(float peak_mass, float final_mass, int final_rank) {
   ShroomImGuiTestAppReset(false);
   g_imgui_test_app.game.selected_mode = SHROOM_SESSION_MODE_OFFLINE_PRACTICE;
+  g_imgui_test_app.game.active_mode = SHROOM_SESSION_MODE_OFFLINE_PRACTICE;
   g_imgui_test_app.game.peak_mass = peak_mass;
   g_imgui_test_app.game.final_mass = final_mass;
   g_imgui_test_app.game.final_rank = final_rank;
@@ -647,8 +679,7 @@ static void Test_LobbyUnreachableServerShowsFriendlyError(ImGuiTestContext* ctx)
                                    1000u + SHROOM_CLIENT_CONNECT_TIMEOUT_MS);
 
   IM_CHECK_EQ(g_imgui_test_app.game.net.status, CLIENT_NET_ERROR);
-  IM_CHECK_STR_EQ(g_imgui_test_app.game.net.status_text,
-                  SHROOM_NET_CONNECT_UNREACHABLE_MSG);
+  IM_CHECK_STR_EQ(g_imgui_test_app.game.net.status_text, SHROOM_NET_CONNECT_UNREACHABLE_MSG);
 
   ShroomTeCtx_SetRef(ctx, "Connection Status");
   ShroomTeCtx_Yield(ctx, 2);
@@ -849,6 +880,76 @@ static void Test_ResultsDurationStaysFrozen(ImGuiTestContext* ctx) {
 
   IM_CHECK_EQ(g_imgui_test_app.game.session_duration_seconds, captured_duration);
   IM_CHECK_STR_EQ(ShroomTestGetResultsDurationText(&g_imgui_test_app.game), "1:05");
+}
+
+static void Test_OnlineResultsPlayAgainPreservesLobbySession(ImGuiTestContext* ctx) {
+  ENetHost* original_host;
+  ENetPeer* original_peer;
+
+  SetupLiveLobbyGame();
+  original_host = g_imgui_test_app.game.net.host;
+  original_peer = g_imgui_test_app.game.net.peer;
+  IM_CHECK(original_host != NULL);
+  IM_CHECK(original_peer != NULL);
+
+  g_imgui_test_app.game.return_to_menu_requested = true;
+  ShroomTeCtx_Yield(ctx, 2);
+
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_RESULTS);
+  IM_CHECK(ClientNetCanResumeLobbySession(&g_imgui_test_app.game.net));
+  IM_CHECK_EQ(g_imgui_test_app.game.net.host, original_host);
+  IM_CHECK_EQ(g_imgui_test_app.game.net.peer, original_peer);
+
+  ShroomTeCtx_SetRef(ctx, "Match Results");
+  ShroomTeCtx_ItemClick(ctx, "Play Again");
+  ShroomTeCtx_Yield(ctx, 3);
+
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_GAME);
+  IM_CHECK_EQ(g_imgui_test_app.game.active_mode, SHROOM_SESSION_MODE_LOBBY_PLAY);
+  IM_CHECK_EQ(g_imgui_test_app.game.net.host, original_host);
+  IM_CHECK_EQ(g_imgui_test_app.game.net.peer, original_peer);
+  IM_CHECK_EQ(g_imgui_test_app.game.world.player_count, 1u);
+  IM_CHECK(g_imgui_test_app.game.local_player != NULL);
+  IM_CHECK_EQ(g_imgui_test_app.game.local_player->player_id, 7u);
+}
+
+static void Test_OnlineResultsMainMenuCleansUpLobbySession(ImGuiTestContext* ctx) {
+  SetupLiveLobbyGame();
+  g_imgui_test_app.game.return_to_menu_requested = true;
+  ShroomTeCtx_Yield(ctx, 2);
+
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_RESULTS);
+  IM_CHECK(g_imgui_test_app.game.net.host != NULL);
+
+  ShroomTeCtx_SetRef(ctx, "Match Results");
+  ShroomTeCtx_ItemClick(ctx, "Main Menu");
+  ShroomTeCtx_Yield(ctx, 2);
+
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_MAIN_MENU);
+  IM_CHECK(g_imgui_test_app.game.net.host == NULL);
+  IM_CHECK(g_imgui_test_app.game.net.peer == NULL);
+  IM_CHECK(!g_imgui_test_app.game.net.enet_initialized);
+}
+
+static void Test_OnlineResultsWithoutSessionRejoinsLobby(ImGuiTestContext* ctx) {
+  SetupResultsScreen(420.0f, 300.0f, 3);
+  g_imgui_test_app.game.selected_mode = SHROOM_SESSION_MODE_LOBBY_PLAY;
+  g_imgui_test_app.game.active_mode = SHROOM_SESSION_MODE_LOBBY_PLAY;
+  IM_CHECK(!ClientNetCanResumeLobbySession(&g_imgui_test_app.game.net));
+
+  ShroomTeCtx_SetRef(ctx, "Match Results");
+  ShroomTeCtx_ItemClick(ctx, "Play Again");
+  ShroomTeCtx_Yield(ctx, 2);
+
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_LOBBY);
+  IM_CHECK(g_imgui_test_app.game.net.host != NULL);
+  IM_CHECK(g_imgui_test_app.game.net.peer != NULL);
+  IM_CHECK(g_imgui_test_app.game.auto_join_lobby);
 }
 
 static void Test_DeathCutscenePlayAgainResumesOnlineMatch(ImGuiTestContext* ctx) {
@@ -1064,6 +1165,9 @@ static void Test_LobbyAutoJoinTransitionsToRoster(ImGuiTestContext* ctx) {
 
 static void Test_FirstLobbyEntryDoesNotOpenDeathCutscene(ImGuiTestContext* ctx) {
   SetupLobbyBrowser();
+  ClientNetInit(&g_imgui_test_app.game.net, "127.0.0.1", 37779u);
+  g_imgui_test_app.game.net.status = CLIENT_NET_CONNECTED;
+  g_imgui_test_app.game.net.handshake_received = true;
   InjectFakeLobbies(1);
   g_imgui_test_app.game.auto_join_lobby = true;
   ShroomTeCtx_Yield(ctx, 1);
@@ -1268,6 +1372,12 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_ResultsNavigationActions);
   ShroomTeEngine_RegisterTest(engine, "screens", "results_duration_stays_frozen",
                               Test_ResultsDurationStaysFrozen);
+  ShroomTeEngine_RegisterTest(engine, "screens", "online_results_play_again_preserves_session",
+                              Test_OnlineResultsPlayAgainPreservesLobbySession);
+  ShroomTeEngine_RegisterTest(engine, "screens", "online_results_main_menu_cleans_up_session",
+                              Test_OnlineResultsMainMenuCleansUpLobbySession);
+  ShroomTeEngine_RegisterTest(engine, "screens", "online_results_without_session_rejoins_lobby",
+                              Test_OnlineResultsWithoutSessionRejoinsLobby);
   ShroomTeEngine_RegisterTest(engine, "screens", "death_cutscene_play_again_resumes_online_match",
                               Test_DeathCutscenePlayAgainResumesOnlineMatch);
   ShroomTeEngine_RegisterTest(engine, "screens", "match_reset_rebaselines_feedback",
@@ -1291,7 +1401,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_FirstLobbyEntryDoesNotOpenDeathCutscene);
   ShroomTeEngine_RegisterTest(engine, "menu", "play_online_click_transitions_to_lobby",
                               Test_PlayOnlineClickTransitionsToLobby);
-  ShroomTeEngine_RegisterTest(engine, "menu", "play_online_persisted_settings_survives_lobby_frames",
+  ShroomTeEngine_RegisterTest(engine, "menu",
+                              "play_online_persisted_settings_survives_lobby_frames",
                               Test_PlayOnlineWithPersistedSettingsSurvivesLobbyFrames);
   ShroomTeEngine_RegisterTest(engine, "lobby", "back_returns_to_server_browser",
                               Test_LobbyBackReturnsToServerBrowser);
