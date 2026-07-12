@@ -205,6 +205,8 @@ static void Test_HelpAndCreditsBackNavigation(ImGuiTestContext* ctx) {
   IM_CHECK(ShroomTeImGui_WindowIsActive("How To Play"));
 
   ShroomTeCtx_SetRef(ctx, "How To Play");
+  ShroomTeCtx_ItemClick(ctx, "Gameplay");
+  ShroomTeCtx_Yield(ctx, 1);
   IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Sprout 86"));
   IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Cluster 112"));
   IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Bloom 148"));
