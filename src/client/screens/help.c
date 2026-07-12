@@ -7,9 +7,30 @@
 
 #include <stdio.h>
 
+static int g_help_active_tab;
+
 static bool HelpInit(ShroomScreenManager* manager) {
   (void)manager;
+  g_help_active_tab = 0;
   return true;
+}
+
+static void DrawTabButton(const char* label, int index) {
+  ShroomImGuiColor tab_color;
+  const bool is_active = (g_help_active_tab == index);
+
+  if (is_active) {
+    tab_color = (ShroomImGuiColor){0.28f, 0.56f, 0.88f, 1.0f};
+    ShroomImGui_PushStyleColor(SHROOM_IMGUI_COL_BUTTON, tab_color.r, tab_color.g, tab_color.b,
+                               tab_color.a);
+  }
+  if (ShroomImGui_Button(label, 120.0f, 32.0f)) {
+    g_help_active_tab = index;
+  }
+  if (is_active) {
+    ShroomImGui_PopStyleColor();
+  }
+  ShroomImGui_SameLine();
 }
 
 static bool CanDemoColonyConsume(float attacker_mass, float target_mass) {
@@ -120,62 +141,56 @@ static void HelpDraw(ShroomScreenManager* manager) {
                           "mouse, with keyboard nudging available for sharper cuts and escapes.");
 
   ShroomImGui_Separator();
+  DrawTabButton("Controls", 0);
+  DrawTabButton("Gameplay", 1);
+  DrawTabButton("Zones", 2);
+  DrawTabButton("Modes", 3);
+  ShroomImGui_Spacing();
 
-  {
+  if (g_help_active_tab == 0) {
     const char* items[] = {
         "[LMB]     Move toward cursor",
-        "[Space]   Split — divide mass to catch prey",
-        "[Q]       Eject mass — shed mass to gain speed",
-        "[W]       Boost — spend mass for burst speed",
+        "[Space]   Split \342\200\224 divide mass to catch prey",
+        "[Q]       Eject mass \342\200\224 shed mass to gain speed",
         "[Esc]     Pause / menu overlay",
         "[Tab]     Leaderboard overlay",
         "[F3]      Diagnostics overlay",
         "[F4]      Cycle HUD density",
         "[Enter]   Open chat",
     };
-    DrawSectionCard("Controls", (ShroomImGuiColor){0.28f, 0.56f, 0.88f, 1.0f}, items, 9);
+    DrawSectionCard("Controls", (ShroomImGuiColor){0.28f, 0.56f, 0.88f, 1.0f}, items, 8);
   }
 
-  ShroomImGui_SameLine();
-  ShroomImGui_Spacing();
-  ShroomImGui_SameLine();
-
-  {
+  if (g_help_active_tab == 1) {
     const char* items[] = {
         "Collect spores to gain mass.",
         "Consume players 15%% smaller to absorb their mass.",
-        "Splitting creates two pieces — both must survive to merge back.",
+        "Splitting creates two pieces \342\200\224 both must survive to merge back.",
         "Eject mass to shed weight and accelerate.",
         "Powerups grant temporary speed, shield, magnet, or decay immunity.",
-        "Keep moving — idle colonies decay over time.",
+        "Keep moving \342\200\224 idle colonies decay over time.",
     };
     DrawSectionCard("Growth Rules", (ShroomImGuiColor){0.52f, 0.80f, 0.44f, 1.0f}, items, 6);
+    ShroomImGui_Spacing();
+    DrawGrowthRulesDemo();
   }
 
-  ShroomImGui_Spacing();
-  DrawGrowthRulesDemo();
-  ShroomImGui_Separator();
-
-  {
+  if (g_help_active_tab == 2) {
     const char* items[] = {
-        "Center zone — highest risk, lowest consume advantage (8%%). Decay starts at 2x mass.",
-        "Mid zone   — balanced risk. Decay starts at 6x mass at 3%%/sec.",
-        "Outer zone — safest. No decay. Higher consume advantage (18%%).",
+        "Center zone \342\200\224 highest risk, lowest consume advantage (8%%).",
+        "Decay starts at 2x mass in the center, 6x in mid, never in outer.",
+        "Outer zone gives the highest consume advantage (18%%).",
     };
     DrawSectionCard("Zones", (ShroomImGuiColor){0.92f, 0.70f, 0.28f, 1.0f}, items, 3);
   }
 
-  ShroomImGui_SameLine();
-  ShroomImGui_Spacing();
-  ShroomImGui_SameLine();
-
-  {
+  if (g_help_active_tab == 3) {
     const char* items[] = {
-        "Free-for-All   — every colony for itself.",
-        "Teams          — 2v2, 3v3, or 4v4.",
-        "Battle Royale  — shrinking zone, last colony standing.",
-        "King of the Hill — control the center to score points.",
-        "Mass Race      — first to reach target mass wins.",
+        "Free-for-All   \342\200\224 every colony for itself.",
+        "Teams          \342\200\224 2v2, 3v3, or 4v4.",
+        "Battle Royale  \342\200\224 shrinking zone, last colony standing.",
+        "King of the Hill \342\200\224 control the center to score points.",
+        "Mass Race      \342\200\224 first to reach target mass wins.",
     };
     DrawSectionCard("Game Modes", (ShroomImGuiColor){0.72f, 0.48f, 0.84f, 1.0f}, items, 5);
   }
@@ -192,6 +207,12 @@ static void HelpDraw(ShroomScreenManager* manager) {
 static void HelpHandleInput(ShroomScreenManager* manager) {
   if (IsKeyPressed(KEY_ESCAPE)) {
     ShroomScreenManagerGoBack(manager);
+  }
+  if (IsKeyPressed(KEY_RIGHT) && (g_help_active_tab < 3)) {
+    g_help_active_tab += 1;
+  }
+  if (IsKeyPressed(KEY_LEFT) && (g_help_active_tab > 0)) {
+    g_help_active_tab -= 1;
   }
 }
 
