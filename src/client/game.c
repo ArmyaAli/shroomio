@@ -877,6 +877,7 @@ static void CaptureParticleBaselines(Game* game) {
 static void RebaselineMatchPresentation(Game* game) {
   memset(game->particles, 0, sizeof(game->particles));
   game->particle_cursor = 0u;
+  game->ambient_particle_timer = 0.0f;
 
   memset(game->notifications, 0, sizeof(game->notifications));
   game->notification_head = 0u;
