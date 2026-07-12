@@ -368,6 +368,10 @@ static void Test_UiScaleEndpointsKeepPrimaryWindowsUsable(ImGuiTestContext* ctx)
 
   g_imgui_test_app.game.net.welcome_received = true;
   g_imgui_test_app.game.net.player_id = 7u;
+  g_imgui_test_app.game.net.lobby_roster_received = true;
+  g_imgui_test_app.game.net.lobby_roster_count = 1u;
+  g_imgui_test_app.game.net.lobby_roster[0] =
+      (ShroomLobbyRosterEntry){.player_id = 7u, .is_ready = 1u};
   ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_LOBBY_ROSTER);
   ShroomTeCtx_SetRef(ctx, "Lobby Roster");
   ShroomTeCtx_Yield(ctx, 2);
