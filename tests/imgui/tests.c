@@ -1,6 +1,7 @@
 #include "app.h"
 #include "imgui_te_wrapper.h"
 
+#include "client/audio.h"
 #include "client/screens/screen_background.h"
 #include "client/server_browser_model.h"
 #include "shared/protocol.h"
@@ -9,6 +10,43 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+
+typedef struct ImGuiAudioBackend {
+  bool ready;
+  int init_count;
+  int close_count;
+  int load_count;
+  int unload_count;
+  ClientSettings applied_settings;
+} ImGuiAudioBackend;
+
+static ImGuiAudioBackend g_imgui_audio_backend;
+
+static bool ImGuiAudioInit(void* context) {
+  ImGuiAudioBackend* backend = context;
+  backend->init_count += 1;
+  backend->ready = true;
+  return true;
+}
+
+static bool ImGuiAudioReady(void* context) { return ((ImGuiAudioBackend*)context)->ready; }
+
+static void ImGuiAudioClose(void* context) {
+  ImGuiAudioBackend* backend = context;
+  backend->close_count += 1;
+  backend->ready = false;
+}
+
+static bool ImGuiAudioLoad(void* context) {
+  ((ImGuiAudioBackend*)context)->load_count += 1;
+  return true;
+}
+
+static void ImGuiAudioUnload(void* context) { ((ImGuiAudioBackend*)context)->unload_count += 1; }
+
+static void ImGuiAudioApply(void* context, const ClientSettings* settings) {
+  ((ImGuiAudioBackend*)context)->applied_settings = *settings;
+}
 
 /* Inject N fake lobby entries into the game's net state as the server would. */
 static void InjectFakeLobbies(int count) {
@@ -318,6 +356,54 @@ static void Test_SettingsExposesSpecControlsAndAppliesBoundaryValues(ImGuiTestCo
 
   IM_CHECK_EQ(g_imgui_test_app.game.settings.music_volume_percent, 0);
   IM_CHECK_EQ(g_imgui_test_app.game.settings.effects_volume_percent, 100);
+}
+
+static void Test_AudioSurvivesMatchTransitionsAndRestartsFromSettings(ImGuiTestContext* ctx) {
+  ShroomClientAudioTestBackend backend;
+
+  ShroomImGuiTestAppReset(false);
+  memset(&g_imgui_audio_backend, 0, sizeof(g_imgui_audio_backend));
+  backend = (ShroomClientAudioTestBackend){
+      .context = &g_imgui_audio_backend,
+      .init_device = ImGuiAudioInit,
+      .device_ready = ImGuiAudioReady,
+      .close_device = ImGuiAudioClose,
+      .load_assets = ImGuiAudioLoad,
+      .unload_assets = ImGuiAudioUnload,
+      .apply_settings = ImGuiAudioApply,
+  };
+  ShroomClientAudioTestSetBackend(&backend);
+  g_imgui_test_app.game.settings.master_volume_percent = 43;
+  g_imgui_test_app.game.settings.music_volume_percent = 57;
+  g_imgui_test_app.game.settings.effects_volume_percent = 79;
+  IM_CHECK(ShroomClientAudioInit(&g_imgui_test_app.game.settings));
+
+  for (int transition = 0; transition < 12; ++transition) {
+    GameInit(&g_imgui_test_app.game, 1280, 720, SHROOM_SESSION_MODE_OFFLINE_PRACTICE);
+    GameShutdown(&g_imgui_test_app.game);
+    IM_CHECK(ShroomClientAudioIsReady());
+  }
+  IM_CHECK_EQ(g_imgui_audio_backend.init_count, 1);
+  IM_CHECK_EQ(g_imgui_audio_backend.load_count, 1);
+  IM_CHECK_EQ(g_imgui_audio_backend.unload_count, 0);
+
+  ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_SETTINGS);
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_SETTINGS);
+  IM_CHECK(ShroomTeCtx_SetRefWindow(ctx, "//Settings/SettingsContent"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Restart Audio"));
+  ShroomTeCtx_ItemClick(ctx, "Restart Audio");
+  ShroomTeCtx_Yield(ctx, 2);
+
+  IM_CHECK(ShroomClientAudioIsReady());
+  IM_CHECK_EQ(g_imgui_audio_backend.init_count, 2);
+  IM_CHECK_EQ(g_imgui_audio_backend.load_count, 2);
+  IM_CHECK_EQ(g_imgui_audio_backend.unload_count, 1);
+  IM_CHECK_EQ(g_imgui_audio_backend.close_count, 1);
+  IM_CHECK_EQ(g_imgui_audio_backend.applied_settings.master_volume_percent, 43);
+  IM_CHECK_EQ(g_imgui_audio_backend.applied_settings.music_volume_percent, 57);
+  IM_CHECK_EQ(g_imgui_audio_backend.applied_settings.effects_volume_percent, 79);
 }
 
 static void Test_SettingsPersistence(ImGuiTestContext* ctx) {
@@ -1335,6 +1421,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_OfflinePracticePersistedSettingsCameraStaysStable);
   ShroomTeEngine_RegisterTest(engine, "screens", "settings_exposes_controls_and_applies_bounds",
                               Test_SettingsExposesSpecControlsAndAppliesBoundaryValues);
+  ShroomTeEngine_RegisterTest(engine, "screens", "audio_lifecycle_soak_and_restart",
+                              Test_AudioSurvivesMatchTransitionsAndRestartsFromSettings);
   ShroomTeEngine_RegisterTest(engine, "screens", "settings_persistence", Test_SettingsPersistence);
   ShroomTeEngine_RegisterTest(engine, "screens", "settings_reserved_key_rejection_and_recovery",
                               Test_SettingsReservedKeyRejectionAndRecovery);
