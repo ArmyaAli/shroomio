@@ -746,8 +746,8 @@ static void Test_GameplayOverlayStateToggles(ImGuiTestContext* ctx) {
 }
 
 static void Test_LeaderboardAggregatesSplitColony(ImGuiTestContext* ctx) {
-  LeaderboardEntry before[SHROOM_MAX_PLAYERS];
-  LeaderboardEntry after[SHROOM_MAX_PLAYERS];
+  LeaderboardEntry before[SHROOM_MAX_PLAYER_ENTITIES];
+  LeaderboardEntry after[SHROOM_MAX_PLAYER_ENTITIES];
   size_t before_count = 0u;
   size_t after_count = 0u;
   float local_mass = 0.0f;
@@ -755,7 +755,7 @@ static void Test_LeaderboardAggregatesSplitColony(ImGuiTestContext* ctx) {
   SetupOnlineGame();
   BuildLeaderboard(&g_imgui_test_app.game, before, &before_count);
   IM_CHECK(g_imgui_test_app.game.local_player != NULL);
-  IM_CHECK(g_imgui_test_app.game.world.player_count < SHROOM_MAX_PLAYERS);
+  IM_CHECK(g_imgui_test_app.game.world.player_count < SHROOM_MAX_PLAYER_ENTITIES);
 
   const size_t fragment_index = g_imgui_test_app.game.world.player_count++;
   g_imgui_test_app.game.world.players[fragment_index] = *g_imgui_test_app.game.local_player;
