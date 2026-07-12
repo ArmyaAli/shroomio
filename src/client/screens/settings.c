@@ -1,4 +1,5 @@
 #include "game.h"
+#include "audio.h"
 #include "screen.h"
 #include "screen_background.h"
 #include "settings_session.h"
@@ -59,7 +60,7 @@ static const ShroomMushroomSpeciesEntry* FindSpeciesEntry(const ClientNetState* 
 
 static void ApplySettings(Game* game, const ClientSettings* settings) {
   game->settings = *settings;
-  SetMasterVolume((float)game->settings.master_volume_percent / 100.0f);
+  ShroomClientAudioInit(&game->settings);
 }
 
 static void DiscardAndGoBack(ShroomScreenManager* manager) {
@@ -226,6 +227,16 @@ static void SettingsDraw(ShroomScreenManager* manager) {
       "Music Volume", &g_settings_screen.session.pending.music_volume_percent, 0, 100, "%d%%");
   changed |= ShroomImGui_SliderInt(
       "Effects Volume", &g_settings_screen.session.pending.effects_volume_percent, 0, 100, "%d%%");
+  if (ShroomImGui_Button("Restart Audio", 160.0f, 32.0f)) {
+    ShroomClientAudioRestart(&game->settings);
+  }
+  ShroomImGui_SameLine();
+  if (ShroomClientAudioIsReady()) {
+    ShroomImGui_Text("Audio ready");
+  } else {
+    ShroomImGui_TextColored((ShroomImGuiColor){1.0f, 0.45f, 0.4f, 1.0f},
+                            ShroomClientAudioGetStatus());
+  }
 
   ShroomImGui_Separator();
   ShroomImGui_Text("Gameplay");

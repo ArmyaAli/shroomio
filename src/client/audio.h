@@ -18,13 +18,28 @@ typedef enum ShroomClientSfx {
   SHROOM_CLIENT_SFX_COUNT,
 } ShroomClientSfx;
 
-void ShroomClientAudioEnsureAllSfxLoaded(void);
+bool ShroomClientAudioInit(const ClientSettings* settings);
+bool ShroomClientAudioRestart(const ClientSettings* settings);
+bool ShroomClientAudioIsReady(void);
+const char* ShroomClientAudioGetStatus(void);
 void ShroomClientAudioUpdateMusic(const ClientSettings* settings);
 void ShroomClientAudioShutdown(void);
 void ShroomClientAudioPlaySfx(const ClientSettings* settings, ShroomClientSfx sfx,
                               float importance);
 
 #ifdef TEST_MODE
+typedef struct ShroomClientAudioTestBackend {
+  void* context;
+  bool (*init_device)(void* context);
+  bool (*device_ready)(void* context);
+  void (*close_device)(void* context);
+  bool (*load_assets)(void* context);
+  void (*unload_assets)(void* context);
+  void (*apply_settings)(void* context, const ClientSettings* settings);
+} ShroomClientAudioTestBackend;
+
+void ShroomClientAudioTestSetBackend(const ShroomClientAudioTestBackend* backend);
+bool ShroomClientAudioTestAssetsLoaded(void);
 void ShroomClientAudioTestResetThrottleState(void);
 bool ShroomClientAudioTestCanPlaySfx(ShroomClientSfx sfx, double now_seconds);
 #endif
