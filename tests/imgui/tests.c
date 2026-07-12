@@ -1035,6 +1035,71 @@ static void Test_MatchResetRebaselinesFeedback(ImGuiTestContext* ctx) {
   IM_CHECK(ShroomTeImGui_WindowIsActive("Death Cutscene Actions"));
 }
 
+static void Test_AuthoritativeResultsCompleteTwoRoundCycle(ImGuiTestContext* ctx) {
+  const ShroomVec2 local_position = {500.0f, 600.0f};
+  const ShroomVec2 opponent_position = {900.0f, 1000.0f};
+
+  SetupOnlineGame();
+  g_imgui_test_app.game.net.match_entry_sent = true;
+  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RUNNING, 101u, local_position, 300.0f,
+                         opponent_position, 200.0f);
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_GAME);
+
+  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESULTS, 101u, local_position, 300.0f,
+                         opponent_position, 200.0f);
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_RESULTS);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Match Results"));
+  IM_CHECK(!ShroomTeCtx_ItemExists(ctx, "Play Again"));
+  IM_CHECK_EQ(g_imgui_test_app.game.final_rank, 1);
+  IM_CHECK(fabsf(g_imgui_test_app.game.final_mass - 300.0f) < 0.001f);
+
+  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESET, 101u, local_position, 300.0f,
+                         opponent_position, 200.0f);
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_RESULTS);
+
+  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RUNNING, 201u, local_position,
+                         SHROOM_DEFAULT_PLAYER_MASS, opponent_position,
+                         SHROOM_DEFAULT_PLAYER_MASS);
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_GAME);
+  IM_CHECK(g_imgui_test_app.game.net.welcome_received);
+  IM_CHECK(g_imgui_test_app.game.net.match_entry_sent);
+  IM_CHECK(!g_imgui_test_app.game.show_results);
+
+  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESULTS, 201u, local_position, 250.0f,
+                         opponent_position, 350.0f);
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_RESULTS);
+  IM_CHECK_EQ(g_imgui_test_app.game.final_rank, 2);
+
+  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESET, 201u, local_position, 250.0f,
+                         opponent_position, 350.0f);
+  ShroomTeCtx_Yield(ctx, 1);
+  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RUNNING, 301u, local_position,
+                         SHROOM_DEFAULT_PLAYER_MASS, opponent_position,
+                         SHROOM_DEFAULT_PLAYER_MASS);
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_GAME);
+
+  /* A spectator joining during intermission follows the first phase snapshot too. */
+  SetupOnlineGame();
+  g_imgui_test_app.game.net.spectating = true;
+  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESULTS, 0u, local_position, 300.0f,
+                         opponent_position, 200.0f);
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_RESULTS);
+}
+
 /* chat: Chat dock is active in online mode. */
 static void Test_ChatDockVisibleOnline(ImGuiTestContext* ctx) {
   SetupOnlineGame();
@@ -1382,6 +1447,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_DeathCutscenePlayAgainResumesOnlineMatch);
   ShroomTeEngine_RegisterTest(engine, "screens", "match_reset_rebaselines_feedback",
                               Test_MatchResetRebaselinesFeedback);
+  ShroomTeEngine_RegisterTest(engine, "screens", "authoritative_results_two_round_cycle",
+                              Test_AuthoritativeResultsCompleteTwoRoundCycle);
   ShroomTeEngine_RegisterTest(engine, "chat", "dock_visible_in_online_mode",
                               Test_ChatDockVisibleOnline);
   ShroomTeEngine_RegisterTest(engine, "chat", "dock_hidden_in_offline_mode",

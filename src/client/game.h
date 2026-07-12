@@ -206,6 +206,7 @@ typedef struct Game {
   float final_mass;
   int final_rank;
   bool show_results;
+  bool authoritative_round_resume_pending;
   bool eject_requested;
 } Game;
 

@@ -55,6 +55,73 @@ void test_match_timer_transitions_to_reset_after_results(void) {
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, world.match_results_time_remaining);
 }
 
+void test_results_phase_freezes_all_gameplay_state(void) {
+  ResetWorldForPlayers();
+  ShroomPlayerState* player = ShroomWorldSpawnPlayer(&world, 1u, false);
+  ShroomPlayerState* opponent = ShroomWorldSpawnPlayer(&world, 2u, false);
+
+  player->position = (ShroomVec2){200.0f, 300.0f};
+  player->input_direction = (ShroomVec2){1.0f, 0.0f};
+  player->mass = 400.0f;
+  player->split_velocity = (ShroomVec2){100.0f, 20.0f};
+  player->merge_timer = 5.0f;
+  player->spawn_protection_timer = 4.0f;
+  player->speed_powerup_timer = 3.0f;
+  player->eject_cooldown_timer = 2.0f;
+  opponent->position = player->position;
+  opponent->mass = 100.0f;
+  world.spores[0] = (ShroomSporeState){.entity_id = 50u,
+                                      .position = player->position,
+                                      .value = 10u,
+                                      .active = true};
+  world.spore_count = 1u;
+  world.powerups[0] = (ShroomPowerupState){.entity_id = 60u,
+                                           .position = player->position,
+                                           .type = SHROOM_POWERUP_SPEED,
+                                           .respawn_timer = 7.0f,
+                                           .active = true};
+  world.powerup_count = 1u;
+  world.match_phase = SHROOM_MATCH_PHASE_RESULTS;
+  world.match_results_time_remaining = 10.0f;
+  ShroomComputeMatchPodium(&world);
+
+  const ShroomPlayerState frozen_player = *player;
+  const ShroomPlayerState frozen_opponent = *opponent;
+  const ShroomSporeState frozen_spore = world.spores[0];
+  const ShroomPowerupState frozen_powerup = world.powerups[0];
+  const uint32_t random_state = world.random_state;
+  const ShroomEntityId next_entity_id = world.next_entity_id;
+  const uint32_t podium_id = world.podium_player_ids[0];
+  const float podium_mass = world.podium_masses[0];
+  const uint64_t tick = world.tick;
+
+  ShroomWorldStep(&world, 1.0f);
+
+  TEST_ASSERT_EQUAL_MEMORY(&frozen_player, player, sizeof(frozen_player));
+  TEST_ASSERT_EQUAL_MEMORY(&frozen_opponent, opponent, sizeof(frozen_opponent));
+  TEST_ASSERT_EQUAL_MEMORY(&frozen_spore, &world.spores[0], sizeof(frozen_spore));
+  TEST_ASSERT_EQUAL_MEMORY(&frozen_powerup, &world.powerups[0], sizeof(frozen_powerup));
+  TEST_ASSERT_EQUAL_UINT32(random_state, world.random_state);
+  TEST_ASSERT_EQUAL_UINT32(next_entity_id, world.next_entity_id);
+  TEST_ASSERT_EQUAL_UINT32(podium_id, world.podium_player_ids[0]);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, podium_mass, world.podium_masses[0]);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 9.0f, world.match_results_time_remaining);
+  TEST_ASSERT_EQUAL_UINT64(tick + 1u, world.tick);
+}
+
+void test_reset_phase_does_not_mutate_gameplay_before_server_reset(void) {
+  ShroomPlayerState* player = ShroomWorldSpawnPlayer(&world, 1u, false);
+  player->position = (ShroomVec2){200.0f, 300.0f};
+  player->input_direction = (ShroomVec2){1.0f, 0.0f};
+  world.match_phase = SHROOM_MATCH_PHASE_RESET;
+  const ShroomPlayerState frozen_player = *player;
+
+  ShroomWorldStep(&world, 1.0f);
+
+  TEST_ASSERT_EQUAL_MEMORY(&frozen_player, player, sizeof(frozen_player));
+  TEST_ASSERT_EQUAL_UINT32(SHROOM_MATCH_PHASE_RESET, world.match_phase);
+}
+
 void test_podium_sorted_by_mass_with_stable_tiebreak(void) {
   ResetWorldForPlayers();
 
@@ -225,6 +292,8 @@ int main(void) {
   RUN_TEST(test_match_timer_counts_down_during_step);
   RUN_TEST(test_match_timer_transitions_to_results_at_zero);
   RUN_TEST(test_match_timer_transitions_to_reset_after_results);
+  RUN_TEST(test_results_phase_freezes_all_gameplay_state);
+  RUN_TEST(test_reset_phase_does_not_mutate_gameplay_before_server_reset);
   RUN_TEST(test_podium_sorted_by_mass_with_stable_tiebreak);
   RUN_TEST(test_podium_handles_fewer_players_than_slots);
   RUN_TEST(test_reset_match_restores_players_to_default_mass);
