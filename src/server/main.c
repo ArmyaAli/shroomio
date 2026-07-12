@@ -13,6 +13,7 @@
 #endif
 
 #include "shared/lifecycle.h"
+#include "shared/intermission.h"
 #include "shared/protocol.h"
 #include "shared/profiler.h"
 #include "shared/sim.h"
@@ -35,6 +36,9 @@ typedef struct ShroomLobby {
   bool is_dynamic;
   uint64_t empty_since_ms;
   uint64_t last_bot_adjust_ms;
+  ShroomIntermissionState intermission;
+  uint16_t last_intermission_second;
+  uint32_t next_round_id;
 } ShroomLobby;
 
 typedef struct ServerSession {
@@ -681,6 +685,92 @@ static void BroadcastLobbyRoster(ENetHost* host, uint32_t lobby_id) {
                    CreateProtocolPacket(&packet, packet_size, SHROOM_PACKET_LOBBY_ROSTER));
   }
   enet_host_flush(host);
+}
+
+static const ShroomIntermissionVoter* FindIntermissionVoter(const ShroomIntermissionState* state,
+                                                            uint32_t player_id) {
+  for (uint16_t index = 0; index < state->voter_count; ++index) {
+    if (state->voters[index].player_id == player_id) {
+      return &state->voters[index];
+    }
+  }
+  return NULL;
+}
+
+static void BroadcastIntermissionStatus(ENetHost* host, const ShroomLobby* lobby) {
+  for (size_t index = 0; index < host->peerCount; ++index) {
+    ENetPeer* peer = &host->peers[index];
+    const ServerSession* session = (const ServerSession*)peer->data;
+    const ShroomIntermissionVoter* voter;
+    ShroomIntermissionStatusPacket packet;
+
+    if ((peer->state != ENET_PEER_STATE_CONNECTED) || (session == NULL) || !session->active ||
+        (session->lobby_id != lobby->lobby_id)) {
+      continue;
+    }
+    voter = FindIntermissionVoter(&lobby->intermission, session->player_id);
+    packet = (ShroomIntermissionStatusPacket){
+        .round_id = lobby->intermission.round_id,
+        .seconds_remaining = lobby->world.match_results_time_remaining,
+        .eligible_count = lobby->intermission.eligible_count,
+        .play_again_votes = lobby->intermission.play_again_votes,
+        .return_to_lobby_votes = lobby->intermission.return_to_lobby_votes,
+        .spectate_votes = lobby->intermission.spectate_votes,
+        .resolved = lobby->intermission.resolved ? 1u : 0u,
+        .decision = lobby->intermission.decision,
+        .your_vote = voter != NULL ? voter->vote : SHROOM_REMATCH_VOTE_NONE,
+        .can_vote = (voter != NULL) && voter->eligible && !lobby->intermission.resolved ? 1u : 0u,
+    };
+    ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_INTERMISSION_STATUS, sizeof(packet));
+    enet_peer_send(
+        peer, SHROOM_ENET_CHANNEL_CONTROL,
+        CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_INTERMISSION_STATUS));
+  }
+}
+
+static void BeginIntermission(ENetHost* host, ShroomLobby* lobby) {
+  uint32_t player_ids[SHROOM_MAX_PARTICIPANTS];
+  uint16_t count = 0u;
+
+  for (size_t index = 0; (index < host->peerCount) && (count < SHROOM_MAX_PARTICIPANTS); ++index) {
+    const ENetPeer* peer = &host->peers[index];
+    const ServerSession* session = (const ServerSession*)peer->data;
+    if ((peer->state == ENET_PEER_STATE_CONNECTED) && (session != NULL) && session->active &&
+        !session->spectating && session->entered_match && (session->player_id != 0u) &&
+        (session->lobby_id == lobby->lobby_id)) {
+      player_ids[count++] = session->player_id;
+    }
+  }
+  ShroomIntermissionBegin(&lobby->intermission, player_ids, count, ++lobby->next_round_id);
+  lobby->last_intermission_second = UINT16_MAX;
+  BroadcastIntermissionStatus(host, lobby);
+}
+
+static void ResolveIntermission(ENetHost* host, ShroomLobby* lobby) {
+  const ShroomRematchVote decision = ShroomIntermissionResolve(&lobby->intermission);
+
+  BroadcastIntermissionStatus(host, lobby);
+  for (size_t index = 0; index < host->peerCount; ++index) {
+    ServerSession* session = (ServerSession*)host->peers[index].data;
+    if ((session == NULL) || !session->active || (session->lobby_id != lobby->lobby_id)) {
+      continue;
+    }
+    session->is_ready = false;
+    if (decision == SHROOM_REMATCH_VOTE_PLAY_AGAIN) {
+      session->entered_match = true;
+    } else {
+      session->entered_match = false;
+      if (decision == SHROOM_REMATCH_VOTE_SPECTATE && !session->spectating) {
+        ShroomServerCleanupPlayer(&lobby->world, session->player_id, &session->player,
+                                  &session->focused_entity_id);
+        session->spectating = true;
+      }
+    }
+  }
+  ShroomWorldResetMatch(&lobby->world);
+  BroadcastLobbyRoster(host, lobby->lobby_id);
+  LOG_INFO("intermission resolved: lobby_id=%u round=%u decision=%u", lobby->lobby_id,
+           lobby->intermission.round_id, (unsigned)decision);
 }
 
 static void SendLobbyCreated(ENetPeer* peer, const ShroomLobby* lobby) {
@@ -1421,6 +1511,9 @@ static void HandleLobbyJoin(ENetHost* host, ENetPeer* peer, ServerSession* sessi
   LOG_INFO("lobby join: player_id=%u lobby_id=%u spectating=%d", session->player_id,
            lobby->lobby_id, (int)session->spectating);
   BroadcastLobbyRoster(host, lobby->lobby_id);
+  if (lobby->world.match_phase == SHROOM_MATCH_PHASE_RESULTS) {
+    BroadcastIntermissionStatus(host, lobby);
+  }
 }
 
 static void HandleLobbyLeave(ENetHost* host, ServerSession* session, ShroomLobby* lobbies) {
@@ -1430,6 +1523,13 @@ static void HandleLobbyLeave(ENetHost* host, ServerSession* session, ShroomLobby
     return;
   }
   lobby_id = session->lobby_id;
+  {
+    ShroomLobby* lobby = FindLobbyById(lobbies, lobby_id);
+    if ((lobby != NULL) &&
+        ShroomIntermissionRemoveVoter(&lobby->intermission, session->player_id)) {
+      BroadcastIntermissionStatus(host, lobby);
+    }
+  }
   RemoveSessionPlayer(session, lobbies);
   LOG_INFO("lobby leave: player_id=%u lobby_id=%u", session->player_id, session->lobby_id);
   session->lobby_id = 0;
@@ -1525,6 +1625,22 @@ static void DispatchEnterMatch(ServerPacketContext* context) {
   HandleEnterMatchPacket(context->host, context->session, context->enet_packet);
 }
 
+static void DispatchRematchVote(ServerPacketContext* context) {
+  const ShroomRematchVotePacket* packet =
+      (const ShroomRematchVotePacket*)context->enet_packet->data;
+  ShroomLobby* lobby = FindLobbyById(context->lobbies, context->session->lobby_id);
+
+  if ((lobby == NULL) || !context->session->active || context->session->spectating ||
+      (lobby->world.match_phase != SHROOM_MATCH_PHASE_RESULTS) ||
+      (packet->round_id != lobby->intermission.round_id)) {
+    return;
+  }
+  if (ShroomIntermissionCastVote(&lobby->intermission, context->session->player_id,
+                                 (ShroomRematchVote)packet->vote)) {
+    BroadcastIntermissionStatus(context->host, lobby);
+  }
+}
+
 static const ServerPacketDispatchEntry kServerPacketDispatch[] = {
     {SHROOM_PACKET_HELLO, DispatchHelloPacket},
     {SHROOM_PACKET_INPUT, DispatchInputPacket},
@@ -1537,6 +1653,7 @@ static const ServerPacketDispatchEntry kServerPacketDispatch[] = {
     {SHROOM_PACKET_LOBBY_CREATE, DispatchLobbyCreate},
     {SHROOM_PACKET_READY_STATE, DispatchReadyState},
     {SHROOM_PACKET_ENTER_MATCH, DispatchEnterMatch},
+    {SHROOM_PACKET_REMATCH_VOTE, DispatchRematchVote},
 };
 
 static const ServerPacketDispatchEntry* FindServerPacketDispatchEntry(ShroomPacketType type) {
@@ -1713,8 +1830,14 @@ int main(int argc, char** argv) {
         ServerSession* disconnected_session = (ServerSession*)event.peer->data;
         const uint32_t disconnected_lobby_id =
             disconnected_session != NULL ? disconnected_session->lobby_id : 0u;
+        ShroomLobby* disconnected_lobby = FindLobbyById(lobbies, disconnected_lobby_id);
 
         LOG_INFO("peer disconnected: slot=%u", (unsigned)event.peer->incomingPeerID);
+        if ((disconnected_session != NULL) && (disconnected_lobby != NULL) &&
+            ShroomIntermissionRemoveVoter(&disconnected_lobby->intermission,
+                                          disconnected_session->player_id)) {
+          BroadcastIntermissionStatus(host, disconnected_lobby);
+        }
         DisconnectSession(disconnected_session, lobbies);
         event.peer->data = 0;
         BroadcastLobbyRoster(host, disconnected_lobby_id);
@@ -1739,6 +1862,7 @@ int main(int argc, char** argv) {
         uint16_t real_count;
         uint16_t spec_count;
         double simulation_ms = 0.0;
+        ShroomMatchPhase previous_phase;
 
         if (!lobby->active) {
           continue;
@@ -1779,10 +1903,24 @@ int main(int argc, char** argv) {
         AdjustLobbyBots(lobby, host, &next_player_id, now_ms);
 
         phase_start_nanos = profile_enabled ? GetTimeNanos() : 0ull;
+        previous_phase = lobby->world.match_phase;
         ShroomWorldStep(&lobby->world, 1.0f / SHROOM_SERVER_TICK_RATE);
+        if ((previous_phase == SHROOM_MATCH_PHASE_RUNNING) &&
+            (lobby->world.match_phase == SHROOM_MATCH_PHASE_RESULTS)) {
+          BeginIntermission(host, lobby);
+        }
+        if (lobby->world.match_phase == SHROOM_MATCH_PHASE_RESULTS) {
+          uint16_t seconds = (uint16_t)lobby->world.match_results_time_remaining;
+          if (seconds != lobby->last_intermission_second) {
+            lobby->last_intermission_second = seconds;
+            BroadcastIntermissionStatus(host, lobby);
+          }
+          if (ShroomIntermissionAllEligibleVoted(&lobby->intermission)) {
+            ResolveIntermission(host, lobby);
+          }
+        }
         if (lobby->world.match_phase == SHROOM_MATCH_PHASE_RESET) {
-          ShroomWorldResetMatch(&lobby->world);
-          LOG_INFO("match reset: lobby_id=%u", lobby->lobby_id);
+          ResolveIntermission(host, lobby);
         }
         if (profile_enabled) {
           simulation_ms = ShroomProfileNanosToMs(GetTimeNanos() - phase_start_nanos);

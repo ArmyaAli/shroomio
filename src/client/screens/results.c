@@ -40,7 +40,21 @@ static void ResultsUpdate(ShroomScreenManager* manager, float delta_time) {
   }
 
   GameUpdate(game, delta_time);
-  if (game->world.match_phase == SHROOM_MATCH_PHASE_RUNNING) {
+  if (game->net.intermission_received && game->net.intermission.resolved &&
+      (game->net.intermission.decision != SHROOM_REMATCH_VOTE_PLAY_AGAIN)) {
+    if (game->net.intermission.decision == SHROOM_REMATCH_VOTE_SPECTATE) {
+      game->net.spectating = true;
+    }
+    game->authoritative_round_resume_pending = false;
+    game->resume_online_session_requested = true;
+    game->show_results = false;
+    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_LOBBY);
+    return;
+  }
+  if ((game->world.match_phase == SHROOM_MATCH_PHASE_RUNNING) &&
+      (!game->net.intermission_received ||
+       (game->net.intermission.resolved &&
+        (game->net.intermission.decision == SHROOM_REMATCH_VOTE_PLAY_AGAIN)))) {
     game->show_results = false;
     game->session_start_time = (float)GetTime();
     game->session_duration_seconds = 0u;
@@ -98,7 +112,29 @@ static void ResultsDraw(ShroomScreenManager* manager) {
   const float button_height = ShroomLayoutMetric(40.0f);
 
   if (IsAuthoritativeOnlineResults(game)) {
-    ShroomImGui_Text("Waiting for the next round...");
+    char countdown[64];
+    char totals[96];
+    const ShroomIntermissionStatusPacket* status = &game->net.intermission;
+
+    snprintf(countdown, sizeof(countdown), "Vote ends in %.0f seconds", status->seconds_remaining);
+    snprintf(totals, sizeof(totals), "Play Again %u  Lobby %u  Spectate %u",
+             status->play_again_votes, status->return_to_lobby_votes, status->spectate_votes);
+    ShroomImGui_Text(countdown);
+    ShroomImGui_Text(totals);
+    if (status->can_vote && !status->resolved) {
+      if (ShroomImGui_Button("Vote Play Again", button_width, button_height)) {
+        ClientNetSendRematchVote(&game->net, SHROOM_REMATCH_VOTE_PLAY_AGAIN);
+      }
+      ShroomImGui_SameLine();
+      if (ShroomImGui_Button("Vote Lobby", button_width, button_height)) {
+        ClientNetSendRematchVote(&game->net, SHROOM_REMATCH_VOTE_RETURN_TO_LOBBY);
+      }
+      if (ShroomImGui_Button("Vote Spectate", button_width, button_height)) {
+        ClientNetSendRematchVote(&game->net, SHROOM_REMATCH_VOTE_SPECTATE);
+      }
+    } else if (!status->resolved) {
+      ShroomImGui_Text("Spectators and late joiners observe this vote.");
+    }
   } else {
     ShroomImGui_SetNextItemWidth(button_width);
     if (ShroomImGui_Button("Play Again", button_width, button_height)) {

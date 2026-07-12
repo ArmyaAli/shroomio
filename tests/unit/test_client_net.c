@@ -375,6 +375,32 @@ static void test_spectator_lobby_session_can_resume_without_player_identity(void
   TEST_ASSERT_TRUE(ClientNetCanResumeLobbySession(&net));
 }
 
+static void test_client_net_accepts_authoritative_intermission_status(void) {
+  ClientNetState net = {0};
+  ShroomIntermissionStatusPacket status = {.round_id = 12u,
+                                           .seconds_remaining = 9.0f,
+                                           .eligible_count = 3u,
+                                           .play_again_votes = 2u,
+                                           .your_vote = SHROOM_REMATCH_VOTE_PLAY_AGAIN,
+                                           .can_vote = 1u};
+  ENetPacket packet = {.data = (enet_uint8*)&status, .dataLength = sizeof(status)};
+
+  ClientNetTestHandleIntermissionStatus(&net, &packet);
+  TEST_ASSERT_TRUE(net.intermission_received);
+  TEST_ASSERT_EQUAL_UINT32(12u, net.intermission.round_id);
+  TEST_ASSERT_EQUAL_UINT16(2u, net.intermission.play_again_votes);
+  TEST_ASSERT_EQUAL(SHROOM_REMATCH_VOTE_PLAY_AGAIN, net.intermission.your_vote);
+}
+
+static void test_client_net_rejects_truncated_intermission_status(void) {
+  ClientNetState net = {0};
+  ShroomIntermissionStatusPacket status = {0};
+  ENetPacket packet = {.data = (enet_uint8*)&status, .dataLength = sizeof(status) - 1u};
+
+  ClientNetTestHandleIntermissionStatus(&net, &packet);
+  TEST_ASSERT_FALSE(net.intermission_received);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_client_net_records_fresh_pong);
@@ -398,5 +424,7 @@ int main(void) {
   RUN_TEST(test_gameplay_input_requires_explicit_match_entry);
   RUN_TEST(test_lobby_session_resume_requires_live_connection_and_identity);
   RUN_TEST(test_spectator_lobby_session_can_resume_without_player_identity);
+  RUN_TEST(test_client_net_accepts_authoritative_intermission_status);
+  RUN_TEST(test_client_net_rejects_truncated_intermission_status);
   return UNITY_END();
 }

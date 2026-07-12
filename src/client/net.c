@@ -224,6 +224,17 @@ static void HandlePong(ClientNetState* net, const ENetPacket* enet_packet) {
   CompletePendingPing(net, packet->nonce, enet_time_get());
 }
 
+static void HandleIntermissionStatus(ClientNetState* net, const ENetPacket* enet_packet) {
+  const ShroomIntermissionStatusPacket* packet =
+      (const ShroomIntermissionStatusPacket*)enet_packet->data;
+
+  if (enet_packet->dataLength < sizeof(*packet)) {
+    return;
+  }
+  net->intermission = *packet;
+  net->intermission_received = true;
+}
+
 static void HandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet) {
   const ShroomSnapshotPacket* packet = (const ShroomSnapshotPacket*)enet_packet->data;
   uint16_t player_count;
@@ -497,6 +508,11 @@ void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, bool split
             HandleLobbyRoster(net, event.packet);
           }
           break;
+        case SHROOM_PACKET_INTERMISSION_STATUS:
+          if (ShroomPacketHeaderUsesExpectedChannel(header, event.channelID)) {
+            HandleIntermissionStatus(net, event.packet);
+          }
+          break;
         case SHROOM_PACKET_MUSHROOM_SPECIES_CATALOG:
           if (ShroomPacketHeaderUsesExpectedChannel(header, event.channelID)) {
             HandleMushroomSpeciesCatalog(net, event.packet);
@@ -510,6 +526,7 @@ void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, bool split
         case SHROOM_PACKET_INPUT:
         case SHROOM_PACKET_AUTH_REQUEST:
         case SHROOM_PACKET_AUTH_RESPONSE:
+        case SHROOM_PACKET_REMATCH_VOTE:
         default:
           break;
         }
@@ -550,6 +567,19 @@ void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, bool split
   }
 }
 
+void ClientNetSendRematchVote(ClientNetState* net, ShroomRematchVote vote) {
+  ShroomRematchVotePacket packet;
+
+  if ((net == NULL) || (net->peer == NULL) || !net->intermission_received ||
+      !net->intermission.can_vote || net->intermission.resolved) {
+    return;
+  }
+  packet = (ShroomRematchVotePacket){.round_id = net->intermission.round_id, .vote = (uint8_t)vote};
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_REMATCH_VOTE, sizeof(packet));
+  enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CONTROL,
+                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_REMATCH_VOTE));
+}
+
 #ifdef TEST_MODE
 bool ClientNetTestCompletePendingPing(ClientNetState* net, uint32_t nonce, uint32_t now_ms) {
   return CompletePendingPing(net, nonce, now_ms);
@@ -577,6 +607,10 @@ void ClientNetTestHandleLobbyList(ClientNetState* net, const ENetPacket* enet_pa
 
 void ClientNetTestHandleLobbyRoster(ClientNetState* net, const ENetPacket* enet_packet) {
   HandleLobbyRoster(net, enet_packet);
+}
+
+void ClientNetTestHandleIntermissionStatus(ClientNetState* net, const ENetPacket* enet_packet) {
+  HandleIntermissionStatus(net, enet_packet);
 }
 
 bool ClientNetTestCanSendGameplayInput(const ClientNetState* net) {

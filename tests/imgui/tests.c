@@ -1082,8 +1082,7 @@ static void Test_AuthoritativeResultsCompleteTwoRoundCycle(ImGuiTestContext* ctx
 
   InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESULTS, 101u, local_position, 300.0f,
                          opponent_position, 200.0f);
-  g_imgui_test_app.game.net.snapshot_players[2] =
-      g_imgui_test_app.game.net.snapshot_players[0];
+  g_imgui_test_app.game.net.snapshot_players[2] = g_imgui_test_app.game.net.snapshot_players[0];
   g_imgui_test_app.game.net.snapshot_players[2].entity_id = 102u;
   g_imgui_test_app.game.net.snapshot_players[2].mass = 25.0f;
   g_imgui_test_app.game.net.snapshot_player_count = 3u;
@@ -1095,15 +1094,14 @@ static void Test_AuthoritativeResultsCompleteTwoRoundCycle(ImGuiTestContext* ctx
   IM_CHECK_EQ(g_imgui_test_app.game.final_rank, 1);
   IM_CHECK(fabsf(g_imgui_test_app.game.final_mass - 325.0f) < 0.001f);
 
-  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESET, 101u, local_position, 300.0f,
-                         opponent_position, 200.0f);
+  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESET, 101u, local_position, 300.0f, opponent_position,
+                         200.0f);
   ShroomTeCtx_Yield(ctx, 2);
   IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
               SHROOM_SCREEN_RESULTS);
 
   InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RUNNING, 201u, local_position,
-                         SHROOM_DEFAULT_PLAYER_MASS, opponent_position,
-                         SHROOM_DEFAULT_PLAYER_MASS);
+                         SHROOM_DEFAULT_PLAYER_MASS, opponent_position, SHROOM_DEFAULT_PLAYER_MASS);
   ShroomTeCtx_Yield(ctx, 2);
   IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
               SHROOM_SCREEN_GAME);
@@ -1118,12 +1116,11 @@ static void Test_AuthoritativeResultsCompleteTwoRoundCycle(ImGuiTestContext* ctx
               SHROOM_SCREEN_RESULTS);
   IM_CHECK_EQ(g_imgui_test_app.game.final_rank, 2);
 
-  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESET, 201u, local_position, 250.0f,
-                         opponent_position, 350.0f);
+  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESET, 201u, local_position, 250.0f, opponent_position,
+                         350.0f);
   ShroomTeCtx_Yield(ctx, 1);
   InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RUNNING, 301u, local_position,
-                         SHROOM_DEFAULT_PLAYER_MASS, opponent_position,
-                         SHROOM_DEFAULT_PLAYER_MASS);
+                         SHROOM_DEFAULT_PLAYER_MASS, opponent_position, SHROOM_DEFAULT_PLAYER_MASS);
   ShroomTeCtx_Yield(ctx, 2);
   IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
               SHROOM_SCREEN_GAME);
@@ -1131,11 +1128,51 @@ static void Test_AuthoritativeResultsCompleteTwoRoundCycle(ImGuiTestContext* ctx
   /* A spectator joining during intermission follows the first phase snapshot too. */
   SetupOnlineGame();
   g_imgui_test_app.game.net.spectating = true;
-  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESULTS, 0u, local_position, 300.0f,
-                         opponent_position, 200.0f);
+  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESULTS, 0u, local_position, 300.0f, opponent_position,
+                         200.0f);
   ShroomTeCtx_Yield(ctx, 2);
   IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
               SHROOM_SCREEN_RESULTS);
+}
+
+static void Test_AuthoritativeIntermissionMultiClientState(ImGuiTestContext* ctx) {
+  const ShroomVec2 local_position = {500.0f, 600.0f};
+  const ShroomVec2 opponent_position = {900.0f, 1000.0f};
+  ShroomIntermissionStatusPacket* status;
+
+  SetupOnlineGame();
+  status = &g_imgui_test_app.game.net.intermission;
+  g_imgui_test_app.game.net.intermission_received = true;
+  *status = (ShroomIntermissionStatusPacket){.round_id = 12u,
+                                             .seconds_remaining = 18.0f,
+                                             .eligible_count = 3u,
+                                             .play_again_votes = 2u,
+                                             .return_to_lobby_votes = 1u,
+                                             .your_vote = SHROOM_REMATCH_VOTE_PLAY_AGAIN,
+                                             .can_vote = 1u};
+  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESULTS, 101u, local_position, 300.0f,
+                         opponent_position, 200.0f);
+  ShroomTeCtx_SetRef(ctx, "Match Results");
+  ShroomTeCtx_Yield(ctx, 2);
+
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_RESULTS);
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Vote Play Again"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Vote Lobby"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Vote Spectate"));
+
+  /* A spectator/late joiner receives the same totals but no voting controls. */
+  status->can_vote = 0u;
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_EQ(g_imgui_test_app.game.net.intermission.can_vote, 0u);
+
+  /* The reliable final decision returns every observing client to the lobby. */
+  status->resolved = 1u;
+  status->decision = SHROOM_REMATCH_VOTE_RETURN_TO_LOBBY;
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_LOBBY_ROSTER);
+  IM_CHECK(g_imgui_test_app.game.net.welcome_received);
 }
 
 /* chat: Chat dock is active in online mode. */
@@ -1491,6 +1528,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_MatchResetRebaselinesFeedback);
   ShroomTeEngine_RegisterTest(engine, "screens", "authoritative_results_two_round_cycle",
                               Test_AuthoritativeResultsCompleteTwoRoundCycle);
+  ShroomTeEngine_RegisterTest(engine, "screens", "authoritative_intermission_multi_client_state",
+                              Test_AuthoritativeIntermissionMultiClientState);
   ShroomTeEngine_RegisterTest(engine, "chat", "dock_visible_in_online_mode",
                               Test_ChatDockVisibleOnline);
   ShroomTeEngine_RegisterTest(engine, "chat", "dock_hidden_in_offline_mode",
