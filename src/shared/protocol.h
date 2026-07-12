@@ -7,8 +7,9 @@
 #include <stdint.h>
 
 #include "config.h"
+#include "intermission.h"
 
-#define SHROOM_PROTOCOL_VERSION 6u
+#define SHROOM_PROTOCOL_VERSION 7u
 #define SHROOM_SERVER_PORT 7777u
 #define SHROOM_MAX_UNRELIABLE_PACKET_SIZE 1200u
 #define SHROOM_MAX_PASSWORD_LENGTH 64u
@@ -67,6 +68,8 @@ typedef enum ShroomPacketType {
   SHROOM_PACKET_READY_STATE = 21,
   SHROOM_PACKET_ENTER_MATCH = 22,
   SHROOM_PACKET_LOBBY_ROSTER = 23,
+  SHROOM_PACKET_REMATCH_VOTE = 24,
+  SHROOM_PACKET_INTERMISSION_STATUS = 25,
 } ShroomPacketType;
 
 typedef enum ShroomAuthMethod {
@@ -343,6 +346,27 @@ typedef struct ShroomLobbyRosterPacket {
   ShroomLobbyRosterEntry players[SHROOM_MAX_PARTICIPANTS];
 } ShroomLobbyRosterPacket;
 
+typedef struct ShroomRematchVotePacket {
+  ShroomPacketHeader header;
+  uint32_t round_id;
+  uint8_t vote;
+  uint8_t reserved[3];
+} ShroomRematchVotePacket;
+
+typedef struct ShroomIntermissionStatusPacket {
+  ShroomPacketHeader header;
+  uint32_t round_id;
+  float seconds_remaining;
+  uint16_t eligible_count;
+  uint16_t play_again_votes;
+  uint16_t return_to_lobby_votes;
+  uint16_t spectate_votes;
+  uint8_t resolved;
+  uint8_t decision;
+  uint8_t your_vote;
+  uint8_t can_vote;
+} ShroomIntermissionStatusPacket;
+
 #define SHROOM_PACKET_METADATA(X)                                                                  \
   X(SHROOM_PACKET_HELLO, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomHelloPacket))             \
   X(SHROOM_PACKET_WELCOME, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomWelcomePacket))         \
@@ -377,7 +401,11 @@ typedef struct ShroomLobbyRosterPacket {
   X(SHROOM_PACKET_READY_STATE, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomReadyStatePacket))  \
   X(SHROOM_PACKET_ENTER_MATCH, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomEnterMatchPacket))  \
   X(SHROOM_PACKET_LOBBY_ROSTER, SHROOM_ENET_CHANNEL_CONTROL, true,                                 \
-    offsetof(ShroomLobbyRosterPacket, players))
+    offsetof(ShroomLobbyRosterPacket, players))                                                    \
+  X(SHROOM_PACKET_REMATCH_VOTE, SHROOM_ENET_CHANNEL_CONTROL, true,                                 \
+    sizeof(ShroomRematchVotePacket))                                                               \
+  X(SHROOM_PACKET_INTERMISSION_STATUS, SHROOM_ENET_CHANNEL_CONTROL, true,                          \
+    sizeof(ShroomIntermissionStatusPacket))
 
 static inline uint8_t ShroomPacketTypeToChannel(ShroomPacketType type) {
   switch (type) {

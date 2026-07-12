@@ -37,7 +37,8 @@ void test_voice_frame_packet_size(void) {
 }
 
 void test_snapshot_player_state_size(void) {
-  TEST_ASSERT_EQUAL(4 + 4 + 4 + 4 + 4 + 4 + 32 + 1 + 1 + 2 + 1 + 3, sizeof(ShroomSnapshotPlayerState));
+  TEST_ASSERT_EQUAL(4 + 4 + 4 + 4 + 4 + 4 + 32 + 1 + 1 + 2 + 1 + 3,
+                    sizeof(ShroomSnapshotPlayerState));
 }
 
 void test_participant_and_entity_capacities_are_separate_and_bounded(void) {
@@ -75,6 +76,8 @@ void test_packet_type_values(void) {
   TEST_ASSERT_EQUAL(21, SHROOM_PACKET_READY_STATE);
   TEST_ASSERT_EQUAL(22, SHROOM_PACKET_ENTER_MATCH);
   TEST_ASSERT_EQUAL(23, SHROOM_PACKET_LOBBY_ROSTER);
+  TEST_ASSERT_EQUAL(24, SHROOM_PACKET_REMATCH_VOTE);
+  TEST_ASSERT_EQUAL(25, SHROOM_PACKET_INTERMISSION_STATUS);
 }
 
 void test_lobby_packet_channel_mapping(void) {
@@ -186,7 +189,7 @@ void test_lobby_config_constants(void) {
 
 void test_protocol_constants(void) {
   TEST_ASSERT_EQUAL(7777, SHROOM_SERVER_PORT);
-  TEST_ASSERT_EQUAL(6, SHROOM_PROTOCOL_VERSION);
+  TEST_ASSERT_EQUAL(7, SHROOM_PROTOCOL_VERSION);
   TEST_ASSERT_EQUAL(32, SHROOM_MAX_NAME_LENGTH);
   TEST_ASSERT_EQUAL(15, SHROOM_SNAPSHOT_RATE);
   TEST_ASSERT_EQUAL(256, SHROOM_MAX_SNAPSHOT_PLAYERS);
@@ -462,6 +465,19 @@ void test_snapshot_player_state_initialization(void) {
   TEST_ASSERT_EQUAL(0, state.is_bot);
 }
 
+void test_intermission_packets_are_reliable_control_messages(void) {
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CONTROL,
+                    ShroomPacketTypeToChannel(SHROOM_PACKET_REMATCH_VOTE));
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CONTROL,
+                    ShroomPacketTypeToChannel(SHROOM_PACKET_INTERMISSION_STATUS));
+  TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_REMATCH_VOTE));
+  TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_INTERMISSION_STATUS));
+  TEST_ASSERT_EQUAL(sizeof(ShroomRematchVotePacket),
+                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_REMATCH_VOTE));
+  TEST_ASSERT_EQUAL(sizeof(ShroomIntermissionStatusPacket),
+                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_INTERMISSION_STATUS));
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_packet_header_size);
@@ -485,6 +501,7 @@ int main(void) {
   RUN_TEST(test_input_packet_initialization);
   RUN_TEST(test_voice_packet_initialization);
   RUN_TEST(test_snapshot_player_state_initialization);
+  RUN_TEST(test_intermission_packets_are_reliable_control_messages);
   RUN_TEST(test_snapshot_spore_state_size);
   RUN_TEST(test_spore_state_packet_initialization);
   RUN_TEST(test_spore_state_packet_chunk_size_is_bounded);
