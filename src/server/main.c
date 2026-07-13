@@ -24,6 +24,7 @@
 #include "match_persistence.h"
 #include "session_cleanup.h"
 #include "snapshot_stats.h"
+#include "voice_relay.h"
 
 static const char* const kBotNamePrefixes[] = {
     "Mycelium", "Sporecap", "Hyphae", "Spore", "Fungal", "Myco", "Shroom", "Mold",
@@ -437,6 +438,30 @@ static ENetPacket* CreatePacket(const void* data, size_t size, enet_uint32 flags
 static ENetPacket* CreateProtocolPacket(const void* data, size_t size, ShroomPacketType type) {
   return CreatePacket(data, size,
                       ShroomPacketTypeUsesReliableDelivery(type) ? ENET_PACKET_FLAG_RELIABLE : 0);
+}
+
+static bool SendVoiceRelayPacket(void* context, size_t peer_index, const void* data,
+                                 size_t wire_size) {
+  ENetHost* host = (ENetHost*)context;
+  ENetPeer* peer;
+  ENetPacket* packet;
+
+  if ((host == NULL) || (peer_index >= host->peerCount)) {
+    return false;
+  }
+  peer = &host->peers[peer_index];
+  if (peer->state != ENET_PEER_STATE_CONNECTED) {
+    return false;
+  }
+  packet = CreateProtocolPacket(data, wire_size, SHROOM_PACKET_VOICE_FRAME);
+  if (packet == NULL) {
+    return false;
+  }
+  if (enet_peer_send(peer, SHROOM_ENET_CHANNEL_VOICE, packet) != 0) {
+    enet_packet_destroy(packet);
+    return false;
+  }
+  return true;
 }
 
 /* Lightweight handshake ack — player/world data comes via LOBBY_JOINED. */
@@ -1666,8 +1691,8 @@ static void HandleLobbyListQuery(ENetPeer* peer, const ServerSession* session, S
 }
 
 static void HandleLobbyJoin(ENetHost* host, ENetPeer* peer, ServerSession* session,
-                            ShroomLobby* lobbies, const ENetPacket* enet_packet,
-                            uint32_t* next_player_id) {
+                            ShroomLobby* lobbies, ShroomVoiceRelay* voice_relay,
+                            const ENetPacket* enet_packet, uint32_t* next_player_id) {
   const ShroomLobbyJoinPacket* packet = (const ShroomLobbyJoinPacket*)enet_packet->data;
   ShroomLobby* lobby;
 
@@ -1711,6 +1736,9 @@ static void HandleLobbyJoin(ENetHost* host, ENetPeer* peer, ServerSession* sessi
     snprintf(session->player->name, sizeof(session->player->name), "%s", session->display_name);
   }
 
+  ShroomVoiceRelaySetPeer(voice_relay, peer->incomingPeerID, true, session->lobby_id,
+                          session->player_id);
+
   SendLobbyJoined(peer, session, lobby);
   LOG_INFO("lobby join: player_id=%u lobby_id=%u spectating=%d", session->player_id,
            lobby->lobby_id, (int)session->spectating);
@@ -1720,7 +1748,8 @@ static void HandleLobbyJoin(ENetHost* host, ENetPeer* peer, ServerSession* sessi
   }
 }
 
-static void HandleLobbyLeave(ENetHost* host, ServerSession* session, ShroomLobby* lobbies) {
+static void HandleLobbyLeave(ENetHost* host, const ENetPeer* peer, ServerSession* session,
+                             ShroomLobby* lobbies, ShroomVoiceRelay* voice_relay) {
   uint32_t lobby_id;
 
   if (session == NULL) {
@@ -1744,7 +1773,24 @@ static void HandleLobbyLeave(ENetHost* host, ServerSession* session, ShroomLobby
   session->is_ready = false;
   session->entered_match = false;
   session->player_id = 0;
+  if (peer != NULL) {
+    ShroomVoiceRelaySetPeer(voice_relay, peer->incomingPeerID, true, 0u, 0u);
+  }
   BroadcastLobbyRoster(host, lobby_id);
+}
+
+static void HandleVoiceFramePacket(ENetHost* host, const ENetPeer* peer,
+                                   const ServerSession* session, ShroomVoiceRelay* voice_relay,
+                                   const ENetPacket* enet_packet, uint64_t now_ms) {
+  if ((host == NULL) || (peer == NULL) || (session == NULL) || !session->active ||
+      !session->handshake_received || (voice_relay == NULL) || (enet_packet == NULL)) {
+    return;
+  }
+
+  ShroomVoiceRelaySetPeer(voice_relay, peer->incomingPeerID, true, session->lobby_id,
+                          session->player_id);
+  (void)ShroomVoiceRelayRoute(voice_relay, peer->incomingPeerID, enet_packet->data,
+                              enet_packet->dataLength, now_ms, SendVoiceRelayPacket, host, NULL);
 }
 
 static void HandleLobbyCreate(ENetPeer* peer, const ServerSession* session, ShroomLobby* lobbies,
@@ -1775,6 +1821,7 @@ typedef struct ServerPacketContext {
   ServerSession* session;
   ShroomLobby* lobbies;
   ShroomAuthContext* auth_ctx;
+  ShroomVoiceRelay* voice_relay;
   const ENetPacket* enet_packet;
   uint32_t* next_player_id;
   uint32_t* next_lobby_id;
@@ -1811,17 +1858,23 @@ static void DispatchChatPacket(ServerPacketContext* context) {
   HandleChatPacket(context->host, context->session, context->enet_packet, context->now_ms);
 }
 
+static void DispatchVoiceFramePacket(ServerPacketContext* context) {
+  HandleVoiceFramePacket(context->host, context->peer, context->session, context->voice_relay,
+                         context->enet_packet, context->now_ms);
+}
+
 static void DispatchLobbyListQuery(ServerPacketContext* context) {
   HandleLobbyListQuery(context->peer, context->session, context->lobbies, context->host);
 }
 
 static void DispatchLobbyJoin(ServerPacketContext* context) {
   HandleLobbyJoin(context->host, context->peer, context->session, context->lobbies,
-                  context->enet_packet, context->next_player_id);
+                  context->voice_relay, context->enet_packet, context->next_player_id);
 }
 
 static void DispatchLobbyLeave(ServerPacketContext* context) {
-  HandleLobbyLeave(context->host, context->session, context->lobbies);
+  HandleLobbyLeave(context->host, context->peer, context->session, context->lobbies,
+                   context->voice_relay);
 }
 
 static void DispatchLobbyCreate(ServerPacketContext* context) {
@@ -1861,6 +1914,7 @@ static const ServerPacketDispatchEntry kServerPacketDispatch[] = {
     {SHROOM_PACKET_AUTH_REQUEST, DispatchAuthRequestPacket},
     {SHROOM_PACKET_PING, DispatchPingPacket},
     {SHROOM_PACKET_CHAT, DispatchChatPacket},
+    {SHROOM_PACKET_VOICE_FRAME, DispatchVoiceFramePacket},
     {SHROOM_PACKET_LOBBY_LIST_QUERY, DispatchLobbyListQuery},
     {SHROOM_PACKET_LOBBY_JOIN, DispatchLobbyJoin},
     {SHROOM_PACKET_LOBBY_LEAVE, DispatchLobbyLeave},
@@ -1882,8 +1936,9 @@ static const ServerPacketDispatchEntry* FindServerPacketDispatchEntry(ShroomPack
 
 static void HandlePacket(ENetHost* host, ENetPeer* peer, ServerSession* session,
                          ShroomLobby* lobbies, ShroomAuthContext* auth_ctx,
-                         const ENetPacket* enet_packet, uint8_t channel_id,
-                         uint32_t* next_player_id, uint32_t* next_lobby_id, uint64_t now_ms) {
+                         ShroomVoiceRelay* voice_relay, const ENetPacket* enet_packet,
+                         uint8_t channel_id, uint32_t* next_player_id, uint32_t* next_lobby_id,
+                         uint64_t now_ms) {
   const ShroomPacketHeader* header;
   const ServerPacketDispatchEntry* entry;
   ShroomPacketType packet_type;
@@ -1916,6 +1971,7 @@ static void HandlePacket(ENetHost* host, ENetPeer* peer, ServerSession* session,
       .session = session,
       .lobbies = lobbies,
       .auth_ctx = auth_ctx,
+      .voice_relay = voice_relay,
       .enet_packet = enet_packet,
       .next_player_id = next_player_id,
       .next_lobby_id = next_lobby_id,
@@ -1934,6 +1990,7 @@ int main(int argc, char** argv) {
   ENetHost* host;
   static ShroomLobby lobbies[SHROOM_MAX_LOBBIES] = {0};
   static ServerSession sessions[SHROOM_SERVER_MAX_CLIENTS] = {0};
+  static ShroomVoiceRelay voice_relay;
   uint32_t next_player_id = 1;
   uint32_t next_lobby_id = 1;
   uint64_t next_tick_time;
@@ -1943,6 +2000,7 @@ int main(int argc, char** argv) {
   ServerConfig config;
 
   ShroomLifecycleInit(&g_lifecycle);
+  ShroomVoiceRelayInit(&voice_relay);
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_INIT);
 
   LoggerInit(LOG_LEVEL_INFO, 1);
@@ -2032,6 +2090,7 @@ int main(int argc, char** argv) {
       case ENET_EVENT_TYPE_CONNECT:
         if (event.peer->incomingPeerID < SHROOM_SERVER_MAX_CLIENTS) {
           event.peer->data = &sessions[event.peer->incomingPeerID];
+          ShroomVoiceRelaySetPeer(&voice_relay, event.peer->incomingPeerID, true, 0u, 0u);
           LOG_INFO("peer connected: slot=%u", (unsigned)event.peer->incomingPeerID);
         } else {
           LOG_WARN("rejected connection: no available slots");
@@ -2040,7 +2099,8 @@ int main(int argc, char** argv) {
         break;
       case ENET_EVENT_TYPE_RECEIVE:
         HandlePacket(host, event.peer, (ServerSession*)event.peer->data, lobbies, &auth_ctx,
-                     event.packet, event.channelID, &next_player_id, &next_lobby_id, now_ms);
+                     &voice_relay, event.packet, event.channelID, &next_player_id, &next_lobby_id,
+                     now_ms);
         enet_packet_destroy(event.packet);
         break;
       case ENET_EVENT_TYPE_DISCONNECT: {
@@ -2060,6 +2120,7 @@ int main(int argc, char** argv) {
           CapturePersistenceParticipant(disconnected_lobby, disconnected_session->player_id, true);
         }
         DisconnectSession(disconnected_session, lobbies);
+        ShroomVoiceRelaySetPeer(&voice_relay, event.peer->incomingPeerID, false, 0u, 0u);
         event.peer->data = 0;
         BroadcastLobbyRoster(host, disconnected_lobby_id);
       } break;
@@ -2226,6 +2287,7 @@ int main(int argc, char** argv) {
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_STOP);
   for (size_t peer_index = 0; peer_index < host->peerCount; ++peer_index) {
     DisconnectSession((ServerSession*)host->peers[peer_index].data, lobbies);
+    ShroomVoiceRelaySetPeer(&voice_relay, peer_index, false, 0u, 0u);
     host->peers[peer_index].data = NULL;
   }
   enet_host_destroy(host);
