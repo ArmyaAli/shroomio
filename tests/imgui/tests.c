@@ -299,6 +299,29 @@ static void Test_HelpContentMatchesCurrentGameplay(ImGuiTestContext* ctx) {
   IM_CHECK(ShroomTestHelpRenderedTextContains("King of the Hill - Available"));
 }
 
+static void Test_HelpCardHeadingsAreNotInteractive(ImGuiTestContext* ctx) {
+  const char* tab_labels[] = {"Controls", "Gameplay", "Zones", "Modes"};
+  const char* heading_labels[] = {"Controls", "Growth Rules", "Zones", "Game Modes"};
+  char child_path[64];
+
+  ShroomImGuiTestAppReset(true);
+  ShroomTeCtx_SetRef(ctx, "Main Menu");
+  ShroomTeCtx_ItemClick(ctx, "Help");
+
+  for (size_t index = 0; index < sizeof(tab_labels) / sizeof(tab_labels[0]); ++index) {
+    ShroomTeCtx_SetRef(ctx, "How To Play");
+    if (index > 0u) {
+      ShroomTeCtx_ItemClick(ctx, tab_labels[index]);
+    }
+    ShroomTeCtx_Yield(ctx, 1);
+    IM_CHECK_STR_EQ(ShroomTestHelpRenderedHeading(), heading_labels[index]);
+
+    snprintf(child_path, sizeof(child_path), "//How To Play/%s", heading_labels[index]);
+    IM_CHECK(ShroomTeCtx_SetRefWindow(ctx, child_path));
+    IM_CHECK(!ShroomTeCtx_ItemExists(ctx, heading_labels[index]));
+  }
+}
+
 static void Test_MainMenuExposesPrimaryActions(ImGuiTestContext* ctx) {
   ShroomImGuiTestAppReset(true);
   ShroomTeCtx_SetRef(ctx, "Main Menu");
@@ -2123,6 +2146,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_HelpAndCreditsBackNavigation);
   ShroomTeEngine_RegisterTest(engine, "screens", "help_content_matches_current_gameplay",
                               Test_HelpContentMatchesCurrentGameplay);
+  ShroomTeEngine_RegisterTest(engine, "screens", "help_card_headings_are_not_interactive",
+                              Test_HelpCardHeadingsAreNotInteractive);
   ShroomTeEngine_RegisterTest(engine, "screens", "main_menu_exposes_primary_actions",
                               Test_MainMenuExposesPrimaryActions);
   ShroomTeEngine_RegisterTest(engine, "screens", "player_identity_onboarding_persists_session",
