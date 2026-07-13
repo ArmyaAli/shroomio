@@ -1,6 +1,7 @@
 #include "chat_cache.h"
 
 #include <ctype.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -227,20 +228,56 @@ static bool ParseRecord(char* line, ShroomChatCacheKey* key, ChatMessage* messag
 }
 
 static bool LoadCache(const char* path, uint32_t now_sec, ShroomChatCacheData* cache) {
+#ifdef _WIN32
+  struct _stat file_status;
+#else
   struct stat file_status;
+#endif
+  int descriptor;
   FILE* file;
   char line[SHROOM_CHAT_CACHE_LINE_BYTES];
 
   *cache = (ShroomChatCacheData){0};
-  if ((path == NULL) || (stat(path, &file_status) != 0)) {
-    return true;
+  if (path == NULL) {
+    return false;
+  }
+#ifdef _WIN32
+  descriptor = _open(path, _O_RDONLY | _O_BINARY | _O_NOINHERIT);
+#else
+  descriptor = open(path, O_RDONLY);
+#endif
+  if (descriptor < 0) {
+    return errno == ENOENT;
+  }
+#ifdef _WIN32
+  if (_fstat(descriptor, &file_status) != 0) {
+    _close(descriptor);
+#else
+  if (fstat(descriptor, &file_status) != 0) {
+    close(descriptor);
+#endif
+    return false;
   }
   if ((file_status.st_size <= 0) ||
       ((size_t)file_status.st_size > SHROOM_CHAT_CACHE_MAX_FILE_BYTES)) {
+#ifdef _WIN32
+    _close(descriptor);
+#else
+    close(descriptor);
+#endif
     return false;
   }
-  file = fopen(path, "r");
+#ifdef _WIN32
+  file = _fdopen(descriptor, "r");
+#else
+  file = fdopen(descriptor, "r");
+#endif
   if (file == NULL) {
+#ifdef _WIN32
+    _close(descriptor);
+#else
+    close(descriptor);
+#endif
     return false;
   }
   if ((fgets(line, sizeof(line), file) == NULL) ||
