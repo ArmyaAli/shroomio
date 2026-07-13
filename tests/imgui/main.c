@@ -35,6 +35,8 @@ static void ResetPersistentFiles(void) {
   unlink("client_settings.cfg.bak");
   unlink("client_settings.cfg.bak.tmp");
   unlink("server_browser_recent.txt");
+  unlink(SHROOM_CHAT_CACHE_DEFAULT_PATH);
+  unlink(SHROOM_CHAT_CACHE_DEFAULT_PATH ".tmp");
   unlink("imgui.ini");
 }
 

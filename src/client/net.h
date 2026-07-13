@@ -9,12 +9,7 @@
 #include "shared/protocol.h"
 #include "shared/vec2.h"
 
-typedef struct ChatMessage {
-  uint32_t sender_id;
-  uint32_t timestamp_sec; /* local wall-clock time at receive */
-  char sender_name[SHROOM_MAX_NAME_LENGTH];
-  char message[SHROOM_CHAT_MAX_MESSAGE_LENGTH + 1u];
-} ChatMessage;
+#include "chat_cache.h"
 
 #define SHROOM_CLIENT_PING_INTERVAL_SECONDS 1.0f
 #define SHROOM_CLIENT_PING_TIMEOUT_MS 2000u
@@ -40,6 +35,9 @@ typedef struct ClientNetState {
   bool enet_initialized;
   bool welcome_received;
   char player_name[SHROOM_MAX_NAME_LENGTH];
+  char server_host[64];
+  uint16_t server_port;
+  char chat_cache_path[256];
   uint32_t player_id;
   uint32_t entity_id;
   uint32_t last_input_sequence;
@@ -127,6 +125,8 @@ void ClientNetTestHandleSnapshot(ClientNetState* net, const ENetPacket* enet_pac
 void ClientNetTestHandleSporeState(ClientNetState* net, const ENetPacket* enet_packet);
 void ClientNetTestHandleLobbyList(ClientNetState* net, const ENetPacket* enet_packet);
 void ClientNetTestHandleLobbyRoster(ClientNetState* net, const ENetPacket* enet_packet);
+void ClientNetTestHandleLobbyJoined(ClientNetState* net, const ENetPacket* enet_packet);
+void ClientNetTestHandleChat(ClientNetState* net, const ENetPacket* enet_packet);
 void ClientNetTestHandleIntermissionStatus(ClientNetState* net, const ENetPacket* enet_packet);
 bool ClientNetTestCanSendGameplayInput(const ClientNetState* net);
 void ClientNetTestHandleMushroomSpeciesCatalog(ClientNetState* net, const ENetPacket* enet_packet);
