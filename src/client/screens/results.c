@@ -41,6 +41,23 @@ static bool IsAuthoritativeOnlineResults(const Game* game) {
           (game->active_mode == SHROOM_SESSION_MODE_LOBBY_PLAY));
 }
 
+static bool ResultsVoteButton(const char* label, bool selected, float width, float height) {
+  bool clicked;
+
+  if (selected) {
+    ShroomImGui_PushStyleColor(SHROOM_IMGUI_COL_BUTTON, 0.24f, 0.36f, 0.16f, 0.92f);
+    ShroomImGui_PushStyleColor(SHROOM_IMGUI_COL_BUTTON_HOVERED, 0.34f, 0.50f, 0.23f, 0.96f);
+    ShroomImGui_PushStyleColor(SHROOM_IMGUI_COL_BUTTON_ACTIVE, 0.42f, 0.62f, 0.28f, 1.0f);
+  }
+  clicked = ShroomImGui_Button(label, width, height);
+  if (selected) {
+    ShroomImGui_PopStyleColor();
+    ShroomImGui_PopStyleColor();
+    ShroomImGui_PopStyleColor();
+  }
+  return clicked;
+}
+
 static void ResultsUpdate(ShroomScreenManager* manager, float delta_time) {
   Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
 
@@ -84,7 +101,7 @@ static void ResultsDraw(ShroomScreenManager* manager) {
 
   ShroomScreenDrawFungalBackground(game->settings.menu_animations_enabled);
 
-  if (!ShroomLayoutBeginCenteredPanel("Match Results", 500.0f, 400.0f, 0.88f,
+  if (!ShroomLayoutBeginCenteredPanel("Match Results", 500.0f, 460.0f, 0.88f,
                                       SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
                                           SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
                                           SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
@@ -139,23 +156,45 @@ static void ResultsDraw(ShroomScreenManager* manager) {
 
   if (IsAuthoritativeOnlineResults(game)) {
     char countdown[64];
+    char local_vote[64];
+    char participation[64];
     char totals[96];
     const ShroomIntermissionStatusPacket* status = &game->net.intermission;
 
-    snprintf(countdown, sizeof(countdown), "Vote ends in %.0f seconds", status->seconds_remaining);
+    if (status->resolved) {
+      ShroomResultsFormatDecision((ShroomRematchVote)status->decision, countdown,
+                                  sizeof(countdown));
+    } else {
+      snprintf(countdown, sizeof(countdown), "Vote ends in %.0f seconds",
+               status->seconds_remaining);
+    }
+    ShroomResultsFormatLocalVote((ShroomRematchVote)status->your_vote, status->can_vote != 0u,
+                                 local_vote, sizeof(local_vote));
+    ShroomResultsFormatVoteParticipation(status->play_again_votes, status->return_to_lobby_votes,
+                                         status->spectate_votes, status->eligible_count,
+                                         participation, sizeof(participation));
     snprintf(totals, sizeof(totals), "Play Again %u  Lobby %u  Spectate %u",
              status->play_again_votes, status->return_to_lobby_votes, status->spectate_votes);
     ShroomImGui_Text(countdown);
+    ShroomImGui_Text(local_vote);
+    ShroomImGui_Text(participation);
     ShroomImGui_Text(totals);
     if (status->can_vote && !status->resolved) {
-      if (ShroomImGui_Button("Vote Play Again", button_width, button_height)) {
+      const bool play_again_selected = status->your_vote == SHROOM_REMATCH_VOTE_PLAY_AGAIN;
+      const bool lobby_selected = status->your_vote == SHROOM_REMATCH_VOTE_RETURN_TO_LOBBY;
+      const bool spectate_selected = status->your_vote == SHROOM_REMATCH_VOTE_SPECTATE;
+
+      if (ResultsVoteButton(play_again_selected ? "Vote Play Again (Selected)" : "Vote Play Again",
+                            play_again_selected, button_width, button_height)) {
         ClientNetSendRematchVote(&game->net, SHROOM_REMATCH_VOTE_PLAY_AGAIN);
       }
       ShroomImGui_SameLine();
-      if (ShroomImGui_Button("Vote Lobby", button_width, button_height)) {
+      if (ResultsVoteButton(lobby_selected ? "Vote Lobby (Selected)" : "Vote Lobby", lobby_selected,
+                            button_width, button_height)) {
         ClientNetSendRematchVote(&game->net, SHROOM_REMATCH_VOTE_RETURN_TO_LOBBY);
       }
-      if (ShroomImGui_Button("Vote Spectate", button_width, button_height)) {
+      if (ResultsVoteButton(spectate_selected ? "Vote Spectate (Selected)" : "Vote Spectate",
+                            spectate_selected, button_width, button_height)) {
         ClientNetSendRematchVote(&game->net, SHROOM_REMATCH_VOTE_SPECTATE);
       }
     } else if (!status->resolved) {
