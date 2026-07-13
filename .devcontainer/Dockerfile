@@ -1,4 +1,8 @@
+FROM node:22-bookworm-slim AS node-runtime
+
 FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
+
+COPY --from=node-runtime /usr/local/ /usr/local/
 
 ARG ACTIONLINT_VERSION=1.7.7
 
@@ -25,7 +29,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     make \
     mingw-w64 \
     ninja-build \
-    npm \
     pkg-config \
     ruby \
     tar \

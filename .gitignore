@@ -17,6 +17,9 @@ imgui.ini
 server_browser_recent.txt
 shroomio.db
 vcpkg_installed/
+website/.astro/
+website/dist/
+website/node_modules/
 .opencode/*
 !.opencode/agents/
 .opencode/agents/*
