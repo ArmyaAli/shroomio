@@ -2,6 +2,7 @@
 #include "imgui_te_wrapper.h"
 
 #include "client/audio.h"
+#include "client/results_summary.h"
 #include "client/screens/screen_background.h"
 #include "client/server_browser_model.h"
 #include "shared/protocol.h"
@@ -1768,6 +1769,7 @@ static void Test_AuthoritativeIntermissionMultiClientState(ImGuiTestContext* ctx
   const ShroomVec2 local_position = {500.0f, 600.0f};
   const ShroomVec2 opponent_position = {900.0f, 1000.0f};
   ShroomIntermissionStatusPacket* status;
+  char state_text[128];
 
   SetupOnlineGame();
   status = &g_imgui_test_app.game.net.intermission;
@@ -1777,7 +1779,7 @@ static void Test_AuthoritativeIntermissionMultiClientState(ImGuiTestContext* ctx
                                              .eligible_count = 3u,
                                              .play_again_votes = 2u,
                                              .return_to_lobby_votes = 1u,
-                                             .your_vote = SHROOM_REMATCH_VOTE_PLAY_AGAIN,
+                                             .your_vote = SHROOM_REMATCH_VOTE_NONE,
                                              .can_vote = 1u};
   InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESULTS, 101u, local_position, 300.0f,
                          opponent_position, 200.0f);
@@ -1786,17 +1788,53 @@ static void Test_AuthoritativeIntermissionMultiClientState(ImGuiTestContext* ctx
 
   IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
               SHROOM_SCREEN_RESULTS);
+  ShroomResultsFormatLocalVote((ShroomRematchVote)status->your_vote, status->can_vote != 0u,
+                               state_text, sizeof(state_text));
+  IM_CHECK_STR_EQ(state_text, "Your vote: Not cast");
+  ShroomResultsFormatVoteParticipation(status->play_again_votes, status->return_to_lobby_votes,
+                                       status->spectate_votes, status->eligible_count, state_text,
+                                       sizeof(state_text));
+  IM_CHECK_STR_EQ(state_text, "Participation: 3 / 3 eligible");
   IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Vote Play Again"));
   IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Vote Lobby"));
   IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Vote Spectate"));
 
+  /* Server acknowledgements persist on the selected action and replace an earlier vote. */
+  status->your_vote = SHROOM_REMATCH_VOTE_PLAY_AGAIN;
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Vote Play Again (Selected)"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Vote Lobby"));
+
+  status->your_vote = SHROOM_REMATCH_VOTE_RETURN_TO_LOBBY;
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Vote Play Again"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Vote Lobby (Selected)"));
+
+  status->your_vote = SHROOM_REMATCH_VOTE_SPECTATE;
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Vote Spectate (Selected)"));
+
   /* A spectator/late joiner receives the same totals but no voting controls. */
   status->can_vote = 0u;
+  status->your_vote = SHROOM_REMATCH_VOTE_NONE;
   ShroomTeCtx_Yield(ctx, 2);
   IM_CHECK_EQ(g_imgui_test_app.game.net.intermission.can_vote, 0u);
+  ShroomResultsFormatLocalVote((ShroomRematchVote)status->your_vote, status->can_vote != 0u,
+                               state_text, sizeof(state_text));
+  IM_CHECK_STR_EQ(state_text, "Your vote: Not eligible");
+
+  /* A resolved play-again vote remains visible until the next running snapshot arrives. */
+  status->can_vote = 1u;
+  status->resolved = 1u;
+  status->decision = SHROOM_REMATCH_VOTE_PLAY_AGAIN;
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_RESULTS);
+  ShroomResultsFormatDecision((ShroomRematchVote)status->decision, state_text, sizeof(state_text));
+  IM_CHECK_STR_EQ(state_text, "Decision: Play Again");
+  IM_CHECK(!ShroomTeCtx_ItemExists(ctx, "Vote Play Again"));
 
   /* The reliable final decision returns every observing client to the lobby. */
-  status->resolved = 1u;
   status->decision = SHROOM_REMATCH_VOTE_RETURN_TO_LOBBY;
   ShroomTeCtx_Yield(ctx, 2);
   IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
