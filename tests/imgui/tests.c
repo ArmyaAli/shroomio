@@ -709,6 +709,78 @@ static void Test_SettingsPersistence(ImGuiTestContext* ctx) {
   IM_CHECK(loaded.menu_animations_enabled);
 }
 
+static bool RewriteSettingsAsUnversioned(void) {
+  FILE* file = fopen("client_settings.cfg", "rb");
+  char contents[2048];
+  char* first_newline;
+  size_t count;
+
+  if (file == NULL) {
+    return false;
+  }
+  count = fread(contents, 1u, sizeof(contents) - 1u, file);
+  fclose(file);
+  contents[count] = '\0';
+  first_newline = strchr(contents, '\n');
+  if (first_newline == NULL) {
+    return false;
+  }
+  file = fopen("client_settings.cfg", "wb");
+  if (file == NULL) {
+    return false;
+  }
+  fputs(first_newline + 1, file);
+  return fclose(file) == 0;
+}
+
+static void Test_MigratedSettingsSurviveCrossScreenWorkflow(ImGuiTestContext* ctx) {
+  ClientSettings legacy;
+  FILE* file;
+  char schema_line[64] = {0};
+
+  ShroomImGuiTestAppReset(true);
+  ClientSettingsSetDefaults(&legacy);
+  snprintf(legacy.player_name, sizeof(legacy.player_name), "%s", "Migrated Player");
+  legacy.ui_scale_percent = 110;
+  legacy.master_volume_percent = 63;
+  legacy.camera_zoom = 1.37f;
+  legacy.key_chat_open = KEY_Y;
+  IM_CHECK(ClientSettingsSave(&legacy));
+  IM_CHECK(RewriteSettingsAsUnversioned());
+  IM_CHECK(ClientSettingsLoad(&g_imgui_test_app.game.settings));
+
+  file = fopen("client_settings.cfg", "rb");
+  IM_CHECK(file != NULL);
+  if (file != NULL) {
+    IM_CHECK(fgets(schema_line, sizeof(schema_line), file) != NULL);
+    fclose(file);
+  }
+  IM_CHECK_STR_EQ(schema_line, "schema_version=1\n");
+  IM_CHECK_EQ(g_imgui_test_app.game.settings.ui_scale_percent, 110);
+  IM_CHECK_EQ(g_imgui_test_app.game.settings.master_volume_percent, 63);
+  IM_CHECK_EQ(g_imgui_test_app.game.settings.key_chat_open, KEY_Y);
+
+  ShroomTeCtx_SetRef(ctx, "Main Menu");
+  ShroomTeCtx_ItemClick(ctx, "Settings");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_SETTINGS);
+  ShroomTeCtx_SetRef(ctx, "Settings");
+  ShroomTeCtx_ItemClick(ctx, "Back");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_MAIN_MENU);
+
+  ShroomTeCtx_SetRef(ctx, "Main Menu");
+  ShroomTeCtx_ItemClick(ctx, "Offline Practice");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_GAME);
+  IM_CHECK_STR_EQ(g_imgui_test_app.game.settings.player_name, "Migrated Player");
+  IM_CHECK(fabsf(g_imgui_test_app.game.settings.camera_zoom - 1.37f) < 0.001f);
+  IM_CHECK_EQ(g_imgui_test_app.game.settings.key_chat_open, KEY_Y);
+}
+
 static void Test_SettingsReservedKeyRejectionAndRecovery(ImGuiTestContext* ctx) {
   ClientSettings loaded;
 
@@ -1921,6 +1993,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
   ShroomTeEngine_RegisterTest(engine, "screens", "audio_updates_on_non_gameplay_screens",
                               Test_AudioUpdatesOnNonGameplayScreens);
   ShroomTeEngine_RegisterTest(engine, "screens", "settings_persistence", Test_SettingsPersistence);
+  ShroomTeEngine_RegisterTest(engine, "screens", "migrated_settings_cross_screen_workflow",
+                              Test_MigratedSettingsSurviveCrossScreenWorkflow);
   ShroomTeEngine_RegisterTest(engine, "screens", "settings_reserved_key_rejection_and_recovery",
                               Test_SettingsReservedKeyRejectionAndRecovery);
   ShroomTeEngine_RegisterTest(engine, "screens", "ui_scale_endpoints_keep_windows_usable",

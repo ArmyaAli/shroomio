@@ -4,9 +4,16 @@
 #include "shared/player_identity.h"
 
 #include <fcntl.h>
+#include <limits.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <io.h>
+#endif
 
 static const char* kClientSettingsPath = "client_settings.cfg";
 
@@ -106,123 +113,334 @@ void ClientSettingsValidate(ClientSettings* settings) {
   }
 }
 
-bool ClientSettingsLoad(ClientSettings* settings) {
-  FILE* file;
-  char line[128];
+enum { CLIENT_SETTINGS_FIELD_COUNT = 20 };
+#define CLIENT_SETTINGS_REQUIRED_MASK ((1u << CLIENT_SETTINGS_FIELD_COUNT) - 1u)
 
-  if (settings == NULL) {
+static bool BuildSettingsSidePath(char* destination, size_t size, const char* path,
+                                  const char* suffix) {
+  int written;
+
+  if ((destination == NULL) || (path == NULL) || (suffix == NULL)) {
     return false;
   }
+  written = snprintf(destination, size, "%s%s", path, suffix);
+  return (written >= 0) && ((size_t)written < size);
+}
 
-  ClientSettingsSetDefaults(settings);
+static bool ParseInteger(const char* text, int* value) {
+  char* end;
+  long parsed;
 
-  file = fopen(kClientSettingsPath, "r");
-  if (file == NULL) {
+  if ((text == NULL) || (value == NULL) || (*text == '\0')) {
     return false;
   }
-
-  while (fgets(line, sizeof(line), file) != NULL) {
-    char key[48] = {0};
-    int value = 0;
-
-    if (strncmp(line, "player_name=", 12u) == 0) {
-      char* name = line + 12u;
-      name[strcspn(name, "\r\n")] = '\0';
-      ClientSettingsSanitizePlayerName(settings->player_name, name);
-      continue;
-    }
-    if (sscanf(line, "%47[^=]=%d", key, &value) != 2) {
-      continue;
-    }
-
-    if (strcmp(key, "ui_scale_percent") == 0) {
-      settings->ui_scale_percent = value;
-    } else if (strcmp(key, "master_volume_percent") == 0) {
-      settings->master_volume_percent = value;
-    } else if (strcmp(key, "music_volume_percent") == 0) {
-      settings->music_volume_percent = value;
-    } else if (strcmp(key, "effects_volume_percent") == 0) {
-      settings->effects_volume_percent = value;
-    } else if (strcmp(key, "invert_mouse") == 0) {
-      settings->invert_mouse = value != 0;
-    } else if (strcmp(key, "diagnostics_enabled") == 0) {
-      settings->diagnostics_enabled = value != 0;
-    } else if (strcmp(key, "show_ping_ms") == 0) {
-      settings->show_ping_ms = value != 0;
-    } else if (strcmp(key, "menu_animations_enabled") == 0) {
-      settings->menu_animations_enabled = value != 0;
-    } else if (strcmp(key, "death_cutscene_enabled") == 0) {
-      settings->death_cutscene_enabled = value != 0;
-    } else if (strcmp(key, "preferred_region_index") == 0) {
-      settings->preferred_region_index = value;
-    } else if (strcmp(key, "palette_preset") == 0) {
-      settings->palette_preset = (ClientPalettePreset)value;
-    } else if (strcmp(key, "hud_density") == 0) {
-      settings->hud_density = (ClientHudDensity)value;
-    } else if (strcmp(key, "particle_quality") == 0) {
-      settings->particle_quality = (ClientParticleQuality)value;
-    } else if (strcmp(key, "mushroom_species") == 0) {
-      settings->mushroom_species = (ClientMushroomSpecies)value;
-    } else if (strcmp(key, "camera_zoom_x100") == 0) {
-      settings->camera_zoom = (float)value / 100.0f;
-    } else if (strcmp(key, "key_chat_open") == 0) {
-      settings->key_chat_open = value;
-    } else if (strcmp(key, "key_hud_toggle") == 0) {
-      settings->key_hud_toggle = value;
-    } else if (strcmp(key, "key_pause_menu") == 0) {
-      settings->key_pause_menu = value;
-    } else if (strcmp(key, "key_push_to_talk") == 0) {
-      settings->key_push_to_talk = value;
-    }
+  parsed = strtol(text, &end, 10);
+  if ((*end != '\0') && (*end != '\r') && (*end != '\n')) {
+    return false;
   }
-
-  fclose(file);
-  ClientSettingsValidate(settings);
+  if ((parsed < INT_MIN) || (parsed > INT_MAX)) {
+    return false;
+  }
+  *value = (int)parsed;
   return true;
 }
 
-bool ClientSettingsSave(const ClientSettings* settings) {
-  int file_descriptor;
+static bool ParseSettingsFile(const char* path, ClientSettings* settings, bool* unversioned) {
   FILE* file;
+  char line[160];
+  unsigned int fields = 0u;
+  int schema_version = 0;
+  bool schema_seen = false;
+  bool valid = true;
 
-  if (settings == NULL) {
-    return false;
-  }
-
-  file_descriptor = open(kClientSettingsPath, O_WRONLY | O_CREAT | O_TRUNC, 0600);
-  if (file_descriptor < 0) {
-    return false;
-  }
-
-  file = fdopen(file_descriptor, "w");
+  ClientSettingsSetDefaults(settings);
+  file = fopen(path, "rb");
   if (file == NULL) {
-    close(file_descriptor);
+    return false;
+  }
+  while (fgets(line, sizeof(line), file) != NULL) {
+    char* equals;
+    char* key = line;
+    const char* text;
+    int value;
+    unsigned int field = UINT_MAX;
+
+    if (strchr(line, '\n') == NULL && !feof(file)) {
+      valid = false;
+      break;
+    }
+    line[strcspn(line, "\r\n")] = '\0';
+    if (line[0] == '\0') {
+      continue;
+    }
+    equals = strchr(line, '=');
+    if (equals == NULL) {
+      valid = false;
+      break;
+    }
+    *equals = '\0';
+    text = equals + 1;
+    if (strcmp(key, "schema_version") == 0) {
+      schema_seen = ParseInteger(text, &schema_version);
+      valid = valid && schema_seen;
+      continue;
+    }
+    if (strcmp(key, "player_name") == 0) {
+      ClientSettingsSanitizePlayerName(settings->player_name, text);
+      field = 1u;
+    } else {
+      if (!ParseInteger(text, &value)) {
+        valid = false;
+        break;
+      }
+      if (strcmp(key, "ui_scale_percent") == 0) {
+        settings->ui_scale_percent = value;
+        field = 0u;
+      } else if (strcmp(key, "master_volume_percent") == 0) {
+        settings->master_volume_percent = value;
+        field = 2u;
+      } else if (strcmp(key, "music_volume_percent") == 0) {
+        settings->music_volume_percent = value;
+        field = 3u;
+      } else if (strcmp(key, "effects_volume_percent") == 0) {
+        settings->effects_volume_percent = value;
+        field = 4u;
+      } else if (strcmp(key, "invert_mouse") == 0) {
+        settings->invert_mouse = value != 0;
+        field = 5u;
+      } else if (strcmp(key, "diagnostics_enabled") == 0) {
+        settings->diagnostics_enabled = value != 0;
+        field = 6u;
+      } else if (strcmp(key, "show_ping_ms") == 0) {
+        settings->show_ping_ms = value != 0;
+        field = 7u;
+      } else if (strcmp(key, "menu_animations_enabled") == 0) {
+        settings->menu_animations_enabled = value != 0;
+        field = 8u;
+      } else if (strcmp(key, "death_cutscene_enabled") == 0) {
+        settings->death_cutscene_enabled = value != 0;
+        field = 9u;
+      } else if (strcmp(key, "preferred_region_index") == 0) {
+        settings->preferred_region_index = value;
+        field = 10u;
+      } else if (strcmp(key, "palette_preset") == 0) {
+        settings->palette_preset = (ClientPalettePreset)value;
+        field = 11u;
+      } else if (strcmp(key, "hud_density") == 0) {
+        settings->hud_density = (ClientHudDensity)value;
+        field = 12u;
+      } else if (strcmp(key, "particle_quality") == 0) {
+        settings->particle_quality = (ClientParticleQuality)value;
+        field = 13u;
+      } else if (strcmp(key, "mushroom_species") == 0) {
+        settings->mushroom_species = (ClientMushroomSpecies)value;
+        field = 14u;
+      } else if (strcmp(key, "camera_zoom_x100") == 0) {
+        settings->camera_zoom = (float)value / 100.0f;
+        field = 15u;
+      } else if (strcmp(key, "key_chat_open") == 0) {
+        settings->key_chat_open = value;
+        field = 16u;
+      } else if (strcmp(key, "key_hud_toggle") == 0) {
+        settings->key_hud_toggle = value;
+        field = 17u;
+      } else if (strcmp(key, "key_pause_menu") == 0) {
+        settings->key_pause_menu = value;
+        field = 18u;
+      } else if (strcmp(key, "key_push_to_talk") == 0) {
+        settings->key_push_to_talk = value;
+        field = 19u;
+      }
+    }
+    if (field < CLIENT_SETTINGS_FIELD_COUNT) {
+      fields |= 1u << field;
+    }
+  }
+  if (ferror(file)) {
+    valid = false;
+  }
+  fclose(file);
+
+  valid = valid && (fields == CLIENT_SETTINGS_REQUIRED_MASK) &&
+          (!schema_seen || (schema_version == CLIENT_SETTINGS_SCHEMA_VERSION));
+  if (!valid) {
+    ClientSettingsSetDefaults(settings);
+    return false;
+  }
+  ClientSettingsValidate(settings);
+  if (unversioned != NULL) {
+    *unversioned = !schema_seen;
+  }
+  return true;
+}
+
+static bool FlushSettingsFile(FILE* file) {
+  if ((fflush(file) != 0) || (ferror(file) != 0)) {
+    return false;
+  }
+#ifdef _WIN32
+  return _commit(_fileno(file)) == 0;
+#else
+  return fsync(fileno(file)) == 0;
+#endif
+}
+
+static bool ReplaceSettingsFile(const char* source, const char* destination) {
+#ifdef _WIN32
+  return MoveFileExA(source, destination, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+#else
+  return rename(source, destination) == 0;
+#endif
+}
+
+static bool WriteSettingsFile(const char* path, const ClientSettings* settings) {
+  FILE* file = fopen(path, "wb");
+  bool success;
+
+  if (file == NULL) {
+    return false;
+  }
+  success =
+      fprintf(file, "schema_version=%d\n", CLIENT_SETTINGS_SCHEMA_VERSION) >= 0 &&
+      fprintf(file, "ui_scale_percent=%d\n", settings->ui_scale_percent) >= 0 &&
+      fprintf(file, "player_name=%s\n", settings->player_name) >= 0 &&
+      fprintf(file, "master_volume_percent=%d\n", settings->master_volume_percent) >= 0 &&
+      fprintf(file, "music_volume_percent=%d\n", settings->music_volume_percent) >= 0 &&
+      fprintf(file, "effects_volume_percent=%d\n", settings->effects_volume_percent) >= 0 &&
+      fprintf(file, "invert_mouse=%d\n", settings->invert_mouse ? 1 : 0) >= 0 &&
+      fprintf(file, "diagnostics_enabled=%d\n", settings->diagnostics_enabled ? 1 : 0) >= 0 &&
+      fprintf(file, "show_ping_ms=%d\n", settings->show_ping_ms ? 1 : 0) >= 0 &&
+      fprintf(file, "menu_animations_enabled=%d\n", settings->menu_animations_enabled ? 1 : 0) >=
+          0 &&
+      fprintf(file, "death_cutscene_enabled=%d\n", settings->death_cutscene_enabled ? 1 : 0) >= 0 &&
+      fprintf(file, "preferred_region_index=%d\n", settings->preferred_region_index) >= 0 &&
+      fprintf(file, "palette_preset=%d\n", (int)settings->palette_preset) >= 0 &&
+      fprintf(file, "hud_density=%d\n", (int)settings->hud_density) >= 0 &&
+      fprintf(file, "particle_quality=%d\n", (int)settings->particle_quality) >= 0 &&
+      fprintf(file, "mushroom_species=%d\n", (int)settings->mushroom_species) >= 0 &&
+      fprintf(file, "camera_zoom_x100=%d\n", (int)(settings->camera_zoom * 100.0f)) >= 0 &&
+      fprintf(file, "key_chat_open=%d\n", settings->key_chat_open) >= 0 &&
+      fprintf(file, "key_hud_toggle=%d\n", settings->key_hud_toggle) >= 0 &&
+      fprintf(file, "key_pause_menu=%d\n", settings->key_pause_menu) >= 0 &&
+      fprintf(file, "key_push_to_talk=%d\n", settings->key_push_to_talk) >= 0;
+  success = success && FlushSettingsFile(file);
+  if (fclose(file) != 0) {
+    success = false;
+  }
+  if (!success) {
+    remove(path);
+  }
+  return success;
+}
+
+static bool CopyFileContents(const char* source, const char* destination) {
+  FILE* input = fopen(source, "rb");
+  FILE* output;
+  char buffer[4096];
+  bool success = true;
+
+  if (input == NULL) {
+    return false;
+  }
+  output = fopen(destination, "wb");
+  if (output == NULL) {
+    fclose(input);
+    return false;
+  }
+  while (!feof(input)) {
+    size_t count = fread(buffer, 1u, sizeof(buffer), input);
+    if ((count > 0u) && (fwrite(buffer, 1u, count, output) != count)) {
+      success = false;
+      break;
+    }
+    if (ferror(input)) {
+      success = false;
+      break;
+    }
+  }
+  success = success && FlushSettingsFile(output);
+  if ((fclose(input) != 0) || (fclose(output) != 0)) {
+    success = false;
+  }
+  if (!success) {
+    remove(destination);
+  }
+  return success;
+}
+
+bool ClientSettingsSaveToPath(const ClientSettings* settings, const char* path) {
+  ClientSettings validated;
+  ClientSettings parsed;
+  char temporary[512];
+  char backup[512];
+  char backup_temporary[512];
+  bool ignored;
+
+  if ((settings == NULL) || (path == NULL) || (*path == '\0') ||
+      !BuildSettingsSidePath(temporary, sizeof(temporary), path, ".tmp") ||
+      !BuildSettingsSidePath(backup, sizeof(backup), path, ".bak") ||
+      !BuildSettingsSidePath(backup_temporary, sizeof(backup_temporary), path, ".bak.tmp")) {
+    return false;
+  }
+  validated = *settings;
+  ClientSettingsValidate(&validated);
+  remove(temporary);
+  if (!WriteSettingsFile(temporary, &validated) ||
+      !ParseSettingsFile(temporary, &parsed, &ignored)) {
+    remove(temporary);
     return false;
   }
 
-  fprintf(file, "ui_scale_percent=%d\n", settings->ui_scale_percent);
-  fprintf(file, "player_name=%s\n", settings->player_name);
-  fprintf(file, "master_volume_percent=%d\n", settings->master_volume_percent);
-  fprintf(file, "music_volume_percent=%d\n", settings->music_volume_percent);
-  fprintf(file, "effects_volume_percent=%d\n", settings->effects_volume_percent);
-  fprintf(file, "invert_mouse=%d\n", settings->invert_mouse ? 1 : 0);
-  fprintf(file, "diagnostics_enabled=%d\n", settings->diagnostics_enabled ? 1 : 0);
-  fprintf(file, "show_ping_ms=%d\n", settings->show_ping_ms ? 1 : 0);
-  fprintf(file, "menu_animations_enabled=%d\n", settings->menu_animations_enabled ? 1 : 0);
-  fprintf(file, "death_cutscene_enabled=%d\n", settings->death_cutscene_enabled ? 1 : 0);
-  fprintf(file, "preferred_region_index=%d\n", settings->preferred_region_index);
-  fprintf(file, "palette_preset=%d\n", (int)settings->palette_preset);
-  fprintf(file, "hud_density=%d\n", (int)settings->hud_density);
-  fprintf(file, "particle_quality=%d\n", (int)settings->particle_quality);
-  fprintf(file, "mushroom_species=%d\n", (int)settings->mushroom_species);
-  fprintf(file, "camera_zoom_x100=%d\n", (int)(settings->camera_zoom * 100.0f));
-  fprintf(file, "key_chat_open=%d\n", settings->key_chat_open);
-  fprintf(file, "key_hud_toggle=%d\n", settings->key_hud_toggle);
-  fprintf(file, "key_pause_menu=%d\n", settings->key_pause_menu);
-  fprintf(file, "key_push_to_talk=%d\n", settings->key_push_to_talk);
-
-  fclose(file);
+  if (ParseSettingsFile(path, &parsed, &ignored)) {
+    remove(backup_temporary);
+    if (!CopyFileContents(path, backup_temporary) ||
+        !ParseSettingsFile(backup_temporary, &parsed, &ignored) ||
+        !ReplaceSettingsFile(backup_temporary, backup)) {
+      remove(temporary);
+      remove(backup_temporary);
+      return false;
+    }
+  }
+  if (!ReplaceSettingsFile(temporary, path)) {
+    remove(temporary);
+    return false;
+  }
   return true;
+}
+
+bool ClientSettingsLoadFromPath(ClientSettings* settings, const char* path) {
+  char backup[512];
+  bool unversioned = false;
+
+  if ((settings == NULL) || (path == NULL) || (*path == '\0') ||
+      !BuildSettingsSidePath(backup, sizeof(backup), path, ".bak")) {
+    if (settings != NULL) {
+      ClientSettingsSetDefaults(settings);
+      ClientSettingsValidate(settings);
+    }
+    return false;
+  }
+  if (ParseSettingsFile(path, settings, &unversioned)) {
+    if (unversioned) {
+      (void)ClientSettingsSaveToPath(settings, path);
+    }
+    return true;
+  }
+  if (ParseSettingsFile(backup, settings, &unversioned)) {
+    (void)ClientSettingsSaveToPath(settings, path);
+    return true;
+  }
+  ClientSettingsSetDefaults(settings);
+  ClientSettingsValidate(settings);
+  return false;
+}
+
+bool ClientSettingsLoad(ClientSettings* settings) {
+  return ClientSettingsLoadFromPath(settings, kClientSettingsPath);
+}
+
+bool ClientSettingsSave(const ClientSettings* settings) {
+  return ClientSettingsSaveToPath(settings, kClientSettingsPath);
 }
 
 const char* ClientSettingsPreferredRegionLabel(int region_index) {

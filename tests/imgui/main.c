@@ -31,6 +31,9 @@ static void RegisterScreens(ShroomScreenManager* manager) {
 
 static void ResetPersistentFiles(void) {
   unlink("client_settings.cfg");
+  unlink("client_settings.cfg.tmp");
+  unlink("client_settings.cfg.bak");
+  unlink("client_settings.cfg.bak.tmp");
   unlink("server_browser_recent.txt");
   unlink("imgui.ini");
 }

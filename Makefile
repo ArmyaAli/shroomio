@@ -742,6 +742,9 @@ test_connection) \
 		test_settings_session) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/settings_session.c $(CLIENT_SRC_DIR)/client_settings.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+		test_client_settings_persistence) \
+			$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) \
+				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/client_settings.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_server_browser_model) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/server_browser_model.c -o $$test_bin $(COVERAGE_LIBS) ;; \
@@ -839,6 +842,10 @@ $(TEST_BUILD_DIR)/test_game_mode_availability: $(UNIT_TESTS_DIR)/test_game_mode_
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
 $(TEST_BUILD_DIR)/test_settings_session: $(UNIT_TESTS_DIR)/test_settings_session.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/settings_session.c $(CLIENT_SRC_DIR)/client_settings.c | $(UNITY_DIR) $(VCPKG_LINUX_STAMP)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_client_settings_persistence: $(UNIT_TESTS_DIR)/test_client_settings_persistence.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/client_settings.c | $(UNITY_DIR) $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) $^ -o $@ $(TEST_LIBS)
 
