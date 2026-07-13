@@ -122,11 +122,12 @@ static void LobbyRosterDraw(ShroomScreenManager* manager) {
 
   if (ShroomImGui_BeginTable("RosterTable", 3,
                              SHROOM_IMGUI_TABLE_BORDERS | SHROOM_IMGUI_TABLE_ROW_BG |
-                                 SHROOM_IMGUI_TABLE_SIZING_FIXED,
-                             0.0f, ShroomLayoutMetric(220.0f))) {
+                                 SHROOM_IMGUI_TABLE_SCROLL_Y | SHROOM_IMGUI_TABLE_SIZING_FIXED,
+                             0.0f, ShroomLayoutMetric(190.0f))) {
     ShroomImGui_TableSetupColumn("Player", ShroomLayoutMetric(280.0f));
     ShroomImGui_TableSetupColumn("Role", ShroomLayoutMetric(120.0f));
     ShroomImGui_TableSetupColumn("Status", ShroomLayoutMetric(120.0f));
+    ShroomImGui_TableSetupScrollFreeze(0, 2);
     ShroomImGui_TableHeadersRow();
 
     /* Local player row is always first and highlighted. */
