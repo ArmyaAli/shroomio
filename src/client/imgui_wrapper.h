@@ -102,6 +102,7 @@ bool ShroomImGui_InputTextWithSubmit(const char* label, char* buffer, size_t buf
 bool ShroomImGui_BeginTable(const char* id, int columns, int flags, float width, float height);
 void ShroomImGui_EndTable(void);
 void ShroomImGui_TableSetupColumn(const char* label, float width);
+void ShroomImGui_TableSetupScrollFreeze(int columns, int rows);
 void ShroomImGui_TableHeadersRow(void);
 void ShroomImGui_TableNextRow(void);
 void ShroomImGui_TableSetColumnIndex(int index);

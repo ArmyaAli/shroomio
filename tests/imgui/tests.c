@@ -170,6 +170,32 @@ static void SetupLiveLobbyGame(void) {
   g_imgui_test_app.game.active_mode = SHROOM_SESSION_MODE_LOBBY_PLAY;
 }
 
+static void SetupPopulatedLobbyRoster(int ui_scale_percent) {
+  ClientNetState* net;
+
+  SetupLobbyBrowser();
+  net = &g_imgui_test_app.game.net;
+  g_imgui_test_app.game.settings.ui_scale_percent = ui_scale_percent;
+  net->welcome_received = true;
+  net->player_id = 7u;
+  net->lobby_id = 1u;
+  net->lobby_roster_received = true;
+  net->lobby_roster_count = SHROOM_MAX_PLAYABLE_PARTICIPANTS;
+  net->snapshot_player_count = SHROOM_MAX_PLAYABLE_PARTICIPANTS;
+
+  for (uint16_t i = 0u; i < SHROOM_MAX_PLAYABLE_PARTICIPANTS; ++i) {
+    const uint16_t player_id = (uint16_t)(i + 1u);
+    net->lobby_roster[i] = (ShroomLobbyRosterEntry){.player_id = player_id, .is_ready = 1u};
+    net->snapshot_players[i] = (ShroomSnapshotPlayerState){
+        .player_id = player_id,
+        .entity_id = (uint32_t)(100u + i),
+        .alive = 1u,
+    };
+  }
+
+  ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_LOBBY_ROSTER);
+}
+
 static void SetupResultsScreen(float peak_mass, float final_mass, int final_rank) {
   ShroomImGuiTestAppReset(false);
   g_imgui_test_app.game.selected_mode = SHROOM_SESSION_MODE_OFFLINE_PRACTICE;
@@ -931,6 +957,24 @@ static void Test_UiScaleEndpointsKeepPrimaryWindowsUsable(ImGuiTestContext* ctx)
   IM_CHECK(ShroomTeImGui_WindowFitsViewport("HUD Left"));
   IM_CHECK(ShroomTeImGui_WindowFitsViewport("HUD Right"));
   IM_CHECK(ShroomTeImGui_WindowFitsViewport("Chat"));
+}
+
+static void Test_LobbyRosterScrollKeepsActionsUsable(ImGuiTestContext* ctx) {
+  const int scales[] = {80, 100, 160};
+
+  for (size_t index = 0; index < sizeof(scales) / sizeof(scales[0]); ++index) {
+    SetupPopulatedLobbyRoster(scales[index]);
+    ShroomTeCtx_SetRef(ctx, "Lobby Roster");
+    ShroomTeCtx_Yield(ctx, 3);
+
+    IM_CHECK(ShroomTeImGui_WindowFitsViewport("Lobby Roster"));
+    IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Ready to enter"));
+    IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Leave Lobby"));
+    IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Enter Match"));
+    IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Ready to enter"));
+    IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Leave Lobby"));
+    IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Enter Match"));
+  }
 }
 
 static void Test_SettingsDiscardAndEscape(ImGuiTestContext* ctx) {
@@ -2107,6 +2151,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_SettingsReservedKeyRejectionAndRecovery);
   ShroomTeEngine_RegisterTest(engine, "screens", "ui_scale_endpoints_keep_windows_usable",
                               Test_UiScaleEndpointsKeepPrimaryWindowsUsable);
+  ShroomTeEngine_RegisterTest(engine, "lobby", "roster_scroll_keeps_actions_usable",
+                              Test_LobbyRosterScrollKeepsActionsUsable);
   ShroomTeEngine_RegisterTest(engine, "screens", "settings_discard_and_escape",
                               Test_SettingsDiscardAndEscape);
   ShroomTeEngine_RegisterTest(engine, "screens", "settings_restore_defaults_requires_save",

@@ -417,6 +417,10 @@ void ShroomImGui_TableSetupColumn(const char* label, float width) {
   ImGui::TableSetupColumn(label, ImGuiTableColumnFlags_None, width);
 }
 
+void ShroomImGui_TableSetupScrollFreeze(int columns, int rows) {
+  ImGui::TableSetupScrollFreeze(columns, rows);
+}
+
 void ShroomImGui_TableHeadersRow(void) { ImGui::TableHeadersRow(); }
 
 void ShroomImGui_TableNextRow(void) { ImGui::TableNextRow(); }
