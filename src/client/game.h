@@ -226,6 +226,9 @@ void GameCycleSpectatorTarget(Game* game, int direction);
 
 #ifdef TEST_MODE
 void GameTestSetMovementInput(ShroomVec2 direction);
+const char* ShroomTestGetDiagnosticsRatesText(void);
+const char* ShroomTestGetDiagnosticsBandwidthText(void);
+const char* ShroomTestGetDiagnosticsTransportText(void);
 #endif
 
 /* Leaderboard and ranking functions */

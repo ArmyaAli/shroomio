@@ -37,3 +37,45 @@ python3 scripts/benchmark.py --server ./dist/linux/server/shroomio-server --out-
 
 Run the same command on both branches and compare `summary.csv` values. Attach the CSV artifacts to
 performance PRs/issues when making optimization claims.
+
+## Real ENet loopback benchmark
+
+Use the networking harness when evaluating packet throughput or queue pressure:
+
+```bash
+make network-benchmark
+make network-benchmark NETWORK_BENCH_CLIENTS=1,64 NETWORK_BENCH_DURATION_MS=5000
+make network-benchmark NETWORK_BENCH_CLIENTS=256 NETWORK_BENCH_SPLIT_PIECES=4
+```
+
+The default run creates real ENet loopback connections for 1, 64, and 256 clients. It writes raw
+scenario CSVs and `summary.csv` under `build/benchmarks/network/`. The harness sends client input at
+30 Hz and server snapshots at 15 Hz, then reports messages/s and payload bytes/s from packets actually
+accepted by the opposite ENet host. It also reports rejected sends/packets, outgoing queue high-water,
+and network-loop tick deadline failures. An intentionally impossible threshold is run last to verify
+that threshold failures return a nonzero status.
+
+Default pass thresholds are at least 20 accepted inputs/client/s, 10 accepted snapshots/client/s,
+at most 1% application-level drops, and at most five 33.3 ms network-loop deadline failures. Override
+them through `scripts/network_benchmark.py` when a slower reference role has documented limits. These
+are regression gates, not internet latency or packet-loss claims; loopback cannot model either.
+
+### Scale assumptions
+
+- One process owns both ENet hosts to isolate serialization, delivery, dispatch, and queue cost.
+- Up to 64 clients are participants; additional clients in the 256-client scenario are spectators.
+- Every connected client receives snapshots. Snapshot payloads contain
+  `participants * split_pieces` entities, bounded by 64 participants and four pieces each.
+- Inputs and snapshots use their production unreliable channels and production wire structs.
+- Simulation, SQLite, rendering, authentication, and WAN behavior are intentionally excluded. Use
+  `make benchmark` and production profiling separately for those costs.
+
+Record the execution role with every attached CSV:
+
+```bash
+uname -srm
+lscpu | sed -n '1,18p'
+```
+
+The initial reference run used WSL2 Linux x86_64 on an AMD Ryzen 5 7600 (6 cores/12 threads). Compare
+branches on the same hardware, power profile, client counts, duration, and split-piece setting.

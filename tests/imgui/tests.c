@@ -1309,15 +1309,32 @@ static void Test_GameplayLeaveConfirmationStayAndLeave(ImGuiTestContext* ctx) {
 }
 
 static void Test_GameplayDiagnosticsAndConnectionOverlays(ImGuiTestContext* ctx) {
+  const uint64_t telemetry_now = enet_time_get();
+
   SetupOnlineGame();
   g_imgui_test_app.game.diagnostics_overlay_open = true;
   g_imgui_test_app.game.net.rtt_ms = 15000u;
   g_imgui_test_app.game.net.rtt_average_ms = 14000u;
+  for (size_t index = 0u; index < 30u; ++index) {
+    ShroomNetTelemetryRecordSent(&g_imgui_test_app.game.net.telemetry, 0u,
+                                 SHROOM_ENET_CHANNEL_INPUT, SHROOM_PACKET_INPUT, 512u,
+                                 telemetry_now);
+  }
+  for (size_t index = 0u; index < 15u; ++index) {
+    ShroomNetTelemetryRecordAccepted(&g_imgui_test_app.game.net.telemetry, 0u,
+                                     SHROOM_ENET_CHANNEL_SNAPSHOT, SHROOM_PACKET_SNAPSHOT, 1024u,
+                                     telemetry_now);
+  }
+  ShroomNetTelemetrySetPeerTransport(&g_imgui_test_app.game.net.telemetry, 0u, 70u, 250u, true);
 
   ShroomTeCtx_SetRef(ctx, "Diagnostics");
   ShroomTeCtx_Yield(ctx, 2);
   IM_CHECK(ShroomTeImGui_WindowIsActive("Diagnostics"));
+  IM_CHECK_STR_EQ(ShroomTestGetDiagnosticsRatesText(), "Input: 30 Hz  Snapshot: 15 Hz");
+  IM_CHECK_STR_EQ(ShroomTestGetDiagnosticsBandwidthText(), "In: 15.0 KiB/s  Out: 15.0 KiB/s");
+  IM_CHECK_STR_EQ(ShroomTestGetDiagnosticsTransportText(), "Loss: 2.50%  Queue: 70 (congested)");
 
+  g_imgui_test_app.game.diagnostics_overlay_open = false;
   g_imgui_test_app.game.net.welcome_received = false;
   g_imgui_test_app.game.net.status = CLIENT_NET_ERROR;
   snprintf(g_imgui_test_app.game.net.status_text, sizeof(g_imgui_test_app.game.net.status_text),

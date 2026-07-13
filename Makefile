@@ -59,6 +59,10 @@ CLIENT_MACOS_BIN := $(DIST_DIR)/macos/client/$(PROJECT)
 SERVER_LINUX_BIN := $(DIST_DIR)/linux/server/$(PROJECT)-server
 SERVER_WINDOWS_BIN := $(DIST_DIR)/windows/server/$(PROJECT)-server.exe
 SERVER_MACOS_BIN := $(DIST_DIR)/macos/server/$(PROJECT)-server
+NETWORK_BENCH_BIN := $(BUILD_DIR)/benchmarks/network-benchmark
+NETWORK_BENCH_CLIENTS ?= 1,64,256
+NETWORK_BENCH_DURATION_MS ?= 1500
+NETWORK_BENCH_SPLIT_PIECES ?= 1
 
 #== == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==   \
     == == == == == == =
@@ -229,6 +233,7 @@ CLIENT_SOURCES := \
 	$(SHARED_SRC_DIR)/sim.c \
 	$(SHARED_SRC_DIR)/intermission.c \
 	$(SHARED_SRC_DIR)/lifecycle.c \
+	$(SHARED_SRC_DIR)/net_telemetry.c \
 	$(SHARED_SRC_DIR)/connection.c
 
 #Server source files
@@ -244,6 +249,7 @@ SERVER_SOURCES := \
 	$(SHARED_SRC_DIR)/sim.c \
 	$(SHARED_SRC_DIR)/intermission.c \
 	$(SHARED_SRC_DIR)/lifecycle.c \
+	$(SHARED_SRC_DIR)/net_telemetry.c \
 	$(SHARED_SRC_DIR)/connection.c
 
 #Shared headers(dependencies for all modules)
@@ -255,6 +261,7 @@ SHARED_HEADERS := \
 	$(SHARED_SRC_DIR)/intermission.h \
 	$(SHARED_SRC_DIR)/protocol.h \
 	$(SHARED_SRC_DIR)/profiler.h \
+	$(SHARED_SRC_DIR)/net_telemetry.h \
 	$(SHARED_SRC_DIR)/lifecycle.h \
 	$(SHARED_SRC_DIR)/connection.h \
 	$(SHARED_SRC_DIR)/player_identity.h \
@@ -313,6 +320,7 @@ IMGUI_TEST_CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/screens/results.c \
 	$(SHARED_SRC_DIR)/sim.c \
 	$(SHARED_SRC_DIR)/lifecycle.c \
+	$(SHARED_SRC_DIR)/net_telemetry.c \
 	$(SHARED_SRC_DIR)/connection.c
 # C test driver sources (plain C11 — no C++ in the test logic)
 IMGUI_TEST_C_SOURCES := $(IMGUI_TESTS_DIR)/main.c $(IMGUI_TESTS_DIR)/tests.c
@@ -332,7 +340,7 @@ IMGUI_TEST_ENGINE_OBJECTS := $(addprefix $(TEST_BUILD_DIR)/imgui/engine/,$(addsu
 # =============================================================================
 .PHONY: all client-linux client-windows client-macos server-linux server-windows server-macos servers-all
 .PHONY: linux windows macos server run run-server run-windows help
-.PHONY: benchmark
+.PHONY: benchmark network-benchmark network-benchmark-test
 
 all: client-linux
 
@@ -353,6 +361,7 @@ help:
 	@echo "  make run            Build and run the Linux client"
 	@echo "  make run-server     Build and run the Linux server"
 	@echo "  make benchmark      Run repeatable local server benchmark scenarios"
+	@echo "  make network-benchmark Run real ENet loopback scenarios (1/64/256 clients)"
 	@echo "  make run-windows    Build and launch Windows client from WSL (bypasses WSLg audio/video)"
 	@echo ""
 	@echo "Quality targets:"
@@ -432,6 +441,20 @@ run-server: $(SERVER_LINUX_BIN)
 benchmark: $(SERVER_LINUX_BIN)
 	python3 scripts/benchmark.py --server ./$(SERVER_LINUX_BIN)
 
+network-benchmark: $(NETWORK_BENCH_BIN)
+	python3 scripts/network_benchmark.py --binary ./$(NETWORK_BENCH_BIN) \
+		--clients "$(NETWORK_BENCH_CLIENTS)" --duration-ms $(NETWORK_BENCH_DURATION_MS) \
+		--split-pieces $(NETWORK_BENCH_SPLIT_PIECES)
+	@set +e; ./$(NETWORK_BENCH_BIN) --clients 1 --participants 1 --duration-ms 250 \
+		--port 39888 --min-input-hz 1000000 >/dev/null 2>&1; status=$$?; set -e; \
+	if [ $$status -ne 2 ]; then \
+		echo "Error: expected threshold exit 2, got $$status"; exit 1; \
+	fi; \
+	echo "Deterministic threshold failure check passed."
+
+network-benchmark-test: NETWORK_BENCH_DURATION_MS=500
+network-benchmark-test: network-benchmark
+
 run-windows:
 	@command -v $(WINDOWS_CXX) >/dev/null 2>&1 || (printf '%s\n' 'Error: $(WINDOWS_CXX) not found. Install mingw-w64:' '  Ubuntu/Debian: sudo apt install mingw-w64' '  Fedora:       sudo dnf install mingw64-gcc-c++' '  Arch:         sudo pacman -S mingw-w64-gcc' && exit 1)
 	@test -f $(VCPKG_WINDOWS_STAMP) || (printf '%s\n' 'Error: Windows vcpkg dependencies not installed.' 'Run: make vcpkg-install-windows' && exit 1)
@@ -466,6 +489,11 @@ $(SERVER_WINDOWS_BIN): $(SERVER_WINDOWS_OBJECTS) $(VCPKG_WINDOWS_STAMP)
 $(SERVER_MACOS_BIN): $(SERVER_MACOS_OBJECTS) $(VCPKG_MACOS_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(MACOS_CC) $(SERVER_MACOS_OBJECTS) -o $@ $(MACOS_SERVER_LIBS)
+
+$(NETWORK_BENCH_BIN): tools/network_benchmark.c $(SHARED_SRC_DIR)/net_telemetry.c $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) tools/network_benchmark.c \
+		$(SHARED_SRC_DIR)/net_telemetry.c -o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet
 
 # Client object compilation
 $(LINUX_BUILD_DIR)/client/%.o: $(CLIENT_SRC_DIR)/%.c $(CLIENT_SRC_DIR)/game.h $(CLIENT_SRC_DIR)/net.h $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
@@ -771,10 +799,13 @@ test_connection) \
 				$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/intermission.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_client_net) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) \
-				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/chat_cache.c -o $$test_bin $(COVERAGE_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lenet ;; \
+				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/chat_cache.c $(SHARED_SRC_DIR)/net_telemetry.c -o $$test_bin $(COVERAGE_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lenet ;; \
 		test_chat_cache) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/chat_cache.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+		test_net_telemetry) \
+			$(LINUX_CC) $(COVERAGE_CFLAGS) \
+				$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/net_telemetry.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_sim) \
 				$(LINUX_CC) $(COVERAGE_CFLAGS) \
 					$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/sim.c -o $$test_bin $(COVERAGE_LIBS) ;; \
@@ -884,11 +915,15 @@ $(TEST_BUILD_DIR)/test_prediction: $(UNIT_TESTS_DIR)/test_prediction.c $(UNITY_S
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
-$(TEST_BUILD_DIR)/test_client_net: $(UNIT_TESTS_DIR)/test_client_net.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/chat_cache.c | $(UNITY_DIR)
+$(TEST_BUILD_DIR)/test_client_net: $(UNIT_TESTS_DIR)/test_client_net.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/chat_cache.c $(SHARED_SRC_DIR)/net_telemetry.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) $^ -o $@ $(TEST_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lenet
 
 $(TEST_BUILD_DIR)/test_chat_cache: $(UNIT_TESTS_DIR)/test_chat_cache.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/chat_cache.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_net_telemetry: $(UNIT_TESTS_DIR)/test_net_telemetry.c $(UNITY_SRC) $(SHARED_SRC_DIR)/net_telemetry.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
@@ -1086,7 +1121,7 @@ lint: format-check cppcheck
 	@echo "All lint checks passed."
 
 # Run full CI validation locally
-check: lint test
+check: lint test network-benchmark-test
 	@echo "All checks passed."
 
 # =============================================================================
