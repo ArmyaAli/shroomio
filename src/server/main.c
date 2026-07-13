@@ -21,6 +21,7 @@
 #include "auth.h"
 #include "database.h"
 #include "logger.h"
+#include "match_persistence.h"
 #include "session_cleanup.h"
 #include "snapshot_stats.h"
 
@@ -41,6 +42,10 @@ typedef struct ShroomLobby {
   ShroomIntermissionState intermission;
   uint16_t last_intermission_second;
   uint32_t next_round_id;
+  uint64_t persistence_round_started_ms;
+  char persistence_round_uuid[96];
+  ShroomPersistedParticipant persistence_participants[SHROOM_MAX_PARTICIPANTS];
+  size_t persistence_participant_count;
 } ShroomLobby;
 
 typedef struct ServerSession {
@@ -588,6 +593,178 @@ static ShroomLobby* FindLobbyById(ShroomLobby* lobbies, uint32_t lobby_id) {
   return NULL;
 }
 
+static int64_t ResolveSessionDatabasePlayerId(sqlite3* db, const ServerSession* session) {
+  sqlite3_stmt* statement = NULL;
+  int64_t player_id = 0;
+
+  if ((db == NULL) || (session == NULL) || !session->authenticated || (session->user_id == 0u) ||
+      (sqlite3_prepare_v2(db, "SELECT player_id FROM users WHERE id=?1", -1, &statement, NULL) !=
+       SQLITE_OK)) {
+    return 0;
+  }
+  sqlite3_bind_int64(statement, 1, session->user_id);
+  if (sqlite3_step(statement) == SQLITE_ROW) {
+    player_id = sqlite3_column_int64(statement, 0);
+  }
+  sqlite3_finalize(statement);
+  return player_id;
+}
+
+static void BeginLobbyPersistenceRound(ShroomLobby* lobby) {
+  if (lobby == NULL) {
+    return;
+  }
+  lobby->persistence_round_started_ms = GetTimeMillis();
+  lobby->persistence_participant_count = 0u;
+  memset(lobby->persistence_participants, 0, sizeof(lobby->persistence_participants));
+  snprintf(lobby->persistence_round_uuid, sizeof(lobby->persistence_round_uuid), "%u-%u-%llu",
+           lobby->lobby_id, lobby->next_round_id + 1u,
+           (unsigned long long)lobby->persistence_round_started_ms);
+}
+
+static void RegisterPersistenceParticipant(ShroomLobby* lobby, sqlite3* db,
+                                           const ServerSession* session) {
+  int64_t database_player_id;
+
+  if ((lobby == NULL) || (session == NULL) || session->spectating || (session->player_id == 0u)) {
+    return;
+  }
+  database_player_id = ResolveSessionDatabasePlayerId(db, session);
+  if (database_player_id == 0) {
+    return;
+  }
+  for (size_t index = 0u; index < lobby->persistence_participant_count; ++index) {
+    ShroomPersistedParticipant* participant = &lobby->persistence_participants[index];
+
+    if (participant->runtime_player_id == session->player_id) {
+      return;
+    }
+    if (participant->database_player_id == database_player_id) {
+      participant->runtime_player_id = session->player_id;
+      participant->disconnected = false;
+      return;
+    }
+  }
+  if (lobby->persistence_participant_count >= SHROOM_MAX_PARTICIPANTS) {
+    return;
+  }
+  lobby->persistence_participants[lobby->persistence_participant_count++] =
+      (ShroomPersistedParticipant){
+          .database_player_id = database_player_id,
+          .runtime_player_id = session->player_id,
+      };
+}
+
+static int PersistenceParticipantRank(const ShroomLobby* lobby, uint32_t runtime_player_id);
+
+static void CapturePersistenceParticipant(ShroomLobby* lobby, uint32_t runtime_player_id,
+                                          bool disconnected) {
+  if ((lobby == NULL) || (runtime_player_id == 0u)) {
+    return;
+  }
+  for (size_t index = 0u; index < lobby->persistence_participant_count; ++index) {
+    ShroomPersistedParticipant* participant = &lobby->persistence_participants[index];
+    const ShroomRoundStats* stats;
+
+    if (participant->runtime_player_id != runtime_player_id) {
+      continue;
+    }
+    participant->disconnected = participant->disconnected || disconnected;
+    participant->final_mass = ShroomWorldGetColonyMass(&lobby->world, runtime_player_id);
+    participant->final_rank = PersistenceParticipantRank(lobby, runtime_player_id);
+    stats = ShroomWorldGetRoundStats(&lobby->world, runtime_player_id);
+    if (stats != NULL) {
+      participant->round_stats.colony_mass = stats->colony_mass;
+      if (stats->peak_mass > participant->round_stats.peak_mass) {
+        participant->round_stats.peak_mass = stats->peak_mass;
+      }
+      participant->round_stats.survival_seconds += stats->survival_seconds;
+      participant->round_stats.kills += stats->kills;
+      participant->round_stats.spores_collected += stats->spores_collected;
+      participant->round_stats.powerups_collected += stats->powerups_collected;
+      participant->round_stats.center_zone_seconds += stats->center_zone_seconds;
+      participant->round_stats.mid_zone_seconds += stats->mid_zone_seconds;
+      participant->round_stats.outer_zone_seconds += stats->outer_zone_seconds;
+      participant->round_stats.splits_used += stats->splits_used;
+      participant->round_stats.ejects_used += stats->ejects_used;
+    }
+    return;
+  }
+}
+
+static int PersistenceParticipantRank(const ShroomLobby* lobby, uint32_t runtime_player_id) {
+  const float mass = ShroomWorldGetColonyMass(&lobby->world, runtime_player_id);
+  const float objective_score = lobby->world.game_mode == SHROOM_GAME_MODE_KING_OF_HILL
+                                    ? ShroomWorldGetObjectiveScore(&lobby->world, runtime_player_id)
+                                    : 0.0f;
+  int rank = 1;
+
+  for (size_t index = 0u; index < lobby->world.player_count; ++index) {
+    const ShroomPlayerState* other = &lobby->world.players[index];
+    const uint32_t other_id = other->player_id;
+    bool already_ranked = false;
+
+    if (!other->alive || (other_id == 0u) || (other_id == runtime_player_id)) {
+      continue;
+    }
+    for (size_t previous = 0u; previous < index; ++previous) {
+      if (lobby->world.players[previous].alive &&
+          (lobby->world.players[previous].player_id == other_id)) {
+        already_ranked = true;
+        break;
+      }
+    }
+    if (already_ranked) {
+      continue;
+    }
+
+    const float other_mass = ShroomWorldGetColonyMass(&lobby->world, other_id);
+    const float other_objective_score = lobby->world.game_mode == SHROOM_GAME_MODE_KING_OF_HILL
+                                            ? ShroomWorldGetObjectiveScore(&lobby->world, other_id)
+                                            : 0.0f;
+    if ((other_objective_score > objective_score) ||
+        ((other_objective_score == objective_score) && (other_mass > mass)) ||
+        ((other_objective_score == objective_score) && (other_mass == mass) &&
+         (other_id < runtime_player_id))) {
+      ++rank;
+    }
+  }
+  return rank;
+}
+
+static void PersistCompletedLobbyRound(sqlite3* db, ShroomLobby* lobby) {
+  ShroomCompletedMatch match;
+  ShroomMatchPersistenceResult result;
+  const uint64_t elapsed_ms = GetTimeMillis() >= lobby->persistence_round_started_ms
+                                  ? GetTimeMillis() - lobby->persistence_round_started_ms
+                                  : 0u;
+
+  for (size_t index = 0u; index < lobby->persistence_participant_count; ++index) {
+    ShroomPersistedParticipant* participant = &lobby->persistence_participants[index];
+    if (!participant->disconnected) {
+      CapturePersistenceParticipant(lobby, participant->runtime_player_id, false);
+      participant->final_rank = PersistenceParticipantRank(lobby, participant->runtime_player_id);
+    }
+  }
+  match = (ShroomCompletedMatch){
+      .session_uuid = lobby->persistence_round_uuid,
+      .lobby_id = lobby->lobby_id,
+      .round_id = lobby->next_round_id + 1u,
+      .game_mode = lobby->world.game_mode,
+      .final_tick = lobby->world.tick,
+      .duration_seconds = (uint32_t)(elapsed_ms / 1000u),
+      .bot_count = CountLobbyAliveBots(lobby),
+      .winner_runtime_player_id = lobby->world.podium_player_ids[0],
+      .participants = lobby->persistence_participants,
+      .participant_count = lobby->persistence_participant_count,
+  };
+  result = ShroomMatchPersistenceSave(db, &match);
+  if (result == SHROOM_MATCH_PERSISTENCE_ERROR) {
+    LOG_ERROR("failed to persist completed round lobby_id=%u round=%u", lobby->lobby_id,
+              match.round_id);
+  }
+}
+
 static void SendLobbyList(ENetPeer* peer, ShroomLobby* lobbies, const ENetHost* host) {
   ShroomLobbyListPacket packet = {0};
   size_t packet_size;
@@ -750,7 +927,7 @@ static void BeginIntermission(ENetHost* host, ShroomLobby* lobby) {
   BroadcastIntermissionStatus(host, lobby);
 }
 
-static void ResolveIntermission(ENetHost* host, ShroomLobby* lobby) {
+static void ResolveIntermission(ENetHost* host, ShroomLobby* lobby, sqlite3* db) {
   const ShroomRematchVote decision = ShroomIntermissionResolve(&lobby->intermission);
 
   BroadcastIntermissionStatus(host, lobby);
@@ -772,6 +949,14 @@ static void ResolveIntermission(ENetHost* host, ShroomLobby* lobby) {
     }
   }
   ShroomWorldResetMatch(&lobby->world);
+  BeginLobbyPersistenceRound(lobby);
+  for (size_t index = 0; index < host->peerCount; ++index) {
+    const ServerSession* session = (const ServerSession*)host->peers[index].data;
+    if ((host->peers[index].state == ENET_PEER_STATE_CONNECTED) && (session != NULL) &&
+        session->active && session->entered_match && (session->lobby_id == lobby->lobby_id)) {
+      RegisterPersistenceParticipant(lobby, db, session);
+    }
+  }
   BroadcastLobbyRoster(host, lobby->lobby_id);
   LOG_INFO("intermission resolved: lobby_id=%u round=%u decision=%u", lobby->lobby_id,
            lobby->intermission.round_id, (unsigned)decision);
@@ -1321,8 +1506,8 @@ static void HandleReadyStatePacket(ENetHost* host, ServerSession* session,
   BroadcastLobbyRoster(host, session->lobby_id);
 }
 
-static void HandleEnterMatchPacket(ENetHost* host, ServerSession* session,
-                                   const ENetPacket* enet_packet) {
+static void HandleEnterMatchPacket(ENetHost* host, ServerSession* session, ShroomLobby* lobbies,
+                                   sqlite3* db, const ENetPacket* enet_packet) {
   const ShroomEnterMatchPacket* packet;
 
   if ((host == NULL) || (session == NULL) || !session->active || (enet_packet == NULL) ||
@@ -1340,6 +1525,7 @@ static void HandleEnterMatchPacket(ENetHost* host, ServerSession* session,
   }
 
   session->entered_match = true;
+  RegisterPersistenceParticipant(FindLobbyById(lobbies, session->lobby_id), db, session);
   session->focused_entity_id = 0u;
   if (session->player != NULL) {
     session->player->input_direction = (ShroomVec2){0};
@@ -1461,6 +1647,7 @@ static ShroomLobby* CreateLobby(ShroomLobby* lobbies, uint32_t lobby_id, const c
       ShroomWorldInit(&lobby->world);
       ShroomWorldSetGameMode(&lobby->world, game_mode);
       ShroomWorldSetMatchDuration(&lobby->world, g_match_duration_seconds);
+      BeginLobbyPersistenceRound(lobby);
       InitializeLobbyBots(lobby, next_player_id);
       LOG_INFO("lobby created: id=%u name=%.31s dynamic=%d", lobby_id, lobby->name,
                (int)is_dynamic);
@@ -1545,6 +1732,9 @@ static void HandleLobbyLeave(ENetHost* host, ServerSession* session, ShroomLobby
     if ((lobby != NULL) &&
         ShroomIntermissionRemoveVoter(&lobby->intermission, session->player_id)) {
       BroadcastIntermissionStatus(host, lobby);
+    }
+    if ((lobby != NULL) && session->entered_match) {
+      CapturePersistenceParticipant(lobby, session->player_id, true);
     }
   }
   RemoveSessionPlayer(session, lobbies);
@@ -1644,7 +1834,9 @@ static void DispatchReadyState(ServerPacketContext* context) {
 }
 
 static void DispatchEnterMatch(ServerPacketContext* context) {
-  HandleEnterMatchPacket(context->host, context->session, context->enet_packet);
+  HandleEnterMatchPacket(context->host, context->session, context->lobbies,
+                         context->auth_ctx != NULL ? context->auth_ctx->db : NULL,
+                         context->enet_packet);
 }
 
 static void DispatchRematchVote(ServerPacketContext* context) {
@@ -1863,6 +2055,10 @@ int main(int argc, char** argv) {
                                           disconnected_session->player_id)) {
           BroadcastIntermissionStatus(host, disconnected_lobby);
         }
+        if ((disconnected_session != NULL) && (disconnected_lobby != NULL) &&
+            disconnected_session->entered_match) {
+          CapturePersistenceParticipant(disconnected_lobby, disconnected_session->player_id, true);
+        }
         DisconnectSession(disconnected_session, lobbies);
         event.peer->data = 0;
         BroadcastLobbyRoster(host, disconnected_lobby_id);
@@ -1932,6 +2128,7 @@ int main(int argc, char** argv) {
         ShroomWorldStep(&lobby->world, 1.0f / SHROOM_SERVER_TICK_RATE);
         if ((previous_phase == SHROOM_MATCH_PHASE_RUNNING) &&
             (lobby->world.match_phase == SHROOM_MATCH_PHASE_RESULTS)) {
+          PersistCompletedLobbyRound(db, lobby);
           BeginIntermission(host, lobby);
         }
         if (lobby->world.match_phase == SHROOM_MATCH_PHASE_RESULTS) {
@@ -1941,11 +2138,11 @@ int main(int argc, char** argv) {
             BroadcastIntermissionStatus(host, lobby);
           }
           if (ShroomIntermissionAllEligibleVoted(&lobby->intermission)) {
-            ResolveIntermission(host, lobby);
+            ResolveIntermission(host, lobby, db);
           }
         }
         if (lobby->world.match_phase == SHROOM_MATCH_PHASE_RESET) {
-          ResolveIntermission(host, lobby);
+          ResolveIntermission(host, lobby, db);
         }
         if (profile_enabled) {
           simulation_ms = ShroomProfileNanosToMs(GetTimeNanos() - phase_start_nanos);

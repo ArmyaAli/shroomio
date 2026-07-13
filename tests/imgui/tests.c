@@ -385,6 +385,47 @@ static void Test_KingOfHillCompleteMatchHudAndResults(ImGuiTestContext* ctx) {
   IM_CHECK_EQ(g_imgui_test_app.game.final_rank, 1);
 }
 
+static void Test_AuthoritativeResultsRankBotsByKingOfHillScore(ImGuiTestContext* ctx) {
+  const ShroomVec2 local_position = {600.0f, 600.0f};
+  const ShroomVec2 opponent_position = {900.0f, 900.0f};
+  LeaderboardEntry leaderboard[SHROOM_MAX_PLAYER_ENTITIES];
+  size_t leaderboard_count = 0u;
+
+  SetupOnlineGame();
+  g_imgui_test_app.game.net.match_entry_sent = true;
+  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESULTS, 101u, local_position, 300.0f,
+                         opponent_position, 100.0f);
+  g_imgui_test_app.game.net.game_mode = SHROOM_GAME_MODE_KING_OF_HILL;
+  g_imgui_test_app.game.net.objective_target_score = SHROOM_KOTH_TARGET_SCORE;
+  g_imgui_test_app.game.net.snapshot_players[0].objective_score = 50.0f;
+  g_imgui_test_app.game.net.snapshot_players[1].objective_score = 60.0f;
+  g_imgui_test_app.game.net.snapshot_players[2] = (ShroomSnapshotPlayerState){
+      .player_id = 3u,
+      .entity_id = 302u,
+      .position_x = 1100.0f,
+      .position_y = 1100.0f,
+      .mass = 900.0f,
+      .radius = 30.0f,
+      .alive = 1u,
+      .is_bot = 1u,
+      .objective_score = 40.0f,
+  };
+  snprintf(g_imgui_test_app.game.net.snapshot_players[2].name,
+           sizeof(g_imgui_test_app.game.net.snapshot_players[2].name), "Heavy Bot");
+  g_imgui_test_app.game.net.snapshot_player_count = 3u;
+  ShroomTeCtx_Yield(ctx, 2);
+
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_RESULTS);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Match Results"));
+  BuildLeaderboard(&g_imgui_test_app.game, leaderboard, &leaderboard_count);
+  IM_CHECK_EQ(leaderboard_count, 3u);
+  IM_CHECK_EQ(leaderboard[0].player_id, 2u);
+  IM_CHECK_EQ(leaderboard[1].player_id, 1u);
+  IM_CHECK_EQ(leaderboard[2].player_id, 3u);
+  IM_CHECK_EQ(g_imgui_test_app.game.final_rank, 2);
+}
+
 static void Test_KingOfHillModeSelection(ImGuiTestContext* ctx) {
   ShroomImGuiTestAppReset(true);
   ShroomTeCtx_SetRef(ctx, "Main Menu");
@@ -1975,6 +2016,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_AuthoritativeResultsCompleteTwoRoundCycle);
   ShroomTeEngine_RegisterTest(engine, "screens", "king_of_hill_complete_match_hud_and_results",
                               Test_KingOfHillCompleteMatchHudAndResults);
+  ShroomTeEngine_RegisterTest(engine, "screens", "authoritative_results_rank_koth_bots",
+                              Test_AuthoritativeResultsRankBotsByKingOfHillScore);
   ShroomTeEngine_RegisterTest(engine, "screens", "king_of_hill_mode_selection",
                               Test_KingOfHillModeSelection);
   ShroomTeEngine_RegisterTest(engine, "screens", "authoritative_intermission_multi_client_state",
