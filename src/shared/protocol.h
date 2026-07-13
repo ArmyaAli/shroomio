@@ -9,7 +9,7 @@
 #include "config.h"
 #include "intermission.h"
 
-#define SHROOM_PROTOCOL_VERSION 8u
+#define SHROOM_PROTOCOL_VERSION 9u
 #define SHROOM_SERVER_PORT 7777u
 #define SHROOM_MAX_UNRELIABLE_PACKET_SIZE 1200u
 #define SHROOM_MAX_PASSWORD_LENGTH 64u
@@ -31,6 +31,10 @@
 #define SHROOM_CHAT_MAX_MESSAGE_LENGTH 200u
 #define SHROOM_CHAT_RATE_LIMIT_COUNT 5u
 #define SHROOM_CHAT_RATE_LIMIT_WINDOW_MS 10000u
+#define SHROOM_VOICE_MAX_PAYLOAD_SIZE 512u
+#define SHROOM_VOICE_FLAG_START 0x01u
+#define SHROOM_VOICE_FLAG_END 0x02u
+#define SHROOM_VOICE_FLAG_MASK (SHROOM_VOICE_FLAG_START | SHROOM_VOICE_FLAG_END)
 #define SHROOM_MAX_MUSHROOM_SPECIES 10u
 #define SHROOM_MUSHROOM_SPECIES_NAME_LENGTH 32u
 #define SHROOM_MUSHROOM_SPECIES_DESCRIPTION_LENGTH 128u
@@ -320,11 +324,32 @@ typedef struct ShroomChatPacket {
 
 typedef struct ShroomVoiceFramePacket {
   ShroomPacketHeader header;
-  uint32_t player_id;
+  uint32_t sender_id; /* ignored client->server; authoritative in relayed frames */
+  uint32_t stream_id; /* nonzero sender-local stream generation */
+  uint32_t timestamp; /* Opus 48 kHz sample clock, wraps naturally */
+  uint16_t sequence;  /* modulo-16-bit frame sequence */
   uint16_t payload_size;
-  uint16_t reserved;
-  uint8_t payload[512];
+  uint8_t flags;
+  uint8_t reserved[3];
+#if defined(__cplusplus)
+  /* C++ translation units use a one-byte trailing placeholder for header compatibility. */
+  uint8_t payload[1];
+#else
+  /* Opaque encoded Opus bytes. The server never decodes this payload. */
+  uint8_t payload[];
+#endif
 } ShroomVoiceFramePacket;
+
+#define SHROOM_VOICE_FRAME_HEADER_SIZE offsetof(ShroomVoiceFramePacket, payload)
+#define SHROOM_VOICE_FRAME_MAX_SIZE (SHROOM_VOICE_FRAME_HEADER_SIZE + SHROOM_VOICE_MAX_PAYLOAD_SIZE)
+
+#if defined(__cplusplus)
+static_assert(SHROOM_VOICE_FRAME_MAX_SIZE <= SHROOM_MAX_UNRELIABLE_PACKET_SIZE,
+              "voice frames must fit the unreliable packet budget");
+#else
+_Static_assert(SHROOM_VOICE_FRAME_MAX_SIZE <= SHROOM_MAX_UNRELIABLE_PACKET_SIZE,
+               "voice frames must fit the unreliable packet budget");
+#endif
 
 typedef struct ShroomReadyStatePacket {
   ShroomPacketHeader header;
@@ -391,7 +416,7 @@ typedef struct ShroomIntermissionStatusPacket {
   X(SHROOM_PACKET_AUTH_RESPONSE, SHROOM_ENET_CHANNEL_CONTROL, true,                                \
     sizeof(ShroomAuthResponsePacket))                                                              \
   X(SHROOM_PACKET_CHAT, SHROOM_ENET_CHANNEL_CHAT, true, sizeof(ShroomChatPacket))                  \
-  X(SHROOM_PACKET_VOICE_FRAME, SHROOM_ENET_CHANNEL_VOICE, false, sizeof(ShroomVoiceFramePacket))   \
+  X(SHROOM_PACKET_VOICE_FRAME, SHROOM_ENET_CHANNEL_VOICE, false, SHROOM_VOICE_FRAME_HEADER_SIZE)   \
   X(SHROOM_PACKET_LOBBY_LIST_QUERY, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomPacketHeader)) \
   X(SHROOM_PACKET_LOBBY_LIST, SHROOM_ENET_CHANNEL_CONTROL, true,                                   \
     offsetof(ShroomLobbyListPacket, lobbies))                                                      \
@@ -470,6 +495,37 @@ static inline uint16_t ShroomSporeStatePacketMaxSpores(void) {
                                : 0u;
 
   return (uint16_t)(available / sizeof(ShroomSnapshotSporeState));
+}
+
+static inline size_t ShroomVoiceFramePacketSize(uint16_t payload_size) {
+  return SHROOM_VOICE_FRAME_HEADER_SIZE + (size_t)payload_size;
+}
+
+static inline uint8_t* ShroomVoiceFramePayload(ShroomVoiceFramePacket* packet) {
+  return packet != NULL ? packet->payload : NULL;
+}
+
+static inline const uint8_t* ShroomVoiceFramePayloadConst(const ShroomVoiceFramePacket* packet) {
+  return packet != NULL ? packet->payload : NULL;
+}
+
+static inline bool ShroomVoiceFramePacketIsValid(const void* data, size_t wire_size) {
+  const ShroomVoiceFramePacket* packet = (const ShroomVoiceFramePacket*)data;
+
+  if ((packet == NULL) || (wire_size < SHROOM_VOICE_FRAME_HEADER_SIZE) ||
+      (wire_size > SHROOM_VOICE_FRAME_MAX_SIZE) || (wire_size > UINT16_MAX)) {
+    return false;
+  }
+  if ((packet->header.type != SHROOM_PACKET_VOICE_FRAME) ||
+      (packet->header.reserved != SHROOM_ENET_CHANNEL_VOICE) ||
+      ((size_t)packet->header.size != wire_size) || (packet->stream_id == 0u) ||
+      (packet->payload_size == 0u) || (packet->payload_size > SHROOM_VOICE_MAX_PAYLOAD_SIZE) ||
+      (ShroomVoiceFramePacketSize(packet->payload_size) != wire_size) ||
+      ((packet->flags & (uint8_t)~SHROOM_VOICE_FLAG_MASK) != 0u) || (packet->reserved[0] != 0u) ||
+      (packet->reserved[1] != 0u) || (packet->reserved[2] != 0u)) {
+    return false;
+  }
+  return true;
 }
 
 static inline bool ShroomPacketHeaderUsesExpectedChannel(const ShroomPacketHeader* header,

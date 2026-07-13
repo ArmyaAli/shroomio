@@ -33,7 +33,9 @@ void test_pong_packet_size(void) {
 }
 
 void test_voice_frame_packet_size(void) {
-  TEST_ASSERT_EQUAL(sizeof(ShroomPacketHeader) + 4 + 2 + 2 + 512, sizeof(ShroomVoiceFramePacket));
+  TEST_ASSERT_EQUAL_UINT32(24u, SHROOM_VOICE_FRAME_HEADER_SIZE);
+  TEST_ASSERT_EQUAL_UINT32(536u, SHROOM_VOICE_FRAME_MAX_SIZE);
+  TEST_ASSERT_TRUE(SHROOM_VOICE_FRAME_MAX_SIZE <= SHROOM_MAX_UNRELIABLE_PACKET_SIZE);
 }
 
 void test_snapshot_player_state_size(void) {
@@ -190,7 +192,7 @@ void test_lobby_config_constants(void) {
 
 void test_protocol_constants(void) {
   TEST_ASSERT_EQUAL(7777, SHROOM_SERVER_PORT);
-  TEST_ASSERT_EQUAL(8, SHROOM_PROTOCOL_VERSION);
+  TEST_ASSERT_EQUAL(9, SHROOM_PROTOCOL_VERSION);
   TEST_ASSERT_EQUAL(32, SHROOM_MAX_NAME_LENGTH);
   TEST_ASSERT_EQUAL(15, SHROOM_SNAPSHOT_RATE);
   TEST_ASSERT_EQUAL(256, SHROOM_MAX_SNAPSHOT_PLAYERS);
@@ -249,7 +251,7 @@ void test_packet_minimum_size_mapping(void) {
   TEST_ASSERT_EQUAL(sizeof(ShroomAuthResponsePacket),
                     ShroomPacketTypeMinimumSize(SHROOM_PACKET_AUTH_RESPONSE));
   TEST_ASSERT_EQUAL(sizeof(ShroomChatPacket), ShroomPacketTypeMinimumSize(SHROOM_PACKET_CHAT));
-  TEST_ASSERT_EQUAL(sizeof(ShroomVoiceFramePacket),
+  TEST_ASSERT_EQUAL(SHROOM_VOICE_FRAME_HEADER_SIZE,
                     ShroomPacketTypeMinimumSize(SHROOM_PACKET_VOICE_FRAME));
   TEST_ASSERT_EQUAL(sizeof(ShroomPacketHeader),
                     ShroomPacketTypeMinimumSize(SHROOM_PACKET_LOBBY_LIST_QUERY));
@@ -285,20 +287,63 @@ void test_match_entry_packets_are_reliable_control_messages(void) {
 }
 
 void test_voice_packet_initialization(void) {
-  ShroomVoiceFramePacket packet;
-  memset(&packet, 0, sizeof(packet));
+  union {
+    max_align_t alignment;
+    uint8_t bytes[SHROOM_VOICE_FRAME_MAX_SIZE];
+  } wire = {0};
+  ShroomVoiceFramePacket* packet = (ShroomVoiceFramePacket*)wire.bytes;
+  const uint16_t payload_size = 128u;
+  const uint16_t wire_size = (uint16_t)ShroomVoiceFramePacketSize(payload_size);
 
-  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_VOICE_FRAME, sizeof(packet));
-  packet.player_id = 4;
-  packet.payload_size = 128;
-  packet.payload[0] = 0xABu;
+  ShroomPacketHeaderInit(&packet->header, SHROOM_PACKET_VOICE_FRAME, wire_size);
+  packet->sender_id = 4u;
+  packet->stream_id = 7u;
+  packet->timestamp = 960u;
+  packet->sequence = UINT16_MAX;
+  packet->payload_size = payload_size;
+  packet->flags = SHROOM_VOICE_FLAG_START;
+  ShroomVoiceFramePayload(packet)[0] = 0xABu;
 
-  TEST_ASSERT_EQUAL(SHROOM_PACKET_VOICE_FRAME, packet.header.type);
-  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_VOICE, packet.header.reserved);
-  TEST_ASSERT_EQUAL(sizeof(packet), packet.header.size);
-  TEST_ASSERT_EQUAL(4, packet.player_id);
-  TEST_ASSERT_EQUAL(128, packet.payload_size);
-  TEST_ASSERT_EQUAL_HEX8(0xAB, packet.payload[0]);
+  TEST_ASSERT_EQUAL(SHROOM_PACKET_VOICE_FRAME, packet->header.type);
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_VOICE, packet->header.reserved);
+  TEST_ASSERT_EQUAL(wire_size, packet->header.size);
+  TEST_ASSERT_EQUAL_UINT32(4u, packet->sender_id);
+  TEST_ASSERT_EQUAL_UINT32(7u, packet->stream_id);
+  TEST_ASSERT_EQUAL_UINT32(960u, packet->timestamp);
+  TEST_ASSERT_EQUAL_UINT16(UINT16_MAX, packet->sequence);
+  TEST_ASSERT_EQUAL_UINT16(payload_size, packet->payload_size);
+  TEST_ASSERT_EQUAL_HEX8(0xAB, ShroomVoiceFramePayloadConst(packet)[0]);
+  TEST_ASSERT_TRUE(ShroomVoiceFramePacketIsValid(packet, wire_size));
+}
+
+void test_voice_packet_validation_requires_exact_framing(void) {
+  union {
+    max_align_t alignment;
+    uint8_t bytes[SHROOM_VOICE_FRAME_MAX_SIZE];
+  } wire = {0};
+  ShroomVoiceFramePacket* packet = (ShroomVoiceFramePacket*)wire.bytes;
+  const uint16_t wire_size = (uint16_t)ShroomVoiceFramePacketSize(20u);
+
+  ShroomPacketHeaderInit(&packet->header, SHROOM_PACKET_VOICE_FRAME, wire_size);
+  packet->stream_id = 1u;
+  packet->payload_size = 20u;
+  packet->flags = SHROOM_VOICE_FLAG_START | SHROOM_VOICE_FLAG_END;
+
+  TEST_ASSERT_TRUE(ShroomVoiceFramePacketIsValid(packet, wire_size));
+  TEST_ASSERT_FALSE(ShroomVoiceFramePacketIsValid(packet, wire_size - 1u));
+  TEST_ASSERT_FALSE(ShroomVoiceFramePacketIsValid(packet, wire_size + 1u));
+
+  packet->header.size = (uint16_t)(wire_size - 1u);
+  TEST_ASSERT_FALSE(ShroomVoiceFramePacketIsValid(packet, wire_size));
+  packet->header.size = wire_size;
+  packet->flags = 0x80u;
+  TEST_ASSERT_FALSE(ShroomVoiceFramePacketIsValid(packet, wire_size));
+  packet->flags = SHROOM_VOICE_FLAG_START;
+  packet->reserved[1] = 1u;
+  TEST_ASSERT_FALSE(ShroomVoiceFramePacketIsValid(packet, wire_size));
+  packet->reserved[1] = 0u;
+  packet->payload_size = SHROOM_VOICE_MAX_PAYLOAD_SIZE + 1u;
+  TEST_ASSERT_FALSE(ShroomVoiceFramePacketIsValid(packet, wire_size));
 }
 
 void test_packet_header_initializes_channel_metadata(void) {
@@ -503,6 +548,7 @@ int main(void) {
   RUN_TEST(test_hello_packet_initialization);
   RUN_TEST(test_input_packet_initialization);
   RUN_TEST(test_voice_packet_initialization);
+  RUN_TEST(test_voice_packet_validation_requires_exact_framing);
   RUN_TEST(test_snapshot_player_state_initialization);
   RUN_TEST(test_intermission_packets_are_reliable_control_messages);
   RUN_TEST(test_snapshot_spore_state_size);
