@@ -223,6 +223,18 @@ jobs:
           cp dist/macos/server/shroomio-server release-stage/macos/server/
           tar -czf release-assets/shroomio-${VERSION}-macos-x64.tar.gz -C release-stage macos
 
+      - name: Validate macOS asset
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          archive="release-assets/shroomio-${VERSION}-macos-x64.tar.gz"
+          test -s "$archive"
+          tar -tzf "$archive" > macos-archive-contents.txt
+          grep -Fxq 'macos/client/shroomio' macos-archive-contents.txt
+          grep -Fxq 'macos/server/shroomio-server' macos-archive-contents.txt
+          file release-stage/macos/client/shroomio | grep -Eq 'Mach-O 64-bit.*x86_64'
+          file release-stage/macos/server/shroomio-server | grep -Eq 'Mach-O 64-bit.*x86_64'
+
       - name: Upload macOS asset
         uses: actions/upload-artifact@v4
         with:
