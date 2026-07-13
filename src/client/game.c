@@ -2976,14 +2976,28 @@ static void DrawConnectionOverlay(Game* game) {
   ShroomImGui_End();
 }
 
+#ifdef TEST_MODE
+static char g_test_diagnostics_rates[96];
+static char g_test_diagnostics_bandwidth[96];
+static char g_test_diagnostics_transport[96];
+#endif
+
 static void DrawDiagnosticsOverlay(const Game* game) {
+  ShroomNetTelemetryWindow telemetry;
+  char rates_text[96];
+  char bandwidth_text[96];
+  char transport_text[96];
+
   if (!game->diagnostics_overlay_open || (game->local_player == NULL)) {
     return;
   }
 
-  ShroomImGui_SetNextWindowPos(game->screen_width - 330.0f, game->screen_height - 210.0f,
+  ShroomNetTelemetryReadWindow(&game->net.telemetry, enet_time_get(),
+                               SHROOM_NET_TELEMETRY_WINDOW_MS, &telemetry);
+
+  ShroomImGui_SetNextWindowPos(game->screen_width - 350.0f, game->screen_height - 260.0f,
                                SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowSize(308.0f, 188.0f, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowSize(328.0f, 238.0f, SHROOM_IMGUI_COND_ALWAYS);
   if (!ShroomImGui_Begin("Diagnostics", NULL,
                          SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
                              SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
@@ -3005,9 +3019,36 @@ static void DrawDiagnosticsOverlay(const Game* game) {
         game->net.rtt_average_ms > 9999u ? 9999u : game->net.rtt_average_ms;
     ShroomImGui_Text(TextFormat("RTT: %ums  Avg: %ums", display_rtt, display_avg));
   }
+  snprintf(rates_text, sizeof(rates_text), "Input: %llu Hz  Snapshot: %llu Hz",
+           (unsigned long long)telemetry.by_type[SHROOM_PACKET_INPUT].sent.packets,
+           (unsigned long long)telemetry.by_type[SHROOM_PACKET_SNAPSHOT].accepted.packets);
+  snprintf(bandwidth_text, sizeof(bandwidth_text), "In: %.1f KiB/s  Out: %.1f KiB/s",
+           (double)telemetry.totals.accepted.bytes / 1024.0,
+           (double)telemetry.totals.sent.bytes / 1024.0);
+  snprintf(transport_text, sizeof(transport_text), "Loss: %.2f%%  Queue: %u%s",
+           (double)telemetry.maximum_loss_basis_points / 100.0, telemetry.queue_packets,
+           telemetry.congested_peers > 0u ? " (congested)" : "");
+#ifdef TEST_MODE
+  snprintf(g_test_diagnostics_rates, sizeof(g_test_diagnostics_rates), "%s", rates_text);
+  snprintf(g_test_diagnostics_bandwidth, sizeof(g_test_diagnostics_bandwidth), "%s",
+           bandwidth_text);
+  snprintf(g_test_diagnostics_transport, sizeof(g_test_diagnostics_transport), "%s",
+           transport_text);
+#endif
+  ShroomImGui_Text(rates_text);
+  ShroomImGui_Text(bandwidth_text);
+  ShroomImGui_Text(transport_text);
 
   ShroomImGui_End();
 }
+
+#ifdef TEST_MODE
+const char* ShroomTestGetDiagnosticsRatesText(void) { return g_test_diagnostics_rates; }
+
+const char* ShroomTestGetDiagnosticsBandwidthText(void) { return g_test_diagnostics_bandwidth; }
+
+const char* ShroomTestGetDiagnosticsTransportText(void) { return g_test_diagnostics_transport; }
+#endif
 
 static const float kChatInactiveTimeout = 8.0f;
 

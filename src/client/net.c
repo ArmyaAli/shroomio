@@ -23,6 +23,23 @@ static ENetPacket* CreateProtocolPacket(const void* data, size_t size, ShroomPac
                       ShroomPacketTypeUsesReliableDelivery(type) ? ENET_PACKET_FLAG_RELIABLE : 0);
 }
 
+static bool SendPacket(ClientNetState* net, uint8_t channel, ShroomPacketType type,
+                       ENetPacket* packet) {
+  const size_t bytes = packet != NULL ? packet->dataLength : 0u;
+
+  if ((net == NULL) || (net->peer == NULL) || (packet == NULL) ||
+      (enet_peer_send(net->peer, channel, packet) != 0)) {
+    ShroomNetTelemetryRecordDrop(net != NULL ? &net->telemetry : NULL, 0u, channel, type, bytes,
+                                 enet_time_get());
+    if (packet != NULL) {
+      enet_packet_destroy(packet);
+    }
+    return false;
+  }
+  ShroomNetTelemetryRecordSent(&net->telemetry, 0u, channel, type, bytes, enet_time_get());
+  return true;
+}
+
 static void RecordRTTSample(ClientNetState* net, uint32_t rtt_ms) {
   uint64_t total = 0;
 
@@ -87,8 +104,8 @@ static void SendPing(ClientNetState* net) {
   net->pending_ping_nonce = packet.nonce;
   net->pending_ping_sent_time_ms = enet_time_get();
 
-  enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CONTROL,
-                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_PING));
+  SendPacket(net, SHROOM_ENET_CHANNEL_CONTROL, SHROOM_PACKET_PING,
+             CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_PING));
 }
 
 static void BuildHelloPacket(const ClientNetState* net, ShroomHelloPacket* packet) {
@@ -110,8 +127,8 @@ static void SendHello(ClientNetState* net) {
 
   BuildHelloPacket(net, &packet);
 
-  enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CONTROL,
-                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_HELLO));
+  SendPacket(net, SHROOM_ENET_CHANNEL_CONTROL, SHROOM_PACKET_HELLO,
+             CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_HELLO));
 }
 
 static void SendInput(ClientNetState* net, ShroomVec2 input_direction, bool split_requested,
@@ -135,8 +152,8 @@ static void SendInput(ClientNetState* net, ShroomVec2 input_direction, bool spli
   packet.eject_requested = eject_requested ? 1u : 0u;
   packet.focused_entity_id = focused_entity_id;
 
-  enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_INPUT,
-                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_INPUT));
+  SendPacket(net, SHROOM_ENET_CHANNEL_INPUT, SHROOM_PACKET_INPUT,
+             CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_INPUT));
 }
 
 static void HandleWelcome(ClientNetState* net, const ENetPacket* enet_packet) {
@@ -524,6 +541,17 @@ void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, bool split
       const ShroomPacketHeader* header = (const ShroomPacketHeader*)event.packet->data;
 
       if (event.packet->dataLength >= sizeof(ShroomPacketHeader)) {
+        const ShroomPacketType type = (ShroomPacketType)header->type;
+        const size_t minimum_size = ShroomPacketTypeMinimumSize(type);
+        if ((minimum_size == 0u) || (event.packet->dataLength < minimum_size) ||
+            !ShroomPacketHeaderUsesExpectedChannel(header, event.channelID)) {
+          ShroomNetTelemetryRecordDrop(&net->telemetry, 0u, event.channelID, type,
+                                       event.packet->dataLength, enet_time_get());
+          enet_packet_destroy(event.packet);
+          break;
+        }
+        ShroomNetTelemetryRecordAccepted(&net->telemetry, 0u, event.channelID, type,
+                                         event.packet->dataLength, enet_time_get());
         switch ((ShroomPacketType)header->type) {
         case SHROOM_PACKET_WELCOME:
           if (ShroomPacketHeaderUsesExpectedChannel(header, event.channelID)) {
@@ -592,6 +620,9 @@ void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, bool split
         default:
           break;
         }
+      } else {
+        ShroomNetTelemetryRecordDrop(&net->telemetry, 0u, event.channelID, (ShroomPacketType)0,
+                                     event.packet->dataLength, enet_time_get());
       }
       enet_packet_destroy(event.packet);
     } break;
@@ -605,6 +636,17 @@ void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, bool split
     default:
       break;
     }
+  }
+
+  if (net->peer != NULL) {
+    const size_t queued = enet_list_size(&net->peer->outgoingCommands) +
+                          enet_list_size(&net->peer->outgoingSendReliableCommands);
+    const uint32_t bounded_queue = queued > UINT32_MAX ? UINT32_MAX : (uint32_t)queued;
+    const uint16_t loss_basis_points =
+        (uint16_t)(((uint64_t)net->peer->packetLoss * 10000u) / ENET_PEER_PACKET_LOSS_SCALE);
+    ShroomNetTelemetrySetPeerTransport(&net->telemetry, 0u, bounded_queue, loss_basis_points, true);
+  } else {
+    ShroomNetTelemetrySetPeerTransport(&net->telemetry, 0u, 0u, 0u, false);
   }
 
   CheckConnectTimeout(net, enet_time_get());
@@ -638,8 +680,8 @@ void ClientNetSendRematchVote(ClientNetState* net, ShroomRematchVote vote) {
   }
   packet = (ShroomRematchVotePacket){.round_id = net->intermission.round_id, .vote = (uint8_t)vote};
   ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_REMATCH_VOTE, sizeof(packet));
-  enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CONTROL,
-                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_REMATCH_VOTE));
+  SendPacket(net, SHROOM_ENET_CHANNEL_CONTROL, SHROOM_PACKET_REMATCH_VOTE,
+             CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_REMATCH_VOTE));
 }
 
 #ifdef TEST_MODE
@@ -739,8 +781,8 @@ void ClientNetSendLobbyListQuery(ClientNetState* net) {
   }
 
   ShroomPacketHeaderInit(&packet, SHROOM_PACKET_LOBBY_LIST_QUERY, sizeof(packet));
-  enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CONTROL,
-                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_LOBBY_LIST_QUERY));
+  SendPacket(net, SHROOM_ENET_CHANNEL_CONTROL, SHROOM_PACKET_LOBBY_LIST_QUERY,
+             CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_LOBBY_LIST_QUERY));
 }
 
 void ClientNetSendLobbyJoin(ClientNetState* net, uint32_t lobby_id, bool spectate) {
@@ -753,8 +795,8 @@ void ClientNetSendLobbyJoin(ClientNetState* net, uint32_t lobby_id, bool spectat
   ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_JOIN, sizeof(packet));
   packet.lobby_id = lobby_id;
   packet.spectate = spectate ? 1u : 0u;
-  enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CONTROL,
-                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_LOBBY_JOIN));
+  SendPacket(net, SHROOM_ENET_CHANNEL_CONTROL, SHROOM_PACKET_LOBBY_JOIN,
+             CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_LOBBY_JOIN));
 }
 
 void ClientNetSendLobbyLeave(ClientNetState* net) {
@@ -766,8 +808,8 @@ void ClientNetSendLobbyLeave(ClientNetState* net) {
 
   ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_LEAVE, sizeof(packet));
   packet.lobby_id = net->lobby_id;
-  enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CONTROL,
-                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_LOBBY_LEAVE));
+  SendPacket(net, SHROOM_ENET_CHANNEL_CONTROL, SHROOM_PACKET_LOBBY_LEAVE,
+             CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_LOBBY_LEAVE));
   net->welcome_received = false;
   net->match_entry_sent = false;
   net->lobby_roster_received = false;
@@ -791,8 +833,8 @@ void ClientNetSendLobbyCreate(ClientNetState* net, const char* name, uint16_t ma
   }
   packet.max_players = max_players;
   packet.game_mode = (uint8_t)game_mode;
-  enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CONTROL,
-                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_LOBBY_CREATE));
+  SendPacket(net, SHROOM_ENET_CHANNEL_CONTROL, SHROOM_PACKET_LOBBY_CREATE,
+             CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_LOBBY_CREATE));
 }
 
 void ClientNetSendReadyState(ClientNetState* net, bool is_ready) {
@@ -806,8 +848,8 @@ void ClientNetSendReadyState(ClientNetState* net, bool is_ready) {
   ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_READY_STATE, sizeof(packet));
   packet.player_id = net->player_id;
   packet.is_ready = is_ready ? 1 : 0;
-  enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CONTROL,
-                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_READY_STATE));
+  SendPacket(net, SHROOM_ENET_CHANNEL_CONTROL, SHROOM_PACKET_READY_STATE,
+             CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_READY_STATE));
 }
 
 void ClientNetSendEnterMatch(ClientNetState* net) {
@@ -825,9 +867,8 @@ void ClientNetSendEnterMatch(ClientNetState* net) {
 
   ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_ENTER_MATCH, sizeof(packet));
   packet.lobby_id = net->lobby_id;
-  if (enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CONTROL,
-                     CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_ENTER_MATCH)) ==
-      0) {
+  if (SendPacket(net, SHROOM_ENET_CHANNEL_CONTROL, SHROOM_PACKET_ENTER_MATCH,
+                 CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_ENTER_MATCH))) {
     net->match_entry_sent = true;
     enet_host_flush(net->host);
   }
@@ -848,6 +889,6 @@ bool ClientNetSendChat(ClientNetState* net, uint32_t player_id, const char* send
            (sender_name != NULL) ? sender_name : "");
   snprintf(packet.message, sizeof(packet.message), "%s", message);
 
-  return enet_peer_send(net->peer, SHROOM_ENET_CHANNEL_CHAT,
-                        CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_CHAT)) == 0;
+  return SendPacket(net, SHROOM_ENET_CHANNEL_CHAT, SHROOM_PACKET_CHAT,
+                    CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_CHAT));
 }

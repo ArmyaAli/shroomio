@@ -7,6 +7,7 @@
 #include <enet/enet.h>
 
 #include "shared/protocol.h"
+#include "shared/net_telemetry.h"
 #include "shared/vec2.h"
 
 #include "chat_cache.h"
@@ -69,6 +70,7 @@ typedef struct ClientNetState {
   uint32_t chat_history_count;
   uint32_t chat_history_head;
   uint32_t chat_unread_count;
+  ShroomNetTelemetry telemetry;
   /* Lobby state */
   bool handshake_received; /* set on WELCOME (version ack) */
   bool spectating;
