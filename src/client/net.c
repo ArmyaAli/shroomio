@@ -196,6 +196,20 @@ static void HandleLobbyJoined(ClientNetState* net, const ENetPacket* enet_packet
   net->lobby_match_started = false;
   net->lobby_roster_count = 0;
   snprintf(net->lobby_name, sizeof(net->lobby_name), "%s", packet->lobby_name);
+  {
+    const ShroomChatCacheKey key = {
+        .port = net->server_port,
+        .lobby_id = net->lobby_id,
+    };
+    ShroomChatCacheKey context = key;
+    snprintf(context.host, sizeof(context.host), "%s", net->server_host);
+    memset(net->chat_history, 0, sizeof(net->chat_history));
+    net->chat_history_count =
+        (uint32_t)ShroomChatCacheLoadContext(net->chat_cache_path, &context, (uint32_t)time(NULL),
+                                             net->chat_history, SHROOM_CLIENT_CHAT_HISTORY_COUNT);
+    net->chat_history_head = net->chat_history_count % SHROOM_CLIENT_CHAT_HISTORY_COUNT;
+    net->chat_unread_count = 0u;
+  }
 
   if (!net->spectating) {
     net->player_id = packet->player_id;
@@ -295,20 +309,41 @@ static void HandleChat(ClientNetState* net, const ENetPacket* enet_packet) {
 
   packet = (const ShroomChatPacket*)enet_packet->data;
 
-  slot = &net->chat_history[net->chat_history_head % SHROOM_CLIENT_CHAT_HISTORY_COUNT];
-  slot->sender_id = packet->sender_id;
-  slot->timestamp_sec = (uint32_t)time(NULL);
-  snprintf(slot->sender_name, sizeof(slot->sender_name), "%s", packet->sender_name);
+  ChatMessage incoming = {.sender_id = packet->sender_id, .timestamp_sec = (uint32_t)time(NULL)};
+  memcpy(incoming.sender_name, packet->sender_name, sizeof(incoming.sender_name));
+  incoming.sender_name[sizeof(incoming.sender_name) - 1u] = '\0';
+  ShroomChatCacheSanitizeText(incoming.sender_name, sizeof(incoming.sender_name),
+                              incoming.sender_name);
 
   msg_len = sizeof(packet->message);
-  memcpy(slot->message, packet->message, msg_len);
-  slot->message[sizeof(slot->message) - 1u] = '\0';
+  memcpy(incoming.message, packet->message, msg_len);
+  incoming.message[sizeof(incoming.message) - 1u] = '\0';
+  ShroomChatCacheSanitizeText(incoming.message, sizeof(incoming.message), incoming.message);
+  if ((incoming.sender_name[0] == '\0') || (incoming.message[0] == '\0')) {
+    return;
+  }
+  for (uint32_t index = 0u; index < net->chat_history_count; ++index) {
+    const uint32_t history_index = (net->chat_history_head + SHROOM_CLIENT_CHAT_HISTORY_COUNT -
+                                    net->chat_history_count + index) %
+                                   SHROOM_CLIENT_CHAT_HISTORY_COUNT;
+    if (ShroomChatCacheMessagesDuplicate(&net->chat_history[history_index], &incoming)) {
+      return;
+    }
+  }
+
+  slot = &net->chat_history[net->chat_history_head % SHROOM_CLIENT_CHAT_HISTORY_COUNT];
+  *slot = incoming;
 
   net->chat_history_head = (net->chat_history_head + 1u) % SHROOM_CLIENT_CHAT_HISTORY_COUNT;
   if (net->chat_history_count < SHROOM_CLIENT_CHAT_HISTORY_COUNT) {
     net->chat_history_count += 1u;
   }
   net->chat_unread_count += 1u;
+  if ((net->lobby_id != 0u) && (net->server_host[0] != '\0')) {
+    ShroomChatCacheKey key = {.port = net->server_port, .lobby_id = net->lobby_id};
+    snprintf(key.host, sizeof(key.host), "%s", net->server_host);
+    ShroomChatCacheStoreMessage(net->chat_cache_path, &key, &incoming, incoming.timestamp_sec);
+  }
 }
 
 static void HandleSporeState(ClientNetState* net, const ENetPacket* enet_packet) {
@@ -425,6 +460,10 @@ bool ClientNetInit(ClientNetState* net, const char* host_name, uint16_t port,
   if (net->player_name[0] == '\0') {
     snprintf(net->player_name, sizeof(net->player_name), "%s", "Player");
   }
+  snprintf(net->server_host, sizeof(net->server_host), "%s", host_name != NULL ? host_name : "");
+  net->server_port = port;
+  snprintf(net->chat_cache_path, sizeof(net->chat_cache_path), "%s",
+           SHROOM_CHAT_CACHE_DEFAULT_PATH);
 
   if (enet_initialize() != 0) {
     SetStatus(net, CLIENT_NET_ERROR, "ENet init failed");
@@ -635,6 +674,14 @@ void ClientNetTestHandleLobbyList(ClientNetState* net, const ENetPacket* enet_pa
 
 void ClientNetTestHandleLobbyRoster(ClientNetState* net, const ENetPacket* enet_packet) {
   HandleLobbyRoster(net, enet_packet);
+}
+
+void ClientNetTestHandleLobbyJoined(ClientNetState* net, const ENetPacket* enet_packet) {
+  HandleLobbyJoined(net, enet_packet);
+}
+
+void ClientNetTestHandleChat(ClientNetState* net, const ENetPacket* enet_packet) {
+  HandleChat(net, enet_packet);
 }
 
 void ClientNetTestHandleIntermissionStatus(ClientNetState* net, const ENetPacket* enet_packet) {

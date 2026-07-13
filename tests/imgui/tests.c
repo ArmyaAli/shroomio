@@ -10,6 +10,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 typedef struct ImGuiAudioBackend {
   bool ready;
@@ -1670,6 +1671,55 @@ static void Test_ChatUnreadCountIncrements(ImGuiTestContext* ctx) {
   IM_CHECK_EQ(g_imgui_test_app.game.chat_open, false);
 }
 
+/* chat: Reconnecting restores history without duplicating messages or unread state. */
+static void Test_ChatHistoryRestoresOnReconnect(ImGuiTestContext* ctx) {
+  ClientNetState* net;
+  ShroomChatCacheKey key = {.port = SHROOM_SERVER_PORT, .lobby_id = 42u};
+  ChatMessage cached = {.sender_id = 7u, .timestamp_sec = (uint32_t)time(NULL)};
+  ShroomLobbyJoinedPacket joined = {0};
+  ShroomChatPacket chat = {0};
+  ENetPacket joined_packet = {.data = (enet_uint8*)&joined, .dataLength = sizeof(joined)};
+  ENetPacket chat_packet = {.data = (enet_uint8*)&chat, .dataLength = sizeof(chat)};
+
+  SetupOnlineGame();
+  net = &g_imgui_test_app.game.net;
+  snprintf(net->server_host, sizeof(net->server_host), "%s", "cache.example");
+  net->server_port = SHROOM_SERVER_PORT;
+  snprintf(net->chat_cache_path, sizeof(net->chat_cache_path), "%s",
+           SHROOM_CHAT_CACHE_DEFAULT_PATH);
+  snprintf(key.host, sizeof(key.host), "%s", net->server_host);
+  snprintf(cached.sender_name, sizeof(cached.sender_name), "%s", "Player Seven");
+  snprintf(cached.message, sizeof(cached.message), "%s", "still here after reconnect");
+  IM_CHECK(ShroomChatCacheStoreMessage(net->chat_cache_path, &key, &cached, cached.timestamp_sec));
+
+  joined.lobby_id = key.lobby_id;
+  joined.player_id = 1u;
+  joined.entity_id = 1u;
+  snprintf(joined.lobby_name, sizeof(joined.lobby_name), "%s", "Cache Lobby");
+  ClientNetTestHandleLobbyJoined(net, &joined_packet);
+  IM_CHECK_EQ(net->chat_history_count, 1u);
+  IM_CHECK_EQ(net->chat_unread_count, 0u);
+
+  chat.sender_id = cached.sender_id;
+  snprintf(chat.sender_name, sizeof(chat.sender_name), "%s", cached.sender_name);
+  snprintf(chat.message, sizeof(chat.message), "%s", cached.message);
+  ClientNetTestHandleChat(net, &chat_packet);
+  IM_CHECK_EQ(net->chat_history_count, 1u);
+  IM_CHECK_EQ(net->chat_unread_count, 0u);
+
+  snprintf(chat.message, sizeof(chat.message), "%s", "a new live message");
+  ClientNetTestHandleChat(net, &chat_packet);
+  IM_CHECK_EQ(net->chat_history_count, 2u);
+  IM_CHECK_EQ(net->chat_unread_count, 1u);
+
+  ClientNetTestHandleLobbyJoined(net, &joined_packet);
+  g_imgui_test_app.game.chat_open = true;
+  ShroomTeCtx_Yield(ctx, 3);
+  IM_CHECK_EQ(net->chat_history_count, 2u);
+  IM_CHECK_EQ(net->chat_unread_count, 0u);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Chat"));
+}
+
 /* lobby: Lobby Browser screen renders when transitioned to. */
 static void Test_LobbyScreenRenders(ImGuiTestContext* ctx) {
   SetupLobbyBrowser();
@@ -1987,6 +2037,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_ChatHistoryRendersIncoming);
   ShroomTeEngine_RegisterTest(engine, "chat", "unread_count_increments_on_receive",
                               Test_ChatUnreadCountIncrements);
+  ShroomTeEngine_RegisterTest(engine, "chat", "history_restores_on_reconnect",
+                              Test_ChatHistoryRestoresOnReconnect);
   ShroomTeEngine_RegisterTest(engine, "lobby", "screen_renders", Test_LobbyScreenRenders);
   ShroomTeEngine_RegisterTest(engine, "lobby", "lobby_list_renders_entries",
                               Test_LobbyListRendersEntries);
