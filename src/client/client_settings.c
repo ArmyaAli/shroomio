@@ -3,11 +3,13 @@
 #include "raylib.h"
 #include "shared/player_identity.h"
 
+#include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #ifdef _WIN32
@@ -134,8 +136,9 @@ static bool ParseInteger(const char* text, int* value) {
   if ((text == NULL) || (value == NULL) || (*text == '\0')) {
     return false;
   }
+  errno = 0;
   parsed = strtol(text, &end, 10);
-  if ((*end != '\0') && (*end != '\r') && (*end != '\n')) {
+  if ((errno == ERANGE) || (*end != '\0')) {
     return false;
   }
   if ((parsed < INT_MIN) || (parsed > INT_MAX)) {
@@ -165,7 +168,8 @@ static bool ParseSettingsFile(const char* path, ClientSettings* settings, bool* 
     int value;
     unsigned int field = UINT_MAX;
 
-    if (strchr(line, '\n') == NULL && !feof(file)) {
+    /* Every serialized record is newline-terminated; a missing terminator indicates truncation. */
+    if (strchr(line, '\n') == NULL) {
       valid = false;
       break;
     }
@@ -180,11 +184,14 @@ static bool ParseSettingsFile(const char* path, ClientSettings* settings, bool* 
     }
     *equals = '\0';
     text = equals + 1;
+    /* The schema marker is optional only for the immediately preceding unversioned layout. */
     if (strcmp(key, "schema_version") == 0) {
       schema_seen = ParseInteger(text, &schema_version);
       valid = valid && schema_seen;
       continue;
     }
+    /* Track each known field exactly once so partial, duplicate, and unknown records fail closed.
+     */
     if (strcmp(key, "player_name") == 0) {
       ClientSettingsSanitizePlayerName(settings->player_name, text);
       field = 1u;
@@ -293,8 +300,42 @@ static bool ReplaceSettingsFile(const char* source, const char* destination) {
 #endif
 }
 
+static FILE* OpenPrivateSettingsFile(const char* path) {
+  int descriptor;
+  FILE* file;
+
+#ifdef _WIN32
+  descriptor =
+      _open(path, _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY | _O_NOINHERIT, _S_IREAD | _S_IWRITE);
+#else
+  descriptor = open(path, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+  if ((descriptor >= 0) && (fchmod(descriptor, S_IRUSR | S_IWUSR) != 0)) {
+    close(descriptor);
+    remove(path);
+    return NULL;
+  }
+#endif
+  if (descriptor < 0) {
+    return NULL;
+  }
+#ifdef _WIN32
+  file = _fdopen(descriptor, "wb");
+#else
+  file = fdopen(descriptor, "wb");
+#endif
+  if (file == NULL) {
+#ifdef _WIN32
+    _close(descriptor);
+#else
+    close(descriptor);
+#endif
+    remove(path);
+  }
+  return file;
+}
+
 static bool WriteSettingsFile(const char* path, const ClientSettings* settings) {
-  FILE* file = fopen(path, "wb");
+  FILE* file = OpenPrivateSettingsFile(path);
   bool success;
 
   if (file == NULL) {
@@ -342,7 +383,7 @@ static bool CopyFileContents(const char* source, const char* destination) {
   if (input == NULL) {
     return false;
   }
-  output = fopen(destination, "wb");
+  output = OpenPrivateSettingsFile(destination);
   if (output == NULL) {
     fclose(input);
     return false;
