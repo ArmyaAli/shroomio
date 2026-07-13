@@ -283,6 +283,24 @@ jobs:
       - name: Build macOS server
         run: make server-macos
 
+      - name: Validate macOS binaries
+        run: |
+          test -x dist/macos/client/shroomio
+          test -x dist/macos/server/shroomio-server
+          file dist/macos/client/shroomio | grep -Eq 'Mach-O 64-bit.*x86_64'
+          file dist/macos/server/shroomio-server | grep -Eq 'Mach-O 64-bit.*x86_64'
+          otool -L dist/macos/client/shroomio
+          otool -L dist/macos/server/shroomio-server
+
+      - name: Run macOS server smoke test
+        run: |
+          tmpdir="$(mktemp -d)"
+          trap 'rm -rf "$tmpdir"' EXIT
+          ./dist/macos/server/shroomio-server --smoke-test \
+            --bind 127.0.0.1 \
+            --port 37777 \
+            --database "$tmpdir/shroomio-smoke.db"
+
   docs:
     name: Docs
     needs: changes

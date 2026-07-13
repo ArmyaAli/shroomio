@@ -1,4 +1,4 @@
-#Development Guide
+# Development Guide
 
 ## Building
 
@@ -42,6 +42,57 @@ make client-windows # Builds dist/windows/client/shroomio.exe
 ```
 
 Requires `mingw-w64` installed. Produces a fully static `.exe`.
+
+### macOS (native Intel build)
+
+macOS builds are native rather than cross-compiled. The supported build and release lane currently uses an
+Intel host and the vcpkg `x64-osx` triplet; Apple Silicon native artifacts are not produced or validated yet.
+
+Install Xcode Command Line Tools and the same build helpers used by CI:
+
+```bash
+xcode-select --install
+brew install cmake ninja pkg-config
+```
+
+From the repository root, bootstrap dependencies and build both programs:
+
+```bash
+make vcpkg-install-macos
+make client-macos       # dist/macos/client/shroomio
+make server-macos       # dist/macos/server/shroomio-server
+```
+
+Validate the headless server without leaving a persistent database:
+
+```bash
+tmpdir="$(mktemp -d)"
+trap 'rm -rf "$tmpdir"' EXIT
+./dist/macos/server/shroomio-server --smoke-test \
+  --bind 127.0.0.1 --port 37777 --database "$tmpdir/smoke.db"
+```
+
+Launch `./dist/macos/client/shroomio` from a logged-in desktop session for manual graphics, input, and audio
+testing. CI verifies that the client is an x86-64 Mach-O executable and records its linked dependencies, but does
+not claim GUI runtime coverage because hosted runners do not provide the required interactive session.
+
+#### Signing and notarization
+
+Local builds and the current GitHub release archives are development artifacts: the workflow does not apply a
+Developer ID signature or submit them to Apple's notary service. Do not describe those archives as notarized.
+Developer builds may be run directly on the build Mac; public distribution should instead:
+
+1. Package the client as a macOS `.app` bundle and sign all bundled code with a **Developer ID Application**
+   certificate, hardened runtime, and a trusted timestamp.
+2. Verify signatures with `codesign --verify --deep --strict --verbose=2 <bundle>` and assess the bundle with
+   `spctl --assess --type execute --verbose=2 <bundle>`.
+3. Submit a signed ZIP, DMG, or PKG with `xcrun notarytool submit ... --wait`, then staple and validate the
+   ticket on a supported bundle/container using `xcrun stapler`.
+4. Keep certificates, App Store Connect API keys, and keychain passwords in a protected CI environment. Never
+   commit signing credentials or expose them to pull-request jobs.
+
+Release signing/notarization should be added only when those protected credentials and an app-bundle packaging
+step are available. The headless server must remain smoke-tested after any signing or packaging change.
 
 ## Running
 
