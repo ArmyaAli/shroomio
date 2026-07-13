@@ -5,6 +5,8 @@
 
 #include "shared/config.h"
 
+#define CLIENT_SETTINGS_SCHEMA_VERSION 1
+
 typedef enum ClientPalettePreset {
   CLIENT_PALETTE_CLASSIC = 0,
   CLIENT_PALETTE_HIGH_CONTRAST,
@@ -67,6 +69,8 @@ void ClientSettingsSetDefaults(ClientSettings* settings);
 void ClientSettingsValidate(ClientSettings* settings);
 bool ClientSettingsLoad(ClientSettings* settings);
 bool ClientSettingsSave(const ClientSettings* settings);
+bool ClientSettingsLoadFromPath(ClientSettings* settings, const char* path);
+bool ClientSettingsSaveToPath(const ClientSettings* settings, const char* path);
 const char* ClientSettingsPreferredRegionLabel(int region_index);
 const char* ClientSettingsPaletteLabel(ClientPalettePreset preset);
 const char* ClientSettingsHudDensityLabel(ClientHudDensity density);
