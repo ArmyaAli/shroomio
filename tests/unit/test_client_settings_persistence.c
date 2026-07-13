@@ -5,6 +5,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 static char settings_path[256];
@@ -86,6 +87,7 @@ void tearDown(void) { CleanupFiles(); }
 void test_versioned_round_trip_leaves_no_temporary_file(void) {
   ClientSettings saved = ExampleSettings(130, 64, "Versioned Player");
   ClientSettings loaded;
+  struct stat status;
   char temporary[300];
 
   TEST_ASSERT_TRUE(ClientSettingsSaveToPath(&saved, settings_path));
@@ -94,6 +96,8 @@ void test_versioned_round_trip_leaves_no_temporary_file(void) {
   TEST_ASSERT_EQUAL_INT(64, loaded.master_volume_percent);
   TEST_ASSERT_EQUAL_STRING("Versioned Player", loaded.player_name);
   TEST_ASSERT_TRUE(FileContains(settings_path, "schema_version=1\n"));
+  TEST_ASSERT_EQUAL_INT(0, stat(settings_path, &status));
+  TEST_ASSERT_EQUAL_INT(0, status.st_mode & (S_IRWXG | S_IRWXO));
   SidePath(temporary, sizeof(temporary), ".tmp");
   TEST_ASSERT_EQUAL_INT(-1, access(temporary, F_OK));
 }
@@ -162,6 +166,21 @@ void test_truncated_files_fall_back_to_validated_defaults(void) {
   TEST_ASSERT_EQUAL_INT(KEY_T, loaded.key_chat_open);
 }
 
+void test_missing_final_record_terminator_is_treated_as_truncation(void) {
+  ClientSettings saved = ExampleSettings(145, 73, "Truncated Player");
+  ClientSettings loaded;
+  struct stat status;
+
+  TEST_ASSERT_TRUE(ClientSettingsSaveToPath(&saved, settings_path));
+  TEST_ASSERT_EQUAL_INT(0, stat(settings_path, &status));
+  TEST_ASSERT_GREATER_THAN(1, status.st_size);
+  TEST_ASSERT_EQUAL_INT(0, truncate(settings_path, status.st_size - 1));
+
+  TEST_ASSERT_FALSE(ClientSettingsLoadFromPath(&loaded, settings_path));
+  TEST_ASSERT_EQUAL_INT(100, loaded.ui_scale_percent);
+  TEST_ASSERT_EQUAL_INT(80, loaded.master_volume_percent);
+}
+
 void test_save_validates_out_of_range_values_before_replacement(void) {
   ClientSettings invalid = ExampleSettings(999, -20, "  Safe@@ Name  ");
   ClientSettings loaded;
@@ -184,6 +203,7 @@ int main(void) {
   RUN_TEST(test_complete_unversioned_file_migrates_to_current_schema);
   RUN_TEST(test_corrupt_primary_recovers_prior_valid_backup);
   RUN_TEST(test_truncated_files_fall_back_to_validated_defaults);
+  RUN_TEST(test_missing_final_record_terminator_is_treated_as_truncation);
   RUN_TEST(test_save_validates_out_of_range_values_before_replacement);
   return UNITY_END();
 }
