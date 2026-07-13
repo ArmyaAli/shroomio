@@ -15,6 +15,7 @@ static int g_help_active_tab;
 #define SHROOM_HELP_MAX_RENDERED_ITEMS 12
 static char g_help_rendered_items[SHROOM_HELP_MAX_RENDERED_ITEMS][160];
 static int g_help_rendered_item_count;
+static char g_help_rendered_heading[32];
 #endif
 
 static bool HelpInit(ShroomScreenManager* manager) {
@@ -55,13 +56,12 @@ static void DrawSectionCard(const char* title, ShroomImGuiColor header_color, co
   ShroomImGui_PushStyleColor(SHROOM_IMGUI_COL_CHILD_BG, 0.14f, 0.12f, 0.10f, 0.85f);
   ShroomImGui_BeginChild(title, card_width, card_height, true);
 
-  ShroomImGui_PushStyleColor(SHROOM_IMGUI_COL_BUTTON, header_color.r, header_color.g,
-                             header_color.b, header_color.a);
-  ShroomImGui_Button(title, card_width - 16.0f, header_height);
-  ShroomImGui_PopStyleColor();
+  ShroomImGui_TextColored(header_color, title);
+  ShroomImGui_Separator();
 
   ShroomImGui_Spacing();
 #ifdef TEST_MODE
+  snprintf(g_help_rendered_heading, sizeof(g_help_rendered_heading), "%s", title);
   g_help_rendered_item_count =
       item_count < SHROOM_HELP_MAX_RENDERED_ITEMS ? item_count : SHROOM_HELP_MAX_RENDERED_ITEMS;
 #endif
@@ -297,6 +297,8 @@ bool ShroomTestHelpRenderedTextContains(const char* text) {
   }
   return false;
 }
+
+const char* ShroomTestHelpRenderedHeading(void) { return g_help_rendered_heading; }
 #endif
 
 static void HelpHandleInput(ShroomScreenManager* manager) {
