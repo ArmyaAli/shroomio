@@ -28,6 +28,10 @@ CREATE TABLE IF NOT EXISTS sessions (
     duration_seconds INTEGER,
     player_count INTEGER NOT NULL DEFAULT 0,
     bot_count INTEGER NOT NULL DEFAULT 0,
+    lobby_id INTEGER NOT NULL DEFAULT 0,
+    round_id INTEGER NOT NULL DEFAULT 0,
+    game_mode INTEGER NOT NULL DEFAULT 0,
+    winner_runtime_player_id INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL CHECK (status IN ('active', 'completed', 'aborted')) DEFAULT 'active'
 );
 
@@ -36,10 +40,21 @@ CREATE TABLE IF NOT EXISTS session_participants (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id INTEGER NOT NULL,
     player_id INTEGER NOT NULL,
+    runtime_player_id INTEGER NOT NULL DEFAULT 0,
     joined_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     left_at TEXT,
     final_rank INTEGER,
     final_mass REAL,
+    disconnected INTEGER NOT NULL DEFAULT 0 CHECK (disconnected IN (0, 1)),
+    kills INTEGER NOT NULL DEFAULT 0,
+    spores_collected INTEGER NOT NULL DEFAULT 0,
+    powerups_collected INTEGER NOT NULL DEFAULT 0,
+    peak_mass REAL NOT NULL DEFAULT 0.0,
+    center_zone_seconds REAL NOT NULL DEFAULT 0.0,
+    mid_zone_seconds REAL NOT NULL DEFAULT 0.0,
+    outer_zone_seconds REAL NOT NULL DEFAULT 0.0,
+    splits_used INTEGER NOT NULL DEFAULT 0,
+    ejects_used INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
     FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
     UNIQUE(session_id, player_id)
@@ -74,7 +89,9 @@ CREATE TABLE IF NOT EXISTS match_events (
         'player_consume_player',
         'player_consume_spore',
         'player_reach_mass',
-        'game_tick'
+        'game_tick',
+        'participant_summary',
+        'match_completed'
     )),
     event_timestamp TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     tick_number INTEGER,
