@@ -80,12 +80,10 @@ typedef struct ServerConfig {
   char bind_host[64];
   char database_path[256];
   char directory_host[SHROOM_DIRECTORY_HOST_LENGTH];
-  char public_host[SHROOM_DIRECTORY_HOST_LENGTH];
   char server_name[SHROOM_DIRECTORY_SERVER_NAME_LENGTH];
   enet_uint32 bind_address;
   uint16_t port;
   uint16_t directory_port;
-  uint64_t server_id;
   float match_duration_seconds;
   bool directory_mode;
   bool smoke_test;
@@ -156,21 +154,6 @@ static bool ParseUint32(const char* text, uint32_t* out_value) {
   return true;
 }
 
-static bool ParseUint64(const char* text, uint64_t* out_value) {
-  char* end = NULL;
-  unsigned long long value;
-
-  if ((text == NULL) || (text[0] == '\0')) {
-    return false;
-  }
-  value = strtoull(text, &end, 10);
-  if ((end == text) || (*end != '\0') || (value == 0ull)) {
-    return false;
-  }
-  *out_value = (uint64_t)value;
-  return true;
-}
-
 static void CopyConfigString(char* destination, size_t destination_size, const char* source) {
   if ((destination == NULL) || (destination_size == 0u)) {
     return;
@@ -201,19 +184,7 @@ static void PrintUsage(const char* program_name) {
   printf("\n");
   printf("Environment overrides:\n");
   printf("  SHROOM_SERVER_BIND, SHROOM_SERVER_PORT, SHROOM_SERVER_DB_PATH\n");
-  printf("  SHROOM_DIRECTORY_HOST, SHROOM_DIRECTORY_PORT, SHROOM_SERVER_PUBLIC_HOST\n");
-  printf("  SHROOM_SERVER_ID, SHROOM_SERVER_NAME\n");
-}
-
-static uint64_t StableServerId(const char* host, uint16_t port) {
-  uint64_t hash = 1469598103934665603ull;
-
-  for (const unsigned char* cursor = (const unsigned char*)host; *cursor != '\0'; ++cursor) {
-    hash = (hash ^ *cursor) * 1099511628211ull;
-  }
-  hash = (hash ^ (uint8_t)(port & 0xffu)) * 1099511628211ull;
-  hash = (hash ^ (uint8_t)(port >> 8u)) * 1099511628211ull;
-  return hash == 0ull ? 1ull : hash;
+  printf("  SHROOM_DIRECTORY_HOST, SHROOM_DIRECTORY_PORT, SHROOM_SERVER_NAME\n");
 }
 
 static void SanitizeServerName(char* name) {
@@ -268,8 +239,6 @@ static bool LoadServerConfig(ServerConfig* config, int argc, char** argv) {
   const char* env_database = getenv("SHROOM_SERVER_DB_PATH");
   const char* env_directory_host = getenv("SHROOM_DIRECTORY_HOST");
   const char* env_directory_port = getenv("SHROOM_DIRECTORY_PORT");
-  const char* env_public_host = getenv("SHROOM_SERVER_PUBLIC_HOST");
-  const char* env_server_id = getenv("SHROOM_SERVER_ID");
   const char* env_server_name = getenv("SHROOM_SERVER_NAME");
 
   *config = (ServerConfig){.port = (uint16_t)SHROOM_SERVER_PORT,
@@ -299,16 +268,8 @@ static bool LoadServerConfig(ServerConfig* config, int argc, char** argv) {
     fprintf(stderr, "Invalid SHROOM_DIRECTORY_PORT: %s\n", env_directory_port);
     return false;
   }
-  if ((env_public_host != NULL) && (env_public_host[0] != '\0')) {
-    CopyConfigString(config->public_host, sizeof(config->public_host), env_public_host);
-  }
   if ((env_server_name != NULL) && (env_server_name[0] != '\0')) {
     CopyConfigString(config->server_name, sizeof(config->server_name), env_server_name);
-  }
-  if ((env_server_id != NULL) && (env_server_id[0] != '\0') &&
-      !ParseUint64(env_server_id, &config->server_id)) {
-    fprintf(stderr, "Invalid SHROOM_SERVER_ID: %s\n", env_server_id);
-    return false;
   }
 
   int i = 1;
@@ -404,13 +365,7 @@ static bool LoadServerConfig(ServerConfig* config, int argc, char** argv) {
     return false;
   }
 
-  if (config->public_host[0] == '\0') {
-    CopyConfigString(config->public_host, sizeof(config->public_host), config->bind_host);
-  }
   SanitizeServerName(config->server_name);
-  if (config->server_id == 0ull) {
-    config->server_id = StableServerId(config->public_host, config->port);
-  }
 
   return true;
 }
@@ -2199,14 +2154,16 @@ static int RunDirectoryServer(const ServerConfig* config) {
         if ((event.channelID == SHROOM_ENET_CHANNEL_CONTROL) &&
             (event.packet->dataLength >= sizeof(ShroomPacketHeader))) {
           const ShroomPacketHeader* header = (const ShroomPacketHeader*)event.packet->data;
+          char observed_host[SHROOM_DIRECTORY_HOST_LENGTH] = {0};
           if ((header->type == SHROOM_PACKET_DIRECTORY_HEARTBEAT) &&
+              (enet_address_get_host_ip(&event.peer->address, observed_host,
+                                        sizeof(observed_host)) == 0) &&
               ShroomDirectoryRegistryRegister(
                   &registry, (const ShroomDirectoryHeartbeatPacket*)event.packet->data,
-                  event.packet->dataLength, now_ms)) {
+                  event.packet->dataLength, observed_host, now_ms)) {
             const ShroomDirectoryHeartbeatPacket* heartbeat =
                 (const ShroomDirectoryHeartbeatPacket*)event.packet->data;
-            LOG_INFO("directory heartbeat server_id=%llu endpoint=%s:%u players=%u/%u",
-                     (unsigned long long)heartbeat->server.server_id, heartbeat->server.host,
+            LOG_INFO("directory heartbeat endpoint=%s:%u players=%u/%u", observed_host,
                      heartbeat->server.port, heartbeat->server.player_count,
                      heartbeat->server.capacity);
           } else if ((header->type == SHROOM_PACKET_DIRECTORY_QUERY) &&
@@ -2277,11 +2234,6 @@ static bool DirectoryAdvertiserInit(DirectoryAdvertiser* advertiser, const Serve
   if (config->directory_host[0] == '\0') {
     return true;
   }
-  if ((strcmp(config->public_host, "0.0.0.0") == 0) || (strcmp(config->public_host, "::") == 0) ||
-      (strcmp(config->public_host, "*") == 0)) {
-    LOG_WARN("SHROOM_SERVER_PUBLIC_HOST is required when advertising from a wildcard bind");
-    return false;
-  }
   advertiser->host = enet_host_create(NULL, 1u, SHROOM_ENET_CHANNEL_COUNT, 0u, 0u);
   if (advertiser->host == NULL) {
     LOG_WARN("directory advertiser host could not be created");
@@ -2323,9 +2275,7 @@ static void DirectoryAdvertiserUpdate(DirectoryAdvertiser* advertiser, const Ser
 
     ShroomPacketHeaderInit(&heartbeat.header, SHROOM_PACKET_DIRECTORY_HEARTBEAT, sizeof(heartbeat));
     heartbeat.protocol_version = SHROOM_DIRECTORY_PROTOCOL_VERSION;
-    heartbeat.server.server_id = config->server_id;
     CopyConfigString(heartbeat.server.name, sizeof(heartbeat.server.name), config->server_name);
-    CopyConfigString(heartbeat.server.host, sizeof(heartbeat.server.host), config->public_host);
     heartbeat.server.port = config->port;
     heartbeat.server.player_count = CountAdvertisedPlayers(game_host);
     heartbeat.server.capacity = SHROOM_SERVER_MAX_CLIENTS;

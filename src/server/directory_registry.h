@@ -22,7 +22,8 @@ typedef struct ShroomDirectoryRegistry {
 void ShroomDirectoryRegistryInit(ShroomDirectoryRegistry* registry);
 bool ShroomDirectoryRegistryRegister(ShroomDirectoryRegistry* registry,
                                      const ShroomDirectoryHeartbeatPacket* heartbeat,
-                                     size_t packet_size, uint64_t now_ms);
+                                     size_t packet_size, const char* observed_host,
+                                     uint64_t now_ms);
 size_t ShroomDirectoryRegistryEvictExpired(ShroomDirectoryRegistry* registry, uint64_t now_ms);
 size_t ShroomDirectoryRegistryCopyActive(const ShroomDirectoryRegistry* registry,
                                          ShroomDirectoryServerEntry* entries, size_t capacity);

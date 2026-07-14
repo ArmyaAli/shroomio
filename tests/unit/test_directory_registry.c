@@ -29,6 +29,9 @@ static size_t ActiveCount(const ShroomDirectoryRegistry* registry) {
   return ShroomDirectoryRegistryCopyActive(registry, entries, SHROOM_DIRECTORY_MAX_ENTRIES);
 }
 
+#define Register(registry, heartbeat, packet_size, now_ms)                                         \
+  ShroomDirectoryRegistryRegister((registry), (heartbeat), (packet_size), "203.0.113.10", (now_ms))
+
 static void test_valid_registration_is_copied(void) {
   ShroomDirectoryRegistry registry;
   ShroomDirectoryHeartbeatPacket heartbeat = Heartbeat(42u, "game.example", 7777u);
@@ -36,10 +39,10 @@ static void test_valid_registration_is_copied(void) {
 
   ShroomDirectoryRegistryInit(&registry);
   TEST_ASSERT_TRUE(
-      ShroomDirectoryRegistryRegister(&registry, &heartbeat, sizeof(heartbeat), 1000u));
+      Register(&registry, &heartbeat, sizeof(heartbeat), 1000u));
   TEST_ASSERT_EQUAL_size_t(1u, ShroomDirectoryRegistryCopyActive(&registry, &entry, 1u));
-  TEST_ASSERT_EQUAL_UINT64(42u, entry.server_id);
-  TEST_ASSERT_EQUAL_STRING("game.example", entry.host);
+  TEST_ASSERT_NOT_EQUAL(42u, entry.server_id);
+  TEST_ASSERT_EQUAL_STRING("203.0.113.10", entry.host);
   TEST_ASSERT_EQUAL_UINT16(3u, entry.player_count);
 }
 
@@ -49,20 +52,20 @@ static void test_refresh_updates_registration_and_extends_expiry(void) {
   ShroomDirectoryServerEntry entry = {0};
 
   ShroomDirectoryRegistryInit(&registry);
-  TEST_ASSERT_TRUE(ShroomDirectoryRegistryRegister(&registry, &heartbeat, sizeof(heartbeat), 0u));
+  TEST_ASSERT_TRUE(Register(&registry, &heartbeat, sizeof(heartbeat), 0u));
   heartbeat.server.player_count = 9u;
   TEST_ASSERT_TRUE(
-      ShroomDirectoryRegistryRegister(&registry, &heartbeat, sizeof(heartbeat), 14000u));
+      Register(&registry, &heartbeat, sizeof(heartbeat), 14000u));
   heartbeat.server.player_count = 2u;
   TEST_ASSERT_FALSE(
-      ShroomDirectoryRegistryRegister(&registry, &heartbeat, sizeof(heartbeat), 13000u));
+      Register(&registry, &heartbeat, sizeof(heartbeat), 13000u));
   TEST_ASSERT_EQUAL_size_t(0u, ShroomDirectoryRegistryEvictExpired(&registry, 15000u));
   TEST_ASSERT_EQUAL_size_t(1u, ShroomDirectoryRegistryCopyActive(&registry, &entry, 1u));
   TEST_ASSERT_EQUAL_UINT16(9u, entry.player_count);
   TEST_ASSERT_EQUAL_size_t(1u, ShroomDirectoryRegistryEvictExpired(&registry, 29000u));
 }
 
-static void test_server_id_and_endpoint_are_deduplicated(void) {
+static void test_observed_endpoint_is_deduplicated(void) {
   ShroomDirectoryRegistry registry;
   ShroomDirectoryHeartbeatPacket first = Heartbeat(1u, "same.example", 7777u);
   ShroomDirectoryHeartbeatPacket moved = Heartbeat(1u, "moved.example", 8888u);
@@ -70,16 +73,16 @@ static void test_server_id_and_endpoint_are_deduplicated(void) {
   ShroomDirectoryServerEntry entry = {0};
 
   ShroomDirectoryRegistryInit(&registry);
-  TEST_ASSERT_TRUE(ShroomDirectoryRegistryRegister(&registry, &first, sizeof(first), 1u));
-  TEST_ASSERT_TRUE(ShroomDirectoryRegistryRegister(&registry, &moved, sizeof(moved), 2u));
+  TEST_ASSERT_TRUE(Register(&registry, &first, sizeof(first), 1u));
+  TEST_ASSERT_TRUE(Register(&registry, &moved, sizeof(moved), 2u));
   TEST_ASSERT_TRUE(
-      ShroomDirectoryRegistryRegister(&registry, &replacement, sizeof(replacement), 3u));
+      Register(&registry, &replacement, sizeof(replacement), 3u));
+  TEST_ASSERT_EQUAL_size_t(2u, ActiveCount(&registry));
   TEST_ASSERT_EQUAL_size_t(1u, ShroomDirectoryRegistryCopyActive(&registry, &entry, 1u));
-  TEST_ASSERT_EQUAL_UINT64(2u, entry.server_id);
-  TEST_ASSERT_EQUAL_STRING("moved.example", entry.host);
+  TEST_ASSERT_EQUAL_STRING("203.0.113.10", entry.host);
 }
 
-static void test_moving_id_onto_registered_endpoint_removes_duplicate(void) {
+static void test_claimed_id_does_not_merge_distinct_observed_endpoints(void) {
   ShroomDirectoryRegistry registry;
   ShroomDirectoryHeartbeatPacket first = Heartbeat(1u, "one.example", 7777u);
   ShroomDirectoryHeartbeatPacket second = Heartbeat(2u, "two.example", 8888u);
@@ -87,12 +90,12 @@ static void test_moving_id_onto_registered_endpoint_removes_duplicate(void) {
   ShroomDirectoryServerEntry entry = {0};
 
   ShroomDirectoryRegistryInit(&registry);
-  TEST_ASSERT_TRUE(ShroomDirectoryRegistryRegister(&registry, &first, sizeof(first), 1u));
-  TEST_ASSERT_TRUE(ShroomDirectoryRegistryRegister(&registry, &second, sizeof(second), 2u));
-  TEST_ASSERT_TRUE(ShroomDirectoryRegistryRegister(&registry, &moved, sizeof(moved), 3u));
+  TEST_ASSERT_TRUE(Register(&registry, &first, sizeof(first), 1u));
+  TEST_ASSERT_TRUE(Register(&registry, &second, sizeof(second), 2u));
+  TEST_ASSERT_TRUE(Register(&registry, &moved, sizeof(moved), 3u));
+  TEST_ASSERT_EQUAL_size_t(2u, ActiveCount(&registry));
   TEST_ASSERT_EQUAL_size_t(1u, ShroomDirectoryRegistryCopyActive(&registry, &entry, 1u));
-  TEST_ASSERT_EQUAL_UINT64(1u, entry.server_id);
-  TEST_ASSERT_EQUAL_STRING("two.example", entry.host);
+  TEST_ASSERT_EQUAL_STRING("203.0.113.10", entry.host);
 }
 
 static void test_capacity_is_clamped_and_impossible_load_rejected(void) {
@@ -104,14 +107,14 @@ static void test_capacity_is_clamped_and_impossible_load_rejected(void) {
   heartbeat.server.capacity = UINT16_MAX;
   heartbeat.server.player_count = 100u;
   TEST_ASSERT_TRUE(
-      ShroomDirectoryRegistryRegister(&registry, &heartbeat, sizeof(heartbeat), 100u));
+      Register(&registry, &heartbeat, sizeof(heartbeat), 100u));
   TEST_ASSERT_EQUAL_size_t(1u, ShroomDirectoryRegistryCopyActive(&registry, &entry, 1u));
   TEST_ASSERT_EQUAL_UINT16(SHROOM_SERVER_MAX_CLIENTS, entry.capacity);
 
   heartbeat.server.server_id = 5u;
   heartbeat.server.player_count = SHROOM_SERVER_MAX_CLIENTS + 1u;
   TEST_ASSERT_FALSE(
-      ShroomDirectoryRegistryRegister(&registry, &heartbeat, sizeof(heartbeat), 101u));
+      Register(&registry, &heartbeat, sizeof(heartbeat), 101u));
   TEST_ASSERT_EQUAL_size_t(1u, ActiveCount(&registry));
 }
 
@@ -121,26 +124,21 @@ static void test_malformed_stale_and_wrong_version_packets_are_rejected(void) {
 
   ShroomDirectoryRegistryInit(&registry);
   TEST_ASSERT_FALSE(
-      ShroomDirectoryRegistryRegister(&registry, &heartbeat, sizeof(heartbeat) - 1u, 0u));
+      Register(&registry, &heartbeat, sizeof(heartbeat) - 1u, 0u));
   heartbeat.protocol_version += 1u;
   TEST_ASSERT_FALSE(
-      ShroomDirectoryRegistryRegister(&registry, &heartbeat, sizeof(heartbeat), 0u));
+      Register(&registry, &heartbeat, sizeof(heartbeat), 0u));
   heartbeat.protocol_version = SHROOM_DIRECTORY_PROTOCOL_VERSION;
-  memset(heartbeat.server.host, 'x', sizeof(heartbeat.server.host));
   TEST_ASSERT_FALSE(
-      ShroomDirectoryRegistryRegister(&registry, &heartbeat, sizeof(heartbeat), 0u));
-  heartbeat = Heartbeat(6u, "valid.example", 7777u);
-  snprintf(heartbeat.server.host, sizeof(heartbeat.server.host), "%s", "bad host.example");
+      ShroomDirectoryRegistryRegister(&registry, &heartbeat, sizeof(heartbeat), "bad host", 0u));
   TEST_ASSERT_FALSE(
-      ShroomDirectoryRegistryRegister(&registry, &heartbeat, sizeof(heartbeat), 0u));
-  heartbeat = Heartbeat(6u, "0.0.0.0", 7777u);
+      ShroomDirectoryRegistryRegister(&registry, &heartbeat, sizeof(heartbeat), "0.0.0.0", 0u));
   TEST_ASSERT_FALSE(
-      ShroomDirectoryRegistryRegister(&registry, &heartbeat, sizeof(heartbeat), 0u));
-  heartbeat = Heartbeat(6u, "valid.example", 7777u);
+      ShroomDirectoryRegistryRegister(&registry, &heartbeat, sizeof(heartbeat), NULL, 0u));
   heartbeat.server.player_count = 65u;
   heartbeat.server.capacity = 64u;
   TEST_ASSERT_FALSE(
-      ShroomDirectoryRegistryRegister(&registry, &heartbeat, sizeof(heartbeat), 0u));
+      Register(&registry, &heartbeat, sizeof(heartbeat), 0u));
   TEST_ASSERT_EQUAL_size_t(0u, ActiveCount(&registry));
 }
 
@@ -154,12 +152,12 @@ static void test_registry_is_bounded_to_32_entries(void) {
     snprintf(host, sizeof(host), "server-%llu.test", (unsigned long long)index);
     heartbeat = Heartbeat(index + 1u, host, (uint16_t)(7000u + index));
     TEST_ASSERT_TRUE(
-        ShroomDirectoryRegistryRegister(&registry, &heartbeat, sizeof(heartbeat), index));
+        Register(&registry, &heartbeat, sizeof(heartbeat), index));
   }
   {
     ShroomDirectoryHeartbeatPacket overflow = Heartbeat(1000u, "overflow.test", 9000u);
     TEST_ASSERT_FALSE(
-        ShroomDirectoryRegistryRegister(&registry, &overflow, sizeof(overflow), 100u));
+        Register(&registry, &overflow, sizeof(overflow), 100u));
   }
   TEST_ASSERT_EQUAL_size_t(SHROOM_DIRECTORY_MAX_ENTRIES, ActiveCount(&registry));
 }
@@ -209,8 +207,8 @@ int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_valid_registration_is_copied);
   RUN_TEST(test_refresh_updates_registration_and_extends_expiry);
-  RUN_TEST(test_server_id_and_endpoint_are_deduplicated);
-  RUN_TEST(test_moving_id_onto_registered_endpoint_removes_duplicate);
+  RUN_TEST(test_observed_endpoint_is_deduplicated);
+  RUN_TEST(test_claimed_id_does_not_merge_distinct_observed_endpoints);
   RUN_TEST(test_capacity_is_clamped_and_impossible_load_rejected);
   RUN_TEST(test_malformed_stale_and_wrong_version_packets_are_rejected);
   RUN_TEST(test_registry_is_bounded_to_32_entries);
