@@ -227,6 +227,7 @@ void GameCycleSpectatorTarget(Game* game, int direction);
 
 #ifdef TEST_MODE
 void GameTestSetMovementInput(ShroomVec2 direction);
+void GameTestSetPushToTalk(bool enabled, bool held);
 const char* ShroomTestGetDiagnosticsRatesText(void);
 const char* ShroomTestGetDiagnosticsBandwidthText(void);
 const char* ShroomTestGetDiagnosticsTransportText(void);

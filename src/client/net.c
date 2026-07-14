@@ -391,6 +391,16 @@ static void HandleChat(ClientNetState* net, const ENetPacket* enet_packet) {
   }
 }
 
+static void HandleVoiceFrame(ClientNetState* net, const ENetPacket* enet_packet) {
+  if ((net == NULL) || (enet_packet == NULL) ||
+      !ShroomVoiceFramePacketIsValid(enet_packet->data, enet_packet->dataLength)) {
+    return;
+  }
+  if (net->voice_frame_handler != NULL) {
+    net->voice_frame_handler(net->voice_frame_context, enet_packet->data, enet_packet->dataLength);
+  }
+}
+
 static void HandleSporeState(ClientNetState* net, const ENetPacket* enet_packet) {
   const ShroomSporeStatePacket* packet = (const ShroomSporeStatePacket*)enet_packet->data;
   uint16_t total_spore_count;
@@ -635,6 +645,11 @@ void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, bool split
         case SHROOM_PACKET_MUSHROOM_SPECIES_CATALOG:
           if (ShroomPacketHeaderUsesExpectedChannel(header, event.channelID)) {
             HandleMushroomSpeciesCatalog(net, event.packet);
+          }
+          break;
+        case SHROOM_PACKET_VOICE_FRAME:
+          if (ShroomPacketHeaderUsesExpectedChannel(header, event.channelID)) {
+            HandleVoiceFrame(net, event.packet);
           }
           break;
         case SHROOM_PACKET_LOBBY_CREATED:
@@ -936,4 +951,21 @@ bool ClientNetSendChat(ClientNetState* net, uint32_t player_id, const char* send
 
   return SendPacket(net, SHROOM_ENET_CHANNEL_CHAT, SHROOM_PACKET_CHAT,
                     CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_CHAT));
+}
+
+bool ClientNetSendVoiceFrame(ClientNetState* net, const void* data, size_t wire_size) {
+  if ((net == NULL) || (net->peer == NULL) || (net->peer->state != ENET_PEER_STATE_CONNECTED) ||
+      (net->lobby_id == 0u) || !ShroomVoiceFramePacketIsValid(data, wire_size)) {
+    return false;
+  }
+  return SendPacket(net, SHROOM_ENET_CHANNEL_VOICE, SHROOM_PACKET_VOICE_FRAME,
+                    CreatePacket(data, wire_size, 0u));
+}
+
+void ClientNetSetVoiceFrameHandler(ClientNetState* net, ClientNetVoiceFrameHandler handler,
+                                   void* context) {
+  if (net != NULL) {
+    net->voice_frame_handler = handler;
+    net->voice_frame_context = context;
+  }
 }

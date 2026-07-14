@@ -2,6 +2,7 @@
 #define SHROOM_CLIENT_NET_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include <enet/enet.h>
@@ -29,6 +30,8 @@ typedef enum ClientNetStatus {
   CLIENT_NET_CONNECTED = 2,
   CLIENT_NET_ERROR = 3,
 } ClientNetStatus;
+
+typedef void (*ClientNetVoiceFrameHandler)(void* context, const void* data, size_t wire_size);
 
 typedef struct ClientNetState {
   ENetHost* host;
@@ -100,6 +103,8 @@ typedef struct ClientNetState {
   bool intermission_received;
   uint32_t consumed_intermission_round_id;
   bool consumed_intermission_round_valid;
+  ClientNetVoiceFrameHandler voice_frame_handler;
+  void* voice_frame_context;
 } ClientNetState;
 
 bool ClientNetInit(ClientNetState* net, const char* host_name, uint16_t port,
@@ -112,6 +117,9 @@ bool ClientNetCanResumeLobbySession(const ClientNetState* net);
 const char* ClientNetStatusLabel(const ClientNetState* net);
 bool ClientNetSendChat(ClientNetState* net, uint32_t player_id, const char* sender_name,
                        const char* message);
+bool ClientNetSendVoiceFrame(ClientNetState* net, const void* data, size_t wire_size);
+void ClientNetSetVoiceFrameHandler(ClientNetState* net, ClientNetVoiceFrameHandler handler,
+                                   void* context);
 void ClientNetSendLobbyListQuery(ClientNetState* net);
 void ClientNetSendLobbyJoin(ClientNetState* net, uint32_t lobby_id, bool spectate);
 void ClientNetSendLobbyLeave(ClientNetState* net);

@@ -4,6 +4,7 @@
 #include "client/results_transition.h"
 #include "client/screen.h"
 #include "client/screens/screen_background.h"
+#include "client/voice.h"
 #include "imgui_wrapper.h"
 #include "raylib.h"
 #include "shared/sim.h"
@@ -72,6 +73,7 @@ static void ResultsUpdate(ShroomScreenManager* manager, float delta_time) {
       game->world.match_phase, game->net.intermission_received, &game->net.intermission,
       game->net.consumed_intermission_round_valid, game->net.consumed_intermission_round_id);
   if ((route == SHROOM_RESULTS_ROUTE_LOBBY) || (route == SHROOM_RESULTS_ROUTE_SPECTATE)) {
+    ShroomVoiceSetSessionActive(false);
     game->net.spectating = route == SHROOM_RESULTS_ROUTE_SPECTATE;
     ClientNetConsumeIntermission(&game->net);
     game->authoritative_round_resume_pending = false;
