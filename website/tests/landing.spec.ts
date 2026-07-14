@@ -9,12 +9,17 @@ test("presents the game and keeps the page inside the viewport", async ({ page }
     "href",
     "https://github.com/ArmyaAli/shroomio/releases",
   );
-  await expect(page.locator("#gameplay")).toBeVisible();
+  const gameplay = page.locator("#gameplay");
+  await expect(gameplay).toBeVisible();
 
   const hasHorizontalOverflow = await page.evaluate(
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
   );
   expect(hasHorizontalOverflow).toBe(false);
+
+  const gameplayTop = await gameplay.evaluate((element) => element.getBoundingClientRect().top);
+  const viewportHeight = await page.evaluate(() => window.innerHeight);
+  expect(gameplayTop).toBeLessThan(viewportHeight);
 
   await page.screenshot({ path: testInfo.outputPath("landing.png"), fullPage: true });
 });
