@@ -13,6 +13,11 @@ static float Clamp(float value, float minimum, float maximum) {
   return value;
 }
 
+static bool SequenceIsNewer(uint32_t sequence, uint32_t previous) {
+  const uint32_t delta = sequence - previous;
+  return (delta != 0u) && (delta < 0x80000000u);
+}
+
 ShroomVec2 ShroomPredictionApplyInput(ShroomVec2 position, ShroomVec2 direction, float speed,
                                       float delta_time, float radius, float world_width,
                                       float world_height) {
@@ -31,7 +36,7 @@ void ShroomPredictionDiscardAcknowledged(ShroomPendingInput* inputs, uint32_t* c
     return;
   }
   for (uint32_t index = 0u; index < *count; ++index) {
-    if (inputs[index].sequence > acknowledged_sequence) {
+    if (SequenceIsNewer(inputs[index].sequence, acknowledged_sequence)) {
       inputs[keep_count++] = inputs[index];
     }
   }

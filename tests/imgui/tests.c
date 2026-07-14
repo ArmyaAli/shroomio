@@ -2,6 +2,7 @@
 #include "imgui_te_wrapper.h"
 
 #include "client/audio.h"
+#include "client/prediction.h"
 #include "client/results_summary.h"
 #include "client/screens/screen_background.h"
 #include "client/server_browser_model.h"
@@ -1496,6 +1497,8 @@ static void Test_GameplayDiagnosticsAndConnectionOverlays(ImGuiTestContext* ctx)
   IM_CHECK_STR_EQ(ShroomTestGetDiagnosticsRatesText(), "Input: 30 Hz  Snapshot: 15 Hz");
   IM_CHECK_STR_EQ(ShroomTestGetDiagnosticsBandwidthText(), "In: 15.0 KiB/s  Out: 15.0 KiB/s");
   IM_CHECK_STR_EQ(ShroomTestGetDiagnosticsTransportText(), "Loss: 2.50%  Queue: 70 (congested)");
+  IM_CHECK_STR_EQ(ShroomTestGetDiagnosticsCadenceText(), "Cadence: 30 Hz  Catch-up suppressed: 0");
+  IM_CHECK_STR_EQ(ShroomTestGetDiagnosticsActionsText(), "Action queue: 0/16  Drops: 0");
 
   g_imgui_test_app.game.diagnostics_overlay_open = false;
   g_imgui_test_app.game.net.welcome_received = false;
@@ -1507,6 +1510,55 @@ static void Test_GameplayDiagnosticsAndConnectionOverlays(ImGuiTestContext* ctx)
   IM_CHECK(ShroomTeImGui_WindowIsActive("Connection Status"));
   IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Retry"));
   IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Back To Menu"));
+}
+
+static void Test_GameplayInputCadenceFakeTransportSoak(ImGuiTestContext* ctx) {
+  ShroomClientInputScheduler* scheduler;
+  ShroomClientScheduledActions actions;
+  ShroomVec2 predicted = {100.0f, 100.0f};
+  uint32_t sends = 0u;
+  uint32_t split_actions = 0u;
+  uint32_t eject_actions = 0u;
+  char expected_cadence[96];
+
+  SetupOnlineGame();
+  scheduler = &g_imgui_test_app.game.net.input_scheduler;
+  for (uint32_t frame = 0u; frame < 1440u; ++frame) {
+    if (frame == 1u) {
+      ShroomClientInputSchedulerQueueActions(scheduler, true, false, (ShroomVec2){1.0f, 0.0f}, 9u);
+    }
+    if (frame == 721u) {
+      ShroomClientInputSchedulerQueueActions(scheduler, false, true, (ShroomVec2){1.0f, 0.0f}, 9u);
+    }
+    if (!ShroomClientInputSchedulerPrepare(scheduler, 1.0f / 144.0f, &actions)) {
+      continue;
+    }
+    sends += 1u;
+    split_actions += actions.split_requested ? 1u : 0u;
+    eject_actions += actions.eject_requested ? 1u : 0u;
+    predicted = ShroomPredictionApplyInput(predicted, (ShroomVec2){1.0f, 0.0f}, 30.0f, 1.0f / 30.0f,
+                                           5.0f, 1000.0f, 1000.0f);
+    ShroomClientInputSchedulerCommit(scheduler, &actions);
+  }
+
+  IM_CHECK(sends <= 300u);
+  IM_CHECK(sends >= 299u);
+  IM_CHECK_EQ(split_actions, 1u);
+  IM_CHECK_EQ(eject_actions, 1u);
+  IM_CHECK(predicted.x >= 399.0f);
+  IM_CHECK(predicted.x <= 400.0f);
+
+  IM_CHECK(ShroomClientInputSchedulerPrepare(scheduler, 1.0f, &actions));
+  ShroomClientInputSchedulerCommit(scheduler, &actions);
+  IM_CHECK(scheduler->suppressed_catchup_count >= 29u);
+
+  g_imgui_test_app.game.diagnostics_overlay_open = true;
+  ShroomTeCtx_SetRef(ctx, "Diagnostics");
+  ShroomTeCtx_Yield(ctx, 2);
+  snprintf(expected_cadence, sizeof(expected_cadence), "Cadence: 30 Hz  Catch-up suppressed: %llu",
+           (unsigned long long)scheduler->suppressed_catchup_count);
+  IM_CHECK_STR_EQ(ShroomTestGetDiagnosticsCadenceText(), expected_cadence);
+  IM_CHECK_STR_EQ(ShroomTestGetDiagnosticsActionsText(), "Action queue: 0/16  Drops: 0");
 }
 
 static void Test_GameplayOfflineMenuReturnRequestsResults(ImGuiTestContext* ctx) {
@@ -2437,6 +2489,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_GameplayLeaveConfirmationStayAndLeave);
   ShroomTeEngine_RegisterTest(engine, "screens", "gameplay_diagnostics_and_connection_overlays",
                               Test_GameplayDiagnosticsAndConnectionOverlays);
+  ShroomTeEngine_RegisterTest(engine, "screens", "gameplay_input_cadence_fake_transport_soak",
+                              Test_GameplayInputCadenceFakeTransportSoak);
   ShroomTeEngine_RegisterTest(engine, "screens", "gameplay_offline_menu_return_requests_results",
                               Test_GameplayOfflineMenuReturnRequestsResults);
   ShroomTeEngine_RegisterTest(engine, "screens", "results_navigation_actions",

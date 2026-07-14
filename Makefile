@@ -60,6 +60,8 @@ SERVER_LINUX_BIN := $(DIST_DIR)/linux/server/$(PROJECT)-server
 SERVER_WINDOWS_BIN := $(DIST_DIR)/windows/server/$(PROJECT)-server.exe
 SERVER_MACOS_BIN := $(DIST_DIR)/macos/server/$(PROJECT)-server
 NETWORK_BENCH_BIN := $(BUILD_DIR)/benchmarks/network-benchmark
+INPUT_FLOOD_CLIENT_BIN := $(BUILD_DIR)/tests/input-flood-client
+INPUT_FLOOD_PORT ?=
 NETWORK_BENCH_CLIENTS ?= 1,64,256
 NETWORK_BENCH_DURATION_MS ?= 1500
 NETWORK_BENCH_SPLIT_PIECES ?= 1
@@ -209,6 +211,7 @@ CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/cursor.c \
 	$(CLIENT_SRC_DIR)/game.c \
 	$(CLIENT_SRC_DIR)/game_mode_availability.c \
+	$(CLIENT_SRC_DIR)/input_scheduler.c \
 	$(CLIENT_SRC_DIR)/layout.c \
 	$(CLIENT_SRC_DIR)/layout_metrics.c \
 	$(CLIENT_SRC_DIR)/match_feedback.c \
@@ -243,6 +246,7 @@ SERVER_SOURCES := \
 	$(SERVER_SRC_DIR)/database.c \
 	$(SERVER_SRC_DIR)/match_persistence.c \
 	$(SERVER_SRC_DIR)/auth.c \
+	$(SERVER_SRC_DIR)/input_admission.c \
 	$(SERVER_SRC_DIR)/session_cleanup.c \
 	$(SERVER_SRC_DIR)/snapshot_stats.c \
 	$(SERVER_SRC_DIR)/voice_relay.c \
@@ -267,11 +271,13 @@ SHARED_HEADERS := \
 	$(SHARED_SRC_DIR)/player_identity.h \
 	$(CLIENT_SRC_DIR)/audio.h \
 	$(CLIENT_SRC_DIR)/cursor.h \
+	$(CLIENT_SRC_DIR)/input_scheduler.h \
 	$(CLIENT_SRC_DIR)/layout.h \
 	$(CLIENT_SRC_DIR)/match_feedback.h \
 	$(SERVER_SRC_DIR)/database.h \
 	$(SERVER_SRC_DIR)/match_persistence.h \
 	$(SERVER_SRC_DIR)/auth.h \
+	$(SERVER_SRC_DIR)/input_admission.h \
 	$(SERVER_SRC_DIR)/session_cleanup.h \
 	$(SERVER_SRC_DIR)/snapshot_stats.h \
 	$(SERVER_SRC_DIR)/voice_relay.h
@@ -297,6 +303,7 @@ IMGUI_TEST_CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/cursor.c \
 	$(CLIENT_SRC_DIR)/game.c \
 	$(CLIENT_SRC_DIR)/game_mode_availability.c \
+	$(CLIENT_SRC_DIR)/input_scheduler.c \
 	$(CLIENT_SRC_DIR)/layout.c \
 	$(CLIENT_SRC_DIR)/layout_metrics.c \
 	$(CLIENT_SRC_DIR)/match_feedback.c \
@@ -340,7 +347,7 @@ IMGUI_TEST_ENGINE_OBJECTS := $(addprefix $(TEST_BUILD_DIR)/imgui/engine/,$(addsu
 # =============================================================================
 .PHONY: all client-linux client-windows client-macos server-linux server-windows server-macos servers-all
 .PHONY: linux windows macos server run run-server run-windows help
-.PHONY: benchmark network-benchmark network-benchmark-test
+.PHONY: benchmark network-benchmark network-benchmark-test input-flood-test
 
 all: client-linux
 
@@ -455,6 +462,48 @@ network-benchmark: $(NETWORK_BENCH_BIN)
 network-benchmark-test: NETWORK_BENCH_DURATION_MS=500
 network-benchmark-test: network-benchmark
 
+input-flood-test: $(SERVER_LINUX_BIN) $(INPUT_FLOOD_CLIENT_BIN)
+	@set -eu; \
+	requested_port="$(INPUT_FLOOD_PORT)"; \
+	db=/tmp/shroomio-input-flood-$$$$.db; \
+	log=/tmp/shroomio-input-flood-$$$$.log; \
+	server_pid=""; ready=0; attempt=0; seed=$$$$; port=""; \
+	cleanup() { \
+		if [ -n "$$server_pid" ]; then \
+			kill "$$server_pid" >/dev/null 2>&1 || true; \
+			wait "$$server_pid" >/dev/null 2>&1 || true; \
+		fi; \
+		rm -f "$$db" "$$db-shm" "$$db-wal" "$$log"; \
+	}; \
+	trap cleanup EXIT INT TERM; \
+	while [ $$attempt -lt 20 ]; do \
+		if [ -n "$$requested_port" ]; then \
+			port="$$requested_port"; \
+		else \
+			port=$$((40000 + (seed * 1103 + attempt * 7919) % 20000)); \
+		fi; \
+		rm -f "$$db" "$$db-shm" "$$db-wal"; \
+		: >"$$log"; \
+		./$(SERVER_LINUX_BIN) --bind 127.0.0.1 --port "$$port" --database "$$db" >"$$log" 2>&1 & \
+		server_pid=$$!; probe=0; \
+		while [ $$probe -lt 200 ]; do \
+			if ! kill -0 "$$server_pid" >/dev/null 2>&1; then break; fi; \
+			if grep -q "server listening on 127.0.0.1:$$port/udp" "$$log"; then ready=1; break; fi; \
+			sleep 0.01; probe=$$((probe + 1)); \
+		done; \
+		if [ $$ready -eq 1 ]; then break; fi; \
+		kill "$$server_pid" >/dev/null 2>&1 || true; \
+		wait "$$server_pid" >/dev/null 2>&1 || true; server_pid=""; \
+		if [ -n "$$requested_port" ]; then \
+			echo "Error: input flood server failed to bind port $$port"; cat "$$log"; exit 1; \
+		fi; \
+		attempt=$$((attempt + 1)); \
+	done; \
+	if [ $$ready -ne 1 ] || ! kill -0 "$$server_pid" >/dev/null 2>&1; then \
+		echo "Error: input flood server failed to bind an available port"; cat "$$log"; exit 1; \
+	fi; \
+	./$(INPUT_FLOOD_CLIENT_BIN) --port $$port
+
 run-windows:
 	@command -v $(WINDOWS_CXX) >/dev/null 2>&1 || (printf '%s\n' 'Error: $(WINDOWS_CXX) not found. Install mingw-w64:' '  Ubuntu/Debian: sudo apt install mingw-w64' '  Fedora:       sudo dnf install mingw64-gcc-c++' '  Arch:         sudo pacman -S mingw-w64-gcc' && exit 1)
 	@test -f $(VCPKG_WINDOWS_STAMP) || (printf '%s\n' 'Error: Windows vcpkg dependencies not installed.' 'Run: make vcpkg-install-windows' && exit 1)
@@ -494,6 +543,10 @@ $(NETWORK_BENCH_BIN): tools/network_benchmark.c $(SHARED_SRC_DIR)/net_telemetry.
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) tools/network_benchmark.c \
 		$(SHARED_SRC_DIR)/net_telemetry.c -o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet
+
+$(INPUT_FLOOD_CLIENT_BIN): tools/input_flood_client.c $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) $< -o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet
 
 # Client object compilation
 $(LINUX_BUILD_DIR)/client/%.o: $(CLIENT_SRC_DIR)/%.c $(CLIENT_SRC_DIR)/game.h $(CLIENT_SRC_DIR)/net.h $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
@@ -646,7 +699,7 @@ $(UNITY_DIR):
 # =============================================================================
 .PHONY: test unit-test imgui-test valgrind-test valgrind-unit-test valgrind-server-smoke valgrind-imgui-test test-coverage test-clean
 
-test: unit-test imgui-test
+test: unit-test imgui-test input-flood-test
 
 unit-test: $(TEST_BINS)
 	@echo "Running unit tests..."
@@ -799,7 +852,13 @@ test_connection) \
 				$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/intermission.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_client_net) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) \
-				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/chat_cache.c $(SHARED_SRC_DIR)/net_telemetry.c -o $$test_bin $(COVERAGE_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lenet ;; \
+				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/input_scheduler.c $(CLIENT_SRC_DIR)/chat_cache.c $(SHARED_SRC_DIR)/net_telemetry.c -o $$test_bin $(COVERAGE_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lenet ;; \
+		test_input_scheduler) \
+			$(LINUX_CC) $(COVERAGE_CFLAGS) \
+				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/input_scheduler.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+		test_input_admission) \
+			$(LINUX_CC) $(COVERAGE_CFLAGS) \
+				$$src $(UNITY_SRC) $(SERVER_SRC_DIR)/input_admission.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_chat_cache) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/chat_cache.c -o $$test_bin $(COVERAGE_LIBS) ;; \
@@ -915,9 +974,17 @@ $(TEST_BUILD_DIR)/test_prediction: $(UNIT_TESTS_DIR)/test_prediction.c $(UNITY_S
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
-$(TEST_BUILD_DIR)/test_client_net: $(UNIT_TESTS_DIR)/test_client_net.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/chat_cache.c $(SHARED_SRC_DIR)/net_telemetry.c | $(UNITY_DIR)
+$(TEST_BUILD_DIR)/test_client_net: $(UNIT_TESTS_DIR)/test_client_net.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/input_scheduler.c $(CLIENT_SRC_DIR)/chat_cache.c $(SHARED_SRC_DIR)/net_telemetry.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) $^ -o $@ $(TEST_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lenet
+
+$(TEST_BUILD_DIR)/test_input_scheduler: $(UNIT_TESTS_DIR)/test_input_scheduler.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/input_scheduler.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_input_admission: $(UNIT_TESTS_DIR)/test_input_admission.c $(UNITY_SRC) $(SERVER_SRC_DIR)/input_admission.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
 $(TEST_BUILD_DIR)/test_chat_cache: $(UNIT_TESTS_DIR)/test_chat_cache.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/chat_cache.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)

@@ -11,6 +11,7 @@
 #include "shared/vec2.h"
 
 #include "chat_cache.h"
+#include "input_scheduler.h"
 
 #define SHROOM_CLIENT_PING_INTERVAL_SECONDS 1.0f
 #define SHROOM_CLIENT_PING_TIMEOUT_MS 2000u
@@ -63,7 +64,7 @@ typedef struct ClientNetState {
   ShroomSnapshotSporeState snapshot_spores[SHROOM_MAX_SPORES];
   ShroomSnapshotPowerupState snapshot_powerups[SHROOM_MAX_POWERUPS];
   ShroomMushroomSpeciesEntry mushroom_species[SHROOM_MAX_MUSHROOM_SPECIES];
-  float input_send_accumulator;
+  ShroomClientInputScheduler input_scheduler;
   float ping_send_accumulator;
   char status_text[64];
   ChatMessage chat_history[SHROOM_CLIENT_CHAT_HISTORY_COUNT];

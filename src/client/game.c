@@ -2971,6 +2971,8 @@ static void DrawConnectionOverlay(Game* game) {
 static char g_test_diagnostics_rates[96];
 static char g_test_diagnostics_bandwidth[96];
 static char g_test_diagnostics_transport[96];
+static char g_test_diagnostics_cadence[96];
+static char g_test_diagnostics_actions[96];
 #endif
 
 static void DrawDiagnosticsOverlay(const Game* game) {
@@ -2978,6 +2980,8 @@ static void DrawDiagnosticsOverlay(const Game* game) {
   char rates_text[96];
   char bandwidth_text[96];
   char transport_text[96];
+  char cadence_text[96];
+  char action_text[96];
 
   if (!game->diagnostics_overlay_open || (game->local_player == NULL)) {
     return;
@@ -2986,7 +2990,7 @@ static void DrawDiagnosticsOverlay(const Game* game) {
   ShroomNetTelemetryReadWindow(&game->net.telemetry, enet_time_get(),
                                SHROOM_NET_TELEMETRY_WINDOW_MS, &telemetry);
 
-  ShroomLayoutSetNextWindowBottomRight(328.0f, 238.0f, 16.0f);
+  ShroomLayoutSetNextWindowBottomRight(328.0f, 278.0f, 16.0f);
   if (!ShroomImGui_Begin("Diagnostics", NULL,
                          SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
                              SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
@@ -3017,16 +3021,26 @@ static void DrawDiagnosticsOverlay(const Game* game) {
   snprintf(transport_text, sizeof(transport_text), "Loss: %.2f%%  Queue: %u%s",
            (double)telemetry.maximum_loss_basis_points / 100.0, telemetry.queue_packets,
            telemetry.congested_peers > 0u ? " (congested)" : "");
+  snprintf(cadence_text, sizeof(cadence_text), "Cadence: %u Hz  Catch-up suppressed: %llu",
+           SHROOM_CLIENT_INPUT_RATE_HZ,
+           (unsigned long long)game->net.input_scheduler.suppressed_catchup_count);
+  snprintf(action_text, sizeof(action_text), "Action queue: %u/%u  Drops: %llu",
+           game->net.input_scheduler.action_queue_count, SHROOM_CLIENT_ACTION_QUEUE_CAPACITY,
+           (unsigned long long)game->net.input_scheduler.action_overflow_count);
 #ifdef TEST_MODE
   snprintf(g_test_diagnostics_rates, sizeof(g_test_diagnostics_rates), "%s", rates_text);
   snprintf(g_test_diagnostics_bandwidth, sizeof(g_test_diagnostics_bandwidth), "%s",
            bandwidth_text);
   snprintf(g_test_diagnostics_transport, sizeof(g_test_diagnostics_transport), "%s",
            transport_text);
+  snprintf(g_test_diagnostics_cadence, sizeof(g_test_diagnostics_cadence), "%s", cadence_text);
+  snprintf(g_test_diagnostics_actions, sizeof(g_test_diagnostics_actions), "%s", action_text);
 #endif
   ShroomImGui_Text(rates_text);
   ShroomImGui_Text(bandwidth_text);
   ShroomImGui_Text(transport_text);
+  ShroomImGui_Text(cadence_text);
+  ShroomImGui_Text(action_text);
 
   ShroomImGui_End();
 }
@@ -3037,6 +3051,10 @@ const char* ShroomTestGetDiagnosticsRatesText(void) { return g_test_diagnostics_
 const char* ShroomTestGetDiagnosticsBandwidthText(void) { return g_test_diagnostics_bandwidth; }
 
 const char* ShroomTestGetDiagnosticsTransportText(void) { return g_test_diagnostics_transport; }
+
+const char* ShroomTestGetDiagnosticsCadenceText(void) { return g_test_diagnostics_cadence; }
+
+const char* ShroomTestGetDiagnosticsActionsText(void) { return g_test_diagnostics_actions; }
 #endif
 
 static const float kChatInactiveTimeout = 8.0f;
@@ -4106,11 +4124,8 @@ void GameUpdate(Game* game, float delta_time) {
   }
 
   if (IsOnlineMode(game->active_mode) &&
-      (game->net.last_input_sequence > previous_input_sequence)) {
-    for (uint32_t sequence = previous_input_sequence + 1; sequence <= game->net.last_input_sequence;
-         ++sequence) {
-      AppendPendingInput(game, sequence, input_direction);
-    }
+      (game->net.last_input_sequence != previous_input_sequence)) {
+    AppendPendingInput(game, game->net.last_input_sequence, input_direction);
     game->tracked_input_sequence = game->net.last_input_sequence;
   }
 

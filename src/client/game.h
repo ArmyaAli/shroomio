@@ -229,6 +229,8 @@ void GameTestSetMovementInput(ShroomVec2 direction);
 const char* ShroomTestGetDiagnosticsRatesText(void);
 const char* ShroomTestGetDiagnosticsBandwidthText(void);
 const char* ShroomTestGetDiagnosticsTransportText(void);
+const char* ShroomTestGetDiagnosticsCadenceText(void);
+const char* ShroomTestGetDiagnosticsActionsText(void);
 #endif
 
 /* Leaderboard and ranking functions */

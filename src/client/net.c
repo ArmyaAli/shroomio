@@ -131,19 +131,26 @@ static void SendHello(ClientNetState* net) {
              CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_HELLO));
 }
 
-static void SendInput(ClientNetState* net, ShroomVec2 input_direction, bool split_requested,
+static bool CanSendGameplayInput(const ClientNetState* net) {
+  return (net != NULL) && net->welcome_received && net->match_entry_sent &&
+         (net->match_phase == SHROOM_MATCH_PHASE_RUNNING) && (net->peer != NULL) &&
+         (net->peer->state == ENET_PEER_STATE_CONNECTED);
+}
+
+static bool SendInput(ClientNetState* net, ShroomVec2 input_direction, bool split_requested,
                       bool eject_requested, ShroomVec2 split_direction,
                       uint32_t focused_entity_id) {
   ShroomInputPacket packet = {0};
+  ENetPacket* outbound;
+  uint32_t sequence;
 
-  if (!net->welcome_received || !net->match_entry_sent ||
-      (net->match_phase != SHROOM_MATCH_PHASE_RUNNING) || (net->peer == 0) ||
-      (net->peer->state != ENET_PEER_STATE_CONNECTED)) {
-    return;
+  if (!CanSendGameplayInput(net)) {
+    return false;
   }
 
+  sequence = net->last_input_sequence == UINT32_MAX ? 1u : net->last_input_sequence + 1u;
   ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_INPUT, sizeof(packet));
-  packet.sequence = ++net->last_input_sequence;
+  packet.sequence = sequence;
   packet.direction_x = input_direction.x;
   packet.direction_y = input_direction.y;
   packet.split_direction_x = split_direction.x;
@@ -152,8 +159,14 @@ static void SendInput(ClientNetState* net, ShroomVec2 input_direction, bool spli
   packet.eject_requested = eject_requested ? 1u : 0u;
   packet.focused_entity_id = focused_entity_id;
 
-  SendPacket(net, SHROOM_ENET_CHANNEL_INPUT, SHROOM_PACKET_INPUT,
-             CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_INPUT));
+  /* Movement is replaceable state; one-shot actions must survive packet loss. */
+  outbound = CreatePacket(&packet, sizeof(packet),
+                          (split_requested || eject_requested) ? ENET_PACKET_FLAG_RELIABLE : 0u);
+  if (!SendPacket(net, SHROOM_ENET_CHANNEL_INPUT, SHROOM_PACKET_INPUT, outbound)) {
+    return false;
+  }
+  net->last_input_sequence = sequence;
+  return true;
 }
 
 static void HandleWelcome(ClientNetState* net, const ENetPacket* enet_packet) {
@@ -525,6 +538,7 @@ void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, bool split
                      bool eject_requested, ShroomVec2 split_direction, uint32_t focused_entity_id,
                      float delta_time) {
   ENetEvent event;
+  ShroomClientScheduledActions actions;
 
   if (net->host == 0) {
     return;
@@ -630,6 +644,7 @@ void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, bool split
       net->peer = 0;
       net->welcome_received = false;
       net->match_entry_sent = false;
+      ShroomClientInputSchedulerPause(&net->input_scheduler);
       SetStatus(net, CLIENT_NET_DISCONNECTED, "Disconnected");
       break;
     case ENET_EVENT_TYPE_NONE:
@@ -653,14 +668,19 @@ void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, bool split
 
   if (net->peer != 0) {
     ClearStalePendingPing(net, enet_time_get());
-    net->input_send_accumulator += delta_time;
-    while (net->input_send_accumulator >= (1.0f / SHROOM_SERVER_TICK_RATE)) {
-      SendInput(net, input_direction, split_requested, eject_requested, split_direction,
-                focused_entity_id);
-      /* Action flags are one-shot — clear after the first packet in this update. */
-      split_requested = false;
-      eject_requested = false;
-      net->input_send_accumulator -= 1.0f / SHROOM_SERVER_TICK_RATE;
+    if (CanSendGameplayInput(net)) {
+      ShroomClientInputSchedulerQueueActions(&net->input_scheduler, split_requested,
+                                             eject_requested, split_direction, focused_entity_id);
+      if (ShroomClientInputSchedulerPrepare(&net->input_scheduler, delta_time, &actions)) {
+        const bool has_action = actions.split_requested || actions.eject_requested;
+        if (SendInput(net, input_direction, actions.split_requested, actions.eject_requested,
+                      has_action ? actions.direction : split_direction,
+                      has_action ? actions.focused_entity_id : focused_entity_id)) {
+          ShroomClientInputSchedulerCommit(&net->input_scheduler, &actions);
+        }
+      }
+    } else {
+      ShroomClientInputSchedulerPause(&net->input_scheduler);
     }
     net->ping_send_accumulator += delta_time;
     while (net->ping_send_accumulator >= SHROOM_CLIENT_PING_INTERVAL_SECONDS) {
@@ -731,7 +751,7 @@ void ClientNetTestHandleIntermissionStatus(ClientNetState* net, const ENetPacket
 }
 
 bool ClientNetTestCanSendGameplayInput(const ClientNetState* net) {
-  return net != NULL && net->welcome_received && net->match_entry_sent;
+  return CanSendGameplayInput(net);
 }
 
 void ClientNetTestHandleMushroomSpeciesCatalog(ClientNetState* net, const ENetPacket* enet_packet) {
