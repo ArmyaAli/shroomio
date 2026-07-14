@@ -28,6 +28,15 @@ make run         # Builds and launches the client
 make imgui-test  # Builds and runs the ImGui UI test harness
 ```
 
+#### WSLg audio recovery soak
+
+Capture client output with `make run 2>&1 | tee /tmp/shroomio-wslg-audio.log`. For five minutes, repeatedly
+suspend and restore the WSLg PulseAudio endpoint while moving between the main menu and active matches. During
+each interruption, Settings should report that audio was lost and is retrying; music and effects should resume
+within eight seconds after the endpoint returns, without selecting **Restart Audio**. Save the terminal log and
+record any cycle that does not return to `Audio ready`. Use `make run-windows` for normal WSL development when
+testing the Linux audio backend itself is not required.
+
 ### Linux Headless Server
 
 ```bash
