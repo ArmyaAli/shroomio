@@ -62,6 +62,7 @@ SERVER_MACOS_BIN := $(DIST_DIR)/macos/server/$(PROJECT)-server
 NETWORK_BENCH_BIN := $(BUILD_DIR)/benchmarks/network-benchmark
 INPUT_FLOOD_CLIENT_BIN := $(BUILD_DIR)/tests/input-flood-client
 DIRECTORY_QUERY_CLIENT_BIN := $(BUILD_DIR)/tests/directory-query-client
+SERVER_DISCOVERY_CLIENT_BIN := $(BUILD_DIR)/tests/server-discovery-client
 SNAPSHOT_RATE_PROBE_BIN := $(BUILD_DIR)/tests/snapshot-rate-probe
 INPUT_FLOOD_PORT ?=
 NETWORK_BENCH_CLIENTS ?= 1,64,256
@@ -231,6 +232,8 @@ CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/voice_mixer.c \
 	$(CLIENT_SRC_DIR)/voice_thread.c \
 	$(CLIENT_SRC_DIR)/screen.c \
+	$(CLIENT_SRC_DIR)/server_discovery.c \
+	$(CLIENT_SRC_DIR)/server_discovery_state.c \
 	$(CLIENT_SRC_DIR)/server_browser_model.c \
 	$(CLIENT_SRC_DIR)/settings_session.c \
 	$(CLIENT_SRC_DIR)/screens/screen_background.c \
@@ -347,6 +350,8 @@ IMGUI_TEST_CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/voice_mixer.c \
 	$(CLIENT_SRC_DIR)/voice_thread.c \
 	$(CLIENT_SRC_DIR)/screen.c \
+	$(CLIENT_SRC_DIR)/server_discovery.c \
+	$(CLIENT_SRC_DIR)/server_discovery_state.c \
 	$(CLIENT_SRC_DIR)/server_browser_model.c \
 	$(CLIENT_SRC_DIR)/settings_session.c \
 	$(CLIENT_SRC_DIR)/screens/screen_background.c \
@@ -545,7 +550,7 @@ input-flood-test: $(SERVER_LINUX_BIN) $(INPUT_FLOOD_CLIENT_BIN)
 	fi; \
 	./$(INPUT_FLOOD_CLIENT_BIN) --port $$port
 
-directory-integration-test: $(SERVER_LINUX_BIN) $(DIRECTORY_QUERY_CLIENT_BIN)
+directory-integration-test: $(SERVER_LINUX_BIN) $(DIRECTORY_QUERY_CLIENT_BIN) $(SERVER_DISCOVERY_CLIENT_BIN)
 	@set -eu; \
 	base_port=$$((40000 + ($$$$ * 1103) % 20000)); directory_port=$$base_port; \
 	game_one_port=$$((base_port + 1)); game_two_port=$$((base_port + 2)); \
@@ -574,7 +579,9 @@ directory-integration-test: $(SERVER_LINUX_BIN) $(DIRECTORY_QUERY_CLIENT_BIN)
 	done; \
 	if [ $$registered -ne 1 ]; then echo "Game servers did not register"; cat "$$tmp/directory.log" "$$tmp/one.log" "$$tmp/two.log"; exit 1; fi; \
 	./$(DIRECTORY_QUERY_CLIENT_BIN) 127.0.0.1 $$directory_port 2; \
-	if grep -q "peer connected:" "$$tmp/one.log" || grep -q "peer connected:" "$$tmp/two.log"; then echo "Directory traffic allocated a player peer"; exit 1; fi; \
+	./$(SERVER_DISCOVERY_CLIENT_BIN) 127.0.0.1 $$directory_port 2; \
+	./$(DIRECTORY_QUERY_CLIENT_BIN) 127.0.0.1 $$directory_port 2; \
+	if grep -q "session activated:" "$$tmp/one.log" || grep -q "session activated:" "$$tmp/two.log"; then echo "Discovery traffic activated a player session"; exit 1; fi; \
 	kill "$$game_one_pid"; wait "$$game_one_pid" >/dev/null 2>&1 || true; game_one_pid=""; \
 	sleep 16; \
 	./$(DIRECTORY_QUERY_CLIENT_BIN) 127.0.0.1 $$directory_port 1; \
@@ -657,6 +664,12 @@ $(INPUT_FLOOD_CLIENT_BIN): tools/input_flood_client.c $(SHARED_HEADERS) | $(VCPK
 $(DIRECTORY_QUERY_CLIENT_BIN): tools/directory_query_client.c $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) $< -o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet
+
+$(SERVER_DISCOVERY_CLIENT_BIN): tools/server_discovery_client.c $(CLIENT_SRC_DIR)/server_discovery.c $(CLIENT_SRC_DIR)/server_discovery_state.c $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) tools/server_discovery_client.c \
+		$(CLIENT_SRC_DIR)/server_discovery.c $(CLIENT_SRC_DIR)/server_discovery_state.c \
+		-o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet
 
 $(SNAPSHOT_RATE_PROBE_BIN): tools/snapshot_rate_probe.c $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
@@ -950,6 +963,9 @@ test_connection) \
 		test_server_browser_model) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/server_browser_model.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+		test_server_discovery_state) \
+			$(LINUX_CC) $(COVERAGE_CFLAGS) \
+				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/server_discovery_state.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_results_summary) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/results_summary.c -o $$test_bin $(COVERAGE_LIBS) ;; \
@@ -1099,6 +1115,10 @@ $(TEST_BUILD_DIR)/test_client_settings_persistence: $(UNIT_TESTS_DIR)/test_clien
 	$(LINUX_CC) $(TEST_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) $^ -o $@ $(TEST_LIBS)
 
 $(TEST_BUILD_DIR)/test_server_browser_model: $(UNIT_TESTS_DIR)/test_server_browser_model.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/server_browser_model.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_server_discovery_state: $(UNIT_TESTS_DIR)/test_server_discovery_state.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/server_discovery_state.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 

@@ -2,6 +2,7 @@
 #include "screen.h"
 #include "screen_background.h"
 #include "server_browser_model.h"
+#include "server_discovery.h"
 #include "shared/config.h"
 
 #include "imgui_wrapper.h"
@@ -13,9 +14,8 @@
 #include <string.h>
 #include <unistd.h>
 
-#define SERVER_BROWSER_MAX_SERVERS 6u
+#define SERVER_BROWSER_MAX_SERVERS SHROOM_DIRECTORY_MAX_ENTRIES
 #define SERVER_BROWSER_MAX_RECENTS 5u
-#define SERVER_BROWSER_REFRESH_DELAY 0.35f
 #define SERVER_BROWSER_STALE_SECONDS 30.0f
 
 typedef enum ServerBrowserType {
@@ -39,6 +39,7 @@ typedef struct ServerBrowserEntry {
 
 typedef struct ServerBrowserState {
   ShroomServerBrowserModel model;
+  ShroomServerDiscovery discovery;
   int selected_index;
   int selected_recent_index;
   size_t server_count;
@@ -47,10 +48,11 @@ typedef struct ServerBrowserState {
   char direct_port_input[8];
   char validation_message[128];
   char connection_error[128];
-  float refresh_elapsed;
   float result_age;
   bool demo_mode;
   bool directory_configured;
+  char directory_host[SHROOM_DIRECTORY_HOST_LENGTH];
+  uint16_t directory_port;
   ServerBrowserEntry servers[SERVER_BROWSER_MAX_SERVERS];
   ServerBrowserEntry recent_servers[SERVER_BROWSER_MAX_RECENTS];
 } ServerBrowserState;
@@ -62,13 +64,19 @@ static ServerBrowserState g_server_browser;
 static const char* DiscoveryStatusText(void) {
   switch (g_server_browser.model.discovery_state) {
   case SHROOM_SERVER_DISCOVERY_LOADING:
-    return "Loading server directory...";
+    return g_server_browser.discovery.state.phase == SHROOM_DISCOVERY_PROBING
+               ? "Measuring live server latency..."
+               : "Loading server directory...";
   case SHROOM_SERVER_DISCOVERY_READY:
-    return "Demo results loaded; counts and ping are illustrative, not live.";
+    return "Live server results loaded.";
   case SHROOM_SERVER_DISCOVERY_FAILED:
-    return "Refresh failed: no server directory is configured. Use Direct Connect.";
+    return g_server_browser.directory_configured
+               ? "Server directory unavailable. Use Direct Connect or try again."
+               : "Refresh failed: no server directory is configured. Use Direct Connect.";
   case SHROOM_SERVER_DISCOVERY_STALE:
-    return "Demo results are stale. Refresh before relying on them.";
+    return "Server results are stale. Refresh before relying on them.";
+  case SHROOM_SERVER_DISCOVERY_CANCELLED:
+    return "Refresh cancelled.";
   case SHROOM_SERVER_DISCOVERY_EMPTY:
   default:
     return g_server_browser.directory_configured
@@ -180,6 +188,7 @@ static bool ServerBrowserEntryIsJoinable(const ServerBrowserEntry* entry) {
   return entry->player_count < entry->player_capacity;
 }
 
+#ifdef TEST_MODE
 static void LoadDemoServers(void) {
   g_server_browser.server_count = 5;
 
@@ -200,6 +209,7 @@ static void LoadDemoServers(void) {
       "Demo / High Risk", SERVER_BROWSER_TYPE_DEMO, true, false};
   SortServersPreservingSelection();
 }
+#endif
 
 static void SaveRecentServers(void) {
   int file_descriptor;
@@ -408,6 +418,7 @@ static bool ParseDirectConnect(ServerBrowserEntry* entry) {
 }
 
 static void JoinServer(ShroomScreenManager* manager, Game* game, const ServerBrowserEntry* entry) {
+  ShroomServerDiscoveryShutdown(&g_server_browser.discovery);
   if (game != NULL) {
     CopyText(game->selected_server_host, sizeof(game->selected_server_host), entry->host);
     game->selected_server_port = (uint16_t)entry->port;
@@ -422,10 +433,20 @@ static void JoinServer(ShroomScreenManager* manager, Game* game, const ServerBro
 
 static void BeginDiscoveryRefresh(void) {
   ShroomServerBrowserBeginRefresh(&g_server_browser.model);
-  g_server_browser.refresh_elapsed = 0.0f;
+  g_server_browser.server_count = 0u;
+  g_server_browser.selected_index = -1;
+  g_server_browser.result_age = 0.0f;
+#ifndef TEST_MODE
+  if (!ShroomServerDiscoveryBegin(&g_server_browser.discovery, g_server_browser.directory_host,
+                                  g_server_browser.directory_port, enet_time_get())) {
+    ShroomServerBrowserFinishRefresh(&g_server_browser.model, false, 0u);
+  }
+#endif
 }
 
+#ifdef TEST_MODE
 static void FinishDiscoveryRefresh(void) {
+  ShroomServerDiscoveryShutdown(&g_server_browser.discovery);
   g_server_browser.server_count = 0u;
   g_server_browser.selected_index = -1;
   g_server_browser.result_age = 0.0f;
@@ -439,17 +460,66 @@ static void FinishDiscoveryRefresh(void) {
     ShroomServerBrowserFinishRefresh(&g_server_browser.model, false, 0u);
   }
 }
+#endif
+
+static void CopyDiscoveryResults(void) {
+  const size_t result_count =
+      ShroomServerDiscoveryStateResultCount(&g_server_browser.discovery.state);
+
+  g_server_browser.server_count = 0u;
+  for (size_t index = 0u;
+       (index < result_count) && (g_server_browser.server_count < SERVER_BROWSER_MAX_SERVERS);
+       ++index) {
+    const ShroomDiscoveryCandidate* candidate =
+        ShroomServerDiscoveryStateResult(&g_server_browser.discovery.state, index);
+    ServerBrowserEntry* entry;
+
+    if (candidate == NULL) {
+      continue;
+    }
+    entry = &g_server_browser.servers[g_server_browser.server_count++];
+    *entry = (ServerBrowserEntry){0};
+    CopyText(entry->name, sizeof(entry->name), candidate->server.name);
+    CopyText(entry->host, sizeof(entry->host), candidate->server.host);
+    CopyText(entry->map_label, sizeof(entry->map_label), "Live / Arena");
+    entry->port = candidate->server.port;
+    entry->player_count = candidate->server.player_count;
+    entry->player_capacity = candidate->server.capacity;
+    entry->ping_ms = candidate->latency_ms;
+    entry->type = SERVER_BROWSER_TYPE_OFFICIAL;
+    entry->metadata_known = true;
+    entry->reachable = true;
+  }
+  SortServersPreservingSelection();
+}
 
 static bool ServerBrowserInit(ShroomScreenManager* manager) {
   const Game* game = manager != NULL ? (const Game*)manager->user_data : NULL;
+#ifdef TEST_MODE
   const char* demo_mode = getenv("SHROOM_SERVER_BROWSER_DEMO");
+#endif
   const char* directory_host = getenv("SHROOM_DIRECTORY_HOST");
+  const char* directory_port = getenv("SHROOM_DIRECTORY_PORT");
+  char* end = NULL;
+  unsigned long parsed_port = SHROOM_DIRECTORY_PORT;
 
   g_server_browser = (ServerBrowserState){0};
   ShroomServerBrowserModelInit(&g_server_browser.model);
   g_server_browser.selected_index = -1;
+#ifdef TEST_MODE
   g_server_browser.demo_mode = (demo_mode != NULL) && (strcmp(demo_mode, "1") == 0);
+#endif
   g_server_browser.directory_configured = (directory_host != NULL) && (directory_host[0] != '\0');
+  CopyText(g_server_browser.directory_host, sizeof(g_server_browser.directory_host),
+           g_server_browser.directory_configured ? directory_host : "");
+  if ((directory_port != NULL) && (directory_port[0] != '\0')) {
+    parsed_port = strtoul(directory_port, &end, 10);
+    if ((end == directory_port) || (*end != '\0') || (parsed_port == 0u) ||
+        (parsed_port > UINT16_MAX)) {
+      parsed_port = SHROOM_DIRECTORY_PORT;
+    }
+  }
+  g_server_browser.directory_port = (uint16_t)parsed_port;
   snprintf(g_server_browser.direct_host_input, sizeof(g_server_browser.direct_host_input), "%s",
            "127.0.0.1");
   snprintf(g_server_browser.direct_port_input, sizeof(g_server_browser.direct_port_input), "%u",
@@ -468,9 +538,15 @@ static void ServerBrowserUpdate(ShroomScreenManager* manager, float delta_time) 
   (void)manager;
 
   if (g_server_browser.model.discovery_state == SHROOM_SERVER_DISCOVERY_LOADING) {
-    g_server_browser.refresh_elapsed += delta_time;
-    if (g_server_browser.refresh_elapsed >= SERVER_BROWSER_REFRESH_DELAY) {
-      FinishDiscoveryRefresh();
+    if (!g_server_browser.demo_mode) {
+      ShroomServerDiscoveryUpdate(&g_server_browser.discovery, enet_time_get());
+      if (g_server_browser.discovery.state.phase == SHROOM_DISCOVERY_COMPLETE) {
+        CopyDiscoveryResults();
+        ShroomServerBrowserFinishRefresh(&g_server_browser.model, true,
+                                         g_server_browser.server_count);
+      } else if (g_server_browser.discovery.state.phase == SHROOM_DISCOVERY_FAILED) {
+        ShroomServerBrowserFinishRefresh(&g_server_browser.model, false, 0u);
+      }
     }
     return;
   }
@@ -529,19 +605,23 @@ static void ServerBrowserDraw(ShroomScreenManager* manager) {
 
   ShroomImGui_Separator();
   ShroomImGui_Text("Server Discovery");
-  ShroomImGui_BeginDisabled(g_server_browser.model.discovery_state ==
-                            SHROOM_SERVER_DISCOVERY_LOADING);
-  if (ShroomImGui_Button("Refresh", 120.0f, 0.0f)) {
-    BeginDiscoveryRefresh();
+  if (g_server_browser.model.discovery_state == SHROOM_SERVER_DISCOVERY_LOADING) {
+    if (ShroomImGui_Button("Cancel", 120.0f, 0.0f)) {
+      ShroomServerDiscoveryCancel(&g_server_browser.discovery);
+      ShroomServerBrowserCancelRefresh(&g_server_browser.model);
+    }
+  } else {
+    if (ShroomImGui_Button("Refresh", 120.0f, 0.0f)) {
+      BeginDiscoveryRefresh();
+    }
   }
-  ShroomImGui_EndDisabled();
 
   ShroomImGui_SameLine();
   ShroomImGui_Text(DiscoveryStatusText());
 
   if ((g_server_browser.model.discovery_state == SHROOM_SERVER_DISCOVERY_READY) ||
       (g_server_browser.model.discovery_state == SHROOM_SERVER_DISCOVERY_STALE)) {
-    ShroomImGui_Text(TextFormat("Source: development demo data | Refreshed %.0f seconds ago",
+    ShroomImGui_Text(TextFormat("Source: live directory probes | Refreshed %.0f seconds ago",
                                 g_server_browser.result_age));
   } else {
     ShroomImGui_Text("Source: none | Last refresh: never completed");
@@ -721,6 +801,11 @@ static void ServerBrowserHandleInput(ShroomScreenManager* manager) {
   }
 }
 
+static void ServerBrowserCleanup(ShroomScreenManager* manager) {
+  (void)manager;
+  ShroomServerDiscoveryShutdown(&g_server_browser.discovery);
+}
+
 void ShroomScreenRegisterServerBrowser(ShroomScreenManager* manager) {
   ShroomScreen* screen;
 
@@ -735,6 +820,7 @@ void ShroomScreenRegisterServerBrowser(ShroomScreenManager* manager) {
   screen->update = ServerBrowserUpdate;
   screen->draw = ServerBrowserDraw;
   screen->handle_input = ServerBrowserHandleInput;
+  screen->cleanup = ServerBrowserCleanup;
 }
 
 #ifdef TEST_MODE
