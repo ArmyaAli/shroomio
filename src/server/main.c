@@ -19,6 +19,7 @@
 #include "shared/protocol.h"
 #include "shared/profiler.h"
 #include "shared/sim.h"
+#include "shared/world_replication.h"
 #include "auth.h"
 #include "database.h"
 #include "directory_registry.h"
@@ -72,6 +73,7 @@ typedef struct ServerSession {
   ShroomPlayerState* player;
   char auth_token[SHROOM_AUTH_TOKEN_LENGTH + 1];
   char display_name[SHROOM_MAX_NAME_LENGTH];
+  ShroomWorldReplicationPeerState world_replication;
 } ServerSession;
 
 static ShroomLifecycle g_lifecycle;
@@ -449,15 +451,26 @@ static int RunServerBenchmark(const ServerConfig* config) {
   const uint64_t snapshot_interval_ticks =
       (uint64_t)(SHROOM_SERVER_TICK_RATE / (float)SHROOM_SNAPSHOT_RATE);
   const uint64_t spore_interval_ticks =
-      (uint64_t)(SHROOM_SERVER_TICK_RATE / (float)SHROOM_SPORE_STATE_RATE);
+      (uint64_t)(SHROOM_SERVER_TICK_RATE / (float)SHROOM_WORLD_REPLICATION_RATE);
   double sim_sum_ms = 0.0;
   double sim_peak_ms = 0.0;
   uint64_t estimated_snapshot_bytes = 0ull;
   uint64_t estimated_packet_count = 0ull;
+  ShroomWorldReplicationPeerState* replication_states = NULL;
+  ShroomWorldStateRecord* replication_records = NULL;
   uint64_t started_nanos;
   uint64_t elapsed_nanos;
 
   ShroomWorldInitWithSeed(&world, 42u + config->benchmark_bots);
+  if (config->benchmark_bots > 0u) {
+    replication_states = calloc(config->benchmark_bots, sizeof(*replication_states));
+    replication_records = malloc(SHROOM_MAX_WORLD_STATE_RECORDS * sizeof(*replication_records));
+    if ((replication_states == NULL) || (replication_records == NULL)) {
+      free(replication_states);
+      free(replication_records);
+      return 1;
+    }
+  }
   for (uint32_t player = 0u; player < config->benchmark_bots; ++player) {
     ShroomPlayerState* spawned = ShroomWorldSpawnPlayer(&world, player + 1u, true);
     if (spawned != NULL) {
@@ -485,12 +498,15 @@ static int RunServerBenchmark(const ServerConfig* config) {
                      ((size_t)world.player_count * sizeof(ShroomSnapshotPlayerState)));
     }
     if ((spore_interval_ticks > 0u) && ((world.tick % spore_interval_ticks) == 0u)) {
-      estimated_packet_count += (uint64_t)config->benchmark_bots * 2ull;
-      estimated_snapshot_bytes +=
-          (uint64_t)config->benchmark_bots *
-          (uint64_t)((sizeof(ShroomPacketHeader) + sizeof(uint64_t) + (2u * sizeof(uint16_t)) +
-                      ((size_t)world.spore_count * sizeof(ShroomSnapshotSporeState))) +
-                     sizeof(ShroomPowerupStatePacket));
+      for (uint32_t player = 0u; player < config->benchmark_bots; ++player) {
+        const ShroomWorldReplicationBatch batch = ShroomWorldReplicationBuild(
+            &replication_states[player], &world, world.players[player].position, false,
+            replication_records, SHROOM_MAX_WORLD_STATE_RECORDS);
+        if (batch.keyframe || (batch.record_count > 0u)) {
+          estimated_packet_count += ShroomWorldReplicationPacketCount(batch.record_count);
+          estimated_snapshot_bytes += ShroomWorldReplicationPacketBytes(batch.record_count);
+        }
+      }
     }
   }
   elapsed_nanos = GetTimeNanos() - started_nanos;
@@ -502,6 +518,8 @@ static int RunServerBenchmark(const ServerConfig* config) {
          sim_sum_ms / (double)config->benchmark_ticks, sim_peak_ms,
          (unsigned long long)estimated_packet_count, (unsigned long long)estimated_snapshot_bytes,
          ShroomProfileNanosToMs(elapsed_nanos));
+  free(replication_states);
+  free(replication_records);
   return 0;
 }
 
@@ -1186,99 +1204,57 @@ static void SendSnapshot(ENetPeer* peer, const ServerSession* session,
   }
 }
 
-static void SendSporeState(ENetPeer* peer, const ShroomWorldState* world) {
-  uint16_t spore_count = 0;
-  const uint16_t max_spores_per_packet = ShroomSporeStatePacketMaxSpores();
-  size_t index;
-
-  for (index = 0; index < world->spore_count; ++index) {
-    if (world->spores[index].active) {
-      ++spore_count;
+static ShroomVec2 ReplicationInterestCenter(const ServerSession* session,
+                                            const ShroomWorldState* world) {
+  if ((session != NULL) && (session->player != NULL) && session->player->alive) {
+    return session->player->position;
+  }
+  for (size_t index = 0u; index < world->player_count; ++index) {
+    if (world->players[index].alive && (world->players[index].piece_index == 0u)) {
+      return world->players[index].position;
     }
   }
-
-  if (spore_count == 0u) {
-    const size_t packet_size = offsetof(ShroomSporeStatePacket, spores);
-    ENetPacket* enet_packet = enet_packet_create(NULL, packet_size, 0);
-    ShroomSporeStatePacket* packet = (ShroomSporeStatePacket*)enet_packet->data;
-
-    ShroomPacketHeaderInit(&packet->header, SHROOM_PACKET_SPORE_STATE, (uint16_t)packet_size);
-    packet->tick = world->tick;
-    packet->spore_count = 0u;
-    packet->reserved = 0u;
-    SendPacket(peer, SHROOM_ENET_CHANNEL_SNAPSHOT, SHROOM_PACKET_SPORE_STATE, enet_packet);
-    return;
-  }
-
-  for (uint16_t chunk_start = 0u; chunk_start < spore_count;
-       chunk_start = (uint16_t)(chunk_start + max_spores_per_packet)) {
-    const uint16_t remaining = (uint16_t)(spore_count - chunk_start);
-    const uint16_t chunk_count =
-        remaining < max_spores_per_packet ? remaining : max_spores_per_packet;
-    const size_t packet_size = offsetof(ShroomSporeStatePacket, spores) +
-                               ((size_t)chunk_count * sizeof(ShroomSnapshotSporeState));
-    ENetPacket* enet_packet = enet_packet_create(NULL, packet_size, 0);
-    ShroomSporeStatePacket* packet = (ShroomSporeStatePacket*)enet_packet->data;
-    uint16_t active_index = 0u;
-    uint16_t packet_index = 0u;
-
-    ShroomPacketHeaderInit(&packet->header, SHROOM_PACKET_SPORE_STATE, (uint16_t)packet_size);
-    packet->tick = world->tick;
-    packet->spore_count = spore_count;
-    packet->reserved = chunk_start;
-
-    for (index = 0; index < world->spore_count; ++index) {
-      const ShroomSporeState* spore = &world->spores[index];
-
-      if (!spore->active) {
-        continue;
-      }
-      if (active_index++ < chunk_start) {
-        continue;
-      }
-      if (packet_index >= chunk_count) {
-        break;
-      }
-
-      packet->spores[packet_index++] = (ShroomSnapshotSporeState){
-          .entity_id = spore->entity_id,
-          .position_x = spore->position.x,
-          .position_y = spore->position.y,
-          .value = spore->value,
-          .reserved = 0,
-      };
-    }
-
-    SendPacket(peer, SHROOM_ENET_CHANNEL_SNAPSHOT, SHROOM_PACKET_SPORE_STATE, enet_packet);
-  }
+  return (ShroomVec2){world->width * 0.5f, world->height * 0.5f};
 }
 
-static void SendPowerupState(ENetPeer* peer, const ShroomWorldState* world) {
-  ShroomPowerupStatePacket packet = {0};
-  uint16_t powerup_count = (uint16_t)world->powerup_count;
+static void SendWorldState(ENetPeer* peer, ServerSession* session, const ShroomWorldState* world) {
+  ShroomWorldStateRecord records[SHROOM_MAX_WORLD_STATE_RECORDS];
+  const ShroomWorldReplicationBatch batch = ShroomWorldReplicationBuild(
+      &session->world_replication, world, ReplicationInterestCenter(session, world), false, records,
+      SHROOM_MAX_WORLD_STATE_RECORDS);
+  const uint16_t records_per_packet = ShroomWorldStatePacketMaxRecords();
+  const uint16_t chunk_count = (uint16_t)ShroomWorldReplicationPacketCount(batch.record_count);
 
-  if (powerup_count > SHROOM_MAX_POWERUPS) {
-    powerup_count = SHROOM_MAX_POWERUPS;
+  if (!batch.keyframe && (batch.record_count == 0u)) {
+    return;
   }
+  for (uint16_t chunk_index = 0u; chunk_index < chunk_count; ++chunk_index) {
+    const size_t record_start = (size_t)chunk_index * records_per_packet;
+    const size_t remaining = batch.record_count - record_start;
+    const uint8_t record_count =
+        (uint8_t)(remaining < records_per_packet ? remaining : records_per_packet);
+    const size_t packet_size = offsetof(ShroomWorldStatePacket, records) +
+                               (size_t)record_count * sizeof(ShroomWorldStateRecord);
+    ENetPacket* enet_packet = enet_packet_create(NULL, packet_size, 0u);
+    ShroomWorldStatePacket* packet;
 
-  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_POWERUP_STATE, sizeof(packet));
-  packet.tick = world->tick;
-  packet.powerup_count = powerup_count;
-
-  for (uint16_t index = 0; index < powerup_count; ++index) {
-    const ShroomPowerupState* powerup = &world->powerups[index];
-
-    packet.powerups[index] = (ShroomSnapshotPowerupState){
-        .entity_id = powerup->entity_id,
-        .position_x = powerup->position.x,
-        .position_y = powerup->position.y,
-        .type = (uint8_t)powerup->type,
-        .active = powerup->active ? 1u : 0u,
-    };
+    if (enet_packet == NULL) {
+      continue;
+    }
+    packet = (ShroomWorldStatePacket*)enet_packet->data;
+    memset(packet, 0, offsetof(ShroomWorldStatePacket, records));
+    ShroomPacketHeaderInit(&packet->header, SHROOM_PACKET_WORLD_STATE, (uint16_t)packet_size);
+    packet->tick = batch.tick;
+    packet->chunk_index = chunk_index;
+    packet->chunk_count = chunk_count;
+    packet->flags = batch.keyframe ? SHROOM_WORLD_STATE_FLAG_KEYFRAME : 0u;
+    packet->record_count = record_count;
+    if (record_count > 0u) {
+      memcpy(packet->records, &records[record_start],
+             (size_t)record_count * sizeof(ShroomWorldStateRecord));
+    }
+    SendPacket(peer, SHROOM_ENET_CHANNEL_SNAPSHOT, SHROOM_PACKET_WORLD_STATE, enet_packet);
   }
-
-  SendPacket(peer, SHROOM_ENET_CHANNEL_SNAPSHOT, SHROOM_PACKET_POWERUP_STATE,
-             CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_POWERUP_STATE));
 }
 
 static void RemoveSessionPlayer(ServerSession* session, ShroomLobby* lobbies) {
@@ -1806,6 +1782,7 @@ static void HandleLobbyJoin(ENetHost* host, ENetPeer* peer, ServerSession* sessi
   }
 
   session->lobby_id = lobby->lobby_id;
+  memset(&session->world_replication, 0, sizeof(session->world_replication));
   session->spectating = (packet->spectate != 0);
   session->is_ready = false;
   session->entered_match = false;
@@ -1853,6 +1830,7 @@ static void HandleLobbyLeave(ENetHost* host, const ENetPeer* peer, ServerSession
   RemoveSessionPlayer(session, lobbies);
   LOG_INFO("lobby leave: player_id=%u lobby_id=%u", session->player_id, session->lobby_id);
   session->lobby_id = 0;
+  memset(&session->world_replication, 0, sizeof(session->world_replication));
   session->spectating = false;
   session->is_ready = false;
   session->entered_match = false;
@@ -2303,7 +2281,7 @@ int main(int argc, char** argv) {
   const uint64_t snapshot_interval_ticks =
       (uint64_t)(SHROOM_SERVER_TICK_RATE / (float)SHROOM_SNAPSHOT_RATE);
   const uint64_t spore_interval_ticks =
-      (uint64_t)(SHROOM_SERVER_TICK_RATE / (float)SHROOM_SPORE_STATE_RATE);
+      (uint64_t)(SHROOM_SERVER_TICK_RATE / (float)SHROOM_WORLD_REPLICATION_RATE);
   ENetAddress address = {0};
   ENetHost* host;
   static ShroomLobby lobbies[SHROOM_MAX_LOBBIES] = {0};
@@ -2583,14 +2561,13 @@ int main(int argc, char** argv) {
 
         if ((spore_interval_ticks > 0) && ((lobby->world.tick % spore_interval_ticks) == 0)) {
           for (pi = 0; pi < host->peerCount; ++pi) {
-            const ServerSession* s = (const ServerSession*)host->peers[pi].data;
+            ServerSession* s = (ServerSession*)host->peers[pi].data;
 
             if ((host->peers[pi].state != ENET_PEER_STATE_CONNECTED) || (s == NULL) || !s->active ||
                 (s->lobby_id != lobby->lobby_id)) {
               continue;
             }
-            SendSporeState(&host->peers[pi], &lobby->world);
-            SendPowerupState(&host->peers[pi], &lobby->world);
+            SendWorldState(&host->peers[pi], s, &lobby->world);
           }
           enet_host_flush(host);
         }

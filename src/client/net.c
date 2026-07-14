@@ -22,6 +22,14 @@ static void ResetIntermissionLifecycle(ClientNetState* net) {
   net->consumed_intermission_round_valid = false;
 }
 
+static void ResetWorldReplication(ClientNetState* net) {
+  net->world_replication = (ShroomWorldReplicationClientState){0};
+  net->spore_count = 0u;
+  net->powerup_count = 0u;
+  memset(net->snapshot_spores, 0, sizeof(net->snapshot_spores));
+  memset(net->snapshot_powerups, 0, sizeof(net->snapshot_powerups));
+}
+
 static ENetPacket* CreatePacket(const void* data, size_t size, enet_uint32 flags) {
   return enet_packet_create(data, size, flags);
 }
@@ -224,6 +232,7 @@ static void HandleLobbyJoined(ClientNetState* net, const ENetPacket* enet_packet
   }
 
   ResetIntermissionLifecycle(net);
+  ResetWorldReplication(net);
   net->lobby_id = packet->lobby_id;
   net->spectating = (packet->spectating != 0);
   net->game_mode = packet->game_mode;
@@ -472,6 +481,16 @@ static void HandlePowerupState(ClientNetState* net, const ENetPacket* enet_packe
   }
 }
 
+static void HandleWorldState(ClientNetState* net, const ENetPacket* enet_packet) {
+  if ((net == NULL) || (enet_packet == NULL)) {
+    return;
+  }
+  ShroomWorldReplicationApplyPacket(&net->world_replication, net->snapshot_spores,
+                                    &net->spore_count, net->snapshot_powerups, &net->powerup_count,
+                                    (const ShroomWorldStatePacket*)enet_packet->data,
+                                    enet_packet->dataLength);
+}
+
 static void HandleMushroomSpeciesCatalog(ClientNetState* net, const ENetPacket* enet_packet) {
   const ShroomMushroomSpeciesCatalogPacket* packet =
       (const ShroomMushroomSpeciesCatalogPacket*)enet_packet->data;
@@ -610,6 +629,11 @@ void ClientNetUpdate(ClientNetState* net, ShroomVec2 input_direction, bool split
         case SHROOM_PACKET_POWERUP_STATE:
           if (ShroomPacketHeaderUsesExpectedChannel(header, event.channelID)) {
             HandlePowerupState(net, event.packet);
+          }
+          break;
+        case SHROOM_PACKET_WORLD_STATE:
+          if (ShroomPacketHeaderUsesExpectedChannel(header, event.channelID)) {
+            HandleWorldState(net, event.packet);
           }
           break;
         case SHROOM_PACKET_PONG:
@@ -769,6 +793,10 @@ void ClientNetTestHandleSporeState(ClientNetState* net, const ENetPacket* enet_p
   HandleSporeState(net, enet_packet);
 }
 
+void ClientNetTestHandleWorldState(ClientNetState* net, const ENetPacket* enet_packet) {
+  HandleWorldState(net, enet_packet);
+}
+
 void ClientNetTestHandleLobbyList(ClientNetState* net, const ENetPacket* enet_packet) {
   HandleLobbyList(net, enet_packet);
 }
@@ -877,6 +905,7 @@ void ClientNetSendLobbyLeave(ClientNetState* net) {
   net->lobby_id = 0;
   net->spectating = false;
   ResetIntermissionLifecycle(net);
+  ResetWorldReplication(net);
 }
 
 void ClientNetSendLobbyCreate(ClientNetState* net, const char* name, uint16_t max_players,

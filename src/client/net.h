@@ -10,6 +10,7 @@
 #include "shared/protocol.h"
 #include "shared/net_telemetry.h"
 #include "shared/vec2.h"
+#include "shared/world_replication.h"
 
 #include "chat_cache.h"
 #include "input_scheduler.h"
@@ -66,6 +67,7 @@ typedef struct ClientNetState {
   ShroomSnapshotPlayerState snapshot_players[SHROOM_MAX_SNAPSHOT_PLAYERS];
   ShroomSnapshotSporeState snapshot_spores[SHROOM_MAX_SPORES];
   ShroomSnapshotPowerupState snapshot_powerups[SHROOM_MAX_POWERUPS];
+  ShroomWorldReplicationClientState world_replication;
   ShroomMushroomSpeciesEntry mushroom_species[SHROOM_MAX_MUSHROOM_SPECIES];
   ShroomClientInputScheduler input_scheduler;
   float ping_send_accumulator;
@@ -137,6 +139,7 @@ void ClientNetTestClearStalePendingPing(ClientNetState* net, uint32_t now_ms);
 void ClientNetTestCheckConnectTimeout(ClientNetState* net, uint32_t now_ms);
 void ClientNetTestHandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet);
 void ClientNetTestHandleSporeState(ClientNetState* net, const ENetPacket* enet_packet);
+void ClientNetTestHandleWorldState(ClientNetState* net, const ENetPacket* enet_packet);
 void ClientNetTestHandleLobbyList(ClientNetState* net, const ENetPacket* enet_packet);
 void ClientNetTestHandleLobbyRoster(ClientNetState* net, const ENetPacket* enet_packet);
 void ClientNetTestHandleLobbyJoined(ClientNetState* net, const ENetPacket* enet_packet);

@@ -80,6 +80,7 @@ void test_packet_type_values(void) {
   TEST_ASSERT_EQUAL(26, SHROOM_PACKET_DIRECTORY_HEARTBEAT);
   TEST_ASSERT_EQUAL(27, SHROOM_PACKET_DIRECTORY_QUERY);
   TEST_ASSERT_EQUAL(28, SHROOM_PACKET_DIRECTORY_LIST);
+  TEST_ASSERT_EQUAL(29, SHROOM_PACKET_WORLD_STATE);
 }
 
 void test_directory_packets_are_versioned_bounded_control_messages(void) {
@@ -216,7 +217,7 @@ void test_lobby_config_constants(void) {
 
 void test_protocol_constants(void) {
   TEST_ASSERT_EQUAL(7777, SHROOM_SERVER_PORT);
-  TEST_ASSERT_EQUAL(10, SHROOM_PROTOCOL_VERSION);
+  TEST_ASSERT_EQUAL(12, SHROOM_PROTOCOL_VERSION);
   TEST_ASSERT_EQUAL(32, SHROOM_MAX_NAME_LENGTH);
   TEST_ASSERT_EQUAL(15, SHROOM_SNAPSHOT_RATE);
   TEST_ASSERT_EQUAL(256, SHROOM_MAX_SNAPSHOT_PLAYERS);
@@ -239,6 +240,8 @@ void test_packet_channel_mapping(void) {
                     ShroomPacketTypeToChannel(SHROOM_PACKET_SPORE_STATE));
   TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_SNAPSHOT,
                     ShroomPacketTypeToChannel(SHROOM_PACKET_POWERUP_STATE));
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_SNAPSHOT,
+                    ShroomPacketTypeToChannel(SHROOM_PACKET_WORLD_STATE));
   TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CHAT, ShroomPacketTypeToChannel(SHROOM_PACKET_CHAT));
   TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_VOICE,
                     ShroomPacketTypeToChannel(SHROOM_PACKET_VOICE_FRAME));
@@ -256,6 +259,7 @@ void test_packet_reliability_mapping(void) {
   TEST_ASSERT_FALSE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_SNAPSHOT));
   TEST_ASSERT_FALSE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_SPORE_STATE));
   TEST_ASSERT_FALSE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_POWERUP_STATE));
+  TEST_ASSERT_FALSE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_WORLD_STATE));
   TEST_ASSERT_FALSE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_VOICE_FRAME));
 }
 
@@ -295,6 +299,8 @@ void test_packet_minimum_size_mapping(void) {
                     ShroomPacketTypeMinimumSize(SHROOM_PACKET_POWERUP_STATE));
   TEST_ASSERT_EQUAL(offsetof(ShroomMushroomSpeciesCatalogPacket, species),
                     ShroomPacketTypeMinimumSize(SHROOM_PACKET_MUSHROOM_SPECIES_CATALOG));
+  TEST_ASSERT_EQUAL(offsetof(ShroomWorldStatePacket, records),
+                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_WORLD_STATE));
   TEST_ASSERT_EQUAL(sizeof(ShroomEnterMatchPacket),
                     ShroomPacketTypeMinimumSize(SHROOM_PACKET_ENTER_MATCH));
   TEST_ASSERT_EQUAL(offsetof(ShroomLobbyRosterPacket, players),
