@@ -38,5 +38,8 @@ bool ShroomIntermissionCastVote(ShroomIntermissionState* state, uint32_t player_
 bool ShroomIntermissionRemoveVoter(ShroomIntermissionState* state, uint32_t player_id);
 bool ShroomIntermissionAllEligibleVoted(const ShroomIntermissionState* state);
 ShroomRematchVote ShroomIntermissionResolve(ShroomIntermissionState* state);
+/* A lobby-wide Play Again result carries only the frozen prior-round participants. */
+bool ShroomIntermissionPlayerContinuesMatch(const ShroomIntermissionState* state,
+                                            uint32_t player_id);
 
 #endif

@@ -106,3 +106,19 @@ ShroomRematchVote ShroomIntermissionResolve(ShroomIntermissionState* state) {
   state->resolved = true;
   return (ShroomRematchVote)state->decision;
 }
+
+bool ShroomIntermissionPlayerContinuesMatch(const ShroomIntermissionState* state,
+                                            uint32_t player_id) {
+  uint16_t index;
+
+  if ((state == NULL) || !state->resolved || (player_id == 0u) ||
+      (state->decision != SHROOM_REMATCH_VOTE_PLAY_AGAIN)) {
+    return false;
+  }
+  for (index = 0u; index < state->voter_count; ++index) {
+    if (state->voters[index].eligible && (state->voters[index].player_id == player_id)) {
+      return true;
+    }
+  }
+  return false;
+}
