@@ -2147,6 +2147,102 @@ static void Test_FirstLobbyEntryDoesNotOpenDeathCutscene(ImGuiTestContext* ctx) 
   IM_CHECK(!ShroomTeImGui_WindowIsActive("Death Cutscene Actions"));
 }
 
+static void Test_LateIntermissionJoinerWaitsForExplicitMatchEntry(ImGuiTestContext* ctx) {
+  ClientNetState* net;
+  ShroomLobbyRosterPacket roster = {0};
+  ShroomIntermissionStatusPacket intermission = {0};
+  ENetPacket roster_packet = {
+      .data = (enet_uint8*)&roster,
+      .dataLength = offsetof(ShroomLobbyRosterPacket, players) +
+                    (2u * sizeof(ShroomLobbyRosterEntry)),
+  };
+  ENetPacket intermission_packet = {
+      .data = (enet_uint8*)&intermission,
+      .dataLength = sizeof(intermission),
+  };
+
+  SetupLobbyBrowser();
+  net = &g_imgui_test_app.game.net;
+  IM_CHECK(ClientNetInit(net, "127.0.0.1", 37779u,
+                         g_imgui_test_app.game.settings.player_name));
+  net->status = CLIENT_NET_CONNECTED;
+  net->welcome_received = true;
+  net->player_id = 7u;
+  net->entity_id = 42u;
+  net->lobby_id = 1u;
+  net->world_width = SHROOM_WORLD_WIDTH;
+  net->world_height = SHROOM_WORLD_HEIGHT;
+
+  intermission.round_id = 5u;
+  intermission.resolved = 1u;
+  intermission.decision = SHROOM_REMATCH_VOTE_PLAY_AGAIN;
+  intermission.can_vote = 0u;
+  ClientNetTestHandleIntermissionStatus(net, &intermission_packet);
+
+  roster.lobby_id = net->lobby_id;
+  roster.player_count = 2u;
+  roster.match_started = 1u;
+  roster.players[0] =
+      (ShroomLobbyRosterEntry){.player_id = 3u, .is_ready = 0u, .entered_match = 1u};
+  roster.players[1] =
+      (ShroomLobbyRosterEntry){.player_id = net->player_id, .is_ready = 0u, .entered_match = 0u};
+  ClientNetTestHandleLobbyRoster(net, &roster_packet);
+
+  net->match_phase = SHROOM_MATCH_PHASE_RUNNING;
+  net->last_snapshot_tick = 1u;
+  net->snapshot_player_count = 2u;
+  net->snapshot_players[0] = (ShroomSnapshotPlayerState){
+      .player_id = net->player_id,
+      .entity_id = net->entity_id,
+      .position_x = 600.0f,
+      .position_y = 700.0f,
+      .mass = SHROOM_DEFAULT_PLAYER_MASS,
+      .radius = ShroomMassToRadius(SHROOM_DEFAULT_PLAYER_MASS),
+      .alive = 1u,
+  };
+  net->snapshot_players[1] = (ShroomSnapshotPlayerState){
+      .player_id = 3u,
+      .entity_id = 30u,
+      .position_x = 640.0f,
+      .position_y = 700.0f,
+      .mass = SHROOM_DEFAULT_PLAYER_MASS * 4.0f,
+      .radius = ShroomMassToRadius(SHROOM_DEFAULT_PLAYER_MASS * 4.0f),
+      .alive = 1u,
+  };
+
+  ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_LOBBY_ROSTER);
+  ShroomTeCtx_Yield(ctx, 5);
+  IM_CHECK(ShroomTeCtx_SetRefWindow(ctx, "//Lobby Roster"));
+
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_LOBBY_ROSTER);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Lobby Roster"));
+  IM_CHECK(net->intermission_received);
+  IM_CHECK_EQ(net->intermission.can_vote, 0u);
+  IM_CHECK_EQ(net->lobby_roster[1].entered_match, 0u);
+  IM_CHECK_EQ(net->match_entry_sent, false);
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Ready to enter"));
+  IM_CHECK(!ShroomTeCtx_ItemExists(ctx, "Enter Match"));
+  IM_CHECK(!ShroomTeImGui_WindowIsActive("Death Cutscene Actions"));
+
+  roster.players[1].is_ready = 1u;
+  ClientNetTestHandleLobbyRoster(net, &roster_packet);
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_LOBBY_ROSTER);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Lobby Roster"));
+  IM_CHECK_EQ(net->lobby_roster[1].is_ready, 1u);
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Enter Match"));
+  ShroomTeCtx_ItemClick(ctx, "Enter Match");
+  ShroomTeCtx_Yield(ctx, 3);
+
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_GAME);
+  IM_CHECK(net->match_entry_sent);
+  IM_CHECK_EQ(g_imgui_test_app.game.death_cutscene_duration, 0.0f);
+  IM_CHECK(!ShroomTeImGui_WindowIsActive("Death Cutscene Actions"));
+}
+
 /* menu: Clicking Play Online calls ClientNetInit (real ENet host create +
  * connect) and transitions to the lobby browser. Regression for #334's
  * reported segfault — the click handler touches ENet + audio + screen
@@ -2388,6 +2484,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_LobbyAutoJoinTransitionsToRoster);
   ShroomTeEngine_RegisterTest(engine, "lobby", "first_entry_has_no_death_cutscene",
                               Test_FirstLobbyEntryDoesNotOpenDeathCutscene);
+  ShroomTeEngine_RegisterTest(engine, "lobby", "late_intermission_joiner_explicit_entry",
+                              Test_LateIntermissionJoinerWaitsForExplicitMatchEntry);
   ShroomTeEngine_RegisterTest(engine, "menu", "play_online_click_transitions_to_lobby",
                               Test_PlayOnlineClickTransitionsToLobby);
   ShroomTeEngine_RegisterTest(engine, "menu",

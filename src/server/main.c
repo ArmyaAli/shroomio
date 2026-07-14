@@ -971,7 +971,8 @@ static void ResolveIntermission(ENetHost* host, ShroomLobby* lobby, sqlite3* db)
       continue;
     }
     session->is_ready = false;
-    if (decision == SHROOM_REMATCH_VOTE_PLAY_AGAIN) {
+    if (!session->spectating &&
+        ShroomIntermissionPlayerContinuesMatch(&lobby->intermission, session->player_id)) {
       session->entered_match = true;
     } else {
       session->entered_match = false;
