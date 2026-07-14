@@ -11,6 +11,10 @@
 #include <string.h>
 #include <time.h>
 
+#if defined(_WIN32)
+#include <windows.h>
+#endif
+
 #include "shared/config.h"
 
 #define SHROOM_VOICE_CAPTURE_QUEUE_CAPACITY 32u
@@ -119,11 +123,15 @@ typedef struct ShroomVoiceRuntime {
 static ShroomVoiceRuntime g_voice;
 
 static uint64_t DefaultNowMs(void) {
+#if defined(_WIN32)
+  return (uint64_t)GetTickCount64();
+#else
   struct timespec now;
   if (timespec_get(&now, TIME_UTC) != TIME_UTC) {
     return 0u;
   }
   return ((uint64_t)now.tv_sec * 1000u) + (uint64_t)(now.tv_nsec / 1000000L);
+#endif
 }
 
 static uint64_t VoiceNowMs(void) {
