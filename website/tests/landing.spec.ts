@@ -7,7 +7,7 @@ test("presents the game and keeps the page inside the viewport", async ({ page }
   await expect(page.getByText("Grow. Split. Dominate.")).toBeVisible();
   await expect(page.getByRole("link", { name: "Download for free" })).toHaveAttribute(
     "href",
-    "https://github.com/ArmyaAli/shroomio/releases",
+    "/download/",
   );
   const gameplay = page.locator("#gameplay");
   await expect(gameplay).toBeVisible();
@@ -22,6 +22,14 @@ test("presents the game and keeps the page inside the viewport", async ({ page }
   expect(gameplayTop).toBeLessThan(viewportHeight);
 
   await page.screenshot({ path: testInfo.outputPath("landing.png"), fullPage: true });
+});
+
+test("download navigation opens the platform page", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("link", { name: "Download for free" }).click();
+
+  await expect(page).toHaveURL(/\/download\/$/);
+  await expect(page.getByRole("heading", { level: 1, name: "Download Shroomio" })).toBeVisible();
 });
 
 test("navigation reaches the gameplay section", async ({ page, isMobile }) => {

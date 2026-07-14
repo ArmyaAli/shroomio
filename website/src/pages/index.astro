@@ -9,7 +9,7 @@ import SiteLayout from "../layouts/SiteLayout.astro";
 const title = "Shroomio | Grow. Split. Dominate.";
 const description =
   "A fast multiplayer fungal arena where every spore makes you stronger and every rival is a meal.";
-const releaseUrl = "https://github.com/ArmyaAli/shroomio/releases";
+const downloadUrl = `${import.meta.env.BASE_URL}download/`;
 ---
 
 <SiteLayout {title} {description}>
@@ -25,7 +25,7 @@ const releaseUrl = "https://github.com/ArmyaAli/shroomio/releases";
       <a href="https://github.com/ArmyaAli/shroomio" rel="noreferrer">GitHub</a>
     </nav>
 
-    <a class="header-cta" href={releaseUrl}>Download</a>
+    <a class="header-cta" href={downloadUrl}>Download</a>
 
     <details class="mobile-nav">
       <summary aria-label="Open navigation" title="Menu">
@@ -35,7 +35,7 @@ const releaseUrl = "https://github.com/ArmyaAli/shroomio/releases";
         <a href="#gameplay">Gameplay</a>
         <a href="#features">Features</a>
         <a href="https://github.com/ArmyaAli/shroomio" rel="noreferrer">GitHub</a>
-        <a href={releaseUrl}>Download</a>
+        <a href={downloadUrl}>Download</a>
       </nav>
     </details>
   </header>
@@ -63,7 +63,7 @@ const releaseUrl = "https://github.com/ArmyaAli/shroomio/releases";
           power and one sharp move changes everything.
         </p>
         <div class="hero-actions">
-          <a class="button primary" href={releaseUrl}>Download for free <span aria-hidden="true">↓</span></a>
+          <a class="button primary" href={downloadUrl}>Download for free <span aria-hidden="true">↓</span></a>
           <a class="button secondary" href="#gameplay">Explore gameplay <span aria-hidden="true">→</span></a>
         </div>
         <p class="platforms">Windows and Linux · Open source · Online and offline play</p>
@@ -149,7 +149,7 @@ const releaseUrl = "https://github.com/ArmyaAli/shroomio/releases";
         <p class="eyebrow">Your colony is waiting</p>
         <h2 id="download-title">Take your place in the food chain.</h2>
       </div>
-      <a class="button primary" href={releaseUrl}>Get Shroomio <span aria-hidden="true">↓</span></a>
+      <a class="button primary" href={downloadUrl}>Get Shroomio <span aria-hidden="true">↓</span></a>
     </section>
   </main>
 

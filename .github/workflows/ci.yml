@@ -84,6 +84,9 @@ jobs:
       - name: Check Astro project
         run: npm run check
 
+      - name: Run website unit tests
+        run: npm run test:unit
+
       - name: Run browser tests
         run: npm run test:e2e
 

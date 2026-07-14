@@ -1,0 +1,590 @@
+---
+import { Image } from "astro:assets";
+import heroArena from "../../../assets/marketing/landing_hero_arena.png";
+import SiteLayout from "../layouts/SiteLayout.astro";
+import { FALLBACK_GITHUB_RELEASE, ResolveDownloadRelease } from "../lib/releases";
+
+const title = "Download Shroomio | Windows, Linux, and macOS";
+const description = "Download the latest Shroomio client and dedicated server for your platform.";
+const homeUrl = import.meta.env.BASE_URL;
+const release = ResolveDownloadRelease(FALLBACK_GITHUB_RELEASE);
+if (!release) {
+  throw new Error("The checked-in fallback release is incomplete.");
+}
+
+const platforms = [
+  {
+    id: "windows" as const,
+    name: "Windows",
+    format: "x64 · ZIP archive",
+    accent: "cyan",
+    steps: ["Extract the ZIP archive.", "Open windows/client/shroomio.exe."],
+  },
+  {
+    id: "linux" as const,
+    name: "Linux",
+    format: "x64 · TAR.GZ archive",
+    accent: "green",
+    steps: ["Extract the archive.", "Run linux/client/shroomio from a terminal."],
+  },
+  {
+    id: "macos" as const,
+    name: "macOS",
+    format: "Intel x64 · TAR.GZ archive",
+    accent: "coral",
+    steps: ["Extract the archive.", "Run macos/client/shroomio from a terminal."],
+  },
+];
+---
+
+<SiteLayout {title} {description}>
+  <header class="download-header">
+    <a class="brand" href={homeUrl} aria-label="Shroomio home">
+      <span class="brand-mark" aria-hidden="true"><i></i></span>
+      <span>Shroomio</span>
+    </a>
+    <nav aria-label="Download navigation">
+      <a href={homeUrl}>Game</a>
+      <a href="https://github.com/ArmyaAli/shroomio" rel="noreferrer">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="download-hero" aria-labelledby="download-title">
+      <Image
+        class="hero-art"
+        src={heroArena}
+        alt="Mushroom colonies gathering spores in the Shroomio arena"
+        widths={[768, 1200, 1672]}
+        sizes="100vw"
+        format="webp"
+        quality={80}
+        loading="eager"
+        fetchpriority="high"
+      />
+      <div class="hero-shade"></div>
+      <div class="hero-content">
+        <p class="eyebrow">Latest stable release</p>
+        <h1 id="download-title">Download Shroomio</h1>
+        <p class="release-line">
+          Version <strong data-release-version>{release.version}</strong>
+          <span aria-hidden="true">·</span>
+          <span data-release-date>{release.publishedLabel}</span>
+        </p>
+        <p>Each archive includes the game client and dedicated server for its platform.</p>
+      </div>
+    </section>
+
+    <section class="downloads" aria-labelledby="platform-title">
+      <div class="section-heading">
+        <p class="eyebrow dark">Choose your platform</p>
+        <h2 id="platform-title">Ready for the arena.</h2>
+        <p>Download, extract, and launch. No installer or account is required for offline practice.</p>
+      </div>
+
+      <div class="platform-grid">
+        {platforms.map((platform) => (
+          <article class:list={["platform-card", platform.accent]} data-platform-card={platform.id}>
+            <div class="platform-heading">
+              <span class="platform-index" aria-hidden="true">0{platforms.indexOf(platform) + 1}</span>
+              <div>
+                <h3>{platform.name}</h3>
+                <p>{platform.format} · <span data-platform-size={platform.id}>{release.platforms[platform.id].sizeLabel}</span></p>
+              </div>
+            </div>
+            <ol>
+              {platform.steps.map((step) => <li>{step}</li>)}
+            </ol>
+            <a
+              class="download-button"
+              href={release.platforms[platform.id].url}
+              data-platform-download={platform.id}
+            >
+              Download {platform.name}<span aria-hidden="true">↓</span>
+            </a>
+          </article>
+        ))}
+      </div>
+
+      <div class="verification" aria-labelledby="verify-title">
+        <div>
+          <p class="eyebrow dark">Verify your download</p>
+          <h2 id="verify-title">Check the archive before running it.</h2>
+        </div>
+        <div class="verification-copy">
+          <p>Compare the archive against the published SHA-256 list:</p>
+          <code>sha256sum -c SHA256SUMS-v<span data-release-version>{release.version}</span>.txt</code>
+          <div class="verification-links">
+            <a href={release.checksumUrl} data-checksum-link>Download checksums</a>
+            <a href={release.releaseUrl} data-release-link>Release notes</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <a class="brand" href={homeUrl}>Shroomio</a>
+    <p>Built in C with raylib and ENet.</p>
+    <a href="https://github.com/ArmyaAli/shroomio/issues" rel="noreferrer">Report an issue</a>
+  </footer>
+
+  <script>
+    import { ParseGitHubRelease, ResolveDownloadRelease } from "../lib/releases";
+
+    const latestReleaseEndpoint = "https://api.github.com/repos/ArmyaAli/shroomio/releases/latest";
+
+    async function RefreshLatestRelease() {
+      try {
+        const response = await fetch(latestReleaseEndpoint, {
+          headers: { Accept: "application/vnd.github+json" },
+        });
+        if (!response.ok) {
+          return;
+        }
+        const parsed = ParseGitHubRelease(await response.json());
+        const latest = parsed ? ResolveDownloadRelease(parsed) : null;
+        if (!latest) {
+          return;
+        }
+        document.querySelectorAll<HTMLElement>("[data-release-version]").forEach((element) => {
+          element.textContent = latest.version;
+        });
+        document.querySelectorAll<HTMLElement>("[data-release-date]").forEach((element) => {
+          element.textContent = latest.publishedLabel;
+        });
+        for (const [platform, asset] of Object.entries(latest.platforms)) {
+          const link = document.querySelector<HTMLAnchorElement>(`[data-platform-download="${platform}"]`);
+          const size = document.querySelector<HTMLElement>(`[data-platform-size="${platform}"]`);
+          if (link) link.href = asset.url;
+          if (size) size.textContent = asset.sizeLabel;
+        }
+        const checksum = document.querySelector<HTMLAnchorElement>("[data-checksum-link]");
+        const releaseLink = document.querySelector<HTMLAnchorElement>("[data-release-link]");
+        if (checksum) checksum.href = latest.checksumUrl;
+        if (releaseLink) releaseLink.href = latest.releaseUrl;
+      } catch {
+        // The checked-in stable release remains usable when GitHub is unavailable.
+      }
+    }
+
+    void RefreshLatestRelease();
+  </script>
+</SiteLayout>
+
+<style>
+  .download-header {
+    position: absolute;
+    z-index: 10;
+    top: 0;
+    left: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: min(100% - 48px, 1240px);
+    min-height: 76px;
+    transform: translateX(-50%);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+  }
+
+  .brand,
+  .download-header nav {
+    display: flex;
+    align-items: center;
+  }
+
+  .brand {
+    gap: 10px;
+    color: #fffaf0;
+    font-size: 1.1rem;
+    font-weight: 850;
+    text-decoration: none;
+  }
+
+  .brand-mark {
+    position: relative;
+    width: 29px;
+    height: 25px;
+  }
+
+  .brand-mark::before {
+    position: absolute;
+    top: 0;
+    left: 1px;
+    width: 27px;
+    height: 15px;
+    border: 2px solid #12121a;
+    border-radius: 18px 18px 9px 9px;
+    background: #f55454;
+    content: "";
+  }
+
+  .brand-mark::after {
+    position: absolute;
+    bottom: 0;
+    left: 10px;
+    width: 10px;
+    height: 13px;
+    border: 2px solid #12121a;
+    border-top: 0;
+    border-radius: 0 0 5px 5px;
+    background: #e0b880;
+    content: "";
+  }
+
+  .brand-mark i,
+  .brand-mark i::before {
+    position: absolute;
+    z-index: 1;
+    top: 4px;
+    left: 7px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #fffaf0;
+    content: "";
+  }
+
+  .brand-mark i::before {
+    top: 3px;
+    left: 10px;
+  }
+
+  .download-header nav {
+    gap: 28px;
+  }
+
+  .download-header nav a,
+  footer a {
+    color: rgba(255, 250, 240, 0.8);
+    font-size: 0.88rem;
+    font-weight: 700;
+    text-decoration: none;
+  }
+
+  .download-header nav a:hover,
+  footer a:hover {
+    color: #ffe470;
+  }
+
+  .download-hero {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    min-height: min(54svh, 560px);
+    overflow: hidden;
+    background: #12121a;
+  }
+
+  .hero-art,
+  .hero-shade {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  .hero-art {
+    object-fit: cover;
+    object-position: center 46%;
+  }
+
+  .hero-shade {
+    background:
+      linear-gradient(90deg, rgba(10, 10, 15, 0.95), rgba(10, 10, 15, 0.62) 45%, rgba(10, 10, 15, 0.14)),
+      linear-gradient(0deg, #12121a 0%, transparent 44%);
+  }
+
+  .hero-content {
+    position: relative;
+    z-index: 1;
+    width: min(100% - 48px, 1240px);
+    margin: 0 auto;
+    padding: 132px 0 66px;
+  }
+
+  .eyebrow {
+    margin: 0 0 16px;
+    color: #ffe470;
+    font-size: 0.75rem;
+    font-weight: 850;
+    letter-spacing: 0;
+    text-transform: uppercase;
+  }
+
+  .eyebrow.dark {
+    color: #a13f45;
+  }
+
+  h1,
+  h2,
+  h3,
+  p {
+    letter-spacing: 0;
+  }
+
+  h1 {
+    max-width: 820px;
+    margin: 0;
+    font-size: 5rem;
+    line-height: 0.95;
+  }
+
+  .release-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 22px 0 12px;
+    color: #70e080;
+    font-size: 1.05rem;
+  }
+
+  .hero-content > p:last-child {
+    max-width: 600px;
+    margin: 0;
+    color: rgba(255, 250, 240, 0.72);
+    line-height: 1.6;
+  }
+
+  .downloads {
+    padding: 82px max(24px, calc((100% - 1240px) / 2));
+    background: #f5f0e6;
+    color: #211c1a;
+  }
+
+  .section-heading {
+    display: grid;
+    grid-template-columns: 1fr 0.8fr;
+    gap: 18px 72px;
+    align-items: end;
+  }
+
+  .section-heading .eyebrow {
+    grid-column: 1 / -1;
+    margin: 0;
+  }
+
+  h2 {
+    margin: 0;
+    font-size: 3.6rem;
+    line-height: 1.05;
+  }
+
+  .section-heading > p:last-child {
+    margin: 0;
+    color: #625750;
+    line-height: 1.7;
+  }
+
+  .platform-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+    margin-top: 52px;
+  }
+
+  .platform-card {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    min-width: 0;
+    padding: 26px;
+    border: 1px solid #c7beb2;
+    border-top: 6px solid #76d2ff;
+    border-radius: 6px;
+    background: #fffdf7;
+  }
+
+  .platform-card.green {
+    border-top-color: #49a66d;
+  }
+
+  .platform-card.coral {
+    border-top-color: #e86d64;
+  }
+
+  .platform-heading {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+  }
+
+  .platform-heading > div,
+  .verification > * {
+    min-width: 0;
+  }
+
+  .platform-index {
+    color: #8a7f75;
+    font-size: 0.72rem;
+    font-weight: 900;
+  }
+
+  h3 {
+    margin: 0;
+    font-size: 1.55rem;
+  }
+
+  .platform-heading p {
+    margin: 6px 0 0;
+    color: #6a5f57;
+    font-size: 0.78rem;
+  }
+
+  .platform-card ol {
+    margin: 28px 0 30px;
+    padding-left: 20px;
+    color: #574e48;
+    line-height: 1.7;
+  }
+
+  .download-button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 50px;
+    padding: 0 16px;
+    border-radius: 6px;
+    background: #19191f;
+    color: #fffaf0;
+    font-weight: 800;
+    text-decoration: none;
+  }
+
+  .download-button:hover {
+    background: #303039;
+  }
+
+  .verification {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 64px;
+    margin-top: 72px;
+    padding-top: 56px;
+    border-top: 1px solid #c7beb2;
+  }
+
+  .verification h2 {
+    max-width: 560px;
+    font-size: 2.6rem;
+  }
+
+  .verification-copy p {
+    margin: 0 0 14px;
+    color: #625750;
+  }
+
+  .verification code {
+    display: block;
+    overflow-x: auto;
+    padding: 15px 17px;
+    border: 1px solid #302d2b;
+    border-radius: 5px;
+    background: #19191f;
+    color: #70e080;
+    white-space: nowrap;
+  }
+
+  .verification-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 22px;
+    margin-top: 18px;
+  }
+
+  .verification-links a {
+    color: #7d3037;
+    font-weight: 800;
+  }
+
+  footer {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 24px;
+    min-height: 110px;
+    padding: 24px max(24px, calc((100% - 1240px) / 2));
+    background: #12121a;
+    color: rgba(255, 250, 240, 0.68);
+  }
+
+  footer p {
+    margin: 0;
+    font-size: 0.82rem;
+  }
+
+  footer > a:last-child {
+    justify-self: end;
+  }
+
+  @media (max-width: 860px) {
+    .platform-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .section-heading,
+    .verification {
+      grid-template-columns: 1fr;
+      gap: 22px;
+    }
+  }
+
+  @media (max-width: 620px) {
+    .download-header {
+      width: calc(100% - 32px);
+      min-height: 66px;
+    }
+
+    .download-header nav {
+      gap: 16px;
+    }
+
+    .download-header nav a:first-child {
+      display: none;
+    }
+
+    .download-hero {
+      min-height: 500px;
+    }
+
+    .hero-art {
+      object-position: 62% center;
+    }
+
+    .hero-content {
+      width: calc(100% - 32px);
+      padding-bottom: 48px;
+    }
+
+    h1 {
+      font-size: 3rem;
+    }
+
+    h2 {
+      font-size: 2.55rem;
+    }
+
+    .downloads {
+      padding-top: 62px;
+      padding-bottom: 62px;
+    }
+
+    .platform-card {
+      padding: 22px;
+    }
+
+    .verification h2 {
+      font-size: 2.2rem;
+    }
+
+    footer {
+      grid-template-columns: 1fr;
+      gap: 12px;
+      padding-top: 34px;
+      padding-bottom: 34px;
+    }
+
+    footer > a:last-child {
+      justify-self: start;
+    }
+  }
+</style>

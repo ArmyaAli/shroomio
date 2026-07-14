@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:4321";
+const previewPort = new URL(baseURL).port || "4321";
 
 export default defineConfig({
   testDir: "./tests",
@@ -12,7 +13,7 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: "npm run preview -- --host 127.0.0.1",
+    command: `npm run preview -- --host 127.0.0.1 --port ${previewPort}`,
     url: baseURL,
     reuseExistingServer: !process.env.CI,
   },
