@@ -1,19 +1,677 @@
 ---
-const pageTitle = "Shroomio";
+import { Image } from "astro:assets";
+import heroArena from "../assets/hero-arena.png";
+import SiteLayout from "../layouts/SiteLayout.astro";
+
+const title = "Shroomio | Grow. Split. Dominate.";
+const description =
+  "A fast multiplayer fungal arena where every spore makes you stronger and every rival is a meal.";
+const releaseUrl = "https://github.com/ArmyaAli/shroomio/releases";
 ---
 
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width" />
-    <meta name="description" content="Shroomio project website" />
-    <title>{pageTitle}</title>
-  </head>
-  <body>
-    <main>
-      <h1>{pageTitle}</h1>
-      <p>The project website is under construction.</p>
-    </main>
-  </body>
-</html>
+<SiteLayout {title} {description}>
+  <header class="site-header">
+    <a class="brand" href="#top" aria-label="Shroomio home">
+      <span class="brand-mark" aria-hidden="true"><i></i></span>
+      <span>Shroomio</span>
+    </a>
+
+    <nav class="desktop-nav" aria-label="Primary navigation">
+      <a href="#gameplay">Gameplay</a>
+      <a href="#features">Features</a>
+      <a href="https://github.com/ArmyaAli/shroomio" rel="noreferrer">GitHub</a>
+    </nav>
+
+    <a class="header-cta" href={releaseUrl}>Download</a>
+
+    <details class="mobile-nav">
+      <summary aria-label="Open navigation" title="Menu">
+        <span></span><span></span><span></span>
+      </summary>
+      <nav aria-label="Mobile navigation">
+        <a href="#gameplay">Gameplay</a>
+        <a href="#features">Features</a>
+        <a href="https://github.com/ArmyaAli/shroomio" rel="noreferrer">GitHub</a>
+        <a href={releaseUrl}>Download</a>
+      </nav>
+    </details>
+  </header>
+
+  <main id="top">
+    <section class="hero" aria-labelledby="hero-title">
+      <Image
+        class="hero-art"
+        src={heroArena}
+        alt="Colorful mushroom colonies competing for glowing spores in a forest arena"
+        widths={[768, 1200, 1672]}
+        sizes="100vw"
+        format="webp"
+        quality={82}
+        loading="eager"
+        fetchpriority="high"
+      />
+      <div class="hero-shade"></div>
+      <div class="hero-content">
+        <p class="eyebrow">Free multiplayer arena game</p>
+        <h1 id="hero-title">Shroomio</h1>
+        <p class="tagline">Grow. Split. Dominate.</p>
+        <p class="hero-copy">
+          Gather spores, outmaneuver rival colonies, and take over a living arena where size is
+          power and one sharp move changes everything.
+        </p>
+        <div class="hero-actions">
+          <a class="button primary" href={releaseUrl}>Download for free <span aria-hidden="true">↓</span></a>
+          <a class="button secondary" href="#gameplay">Explore gameplay <span aria-hidden="true">→</span></a>
+        </div>
+        <p class="platforms">Windows and Linux · Open source · Online and offline play</p>
+      </div>
+    </section>
+
+    <section class="gameplay" id="gameplay" aria-labelledby="gameplay-title">
+      <div class="section-intro">
+        <p class="eyebrow dark">One arena. Endless reversals.</p>
+        <h2 id="gameplay-title">Small spore. Big ambition.</h2>
+        <p>
+          Start nimble, feed fast, and decide when to chase or escape. Every match rewards
+          awareness, timing, and the nerve to split your colony at exactly the right moment.
+        </p>
+      </div>
+
+      <div class="feature-grid" id="features">
+        <article>
+          <span class="feature-number">01</span>
+          <h3>Gather and grow</h3>
+          <p>Collect glowing spores to gain mass, climb the leaderboard, and unlock new targets.</p>
+        </article>
+        <article>
+          <span class="feature-number">02</span>
+          <h3>Split the difference</h3>
+          <p>Launch part of your colony for speed and reach, then regroup before rivals close in.</p>
+        </article>
+        <article>
+          <span class="feature-number">03</span>
+          <h3>Own the arena</h3>
+          <p>Contest high-value zones online, or sharpen your routes against a full field of bots.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="download-band" id="download" aria-labelledby="download-title">
+      <div>
+        <p class="eyebrow">Your colony is waiting</p>
+        <h2 id="download-title">Take your place in the food chain.</h2>
+      </div>
+      <a class="button primary" href={releaseUrl}>Get Shroomio <span aria-hidden="true">↓</span></a>
+    </section>
+  </main>
+
+  <footer>
+    <a class="brand footer-brand" href="#top"><span class="brand-mark" aria-hidden="true"><i></i></span>Shroomio</a>
+    <p>Built in C with raylib and ENet.</p>
+    <nav aria-label="Footer navigation">
+      <a href="https://github.com/ArmyaAli/shroomio" rel="noreferrer">Source</a>
+      <a href="https://github.com/ArmyaAli/shroomio/issues" rel="noreferrer">Issues</a>
+      <a href="https://github.com/ArmyaAli/shroomio/blob/main/LICENSE" rel="noreferrer">License</a>
+    </nav>
+  </footer>
+</SiteLayout>
+
+<style>
+  .site-header {
+    position: absolute;
+    z-index: 10;
+    top: 0;
+    left: 50%;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    width: min(100% - 48px, 1240px);
+    min-height: 80px;
+    transform: translateX(-50%);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+  }
+
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 11px;
+    width: max-content;
+    color: #fffaf0;
+    font-weight: 850;
+    font-size: 1.15rem;
+    text-decoration: none;
+  }
+
+  .brand-mark {
+    position: relative;
+    display: inline-block;
+    width: 29px;
+    height: 25px;
+  }
+
+  .brand-mark::before {
+    position: absolute;
+    top: 0;
+    left: 1px;
+    width: 27px;
+    height: 15px;
+    border: 2px solid #12121a;
+    border-radius: 18px 18px 9px 9px;
+    background: #f55454;
+    box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.35);
+    content: "";
+  }
+
+  .brand-mark::after {
+    position: absolute;
+    bottom: 0;
+    left: 10px;
+    width: 10px;
+    height: 13px;
+    border: 2px solid #12121a;
+    border-top: 0;
+    border-radius: 0 0 5px 5px;
+    background: #e0b880;
+    content: "";
+  }
+
+  .brand-mark i,
+  .brand-mark i::before {
+    position: absolute;
+    z-index: 1;
+    top: 4px;
+    left: 7px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #fffaf0;
+    content: "";
+  }
+
+  .brand-mark i::before {
+    top: 3px;
+    left: 10px;
+  }
+
+  .desktop-nav,
+  footer nav {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+  }
+
+  .desktop-nav a,
+  footer nav a {
+    color: rgba(255, 250, 240, 0.8);
+    font-size: 0.9rem;
+    font-weight: 650;
+    text-decoration: none;
+    transition: color 160ms ease;
+  }
+
+  .desktop-nav a:hover,
+  footer nav a:hover {
+    color: #ffe470;
+  }
+
+  .header-cta {
+    justify-self: end;
+    padding: 10px 18px;
+    border: 1px solid rgba(255, 255, 255, 0.38);
+    border-radius: 8px;
+    font-size: 0.86rem;
+    font-weight: 750;
+    text-decoration: none;
+    transition:
+      border-color 160ms ease,
+      background 160ms ease;
+  }
+
+  .header-cta:hover {
+    border-color: #ffe470;
+    background: rgba(255, 228, 112, 0.12);
+  }
+
+  .mobile-nav {
+    display: none;
+  }
+
+  .hero {
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-height: min(88svh, 820px);
+    overflow: hidden;
+    background: #12121a;
+  }
+
+  .hero-art,
+  .hero-shade {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  .hero-art {
+    object-fit: cover;
+    object-position: center;
+  }
+
+  .hero-shade {
+    background:
+      linear-gradient(90deg, rgba(10, 10, 15, 0.94) 0%, rgba(10, 10, 15, 0.69) 35%, rgba(10, 10, 15, 0.08) 72%),
+      linear-gradient(0deg, rgba(18, 18, 26, 0.72), transparent 30%);
+  }
+
+  .hero-content {
+    position: relative;
+    z-index: 1;
+    width: min(100% - 48px, 1240px);
+    margin: 86px auto 0;
+  }
+
+  .eyebrow {
+    margin: 0 0 18px;
+    color: #ffe470;
+    font-size: 0.76rem;
+    font-weight: 850;
+    letter-spacing: 0;
+    text-transform: uppercase;
+  }
+
+  h1,
+  h2,
+  h3,
+  p {
+    letter-spacing: 0;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: 8rem;
+    line-height: 0.82;
+    text-shadow: 0 7px 24px rgba(0, 0, 0, 0.35);
+  }
+
+  .tagline {
+    margin: 22px 0 16px;
+    color: #70e080;
+    font-size: 2rem;
+    font-weight: 850;
+  }
+
+  .hero-copy {
+    max-width: 570px;
+    margin: 0;
+    color: rgba(255, 250, 240, 0.82);
+    font-size: 1.1rem;
+    line-height: 1.65;
+  }
+
+  .hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 30px;
+  }
+
+  .button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    min-height: 52px;
+    padding: 0 23px;
+    border-radius: 8px;
+    font-weight: 800;
+    text-decoration: none;
+    transition:
+      transform 160ms ease,
+      box-shadow 160ms ease,
+      background 160ms ease;
+  }
+
+  .button:hover {
+    transform: translateY(-2px);
+  }
+
+  .button:active {
+    transform: translateY(2px);
+  }
+
+  .button.primary {
+    background: #ffe470;
+    color: #18121a;
+    box-shadow: 0 8px 24px rgba(255, 228, 112, 0.2);
+  }
+
+  .button.primary:hover {
+    background: #fff09a;
+    box-shadow: 0 12px 30px rgba(255, 228, 112, 0.28);
+  }
+
+  .button.secondary {
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    background: rgba(18, 18, 26, 0.54);
+    color: #fffaf0;
+    backdrop-filter: blur(8px);
+  }
+
+  .button.secondary:hover {
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  .platforms {
+    margin: 21px 0 0;
+    color: rgba(255, 250, 240, 0.58);
+    font-size: 0.78rem;
+  }
+
+  .gameplay {
+    padding: 92px max(24px, calc((100% - 1240px) / 2));
+    background: #f5f0e6;
+    color: #211c1a;
+  }
+
+  .section-intro {
+    display: grid;
+    grid-template-columns: 0.8fr 1fr;
+    gap: 30px 80px;
+    align-items: end;
+  }
+
+  .section-intro .eyebrow {
+    grid-column: 1 / -1;
+    margin: 0;
+  }
+
+  .eyebrow.dark {
+    color: #9a3c3c;
+  }
+
+  h2 {
+    max-width: 720px;
+    margin: 0;
+    font-size: 4rem;
+    line-height: 1.04;
+  }
+
+  .section-intro > p:last-child {
+    max-width: 580px;
+    margin: 0;
+    color: #5e544e;
+    font-size: 1.05rem;
+    line-height: 1.7;
+  }
+
+  .feature-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    margin-top: 74px;
+    border-top: 1px solid #c8beb0;
+    border-bottom: 1px solid #c8beb0;
+  }
+
+  .feature-grid article {
+    min-width: 0;
+    padding: 34px 34px 40px 0;
+  }
+
+  .feature-grid article + article {
+    padding-left: 34px;
+    border-left: 1px solid #c8beb0;
+  }
+
+  .feature-number {
+    color: #b64747;
+    font-size: 0.78rem;
+    font-weight: 900;
+  }
+
+  h3 {
+    margin: 36px 0 12px;
+    font-size: 1.5rem;
+  }
+
+  .feature-grid p {
+    margin: 0;
+    color: #625750;
+    line-height: 1.65;
+  }
+
+  .download-band {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 48px;
+    padding: 72px max(24px, calc((100% - 1240px) / 2));
+    background: #28593e;
+    color: #fffaf0;
+  }
+
+  .download-band h2 {
+    max-width: 780px;
+    font-size: 3.5rem;
+  }
+
+  .download-band .eyebrow {
+    color: #ffe470;
+  }
+
+  .download-band .button {
+    flex: 0 0 auto;
+  }
+
+  footer {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 24px;
+    min-height: 112px;
+    padding: 24px max(24px, calc((100% - 1240px) / 2));
+    background: #12121a;
+    color: rgba(255, 250, 240, 0.68);
+  }
+
+  footer p {
+    margin: 0;
+    font-size: 0.82rem;
+  }
+
+  footer nav {
+    justify-self: end;
+    gap: 22px;
+  }
+
+  @media (max-width: 780px) {
+    .site-header {
+      grid-template-columns: 1fr auto;
+      width: calc(100% - 32px);
+      min-height: 68px;
+    }
+
+    .desktop-nav,
+    .header-cta {
+      display: none;
+    }
+
+    .mobile-nav {
+      position: relative;
+      display: block;
+      justify-self: end;
+    }
+
+    .mobile-nav summary {
+      display: grid;
+      place-content: center;
+      gap: 4px;
+      width: 42px;
+      height: 42px;
+      cursor: pointer;
+      list-style: none;
+    }
+
+    .mobile-nav summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .mobile-nav summary span {
+      display: block;
+      width: 22px;
+      height: 2px;
+      border-radius: 2px;
+      background: #fffaf0;
+    }
+
+    .mobile-nav nav {
+      position: absolute;
+      top: 48px;
+      right: 0;
+      display: grid;
+      width: min(260px, calc(100vw - 32px));
+      padding: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 8px;
+      background: rgba(18, 18, 26, 0.97);
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.42);
+    }
+
+    .mobile-nav nav a {
+      padding: 13px 14px;
+      border-radius: 5px;
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .mobile-nav nav a:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .hero {
+      align-items: flex-end;
+      min-height: 92svh;
+    }
+
+    .hero-art {
+      object-position: 61% center;
+    }
+
+    .hero-shade {
+      background:
+        linear-gradient(0deg, rgba(10, 10, 15, 0.98) 4%, rgba(10, 10, 15, 0.73) 50%, rgba(10, 10, 15, 0.16) 100%),
+        linear-gradient(90deg, rgba(10, 10, 15, 0.4), transparent);
+    }
+
+    .hero-content {
+      width: calc(100% - 32px);
+      margin: 0 auto;
+      padding: 118px 0 42px;
+    }
+
+    h1 {
+      font-size: 4.25rem;
+    }
+
+    h2 {
+      font-size: 2.65rem;
+    }
+
+    h3 {
+      font-size: 1.35rem;
+    }
+
+    .tagline {
+      font-size: 1.45rem;
+    }
+
+    .hero-copy {
+      font-size: 0.98rem;
+      line-height: 1.55;
+    }
+
+    .hero-actions {
+      display: grid;
+      grid-template-columns: 1fr;
+    }
+
+    .button {
+      width: 100%;
+    }
+
+    .platforms {
+      line-height: 1.5;
+    }
+
+    .gameplay {
+      padding-top: 70px;
+      padding-bottom: 70px;
+    }
+
+    .section-intro {
+      grid-template-columns: 1fr;
+      gap: 20px;
+    }
+
+    .feature-grid {
+      grid-template-columns: 1fr;
+      margin-top: 48px;
+    }
+
+    .feature-grid article,
+    .feature-grid article + article {
+      padding: 27px 0 30px;
+      border-left: 0;
+    }
+
+    .feature-grid article + article {
+      border-top: 1px solid #c8beb0;
+    }
+
+    h3 {
+      margin-top: 20px;
+    }
+
+    .download-band {
+      flex-direction: column;
+      align-items: flex-start;
+      padding-top: 60px;
+      padding-bottom: 60px;
+    }
+
+    .download-band h2 {
+      font-size: 2.5rem;
+    }
+
+    footer {
+      grid-template-columns: 1fr;
+      justify-items: start;
+      padding-top: 38px;
+      padding-bottom: 38px;
+    }
+
+    footer nav {
+      justify-self: start;
+    }
+  }
+
+  @media (min-width: 781px) and (max-width: 1050px) {
+    h1 {
+      font-size: 6rem;
+    }
+
+    h2 {
+      font-size: 2.75rem;
+    }
+
+    .download-band h2 {
+      font-size: 3rem;
+    }
+  }
+
+  @media (min-width: 781px) and (max-height: 720px) {
+    .hero {
+      min-height: 700px;
+    }
+  }
+</style>

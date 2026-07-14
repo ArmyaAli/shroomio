@@ -7,13 +7,16 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "check": "astro check"
+    "check": "astro check",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "astro": "7.0.9"
   },
   "devDependencies": {
     "@astrojs/check": "0.9.9",
+    "@playwright/test": "1.61.1",
+    "@types/node": "26.1.1",
     "typescript": "5.9.3"
   },
   "engines": {
