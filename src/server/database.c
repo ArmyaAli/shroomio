@@ -86,7 +86,7 @@ static const char* const DATABASE_SCHEMA[] = {
     "id INTEGER PRIMARY KEY AUTOINCREMENT,"
     "player_id INTEGER NOT NULL UNIQUE,"
     "username TEXT NOT NULL UNIQUE,"
-    "email TEXT,"
+    "email TEXT COLLATE NOCASE UNIQUE,"
     "password_hash TEXT,"
     "discord_id TEXT UNIQUE,"
     "auth_method TEXT NOT NULL CHECK (auth_method IN ('password', 'discord', 'anonymous')),"
@@ -96,11 +96,17 @@ static const char* const DATABASE_SCHEMA[] = {
     "CREATE TABLE IF NOT EXISTS auth_tokens ("
     "id INTEGER PRIMARY KEY AUTOINCREMENT,"
     "user_id INTEGER NOT NULL,"
-    "token TEXT NOT NULL UNIQUE,"
+    "token TEXT UNIQUE,"
+    "token_hash TEXT UNIQUE,"
     "token_type TEXT NOT NULL DEFAULT 'jwt',"
+    "token_kind TEXT NOT NULL DEFAULT 'legacy' "
+    "CHECK (token_kind IN ('legacy', 'access', 'refresh')),"
+    "refresh_family_id TEXT,"
     "expires_at TEXT NOT NULL,"
     "created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),"
     "revoked_at TEXT,"
+    "rotated_at TEXT,"
+    "replaced_by_hash TEXT,"
     "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)",
     "CREATE TABLE IF NOT EXISTS mushroom_species ("
     "species_id INTEGER PRIMARY KEY CHECK (species_id >= 0 AND species_id < 10),"
@@ -131,9 +137,12 @@ static const char* const DATABASE_SCHEMA[] = {
     "CREATE INDEX IF NOT EXISTS idx_match_events_type ON match_events(event_type)",
     "CREATE INDEX IF NOT EXISTS idx_match_events_timestamp ON match_events(event_timestamp DESC)",
     "CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)",
+    "CREATE INDEX IF NOT EXISTS idx_users_email ON users(email COLLATE NOCASE)",
     "CREATE INDEX IF NOT EXISTS idx_users_discord_id ON users(discord_id)",
     "CREATE INDEX IF NOT EXISTS idx_users_player_id ON users(player_id)",
     "CREATE INDEX IF NOT EXISTS idx_auth_tokens_token ON auth_tokens(token)",
+    "CREATE INDEX IF NOT EXISTS idx_auth_tokens_hash ON auth_tokens(token_hash)",
+    "CREATE INDEX IF NOT EXISTS idx_auth_tokens_family ON auth_tokens(refresh_family_id)",
     "CREATE INDEX IF NOT EXISTS idx_auth_tokens_user_id ON auth_tokens(user_id)",
     "CREATE INDEX IF NOT EXISTS idx_auth_tokens_expires_at ON auth_tokens(expires_at)",
     "CREATE INDEX IF NOT EXISTS idx_mushroom_species_sort_order ON mushroom_species(sort_order)",
