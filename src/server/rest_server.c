@@ -8,6 +8,7 @@
 #include <civetweb.h>
 
 #include "logger.h"
+#include "rest_account.h"
 #include "rest_router.h"
 
 #define SHROOM_REST_REQUEST_ID_LENGTH 64u
@@ -81,14 +82,24 @@ static int HandleRequest(struct mg_connection* connection) {
   const struct mg_request_info* request = mg_get_request_info(connection);
   const char* method = request != NULL ? request->request_method : NULL;
   const char* path = request != NULL ? request->local_uri : NULL;
+  ShroomRestServer* server = request != NULL ? request->user_data : NULL;
+  const ShroomRestRoute route = ShroomRestClassifyRoute(method, path);
   char request_id[SHROOM_REST_REQUEST_ID_LENGTH + 1u];
   char body[256];
 
   GetRequestId(connection, request_id, sizeof(request_id));
-  switch (ShroomRestClassifyRoute(method, path)) {
+  switch (route) {
   case SHROOM_REST_ROUTE_HEALTH:
     return SendJson(connection, 200, "OK", request_id,
                     "{\"status\":\"ok\",\"service\":\"shroomio-server\"}");
+  case SHROOM_REST_ROUTE_ACCOUNT_REGISTER:
+  case SHROOM_REST_ROUTE_ACCOUNT_LOGIN:
+  case SHROOM_REST_ROUTE_ACCOUNT_REFRESH:
+  case SHROOM_REST_ROUTE_ACCOUNT_LOGOUT:
+  case SHROOM_REST_ROUTE_ACCOUNT_ME:
+    return ShroomRestHandleAccount(connection, route, request_id,
+                                   server != NULL ? server->account_auth : NULL,
+                                   server != NULL ? &server->rate_limiter : NULL);
   case SHROOM_REST_ROUTE_NOT_FOUND:
   default:
     snprintf(body, sizeof(body),
@@ -156,6 +167,8 @@ bool ShroomRestServerStart(ShroomRestServer* server, const ShroomRestConfig* con
     return false;
   }
   server->library_initialized = true;
+  server->account_auth = config->account_auth;
+  ShroomRestRateLimiterInit(&server->rate_limiter);
   callbacks.begin_request = HandleRequest;
   callbacks.end_request = LogCompletedRequest;
   callbacks.log_message = LogCivetWebMessage;

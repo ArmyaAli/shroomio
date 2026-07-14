@@ -14,6 +14,8 @@ COPY tools/server_healthcheck.c tools/server_healthcheck.h ./tools/
 COPY vcpkg_installed/linux/x64-linux/lib/libenet.a \
      ./vcpkg_installed/linux/x64-linux/lib/libenet.a
 COPY vcpkg_installed/linux/x64-linux/lib/libcivetweb.a \
+     vcpkg_installed/linux/x64-linux/lib/libargon2.a \
+     vcpkg_installed/linux/x64-linux/lib/libcjson.a \
      vcpkg_installed/linux/x64-linux/lib/libssl.a \
      vcpkg_installed/linux/x64-linux/lib/libcrypto.a \
      vcpkg_installed/linux/x64-linux/lib/libz.a \
@@ -22,6 +24,12 @@ COPY vcpkg_installed/linux/x64-linux/include/enet \
      ./vcpkg_installed/linux/x64-linux/include/enet
 COPY vcpkg_installed/linux/x64-linux/include/civetweb.h \
      ./vcpkg_installed/linux/x64-linux/include/civetweb.h
+COPY vcpkg_installed/linux/x64-linux/include/argon2.h \
+     ./vcpkg_installed/linux/x64-linux/include/argon2.h
+COPY vcpkg_installed/linux/x64-linux/include/cjson \
+     ./vcpkg_installed/linux/x64-linux/include/cjson
+COPY vcpkg_installed/linux/x64-linux/include/openssl \
+     ./vcpkg_installed/linux/x64-linux/include/openssl
 
 # Stamp file tells Make that vcpkg deps are already satisfied.
 RUN mkdir -p vcpkg_installed/linux/x64-linux && \

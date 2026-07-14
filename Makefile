@@ -177,11 +177,11 @@ WINDOWS_SERVER_CFLAGS := -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) 
 WINDOWS_SERVER_CFLAGS += -DWIN32_LEAN_AND_MEAN -DNOGDI -DNOUSER
 MACOS_SERVER_CFLAGS := -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
 		  -I$(VCPKG_MACOS_INCLUDE_DIR) -D_DEFAULT_SOURCE
-LINUX_SERVER_LIBS := -L$(VCPKG_LINUX_LIB_DIR) -lenet -lcivetweb -lssl -lcrypto -lz -lm \
+LINUX_SERVER_LIBS := -L$(VCPKG_LINUX_LIB_DIR) -lenet -lcivetweb -largon2 -lcjson -lssl -lcrypto -lz -lm \
 	-lsqlite3 -ldl -lpthread
-WINDOWS_SERVER_LIBS := -L$(VCPKG_WINDOWS_LIB_DIR) -lenet -lcivetweb -lssl -lcrypto -lzs \
+WINDOWS_SERVER_LIBS := -L$(VCPKG_WINDOWS_LIB_DIR) -lenet -lcivetweb -largon2 -lcjson -lssl -lcrypto -lzs \
 	-lsqlite3 -lws2_32 -lwinmm -lcrypt32 -lgdi32 -lwinpthread
-MACOS_SERVER_LIBS := -L$(VCPKG_MACOS_LIB_DIR) -lenet -lcivetweb -lssl -lcrypto -lz \
+MACOS_SERVER_LIBS := -L$(VCPKG_MACOS_LIB_DIR) -lenet -lcivetweb -largon2 -lcjson -lssl -lcrypto -lz \
 	-lsqlite3 -lm -lpthread
 
 #Test compiler flags(UNITY_INCLUDE defined in vendor section)
@@ -266,6 +266,7 @@ CLIENT_SOURCES := \
 SERVER_SOURCES := \
 	$(SERVER_SRC_DIR)/main.c \
 	$(SERVER_SRC_DIR)/logger.c \
+	$(SERVER_SRC_DIR)/account_auth.c \
 	$(SERVER_SRC_DIR)/database.c \
 	$(SERVER_SRC_DIR)/directory_registry.c \
 	$(SERVER_SRC_DIR)/match_persistence.c \
@@ -275,6 +276,8 @@ SERVER_SOURCES := \
 	$(SERVER_SRC_DIR)/session_cleanup.c \
 	$(SERVER_SRC_DIR)/snapshot_stats.c \
 	$(SERVER_SRC_DIR)/rest_router.c \
+	$(SERVER_SRC_DIR)/rest_account.c \
+	$(SERVER_SRC_DIR)/rest_rate_limit.c \
 	$(SERVER_SRC_DIR)/rest_server.c \
 	$(SERVER_SRC_DIR)/voice_relay.c \
 	$(SHARED_SRC_DIR)/sim.c \
@@ -288,6 +291,7 @@ SERVER_SOURCES := \
 
 #Shared headers(dependencies for all modules)
 SHARED_HEADERS := \
+	$(SERVER_SRC_DIR)/account_auth.h \
 	$(SHARED_SRC_DIR)/config.h \
 	$(SHARED_SRC_DIR)/vec2.h \
 	$(SHARED_SRC_DIR)/world.h \
@@ -322,6 +326,8 @@ SHARED_HEADERS := \
 	$(SERVER_SRC_DIR)/session_cleanup.h \
 	$(SERVER_SRC_DIR)/snapshot_stats.h \
 	$(SERVER_SRC_DIR)/rest_router.h \
+	$(SERVER_SRC_DIR)/rest_account.h \
+	$(SERVER_SRC_DIR)/rest_rate_limit.h \
 	$(SERVER_SRC_DIR)/rest_server.h \
 	$(SERVER_SRC_DIR)/voice_relay.h
 
@@ -555,6 +561,7 @@ server-health-test: $(SERVER_LINUX_BIN) $(SERVER_HEALTHCHECK_BIN)
 rest-integration-test: $(SERVER_LINUX_BIN)
 	@command -v openssl >/dev/null 2>&1 || { echo "openssl is required"; exit 1; }
 	@command -v curl >/dev/null 2>&1 || { echo "curl is required"; exit 1; }
+	@command -v python3 >/dev/null 2>&1 || { echo "python3 is required"; exit 1; }
 	@set -eu; \
 	port=$$((40000 + ($$$$ * 1103) % 20000)); udp_port=$$((port + 1)); \
 	tmp=/tmp/shroomio-rest-$$$$; mkdir -p "$$tmp"; server_pid=""; \
@@ -577,10 +584,63 @@ rest-integration-test: $(SERVER_LINUX_BIN)
 	response=$$(curl -ksS -D "$$tmp/headers" "https://127.0.0.1:$$port/health"); \
 	test "$$response" = '{"status":"ok","service":"shroomio-server"}'; \
 	grep -qi '^X-Request-ID: rest-' "$$tmp/headers"; \
+	register_status=$$(curl -ksS -D "$$tmp/register.headers" -o "$$tmp/register.json" \
+		-w '%{http_code}' -H 'Content-Type: application/json' \
+		--data '{"username":"forest_cap","email":"Player@Example.COM","password":"correct horse battery"}' \
+		"https://127.0.0.1:$$port/v1/account/register"); \
+	test "$$register_status" = 201; grep -qi '^X-RateLimit-Limit: 5' "$$tmp/register.headers"; \
+	python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); assert data["account"]["email"] == "player@example.com"; assert data["session"]["expires_in"] == 900' "$$tmp/register.json"; \
+	login_status=$$(curl -ksS -o "$$tmp/login.json" -w '%{http_code}' \
+		-H 'Content-Type: application/json' \
+		--data '{"identity":"PLAYER@EXAMPLE.COM","password":"correct horse battery"}' \
+		"https://127.0.0.1:$$port/v1/account/login"); test "$$login_status" = 200; \
+	access=$$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["access_token"])' "$$tmp/login.json"); \
+	refresh=$$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["refresh_token"])' "$$tmp/login.json"); \
+	me_status=$$(curl -ksS -o "$$tmp/me.json" -w '%{http_code}' -H "Authorization: Bearer $$access" \
+		"https://127.0.0.1:$$port/v1/account/me"); test "$$me_status" = 200; \
+	python3 -c 'import json,sys; assert json.load(open(sys.argv[1]))["username"] == "forest_cap"' "$$tmp/me.json"; \
+	rotate_status=$$(curl -ksS -o "$$tmp/rotate.json" -w '%{http_code}' \
+		-H 'Content-Type: application/json' --data "{\"refresh_token\":\"$$refresh\"}" \
+		"https://127.0.0.1:$$port/v1/account/refresh"); test "$$rotate_status" = 200; \
+	rotated_access=$$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["access_token"])' "$$tmp/rotate.json"); \
+	reuse_status=$$(curl -ksS -o "$$tmp/reuse.json" -w '%{http_code}' \
+		-H 'Content-Type: application/json' --data "{\"refresh_token\":\"$$refresh\"}" \
+		"https://127.0.0.1:$$port/v1/account/refresh"); test "$$reuse_status" = 401; \
+	revoked_status=$$(curl -ksS -o "$$tmp/revoked.json" -w '%{http_code}' \
+		-H "Authorization: Bearer $$rotated_access" "https://127.0.0.1:$$port/v1/account/me"); \
+	test "$$revoked_status" = 401; \
+	login_status=$$(curl -ksS -o "$$tmp/login2.json" -w '%{http_code}' \
+		-H 'Content-Type: application/json' \
+		--data '{"identity":"forest_cap","password":"correct horse battery"}' \
+		"https://127.0.0.1:$$port/v1/account/login"); test "$$login_status" = 200; \
+	access=$$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["access_token"])' "$$tmp/login2.json"); \
+	logout_status=$$(curl -ksS -o /dev/null -w '%{http_code}' -X POST \
+		-H "Authorization: Bearer $$access" "https://127.0.0.1:$$port/v1/account/logout"); \
+	test "$$logout_status" = 204; \
+	logout_retry_status=$$(curl -ksS -o /dev/null -w '%{http_code}' -X POST \
+		-H "Authorization: Bearer $$access" "https://127.0.0.1:$$port/v1/account/logout"); \
+	test "$$logout_retry_status" = 204; \
+	post_logout_status=$$(curl -ksS -o "$$tmp/post-logout.json" -w '%{http_code}' \
+		-H "Authorization: Bearer $$access" "https://127.0.0.1:$$port/v1/account/me"); \
+	test "$$post_logout_status" = 401; \
+	for attempt in 1 2 3; do \
+		bad_login_status=$$(curl -ksS -o /dev/null -w '%{http_code}' \
+			-H 'Content-Type: application/json' \
+			--data '{"identity":"forest_cap","password":"definitely wrong phrase"}' \
+			"https://127.0.0.1:$$port/v1/account/login"); test "$$bad_login_status" = 401; \
+	done; \
+	limited_status=$$(curl -ksS -D "$$tmp/limited.headers" -o "$$tmp/limited.json" \
+		-w '%{http_code}' -H 'Content-Type: application/json' \
+		--data '{"identity":"forest_cap","password":"definitely wrong phrase"}' \
+		"https://127.0.0.1:$$port/v1/account/login"); test "$$limited_status" = 429; \
+	grep -qi '^Retry-After:' "$$tmp/limited.headers"; grep -q '"code":"rate_limited"' "$$tmp/limited.json"; \
 	status=$$(curl -ksS -o "$$tmp/missing.json" -w '%{http_code}' -X POST \
 		"https://127.0.0.1:$$port/health"); \
 	test "$$status" = 404; grep -q '"code":"not_found"' "$$tmp/missing.json"; \
 	grep -q 'rest_access method=GET path=/health status=200 .* body=redacted' "$$tmp/server.log"; \
+	if grep -q 'correct horse battery\|Player@Example.COM\|player@example.com' "$$tmp/server.log"; then \
+		echo "REST server log exposed account credentials"; exit 1; \
+	fi; \
 	if ./$(SERVER_LINUX_BIN) --smoke-test --rest-cert "$$tmp/missing.pem" \
 		>"$$tmp/missing-cert.log" 2>&1; then echo "Server accepted a missing REST certificate"; exit 1; fi; \
 	grep -q 'failed to start REST HTTPS listener' "$$tmp/missing-cert.log"; \
@@ -1030,6 +1090,9 @@ test-coverage: $(UNITY_DIR) $(VCPKG_LINUX_STAMP)
 			test_auth) \
 				$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(SERVER_SRC_DIR) -I$(VCPKG_LINUX_INCLUDE_DIR) \
 					$$src $(UNITY_SRC) $(SERVER_SRC_DIR)/auth.c $(SERVER_SRC_DIR)/logger.c -o $$test_bin $(COVERAGE_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lsqlite3 ;; \
+			test_account_auth) \
+				$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(SERVER_SRC_DIR) -I$(VCPKG_LINUX_INCLUDE_DIR) \
+					$$src $(UNITY_SRC) $(SERVER_SRC_DIR)/account_auth.c $(SERVER_SRC_DIR)/database.c $(SERVER_SRC_DIR)/logger.c -o $$test_bin $(COVERAGE_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -largon2 -lcrypto -lsqlite3 ;; \
 			test_lifecycle) \
 				$(LINUX_CC) $(COVERAGE_CFLAGS) \
 					$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/lifecycle.c -o $$test_bin $(COVERAGE_LIBS) ;; \
@@ -1108,6 +1171,9 @@ test_connection) \
 		test_rest_router) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(SERVER_SRC_DIR)/rest_router.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+		test_rest_rate_limit) \
+			$(LINUX_CC) $(COVERAGE_CFLAGS) \
+				$$src $(UNITY_SRC) $(SERVER_SRC_DIR)/rest_rate_limit.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_spectator_target) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/spectator_target.c -o $$test_bin $(COVERAGE_LIBS) ;; \
@@ -1297,6 +1363,10 @@ $(TEST_BUILD_DIR)/test_rest_router: $(UNIT_TESTS_DIR)/test_rest_router.c $(UNITY
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
+$(TEST_BUILD_DIR)/test_rest_rate_limit: $(UNIT_TESTS_DIR)/test_rest_rate_limit.c $(UNITY_SRC) $(SERVER_SRC_DIR)/rest_rate_limit.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
 $(TEST_BUILD_DIR)/test_chat_cache: $(UNIT_TESTS_DIR)/test_chat_cache.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/chat_cache.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
@@ -1352,6 +1422,10 @@ $(TEST_BUILD_DIR)/test_decay_zones: $(UNIT_TESTS_DIR)/test_decay_zones.c $(UNITY
 $(TEST_BUILD_DIR)/test_auth: $(UNIT_TESTS_DIR)/test_auth.c $(UNITY_SRC) $(SERVER_SRC_DIR)/auth.c $(SERVER_SRC_DIR)/logger.c | $(UNITY_DIR) $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) -I$(SERVER_SRC_DIR) -I$(VCPKG_LINUX_INCLUDE_DIR) $^ -o $@ $(TEST_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lsqlite3
+
+$(TEST_BUILD_DIR)/test_account_auth: $(UNIT_TESTS_DIR)/test_account_auth.c $(UNITY_SRC) $(SERVER_SRC_DIR)/account_auth.c $(SERVER_SRC_DIR)/database.c $(SERVER_SRC_DIR)/logger.c | $(UNITY_DIR) $(VCPKG_LINUX_STAMP)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) -I$(SERVER_SRC_DIR) -I$(VCPKG_LINUX_INCLUDE_DIR) $^ -o $@ $(TEST_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -largon2 -lcrypto -lsqlite3
 
 $(TEST_BUILD_DIR)/test_render_lod: $(UNIT_TESTS_DIR)/test_render_lod.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/render_lod.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)

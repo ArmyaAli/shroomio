@@ -23,6 +23,7 @@
 #include "shared/snapshot_scheduler.h"
 #include "shared/world_replication.h"
 #include "auth.h"
+#include "account_auth.h"
 #include "database.h"
 #include "directory_registry.h"
 #include "logger.h"
@@ -2484,7 +2485,9 @@ int main(int argc, char** argv) {
   uint64_t next_tick_time;
   uint64_t last_health_log_ms = 0;
   sqlite3* db = NULL;
+  sqlite3* account_db = NULL;
   ShroomAuthContext auth_ctx = {0};
+  ShroomAccountAuth account_auth = {0};
   ShroomRestServer rest_server = {0};
   ServerConfig config;
   DirectoryAdvertiser directory_advertiser = {0};
@@ -2531,10 +2534,23 @@ int main(int argc, char** argv) {
   }
 
   ShroomAuthInit(&auth_ctx, db);
+  if (sqlite3_open(config.database_path, &account_db) != SQLITE_OK) {
+    LOG_ERROR("failed to open account database connection: %s", sqlite3_errmsg(account_db));
+    sqlite3_close(account_db);
+    ShroomAuthShutdown(&auth_ctx);
+    sqlite3_close(db);
+    ShroomLifecycleSetError(&g_lifecycle, 1, "Account database initialization failed");
+    return 1;
+  }
+  sqlite3_busy_timeout(account_db, 5000);
+  sqlite3_exec(account_db, "PRAGMA foreign_keys = ON", NULL, NULL, NULL);
+  ShroomAccountAuthInit(&account_auth, account_db);
 
   if (enet_initialize() != 0) {
     LOG_ERROR("failed to initialize ENet");
     ShroomAuthShutdown(&auth_ctx);
+    ShroomAccountAuthShutdown(&account_auth);
+    sqlite3_close(account_db);
     sqlite3_close(db);
     ShroomLifecycleSetError(&g_lifecycle, 1, "ENet initialization failed");
     return 1;
@@ -2559,19 +2575,24 @@ int main(int argc, char** argv) {
     LOG_ERROR("failed to create ENet host");
     enet_deinitialize();
     ShroomAuthShutdown(&auth_ctx);
+    ShroomAccountAuthShutdown(&account_auth);
+    sqlite3_close(account_db);
     sqlite3_close(db);
     ShroomLifecycleSetError(&g_lifecycle, 2, "ENet host creation failed");
     return 1;
   }
 
   if (config.rest_enabled &&
-      !ShroomRestServerStart(
-          &rest_server, &(ShroomRestConfig){.bind_host = config.rest_bind_host,
-                                            .port = config.rest_port,
-                                            .certificate_path = config.rest_certificate_path})) {
+      !ShroomRestServerStart(&rest_server,
+                             &(ShroomRestConfig){.bind_host = config.rest_bind_host,
+                                                 .port = config.rest_port,
+                                                 .certificate_path = config.rest_certificate_path,
+                                                 .account_auth = &account_auth})) {
     enet_host_destroy(host);
     enet_deinitialize();
     ShroomAuthShutdown(&auth_ctx);
+    ShroomAccountAuthShutdown(&account_auth);
+    sqlite3_close(account_db);
     sqlite3_close(db);
     ShroomLifecycleSetError(&g_lifecycle, 2, "REST HTTPS listener initialization failed");
     return 1;
@@ -2833,6 +2854,8 @@ int main(int argc, char** argv) {
   enet_host_destroy(host);
   enet_deinitialize();
   ShroomAuthShutdown(&auth_ctx);
+  ShroomAccountAuthShutdown(&account_auth);
+  sqlite3_close(account_db);
   sqlite3_close(db);
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_SHUTDOWN);
   LOG_INFO("shroomio server shutting down");
