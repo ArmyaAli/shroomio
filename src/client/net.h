@@ -96,6 +96,9 @@ typedef struct ClientNetState {
   uint8_t lobby_count;
   ShroomLobbyEntry lobby_list[SHROOM_MAX_LOBBIES];
   uint16_t lobby_roster_count;
+  uint32_t lobby_roster_generation;
+  uint16_t lobby_roster_chunk_count;
+  uint32_t lobby_roster_received_chunks;
   ShroomLobbyRosterEntry lobby_roster[SHROOM_MAX_PARTICIPANTS];
   /* Match timer state */
   uint8_t match_phase;

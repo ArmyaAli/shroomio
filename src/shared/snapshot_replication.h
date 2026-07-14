@@ -51,7 +51,7 @@ typedef struct ShroomSnapshotAssembly {
   bool active;
   uint64_t tick;
   uint64_t baseline_tick;
-  uint32_t received_chunks;
+  uint64_t received_chunks[(SHROOM_SNAPSHOT_MAX_CHUNKS + 63u) / 64u];
   uint16_t chunk_count;
   uint16_t total_player_count;
   uint8_t flags;

@@ -260,6 +260,9 @@ static void HandleLobbyJoined(ClientNetState* net, const ENetPacket* enet_packet
   net->lobby_roster_received = false;
   net->lobby_match_started = false;
   net->lobby_roster_count = 0;
+  net->lobby_roster_generation = 0u;
+  net->lobby_roster_chunk_count = 0u;
+  net->lobby_roster_received_chunks = 0u;
   snprintf(net->lobby_name, sizeof(net->lobby_name), "%s", packet->lobby_name);
   {
     const ShroomChatCacheKey key = {
@@ -286,22 +289,50 @@ static void HandleLobbyJoined(ClientNetState* net, const ENetPacket* enet_packet
 static void HandleLobbyRoster(ClientNetState* net, const ENetPacket* enet_packet) {
   const ShroomLobbyRosterPacket* packet = (const ShroomLobbyRosterPacket*)enet_packet->data;
   const size_t min_size = offsetof(ShroomLobbyRosterPacket, players);
-  uint16_t count;
+  size_t first_entry;
+  uint32_t required_chunks;
 
-  if (enet_packet->dataLength < min_size || packet->lobby_id != net->lobby_id) {
+  if ((enet_packet->dataLength < min_size) || (packet->lobby_id != net->lobby_id) ||
+      (packet->generation == 0u) || (packet->total_player_count > SHROOM_MAX_PARTICIPANTS) ||
+      (packet->chunk_count == 0u) || (packet->chunk_count > SHROOM_LOBBY_ROSTER_MAX_CHUNKS) ||
+      (packet->chunk_index >= packet->chunk_count) ||
+      (packet->entry_count > SHROOM_LOBBY_ROSTER_ENTRIES_PER_PACKET) ||
+      (enet_packet->dataLength != SHROOM_LOBBY_ROSTER_PACKET_SIZE(packet->entry_count))) {
     return;
   }
-  count = packet->player_count;
-  if (count > SHROOM_MAX_PARTICIPANTS ||
-      enet_packet->dataLength < min_size + (size_t)count * sizeof(packet->players[0])) {
+  first_entry = (size_t)packet->chunk_index * SHROOM_LOBBY_ROSTER_ENTRIES_PER_PACKET;
+  required_chunks =
+      packet->total_player_count == 0u
+          ? 1u
+          : (packet->total_player_count + SHROOM_LOBBY_ROSTER_ENTRIES_PER_PACKET - 1u) /
+                SHROOM_LOBBY_ROSTER_ENTRIES_PER_PACKET;
+  if ((packet->chunk_count != required_chunks) ||
+      (first_entry + packet->entry_count > packet->total_player_count) ||
+      ((packet->chunk_index + 1u < packet->chunk_count) &&
+       (packet->entry_count != SHROOM_LOBBY_ROSTER_ENTRIES_PER_PACKET)) ||
+      ((packet->chunk_index + 1u == packet->chunk_count) &&
+       (first_entry + packet->entry_count != packet->total_player_count))) {
     return;
   }
-  net->lobby_roster_count = count;
+  if (net->lobby_roster_generation != packet->generation) {
+    net->lobby_roster_generation = packet->generation;
+    net->lobby_roster_chunk_count = packet->chunk_count;
+    net->lobby_roster_received_chunks = 0u;
+    net->lobby_roster_received = false;
+    net->lobby_roster_count = packet->total_player_count;
+    memset(net->lobby_roster, 0, sizeof(net->lobby_roster));
+  } else if ((net->lobby_roster_chunk_count != packet->chunk_count) ||
+             (net->lobby_roster_count != packet->total_player_count)) {
+    return;
+  }
   net->lobby_match_started = packet->match_started != 0;
-  net->lobby_roster_received = true;
-  if (count > 0) {
-    memcpy(net->lobby_roster, packet->players, (size_t)count * sizeof(net->lobby_roster[0]));
+  if (packet->entry_count > 0u) {
+    memcpy(&net->lobby_roster[first_entry], packet->players,
+           (size_t)packet->entry_count * sizeof(net->lobby_roster[0]));
   }
+  net->lobby_roster_received_chunks |= 1u << packet->chunk_index;
+  net->lobby_roster_received =
+      net->lobby_roster_received_chunks == ((1u << packet->chunk_count) - 1u);
 }
 
 static void HandlePong(ClientNetState* net, const ENetPacket* enet_packet) {
@@ -930,6 +961,9 @@ void ClientNetSendLobbyLeave(ClientNetState* net) {
   net->lobby_roster_received = false;
   net->lobby_match_started = false;
   net->lobby_roster_count = 0;
+  net->lobby_roster_generation = 0u;
+  net->lobby_roster_chunk_count = 0u;
+  net->lobby_roster_received_chunks = 0u;
   net->lobby_id = 0;
   net->spectating = false;
   ResetIntermissionLifecycle(net);

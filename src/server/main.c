@@ -26,6 +26,7 @@
 #include "database.h"
 #include "directory_registry.h"
 #include "logger.h"
+#include "lobby_capacity.h"
 #include "match_persistence.h"
 #include "session_cleanup.h"
 #include "snapshot_stats.h"
@@ -126,6 +127,7 @@ static ShroomNetTelemetry g_server_net_telemetry;
 static uint64_t g_server_event_budget_exhaustions;
 static uint64_t g_server_input_stale_rejections;
 static uint64_t g_server_input_rate_rejections;
+static uint32_t g_lobby_roster_generation;
 
 static float g_match_duration_seconds = SHROOM_MATCH_DURATION_SECONDS;
 static uint16_t g_snapshot_rate = SHROOM_SNAPSHOT_RATE;
@@ -1001,17 +1003,18 @@ static void SendLobbyJoined(ENetPeer* peer, const ServerSession* session,
 }
 
 static void BroadcastLobbyRoster(ENetHost* host, uint32_t lobby_id) {
-  ShroomLobbyRosterPacket packet = {0};
-  size_t packet_size;
+  ShroomLobbyRosterEntry entries[SHROOM_MAX_PARTICIPANTS] = {0};
+  uint16_t roster_count = 0u;
+  uint16_t chunk_count;
+  uint32_t generation;
+  bool match_started = false;
   size_t index;
 
   if ((host == NULL) || (lobby_id == 0u)) {
     return;
   }
 
-  packet.lobby_id = lobby_id;
-  for (index = 0; index < host->peerCount && packet.player_count < SHROOM_MAX_PARTICIPANTS;
-       ++index) {
+  for (index = 0; index < host->peerCount && roster_count < SHROOM_MAX_PARTICIPANTS; ++index) {
     const ENetPeer* peer = &host->peers[index];
     const ServerSession* session = (const ServerSession*)peer->data;
     ShroomLobbyRosterEntry* entry;
@@ -1020,29 +1023,56 @@ static void BroadcastLobbyRoster(ENetHost* host, uint32_t lobby_id) {
         (session->lobby_id != lobby_id)) {
       continue;
     }
-    entry = &packet.players[packet.player_count++];
+    entry = &entries[roster_count++];
     entry->player_id = session->player_id;
     entry->is_spectator = session->spectating ? 1u : 0u;
     entry->is_ready = session->is_ready ? 1u : 0u;
     entry->entered_match = session->entered_match ? 1u : 0u;
     if (session->entered_match) {
-      packet.match_started = 1u;
+      match_started = true;
     }
   }
 
-  packet_size = offsetof(ShroomLobbyRosterPacket, players) +
-                (size_t)packet.player_count * sizeof(packet.players[0]);
-  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_ROSTER, (uint16_t)packet_size);
-  for (index = 0; index < host->peerCount; ++index) {
-    ENetPeer* peer = &host->peers[index];
-    const ServerSession* session = (const ServerSession*)peer->data;
+  if (g_lobby_roster_generation == UINT32_MAX) {
+    g_lobby_roster_generation = 1u;
+  } else {
+    ++g_lobby_roster_generation;
+  }
+  generation = g_lobby_roster_generation;
+  chunk_count = roster_count == 0u
+                    ? 1u
+                    : (uint16_t)((roster_count + SHROOM_LOBBY_ROSTER_ENTRIES_PER_PACKET - 1u) /
+                                 SHROOM_LOBBY_ROSTER_ENTRIES_PER_PACKET);
+  for (uint16_t chunk_index = 0u; chunk_index < chunk_count; ++chunk_index) {
+    ShroomLobbyRosterPacket packet = {.lobby_id = lobby_id,
+                                      .generation = generation,
+                                      .total_player_count = roster_count,
+                                      .chunk_index = chunk_index,
+                                      .chunk_count = chunk_count,
+                                      .match_started = match_started ? 1u : 0u};
+    const size_t first_entry = (size_t)chunk_index * SHROOM_LOBBY_ROSTER_ENTRIES_PER_PACKET;
+    const size_t remaining = roster_count > first_entry ? roster_count - first_entry : 0u;
+    const size_t entry_count = remaining < SHROOM_LOBBY_ROSTER_ENTRIES_PER_PACKET
+                                   ? remaining
+                                   : SHROOM_LOBBY_ROSTER_ENTRIES_PER_PACKET;
+    const size_t packet_size = SHROOM_LOBBY_ROSTER_PACKET_SIZE(entry_count);
 
-    if ((peer->state != ENET_PEER_STATE_CONNECTED) || (session == NULL) || !session->active ||
-        (session->lobby_id != lobby_id)) {
-      continue;
+    packet.entry_count = (uint16_t)entry_count;
+    if (entry_count > 0u) {
+      memcpy(packet.players, &entries[first_entry], entry_count * sizeof(entries[0]));
     }
-    SendPacket(peer, SHROOM_ENET_CHANNEL_CONTROL, SHROOM_PACKET_LOBBY_ROSTER,
-               CreateProtocolPacket(&packet, packet_size, SHROOM_PACKET_LOBBY_ROSTER));
+    ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_ROSTER, (uint16_t)packet_size);
+    for (index = 0; index < host->peerCount; ++index) {
+      ENetPeer* peer = &host->peers[index];
+      const ServerSession* session = (const ServerSession*)peer->data;
+
+      if ((peer->state != ENET_PEER_STATE_CONNECTED) || (session == NULL) || !session->active ||
+          (session->lobby_id != lobby_id)) {
+        continue;
+      }
+      SendPacket(peer, SHROOM_ENET_CHANNEL_CONTROL, SHROOM_PACKET_LOBBY_ROSTER,
+                 CreateProtocolPacket(&packet, packet_size, SHROOM_PACKET_LOBBY_ROSTER));
+    }
   }
   enet_host_flush(host);
 }
@@ -1849,11 +1879,13 @@ static void HandleLobbyJoin(ENetHost* host, ENetPeer* peer, ServerSession* sessi
 
   if (!packet->spectate) {
     const uint16_t real_player_count = CountLobbyRealPlayers(host, lobby->lobby_id);
+    const ShroomLobbyAdmissionPlan admission =
+        ShroomLobbyPlanAdmission(real_player_count, CountLobbyAliveBots(lobby));
 
-    if (real_player_count >= SHROOM_MAX_PLAYABLE_PARTICIPANTS) {
+    if (!admission.accepted) {
       return;
     }
-    while (((uint32_t)real_player_count + CountLobbyAliveBots(lobby)) >= SHROOM_MAX_PARTICIPANTS) {
+    for (uint16_t index = 0u; index < admission.bots_to_remove; ++index) {
       if (!RemoveLobbyBot(lobby)) {
         return;
       }
