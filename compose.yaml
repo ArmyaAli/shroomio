@@ -9,9 +9,13 @@ services:
     environment:
       SHROOM_SERVER_BIND: 0.0.0.0
       SHROOM_SERVER_PORT: 7777
+      SHROOM_SERVER_REST_BIND: 0.0.0.0
+      SHROOM_SERVER_REST_PORT: 7443
+      SHROOM_SERVER_REST_CERT: ${SHROOM_SERVER_REST_CERT:-}
       SHROOM_SERVER_DB_PATH: /data/shroomio.db
     ports:
       - "7777:7777/udp"
+      - "7443:7443/tcp"
     volumes:
       - shroomio-server-data:/data
 

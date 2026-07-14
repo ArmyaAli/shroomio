@@ -1,4 +1,4 @@
-FROM debian:bookworm-slim AS builder
+FROM ubuntu:24.04 AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential libsqlite3-dev make && rm -rf /var/lib/apt/lists/*
@@ -9,12 +9,19 @@ COPY Makefile vcpkg.json ./
 COPY src ./src
 COPY tools/server_healthcheck.c tools/server_healthcheck.h ./tools/
 
-# Copy only the enet artifacts the server needs from the host's vcpkg_installed.
+# Copy the static server artifacts from the host's vcpkg installation.
 # Run 'make vcpkg-install-linux' on the host before building this image.
 COPY vcpkg_installed/linux/x64-linux/lib/libenet.a \
      ./vcpkg_installed/linux/x64-linux/lib/libenet.a
+COPY vcpkg_installed/linux/x64-linux/lib/libcivetweb.a \
+     vcpkg_installed/linux/x64-linux/lib/libssl.a \
+     vcpkg_installed/linux/x64-linux/lib/libcrypto.a \
+     vcpkg_installed/linux/x64-linux/lib/libz.a \
+     ./vcpkg_installed/linux/x64-linux/lib/
 COPY vcpkg_installed/linux/x64-linux/include/enet \
      ./vcpkg_installed/linux/x64-linux/include/enet
+COPY vcpkg_installed/linux/x64-linux/include/civetweb.h \
+     ./vcpkg_installed/linux/x64-linux/include/civetweb.h
 
 # Stamp file tells Make that vcpkg deps are already satisfied.
 RUN mkdir -p vcpkg_installed/linux/x64-linux && \
@@ -22,7 +29,7 @@ RUN mkdir -p vcpkg_installed/linux/x64-linux && \
 
 RUN make server build/tools/shroomio-healthcheck
 
-FROM debian:bookworm-slim
+FROM ubuntu:24.04
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libsqlite3-0 && rm -rf /var/lib/apt/lists/*
@@ -35,6 +42,8 @@ COPY database ./database
 
 ENV SHROOM_SERVER_BIND=0.0.0.0 \
     SHROOM_SERVER_PORT=7777 \
+    SHROOM_SERVER_REST_BIND=0.0.0.0 \
+    SHROOM_SERVER_REST_PORT=7443 \
     SHROOM_DIRECTORY_PORT=7778 \
     SHROOM_SERVER_SNAPSHOT_RATE=15 \
     SHROOM_SERVER_DB_PATH=/data/shroomio.db
@@ -42,6 +51,7 @@ ENV SHROOM_SERVER_BIND=0.0.0.0 \
 VOLUME ["/data"]
 EXPOSE 7777/udp
 EXPOSE 7778/udp
+EXPOSE 7443/tcp
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD shroomio-healthcheck --host 127.0.0.1 --port "$SHROOM_SERVER_PORT" --timeout-ms 2000 || exit 1

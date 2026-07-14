@@ -7,8 +7,9 @@ This runbook covers one shroomio dedicated game-server process. Read
 
 | Property | Value |
 |---|---|
-| Transport | ENet over UDP |
+| Transport | ENet over UDP; optional CivetWeb HTTPS interface |
 | Game port | `7777/udp` by default |
+| REST port | `7443/tcp` when a TLS PEM is configured |
 | Simulation | 30 Hz |
 | Snapshots | 15 Hz by default; configurable from 15-20 Hz |
 | Capacity | 256 connected clients across up to 8 lobbies |
@@ -22,6 +23,9 @@ CLI flags override environment variables, which override defaults:
 | Bind address | `--bind ADDRESS` | `SHROOM_SERVER_BIND` | `0.0.0.0` |
 | Game port | `--port PORT` | `SHROOM_SERVER_PORT` | `7777` |
 | Database | `--database PATH` | `SHROOM_SERVER_DB_PATH` | `shroomio.db` |
+| REST bind address | `--rest-bind ADDRESS` | `SHROOM_SERVER_REST_BIND` | `0.0.0.0` |
+| REST port | `--rest-port PORT` | `SHROOM_SERVER_REST_PORT` | `7443` |
+| REST TLS PEM | `--rest-cert PATH` | `SHROOM_SERVER_REST_CERT` | Disabled |
 | Snapshot rate | `--snapshot-rate HZ` | `SHROOM_SERVER_SNAPSHOT_RATE` | `15` |
 | Directory port | `--directory-port PORT` | `SHROOM_DIRECTORY_PORT` | `7778` |
 
@@ -36,9 +40,17 @@ docker compose ps
 docker compose logs -f server
 ```
 
-Compose publishes `7777/udp`, persists `/data/shroomio.db`, restarts on failure, allows 15 seconds
-for graceful shutdown, and runs a protocol-level health probe every 30 seconds. Back up the named
-`shroomio-server-data` volume. Override settings under `services.server.environment`.
+Compose publishes `7777/udp` and `7443/tcp`, persists `/data/shroomio.db`, restarts on failure,
+allows 15 seconds for graceful shutdown, and runs a protocol-level health probe every 30 seconds.
+Back up the named `shroomio-server-data` volume. Override settings under
+`services.server.environment`.
+
+REST remains disabled until `SHROOM_SERVER_REST_CERT` names a readable combined PEM containing the
+private key followed by the certificate chain. Mount the PEM read-only into the container; never
+store it in the image, repository, or data volume. For example, add
+`/etc/shroomio/rest.pem:/run/secrets/shroomio-rest.pem:ro` to the service volumes and set
+`SHROOM_SERVER_REST_CERT=/run/secrets/shroomio-rest.pem`. Public deployments must use a certificate
+issued for their hostname. A self-signed PEM is acceptable only for local testing with `curl -k`.
 
 ## systemd Deployment
 
@@ -64,8 +76,9 @@ second file logger unless the host's log collector requires one.
 
 ## Network and Directory
 
-Allow inbound UDP on the configured game port and forward it through NAT. Point an optional DNS
-`A` record at the public host. The bind address remains a local IPv4 address such as `0.0.0.0`.
+Allow inbound UDP on the configured game port and TCP on the REST port, then forward both through
+NAT. Point an optional DNS `A` record at the public host. Bind addresses remain local IPv4 addresses
+such as `0.0.0.0`.
 
 To operate the bounded directory service separately:
 
@@ -90,7 +103,16 @@ protocol version, nonce, player count, and capacity:
 Run it from outside the host as well to verify firewall/NAT reachability. The server also emits
 60-second health logs containing accepted, stale, and rate-limited inputs, event-budget exhaustion,
 and per-lobby player/bot/spectator counts. Collect process CPU/RSS, disk, UDP throughput, packet loss,
-and queue depth according to [Server Capacity](Server-Capacity.md). There is no HTTP metrics endpoint.
+and queue depth according to [Server Capacity](Server-Capacity.md). The HTTPS readiness endpoint is
+available separately when REST is enabled:
+
+```bash
+curl --fail --silent --show-error https://server.example:7443/health
+# {"status":"ok","service":"shroomio-server"}
+```
+
+The endpoint contains no metrics or player data. REST access logs include method, path, status, and
+remote address while recording request bodies only as `body=redacted`.
 
 ## Backup, Upgrade, and Restore
 
@@ -119,4 +141,5 @@ and tick deadlines. Prefer the 15 Hz snapshot setting when bandwidth-constrained
 capacity if voice fanout saturates the link.
 
 **Server will not start:** Check database-directory ownership, SQLite errors, an occupied UDP port,
-and dynamic libraries with `ldd /opt/shroomio/shroomio-server`.
+the REST PEM path and permissions, occupied UDP/TCP ports, and dynamic libraries with
+`ldd /opt/shroomio/shroomio-server`.
