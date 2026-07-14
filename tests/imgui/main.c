@@ -5,6 +5,7 @@
 #include "client/audio.h"
 #include "client/imgui_wrapper.h"
 #include "client/layout.h"
+#include "client/voice.h"
 #include "raylib.h"
 
 #include <stdio.h>
@@ -141,6 +142,7 @@ int main(void) {
   }
 
   ShroomScreenManagerShutdown(&g_imgui_test_app.screen_manager);
+  ShroomVoiceShutdown();
   ShroomClientAudioShutdown();
   ShroomImGui_Shutdown();
   CloseWindow();

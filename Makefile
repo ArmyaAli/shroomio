@@ -184,10 +184,10 @@ TEST_LIBS := -lm
 LINUX_LIBS   := -lGL -lm -ldl -lpthread -lrt -lX11 -lXrandr -lXi -lXcursor -lXinerama -lasound
 WINDOWS_LIBS := -lopengl32 -lgdi32 -lwinmm -lws2_32
 MACOS_LIBS   := -lm -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo
-LINUX_THIRD_PARTY_LIBS := -L$(VCPKG_LINUX_LIB_DIR) -limgui -lenet -lraylib -lglfw3
-WINDOWS_THIRD_PARTY_LIBS := -L$(VCPKG_WINDOWS_LIB_DIR) -limgui -lenet -lraylib -lglfw3
-MACOS_THIRD_PARTY_LIBS := -L$(VCPKG_MACOS_LIB_DIR) -limgui -lenet -lraylib -lglfw3
-IMGUI_TEST_THIRD_PARTY_LIBS := -L$(VCPKG_LINUX_LIB_DIR) -lenet -lraylib -lglfw3
+LINUX_THIRD_PARTY_LIBS := -L$(VCPKG_LINUX_LIB_DIR) -limgui -lenet -lopus -lraylib -lglfw3
+WINDOWS_THIRD_PARTY_LIBS := -L$(VCPKG_WINDOWS_LIB_DIR) -limgui -lenet -lopus -lraylib -lglfw3
+MACOS_THIRD_PARTY_LIBS := -L$(VCPKG_MACOS_LIB_DIR) -limgui -lenet -lopus -lraylib -lglfw3
+IMGUI_TEST_THIRD_PARTY_LIBS := -L$(VCPKG_LINUX_LIB_DIR) -lenet -lopus -lraylib -lglfw3
 
 #== == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==   \
     == == == == == == =
@@ -223,6 +223,12 @@ CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/spectator_target.c \
 	$(CLIENT_SRC_DIR)/results_summary.c \
 	$(CLIENT_SRC_DIR)/results_transition.c \
+	$(CLIENT_SRC_DIR)/voice.c \
+	$(CLIENT_SRC_DIR)/voice_backend.c \
+	$(CLIENT_SRC_DIR)/voice_codec.c \
+	$(CLIENT_SRC_DIR)/voice_jitter.c \
+	$(CLIENT_SRC_DIR)/voice_mixer.c \
+	$(CLIENT_SRC_DIR)/voice_thread.c \
 	$(CLIENT_SRC_DIR)/screen.c \
 	$(CLIENT_SRC_DIR)/server_browser_model.c \
 	$(CLIENT_SRC_DIR)/settings_session.c \
@@ -279,6 +285,12 @@ SHARED_HEADERS := \
 	$(CLIENT_SRC_DIR)/input_scheduler.h \
 	$(CLIENT_SRC_DIR)/layout.h \
 	$(CLIENT_SRC_DIR)/match_feedback.h \
+	$(CLIENT_SRC_DIR)/voice.h \
+	$(CLIENT_SRC_DIR)/voice_backend.h \
+	$(CLIENT_SRC_DIR)/voice_codec.h \
+	$(CLIENT_SRC_DIR)/voice_jitter.h \
+	$(CLIENT_SRC_DIR)/voice_mixer.h \
+	$(CLIENT_SRC_DIR)/voice_thread.h \
 	$(SERVER_SRC_DIR)/database.h \
 	$(SERVER_SRC_DIR)/directory_registry.h \
 	$(SERVER_SRC_DIR)/match_persistence.h \
@@ -320,6 +332,11 @@ IMGUI_TEST_CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/spectator_target.c \
 	$(CLIENT_SRC_DIR)/results_summary.c \
 	$(CLIENT_SRC_DIR)/results_transition.c \
+	$(CLIENT_SRC_DIR)/voice.c \
+	$(CLIENT_SRC_DIR)/voice_codec.c \
+	$(CLIENT_SRC_DIR)/voice_jitter.c \
+	$(CLIENT_SRC_DIR)/voice_mixer.c \
+	$(CLIENT_SRC_DIR)/voice_thread.c \
 	$(CLIENT_SRC_DIR)/screen.c \
 	$(CLIENT_SRC_DIR)/server_browser_model.c \
 	$(CLIENT_SRC_DIR)/settings_session.c \
@@ -997,6 +1014,14 @@ $(TEST_BUILD_DIR)/test_connection: $(UNIT_TESTS_DIR)/test_connection.c $(UNITY_S
 $(TEST_BUILD_DIR)/test_audio: $(UNIT_TESTS_DIR)/test_audio.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/audio.c | $(UNITY_DIR) $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) $^ -o $@ $(TEST_LIBS) $(LINUX_THIRD_PARTY_LIBS) $(LINUX_LIBS)
+
+$(TEST_BUILD_DIR)/test_voice_client: $(UNIT_TESTS_DIR)/test_voice_client.c $(UNITY_SRC) \
+		$(CLIENT_SRC_DIR)/voice.c $(CLIENT_SRC_DIR)/voice_codec.c \
+		$(CLIENT_SRC_DIR)/voice_jitter.c $(CLIENT_SRC_DIR)/voice_mixer.c \
+		$(CLIENT_SRC_DIR)/voice_thread.c | $(UNITY_DIR) $(VCPKG_LINUX_STAMP)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) $^ -o $@ \
+		$(TEST_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lopus -lpthread
 
 $(TEST_BUILD_DIR)/test_client_budget: $(UNIT_TESTS_DIR)/test_client_budget.c $(UNITY_SRC) | $(UNITY_DIR) $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)

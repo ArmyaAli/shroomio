@@ -4,6 +4,8 @@
 #include "layout.h"
 #include "screen.h"
 #include "shared/lifecycle.h"
+#include "voice.h"
+#include "voice_backend.h"
 
 #include <stdio.h>
 
@@ -52,6 +54,7 @@ int main(void) {
   ShroomImGui_Init();
   ClientSettingsLoad(&g_game.settings);
   ShroomClientAudioInit(&g_game.settings);
+  (void)ShroomVoiceConfigure(ShroomVoiceProductionBackend());
   snprintf(g_game.selected_server_host, sizeof(g_game.selected_server_host), "%s", "127.0.0.1");
   g_game.selected_server_port = 7777;
   g_game.selected_mode = SHROOM_SESSION_MODE_QUICK_PLAY;
@@ -95,6 +98,7 @@ int main(void) {
 
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_STOP);
   ShroomScreenManagerShutdown(&g_screen_manager);
+  ShroomVoiceShutdown();
   ShroomClientAudioShutdown();
   ShroomImGui_Shutdown();
   CloseWindow();

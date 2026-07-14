@@ -19,6 +19,7 @@
 #include "shared/protocol.h"
 #include "shared/profiler.h"
 #include "shared/sim.h"
+#include "voice.h"
 
 static const Color kBotColors[] = {
     {255, 173, 96, 255},  {255, 99, 132, 255},  {122, 162, 247, 255},
@@ -34,10 +35,17 @@ static const float kRenderCullMargin = 96.0f;
 #ifdef TEST_MODE
 static bool g_test_movement_input_enabled;
 static ShroomVec2 g_test_movement_input;
+static bool g_test_push_to_talk_enabled;
+static bool g_test_push_to_talk;
 
 void GameTestSetMovementInput(ShroomVec2 direction) {
   g_test_movement_input = direction;
   g_test_movement_input_enabled = ShroomVec2LengthSqr(direction) > 0.0f;
+}
+
+void GameTestSetPushToTalk(bool enabled, bool held) {
+  g_test_push_to_talk_enabled = enabled;
+  g_test_push_to_talk = held;
 }
 #endif
 
@@ -48,9 +56,34 @@ static Color GetZoneColor(ShroomZone zone);
 static const char* GetZoneSummary(ShroomZone zone);
 static const char* GetZoneLabel(ShroomZone zone);
 static const ShroomPlayerState* GetInputReferencePlayer(const Game* game);
+static bool IsOverlayBlockingGameplay(const Game* game);
 
 static bool IsOnlineMode(GameSessionMode mode) {
   return mode == SHROOM_SESSION_MODE_QUICK_PLAY || mode == SHROOM_SESSION_MODE_LOBBY_PLAY;
+}
+
+static bool VoiceSendFrame(void* context, const void* data, size_t wire_size) {
+  return ClientNetSendVoiceFrame(context, data, wire_size);
+}
+
+static void VoiceReceiveFrame(void* context, const void* data, size_t wire_size) {
+  (void)context;
+  (void)ShroomVoiceSubmitFrame(data, wire_size);
+}
+
+static bool VoicePushToTalkHeld(const Game* game) {
+#ifdef TEST_MODE
+  if (g_test_push_to_talk_enabled) {
+    return g_test_push_to_talk;
+  }
+#endif
+  return !game->chat_open && !IsOverlayBlockingGameplay(game) &&
+         IsKeyDown(game->settings.key_push_to_talk);
+}
+
+static bool VoiceSessionIsActive(const Game* game) {
+  return IsOnlineMode(game->active_mode) && (game->net.status == CLIENT_NET_CONNECTED) &&
+         game->net.handshake_received && (game->net.lobby_id != 0u);
 }
 
 static Rectangle GetCameraWorldBounds(Camera2D camera) {
@@ -3973,6 +4006,7 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
     game->show_results = false;
     ShroomWorldInit(&game->world);
     CaptureParticleBaselines(game);
+    ClientNetSetVoiceFrameHandler(&game->net, VoiceReceiveFrame, game);
     ShroomCursorHideSystem();
     /* local_player is NULL until first snapshot from server. */
     return;
@@ -3994,6 +4028,7 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
   if (mode == SHROOM_SESSION_MODE_QUICK_PLAY) {
     ClientNetInit(&game->net, game->selected_server_host, game->selected_server_port,
                   game->settings.player_name);
+    ClientNetSetVoiceFrameHandler(&game->net, VoiceReceiveFrame, game);
   } else {
     game->net.status = CLIENT_NET_CONNECTED;
     snprintf(game->net.status_text, sizeof(game->net.status_text), "%s", "Offline");
@@ -4147,6 +4182,8 @@ void GameUpdate(Game* game, float delta_time) {
         !game->local_player->has_split) {
       QueueGameplaySfx(game, SHROOM_CLIENT_SFX_SPLIT, 0.64f);
     }
+    ShroomVoiceSetSessionActive(VoiceSessionIsActive(game));
+    ShroomVoiceUpdate(VoicePushToTalkHeld(game), VoiceSendFrame, &game->net);
     const uint64_t network_start_nanos = profile_enabled ? ClientProfileNowNanos() : 0ull;
     ClientNetUpdate(&game->net, input_direction, !game->spectator_mode && game->split_requested,
                     !game->spectator_mode && game->eject_requested, split_aim_direction,
@@ -4366,6 +4403,7 @@ void GameSuspendForResults(Game* game) {
 
 void GameShutdown(Game* game) {
   if (IsOnlineMode(game->active_mode)) {
+    ShroomVoiceSetSessionActive(false);
     ClientNetShutdown(&game->net);
   }
   ShroomCursorShowSystem();
