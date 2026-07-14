@@ -2659,6 +2659,8 @@ static void Test_ChatHistoryRestoresOnReconnect(ImGuiTestContext* ctx) {
   joined.lobby_id = key.lobby_id;
   joined.player_id = 1u;
   joined.entity_id = 1u;
+  joined.server_tick_rate = 30u;
+  joined.snapshot_rate = 15u;
   snprintf(joined.lobby_name, sizeof(joined.lobby_name), "%s", "Cache Lobby");
   ClientNetTestHandleLobbyJoined(net, &joined_packet);
   IM_CHECK_EQ(net->chat_history_count, 1u);
