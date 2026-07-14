@@ -9,7 +9,7 @@
 #include "config.h"
 #include "intermission.h"
 
-#define SHROOM_PROTOCOL_VERSION 9u
+#define SHROOM_PROTOCOL_VERSION 10u
 #define SHROOM_SERVER_PORT 7777u
 #define SHROOM_MAX_UNRELIABLE_PACKET_SIZE 1200u
 #define SHROOM_MAX_PASSWORD_LENGTH 64u
@@ -140,8 +140,10 @@ typedef struct ShroomSnapshotPlayerState {
   uint8_t is_bot;
   uint16_t effect_flags;
   uint8_t team_id;
+  uint8_t piece_index;
   uint16_t round_spores;
   uint8_t round_kills;
+  uint8_t life_generation;
   float objective_score;
 } ShroomSnapshotPlayerState;
 

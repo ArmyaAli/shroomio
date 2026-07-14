@@ -57,6 +57,10 @@ float ShroomDistanceSqr(ShroomVec2 a, ShroomVec2 b) {
   return ShroomVec2LengthSqr(delta);
 }
 
+uint8_t ShroomNextLifeGeneration(uint8_t generation) {
+  return generation == UINT8_MAX ? 1u : (uint8_t)(generation + 1u);
+}
+
 static ShroomVec2 ShroomNormalizeOrZero(ShroomVec2 v) {
   const float length_sqr = ShroomVec2LengthSqr(v);
   float scale;
@@ -245,6 +249,7 @@ static ShroomVec2 ShroomRandomSpawnPosition(ShroomWorldState* world, bool prefer
 }
 
 static void ShroomRespawnPlayer(ShroomWorldState* world, ShroomPlayerState* player) {
+  player->life_generation = ShroomNextLifeGeneration(player->life_generation);
   player->position = ShroomRandomSpawnPosition(world, true);
   player->input_direction = (ShroomVec2){0};
   player->mass = SHROOM_DEFAULT_PLAYER_MASS;
@@ -1178,6 +1183,7 @@ ShroomPlayerState* ShroomWorldSpawnPlayer(ShroomWorldState* world, ShroomPlayerI
       .alive = true,
       .is_bot = is_bot,
       .spawn_protection_timer = is_bot ? 0.0f : SHROOM_PLAYER_SPAWN_PROTECTION_SECONDS,
+      .life_generation = 1u,
   };
 
   return player;
@@ -1408,6 +1414,7 @@ bool ShroomWorldSplitPlayerToward(ShroomWorldState* world, ShroomPlayerState* pl
       .merge_timer = SHROOM_SPLIT_MERGE_SECONDS,
       .spawn_protection_timer = SHROOM_SPLIT_PROTECTION_SECONDS,
       .piece_index = (uint8_t)piece_count,
+      .life_generation = player->life_generation,
       .split_velocity = ShroomVec2Scale(launch_dir, SHROOM_SPLIT_IMPULSE_SPEED),
   };
   snprintf(new_piece->name, sizeof(new_piece->name), "%s", player->name);
@@ -1661,6 +1668,7 @@ void ShroomWorldResetMatch(ShroomWorldState* world) {
       }
 
       player->position = ShroomRandomSpawnPosition(world, true);
+      player->life_generation = ShroomNextLifeGeneration(player->life_generation);
       player->mass = SHROOM_DEFAULT_PLAYER_MASS;
       player->radius = ShroomMassToRadius(player->mass);
       player->input_direction = (ShroomVec2){0};

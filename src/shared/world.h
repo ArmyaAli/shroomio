@@ -79,8 +79,9 @@ typedef struct ShroomPlayerState {
   float decay_immune_powerup_timer;
   float eject_cooldown_timer;
   float bot_tactical_cooldown_timer;
-  uint8_t piece_index; /* 0 = primary; 1-3 = split fragment */
-  uint8_t team_id;     /* 0 = no team (FFA), 1-8 = team number */
+  uint8_t piece_index;     /* 0 = primary; 1-3 = split fragment */
+  uint8_t team_id;         /* 0 = no team (FFA), 1-8 = team number */
+  uint8_t life_generation; /* 1-255; advances whenever the primary starts a new life */
 } ShroomPlayerState;
 
 typedef struct ShroomSporeState {

@@ -1092,6 +1092,8 @@ static void SendSnapshot(ENetPeer* peer, const ServerSession* session,
         .objective_score = ShroomWorldGetObjectiveScore(world, player->player_id),
         .alive = 1u,
         .is_bot = player->is_bot ? 1u : 0u,
+        .piece_index = player->piece_index,
+        .life_generation = player->life_generation,
         .effect_flags =
             (uint16_t)((player->speed_powerup_timer > 0.0f ? SHROOM_POWERUP_EFFECT_SPEED : 0u) |
                        (player->shield_powerup_timer > 0.0f ? SHROOM_POWERUP_EFFECT_SHIELD : 0u) |

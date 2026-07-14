@@ -1973,6 +1973,88 @@ static void Test_OnlinePredictionMovesImmediatelyAndReconciles(ImGuiTestContext*
               SHROOM_SCREEN_GAME);
 }
 
+static void Test_SpectatorCyclesWhenWatchedPlayerIsConsumed(ImGuiTestContext* ctx) {
+  ClientNetState* net;
+
+  SetupOnlineGame();
+  net = &g_imgui_test_app.game.net;
+  net->player_id = 99u;
+  net->match_phase = SHROOM_MATCH_PHASE_RUNNING;
+  net->snapshot_player_count = 2u;
+  net->snapshot_players[0] = (ShroomSnapshotPlayerState){
+      .player_id = 2u,
+      .entity_id = 20u,
+      .position_x = 100.0f,
+      .position_y = 100.0f,
+      .mass = 90.0f,
+      .radius = ShroomMassToRadius(90.0f),
+      .alive = 1u,
+      .life_generation = 7u,
+  };
+  snprintf(net->snapshot_players[0].name, sizeof(net->snapshot_players[0].name), "Watched");
+  net->snapshot_players[1] = (ShroomSnapshotPlayerState){
+      .player_id = 3u,
+      .entity_id = 30u,
+      .position_x = 500.0f,
+      .position_y = 500.0f,
+      .mass = 60.0f,
+      .radius = ShroomMassToRadius(60.0f),
+      .alive = 1u,
+      .life_generation = 3u,
+  };
+  snprintf(net->snapshot_players[1].name, sizeof(net->snapshot_players[1].name), "Next Colony");
+  net->last_snapshot_tick = 1u;
+  GameEnterSpectatorMode(&g_imgui_test_app.game);
+  ShroomTeCtx_Yield(ctx, 3);
+
+  IM_CHECK_EQ(g_imgui_test_app.game.spectated_entity_id, 20u);
+  IM_CHECK(g_imgui_test_app.game.spectator_follow_mode);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Spectator"));
+
+  net->snapshot_players[0].mass = SHROOM_DEFAULT_PLAYER_MASS;
+  net->snapshot_players[0].radius = ShroomMassToRadius(SHROOM_DEFAULT_PLAYER_MASS);
+  net->snapshot_players[0].position_x = 101.0f;
+  net->snapshot_players[0].position_y = 101.0f;
+  net->snapshot_players[0].life_generation = 8u;
+  net->last_snapshot_tick += 1u;
+  ShroomTeCtx_Yield(ctx, 3);
+
+  IM_CHECK_EQ(g_imgui_test_app.game.spectated_entity_id, 30u);
+  IM_CHECK(g_imgui_test_app.game.spectator_follow_mode);
+  IM_CHECK_EQ(g_imgui_test_app.game.death_cutscene_duration, 0.0f);
+  IM_CHECK_EQ(g_imgui_test_app.game.death_camera_hold_timer, 0.0f);
+  IM_CHECK(!ShroomTeImGui_WindowIsActive("Death Cutscene Actions"));
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Spectator"));
+
+  net->snapshot_player_count = 1u;
+  net->snapshot_players[0] = (ShroomSnapshotPlayerState){
+      .player_id = net->player_id,
+      .entity_id = 99u,
+      .position_x = 300.0f,
+      .position_y = 300.0f,
+      .mass = SHROOM_DEFAULT_PLAYER_MASS,
+      .radius = ShroomMassToRadius(SHROOM_DEFAULT_PLAYER_MASS),
+      .alive = 1u,
+      .life_generation = 1u,
+  };
+  net->last_snapshot_tick += 1u;
+  ShroomTeCtx_Yield(ctx, 3);
+
+  IM_CHECK_EQ(g_imgui_test_app.game.spectated_entity_id, 0u);
+  IM_CHECK(g_imgui_test_app.game.spectator_follow_mode);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Spectator"));
+
+  net->snapshot_players[0].player_id = 4u;
+  net->snapshot_players[0].entity_id = 40u;
+  snprintf(net->snapshot_players[0].name, sizeof(net->snapshot_players[0].name), "Late Colony");
+  net->last_snapshot_tick += 1u;
+  ShroomTeCtx_Yield(ctx, 3);
+
+  IM_CHECK_EQ(g_imgui_test_app.game.spectated_entity_id, 40u);
+  IM_CHECK(g_imgui_test_app.game.spectator_follow_mode);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Spectator"));
+}
+
 static void Test_AuthoritativeResultsCompleteTwoRoundCycle(ImGuiTestContext* ctx) {
   const ShroomVec2 local_position = {500.0f, 600.0f};
   const ShroomVec2 opponent_position = {900.0f, 1000.0f};
@@ -2713,6 +2795,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_PlayAgainResetsTransientMatchPresentation);
   ShroomTeEngine_RegisterTest(engine, "screens", "online_prediction_moves_and_reconciles",
                               Test_OnlinePredictionMovesImmediatelyAndReconciles);
+  ShroomTeEngine_RegisterTest(engine, "screens", "spectator_cycles_consumed_target",
+                              Test_SpectatorCyclesWhenWatchedPlayerIsConsumed);
   ShroomTeEngine_RegisterTest(engine, "screens", "authoritative_results_two_round_cycle",
                               Test_AuthoritativeResultsCompleteTwoRoundCycle);
   ShroomTeEngine_RegisterTest(engine, "screens", "king_of_hill_complete_match_hud_and_results",

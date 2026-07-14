@@ -39,5 +39,6 @@ float ShroomMassToSpeed(float mass);
 ShroomZone ShroomGetZoneAtPosition(const ShroomWorldState* world, ShroomVec2 position);
 float ShroomGetConsumeMassAdvantageAtPosition(const ShroomWorldState* world, ShroomVec2 position);
 float ShroomDistanceSqr(ShroomVec2 a, ShroomVec2 b);
+uint8_t ShroomNextLifeGeneration(uint8_t generation);
 
 #endif

@@ -192,7 +192,7 @@ void test_lobby_config_constants(void) {
 
 void test_protocol_constants(void) {
   TEST_ASSERT_EQUAL(7777, SHROOM_SERVER_PORT);
-  TEST_ASSERT_EQUAL(9, SHROOM_PROTOCOL_VERSION);
+  TEST_ASSERT_EQUAL(10, SHROOM_PROTOCOL_VERSION);
   TEST_ASSERT_EQUAL(32, SHROOM_MAX_NAME_LENGTH);
   TEST_ASSERT_EQUAL(15, SHROOM_SNAPSHOT_RATE);
   TEST_ASSERT_EQUAL(256, SHROOM_MAX_SNAPSHOT_PLAYERS);
@@ -499,6 +499,8 @@ void test_snapshot_player_state_initialization(void) {
   strncpy(state.name, "ArenaScout", SHROOM_MAX_NAME_LENGTH);
   state.alive = 1;
   state.is_bot = 0;
+  state.piece_index = 2u;
+  state.life_generation = 19u;
   state.objective_score = 42.5f;
 
   TEST_ASSERT_EQUAL(1, state.player_id);
@@ -510,6 +512,8 @@ void test_snapshot_player_state_initialization(void) {
   TEST_ASSERT_EQUAL_STRING("ArenaScout", state.name);
   TEST_ASSERT_EQUAL(1, state.alive);
   TEST_ASSERT_EQUAL(0, state.is_bot);
+  TEST_ASSERT_EQUAL_UINT8(2u, state.piece_index);
+  TEST_ASSERT_EQUAL_UINT8(19u, state.life_generation);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 42.5f, state.objective_score);
 }
 
