@@ -1713,13 +1713,21 @@ static void Test_DeathCutscenePlayAgainResumesOnlineMatch(ImGuiTestContext* ctx)
   IM_CHECK_EQ(g_imgui_test_app.game.local_player, original_player);
 }
 
-static void Test_MatchResetRebaselinesFeedback(ImGuiTestContext* ctx) {
+static void Test_PlayAgainResetsTransientMatchPresentation(ImGuiTestContext* ctx) {
   const ShroomVec2 opening_local_position = {120.0f, 140.0f};
   const ShroomVec2 opening_opponent_position = {1800.0f, 1800.0f};
   const ShroomVec2 reset_local_position = {1100.0f, 1000.0f};
   const ShroomVec2 reset_opponent_position = {1700.0f, 1700.0f};
+  ENetHost* original_host;
+  ENetPeer* original_peer;
+  uint32_t round_two_input_sequence;
 
-  SetupOnlineGame();
+  SetupLiveLobbyGame();
+  g_imgui_test_app.game.net.player_id = 1u;
+  g_imgui_test_app.game.net.entity_id = 101u;
+  original_host = g_imgui_test_app.game.net.host;
+  original_peer = g_imgui_test_app.game.net.peer;
+  original_peer->state = ENET_PEER_STATE_CONNECTED;
   g_imgui_test_app.game.particle_baseline_ready = false;
   InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RUNNING, 101u, opening_local_position, 800.0f,
                          opening_opponent_position, 900.0f);
@@ -1741,6 +1749,29 @@ static void Test_MatchResetRebaselinesFeedback(ImGuiTestContext* ctx) {
   g_imgui_test_app.game.kill_feed[0].active = true;
   g_imgui_test_app.game.particle_cursor = 1u;
   g_imgui_test_app.game.particles[0].active = true;
+  g_imgui_test_app.game.leaderboard_overlay_open = true;
+  g_imgui_test_app.game.menu_overlay_open = true;
+  g_imgui_test_app.game.diagnostics_overlay_open = true;
+  g_imgui_test_app.game.settings.diagnostics_enabled = true;
+  g_imgui_test_app.game.leave_confirmation_open = true;
+  g_imgui_test_app.game.inspect_overlay_open = true;
+  g_imgui_test_app.game.inspect_overlay_progress = 1.0f;
+  g_imgui_test_app.game.inspect_prompt_timer = 1.0f;
+  g_imgui_test_app.game.selected_inspect_index = 2;
+  g_imgui_test_app.game.inspect_target_count = 3;
+  g_imgui_test_app.game.selected_inspect_player_id = 99u;
+  g_imgui_test_app.game.return_to_menu_requested = true;
+  g_imgui_test_app.game.play_again_requested = true;
+  g_imgui_test_app.game.chat_open = true;
+  g_imgui_test_app.game.chat_minimized = true;
+  g_imgui_test_app.game.chat_focus_input = true;
+  g_imgui_test_app.game.chat_inactive_timer = 4.0f;
+  snprintf(g_imgui_test_app.game.chat_input_buf,
+           sizeof(g_imgui_test_app.game.chat_input_buf), "stale draft");
+  g_imgui_test_app.game.chat_scroll_to_bottom = true;
+  g_imgui_test_app.game.net.chat_history_count = 1u;
+  g_imgui_test_app.game.net.chat_history_head = 1u;
+  g_imgui_test_app.game.net.chat_unread_count = 1u;
 
   InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RUNNING, 101u, reset_local_position,
                          SHROOM_DEFAULT_PLAYER_MASS, reset_opponent_position,
@@ -1755,7 +1786,47 @@ static void Test_MatchResetRebaselinesFeedback(ImGuiTestContext* ctx) {
   IM_CHECK_EQ(g_imgui_test_app.game.kill_feed_count, 0u);
   IM_CHECK_EQ(g_imgui_test_app.game.particle_cursor, 0u);
   IM_CHECK_EQ(g_imgui_test_app.game.gameplay_event_count, 0u);
+  IM_CHECK_EQ(g_imgui_test_app.game.leaderboard_overlay_open, false);
+  IM_CHECK_EQ(g_imgui_test_app.game.menu_overlay_open, false);
+  IM_CHECK_EQ(g_imgui_test_app.game.diagnostics_overlay_open, true);
+  IM_CHECK_EQ(g_imgui_test_app.game.leave_confirmation_open, false);
+  IM_CHECK_EQ(g_imgui_test_app.game.inspect_overlay_open, false);
+  IM_CHECK_EQ(g_imgui_test_app.game.inspect_overlay_progress, 0.0f);
+  IM_CHECK_EQ(g_imgui_test_app.game.inspect_prompt_timer, 0.0f);
+  IM_CHECK_EQ(g_imgui_test_app.game.selected_inspect_index, 0);
+  IM_CHECK_EQ(g_imgui_test_app.game.inspect_target_count, 0);
+  IM_CHECK_EQ(g_imgui_test_app.game.selected_inspect_player_id, 0u);
+  IM_CHECK_EQ(g_imgui_test_app.game.return_to_menu_requested, false);
+  IM_CHECK_EQ(g_imgui_test_app.game.play_again_requested, false);
+  IM_CHECK_EQ(g_imgui_test_app.game.chat_open, false);
+  IM_CHECK_EQ(g_imgui_test_app.game.chat_minimized, false);
+  IM_CHECK_EQ(g_imgui_test_app.game.chat_focus_input, false);
+  IM_CHECK_EQ(g_imgui_test_app.game.chat_inactive_timer, 0.0f);
+  IM_CHECK_STR_EQ(g_imgui_test_app.game.chat_input_buf, "");
+  IM_CHECK_EQ(g_imgui_test_app.game.chat_scroll_to_bottom, false);
+  IM_CHECK_EQ(g_imgui_test_app.game.net.chat_history_count, 1u);
+  IM_CHECK_EQ(g_imgui_test_app.game.net.chat_history_head, 1u);
+  IM_CHECK_EQ(g_imgui_test_app.game.net.chat_unread_count, 1u);
+  IM_CHECK_EQ(g_imgui_test_app.game.net.host, original_host);
+  IM_CHECK_EQ(g_imgui_test_app.game.net.peer, original_peer);
+  IM_CHECK_EQ(g_imgui_test_app.game.net.peer->state, ENET_PEER_STATE_CONNECTED);
+  IM_CHECK(g_imgui_test_app.game.net.match_entry_sent);
+  IM_CHECK_EQ(g_imgui_test_app.game.net.match_phase, SHROOM_MATCH_PHASE_RUNNING);
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_GAME);
+  IM_CHECK(!ShroomTeImGui_WindowIsActive("Leaderboard"));
+  IM_CHECK(!ShroomTeImGui_WindowIsActive("Match Menu"));
+  IM_CHECK(!ShroomTeImGui_WindowIsActive("Leave Match?"));
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Diagnostics"));
   IM_CHECK(!ShroomTeImGui_WindowIsActive("Death Cutscene Actions"));
+
+  round_two_input_sequence = g_imgui_test_app.game.net.last_input_sequence;
+  g_imgui_test_app.frame_delta_override = 1.0f / SHROOM_SERVER_TICK_RATE;
+  GameTestSetMovementInput((ShroomVec2){1.0f, 0.0f});
+  ShroomTeCtx_Yield(ctx, 3);
+  GameTestSetMovementInput((ShroomVec2){0});
+  g_imgui_test_app.frame_delta_override = 0.0f;
+  IM_CHECK(g_imgui_test_app.game.net.last_input_sequence > round_two_input_sequence);
 
   InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RUNNING, 202u, reset_local_position,
                          SHROOM_DEFAULT_PLAYER_MASS, reset_opponent_position,
@@ -2559,8 +2630,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_OnlineResultsWithoutSessionRejoinsLobby);
   ShroomTeEngine_RegisterTest(engine, "screens", "death_cutscene_play_again_resumes_online_match",
                               Test_DeathCutscenePlayAgainResumesOnlineMatch);
-  ShroomTeEngine_RegisterTest(engine, "screens", "match_reset_rebaselines_feedback",
-                              Test_MatchResetRebaselinesFeedback);
+  ShroomTeEngine_RegisterTest(engine, "screens", "play_again_resets_transient_presentation",
+                              Test_PlayAgainResetsTransientMatchPresentation);
   ShroomTeEngine_RegisterTest(engine, "screens", "online_prediction_moves_and_reconciles",
                               Test_OnlinePredictionMovesImmediatelyAndReconciles);
   ShroomTeEngine_RegisterTest(engine, "screens", "authoritative_results_two_round_cycle",
