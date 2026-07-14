@@ -69,6 +69,10 @@ The server is self-hostable without recompiling. CLI flags override environment 
 | UDP port | `--port PORT` | `SHROOM_SERVER_PORT` | `7777` |
 | SQLite database | `--database PATH` | `SHROOM_SERVER_DB_PATH` | `shroomio.db` |
 | Directory UDP port | `--directory-port PORT` | `SHROOM_DIRECTORY_PORT` | `7778` |
+| Snapshot rate | `--snapshot-rate HZ` | `SHROOM_SERVER_SNAPSHOT_RATE` | `15` |
+
+Snapshot rate accepts 15-20 Hz. The server advertises the effective value to clients and logs it
+at startup.
 
 Examples:
 
@@ -343,7 +347,7 @@ exit 0
 ### High latency or jitter
 
 - Players will experience rough movement without client-side interpolation (see roadmap milestone 3).
-- Reduce tick/snapshot rates by adjusting `SHROOM_SERVER_TICK_RATE` in `config.h` and `SHROOM_SNAPSHOT_RATE` in `protocol.h`, then rebuild.
+- Use `--snapshot-rate 15` to select the lowest supported bandwidth cadence without rebuilding.
 - Verify server network throughput is adequate for player count.
 
 ### Server not logging anything

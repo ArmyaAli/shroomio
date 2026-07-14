@@ -17,6 +17,39 @@ static ClientNetState MakePendingPing(uint32_t nonce, uint32_t sent_time_ms) {
   return net;
 }
 
+static void test_client_net_negotiates_welcome_cadence(void) {
+  ClientNetState net = {0};
+  ShroomWelcomePacket welcome = {
+      .protocol_version = SHROOM_PROTOCOL_VERSION,
+      .server_tick_rate = 60u,
+      .snapshot_rate = 20u,
+  };
+  ENetPacket packet = {.data = (enet_uint8*)&welcome, .dataLength = sizeof(welcome)};
+
+  ClientNetTestHandleWelcome(&net, &packet);
+
+  TEST_ASSERT_TRUE(net.handshake_received);
+  TEST_ASSERT_EQUAL_UINT16(60u, net.server_tick_rate);
+  TEST_ASSERT_EQUAL_UINT16(20u, net.snapshot_rate);
+  TEST_ASSERT_EQUAL_INT(CLIENT_NET_CONNECTED, net.status);
+}
+
+static void test_client_net_rejects_invalid_welcome_cadence(void) {
+  ClientNetState net = {0};
+  ShroomWelcomePacket welcome = {
+      .protocol_version = SHROOM_PROTOCOL_VERSION,
+      .server_tick_rate = 60u,
+      .snapshot_rate = 21u,
+  };
+  ENetPacket packet = {.data = (enet_uint8*)&welcome, .dataLength = sizeof(welcome)};
+
+  ClientNetTestHandleWelcome(&net, &packet);
+
+  TEST_ASSERT_FALSE(net.handshake_received);
+  TEST_ASSERT_EQUAL_INT(CLIENT_NET_ERROR, net.status);
+  TEST_ASSERT_EQUAL_STRING("Invalid server cadence", net.status_text);
+}
+
 static void test_client_net_records_fresh_pong(void) {
   ClientNetState net = MakePendingPing(42u, 1000u);
 
@@ -250,6 +283,8 @@ static void test_lobby_join_resets_world_replication_tick_and_collectibles(void)
   joined.lobby_id = 7u;
   joined.player_id = 1u;
   joined.entity_id = 2u;
+  joined.server_tick_rate = 60u;
+  joined.snapshot_rate = 15u;
   ClientNetTestHandleLobbyJoined(&net, &joined_packet);
 
   TEST_ASSERT_FALSE(net.world_replication.tick_received);
@@ -563,13 +598,19 @@ static void test_client_net_lobby_join_resets_round_scoped_intermission_state(vo
       .consumed_intermission_round_id = 12u,
       .consumed_intermission_round_valid = true,
   };
-  ShroomLobbyJoinedPacket joined = {.lobby_id = 9u};
+  ShroomLobbyJoinedPacket joined = {
+      .lobby_id = 9u,
+      .server_tick_rate = 60u,
+      .snapshot_rate = 20u,
+  };
   ENetPacket packet = {.data = (enet_uint8*)&joined, .dataLength = sizeof(joined)};
 
   net.intermission.round_id = 13u;
   ClientNetTestHandleLobbyJoined(&net, &packet);
 
   TEST_ASSERT_EQUAL_UINT32(9u, net.lobby_id);
+  TEST_ASSERT_EQUAL_UINT16(60u, net.server_tick_rate);
+  TEST_ASSERT_EQUAL_UINT16(20u, net.snapshot_rate);
   TEST_ASSERT_FALSE(net.intermission_received);
   TEST_ASSERT_FALSE(net.consumed_intermission_round_valid);
   TEST_ASSERT_EQUAL_UINT32(0u, net.intermission.round_id);
@@ -577,6 +618,8 @@ static void test_client_net_lobby_join_resets_round_scoped_intermission_state(vo
 
 int main(void) {
   UNITY_BEGIN();
+  RUN_TEST(test_client_net_negotiates_welcome_cadence);
+  RUN_TEST(test_client_net_rejects_invalid_welcome_cadence);
   RUN_TEST(test_client_net_records_fresh_pong);
   RUN_TEST(test_client_net_ignores_stale_pong_sample);
   RUN_TEST(test_client_net_clears_timed_out_pending_ping);

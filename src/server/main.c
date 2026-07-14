@@ -19,6 +19,7 @@
 #include "shared/protocol.h"
 #include "shared/profiler.h"
 #include "shared/sim.h"
+#include "shared/snapshot_scheduler.h"
 #include "shared/world_replication.h"
 #include "auth.h"
 #include "database.h"
@@ -51,6 +52,7 @@ typedef struct ShroomLobby {
   char persistence_round_uuid[96];
   ShroomPersistedParticipant persistence_participants[SHROOM_MAX_PARTICIPANTS];
   size_t persistence_participant_count;
+  ShroomSnapshotScheduler snapshot_scheduler;
 } ShroomLobby;
 
 typedef struct ServerSession {
@@ -86,6 +88,7 @@ typedef struct ServerConfig {
   enet_uint32 bind_address;
   uint16_t port;
   uint16_t directory_port;
+  uint16_t snapshot_rate;
   float match_duration_seconds;
   bool directory_mode;
   bool smoke_test;
@@ -121,6 +124,7 @@ static uint64_t g_server_input_stale_rejections;
 static uint64_t g_server_input_rate_rejections;
 
 static float g_match_duration_seconds = SHROOM_MATCH_DURATION_SECONDS;
+static uint16_t g_snapshot_rate = SHROOM_SNAPSHOT_RATE;
 
 static bool ParsePort(const char* text, uint16_t* port) {
   char* end = NULL;
@@ -156,6 +160,17 @@ static bool ParseUint32(const char* text, uint32_t* out_value) {
   return true;
 }
 
+static bool ParseSnapshotRate(const char* text, uint16_t* out_rate) {
+  uint32_t value;
+
+  if (!ParseUint32(text, &value) || (value < SHROOM_SNAPSHOT_RATE_MIN) ||
+      (value > SHROOM_SNAPSHOT_RATE_MAX)) {
+    return false;
+  }
+  *out_rate = (uint16_t)value;
+  return true;
+}
+
 static void CopyConfigString(char* destination, size_t destination_size, const char* source) {
   if ((destination == NULL) || (destination_size == 0u)) {
     return;
@@ -176,6 +191,8 @@ static void PrintUsage(const char* program_name) {
   printf("  --database PATH   SQLite database path, default shroomio.db\n");
   printf("  --directory       Run the bounded directory service instead of a game server\n");
   printf("  --directory-port PORT  Directory UDP port, default %u\n", SHROOM_DIRECTORY_PORT);
+  printf("  --snapshot-rate HZ  Snapshot rate %u-%u Hz, default %u\n", SHROOM_SNAPSHOT_RATE_MIN,
+         SHROOM_SNAPSHOT_RATE_MAX, SHROOM_SNAPSHOT_RATE);
   printf("  --match-duration SECONDS  Match duration in seconds, default %.0f\n",
          SHROOM_MATCH_DURATION_SECONDS);
   printf("  --smoke-test      Start, initialize subsystems, then shut down cleanly\n");
@@ -187,6 +204,7 @@ static void PrintUsage(const char* program_name) {
   printf("Environment overrides:\n");
   printf("  SHROOM_SERVER_BIND, SHROOM_SERVER_PORT, SHROOM_SERVER_DB_PATH\n");
   printf("  SHROOM_DIRECTORY_HOST, SHROOM_DIRECTORY_PORT, SHROOM_SERVER_NAME\n");
+  printf("  SHROOM_SERVER_SNAPSHOT_RATE\n");
 }
 
 static void SanitizeServerName(char* name) {
@@ -242,9 +260,11 @@ static bool LoadServerConfig(ServerConfig* config, int argc, char** argv) {
   const char* env_directory_host = getenv("SHROOM_DIRECTORY_HOST");
   const char* env_directory_port = getenv("SHROOM_DIRECTORY_PORT");
   const char* env_server_name = getenv("SHROOM_SERVER_NAME");
+  const char* env_snapshot_rate = getenv("SHROOM_SERVER_SNAPSHOT_RATE");
 
   *config = (ServerConfig){.port = (uint16_t)SHROOM_SERVER_PORT,
                            .directory_port = (uint16_t)SHROOM_DIRECTORY_PORT,
+                           .snapshot_rate = (uint16_t)SHROOM_SNAPSHOT_RATE,
                            .match_duration_seconds = SHROOM_MATCH_DURATION_SECONDS,
                            .benchmark_ticks = 600u,
                            .benchmark_bots = 8u};
@@ -272,6 +292,12 @@ static bool LoadServerConfig(ServerConfig* config, int argc, char** argv) {
   }
   if ((env_server_name != NULL) && (env_server_name[0] != '\0')) {
     CopyConfigString(config->server_name, sizeof(config->server_name), env_server_name);
+  }
+  if ((env_snapshot_rate != NULL) && (env_snapshot_rate[0] != '\0') &&
+      !ParseSnapshotRate(env_snapshot_rate, &config->snapshot_rate)) {
+    fprintf(stderr, "Invalid SHROOM_SERVER_SNAPSHOT_RATE: %s (expected %u-%u)\n", env_snapshot_rate,
+            SHROOM_SNAPSHOT_RATE_MIN, SHROOM_SNAPSHOT_RATE_MAX);
+    return false;
   }
 
   int i = 1;
@@ -313,6 +339,17 @@ static bool LoadServerConfig(ServerConfig* config, int argc, char** argv) {
       ++i;
       if (!ParsePort(argv[i], &config->directory_port)) {
         fprintf(stderr, "Invalid --directory-port: %s\n", argv[i]);
+        return false;
+      }
+    } else if (strcmp(argv[i], "--snapshot-rate") == 0) {
+      if ((i + 1) >= argc) {
+        fprintf(stderr, "Missing value for --snapshot-rate\n");
+        return false;
+      }
+      ++i;
+      if (!ParseSnapshotRate(argv[i], &config->snapshot_rate)) {
+        fprintf(stderr, "Invalid --snapshot-rate: %s (expected %u-%u)\n", argv[i],
+                SHROOM_SNAPSHOT_RATE_MIN, SHROOM_SNAPSHOT_RATE_MAX);
         return false;
       }
     } else if (strcmp(argv[i], "--smoke-test") == 0) {
@@ -448,8 +485,7 @@ static void SleepUntil(uint64_t target_time_nanos) {
 
 static int RunServerBenchmark(const ServerConfig* config) {
   ShroomWorldState world;
-  const uint64_t snapshot_interval_ticks =
-      (uint64_t)(SHROOM_SERVER_TICK_RATE / (float)SHROOM_SNAPSHOT_RATE);
+  ShroomSnapshotScheduler snapshot_scheduler;
   const uint64_t spore_interval_ticks =
       (uint64_t)(SHROOM_SERVER_TICK_RATE / (float)SHROOM_WORLD_REPLICATION_RATE);
   double sim_sum_ms = 0.0;
@@ -462,6 +498,10 @@ static int RunServerBenchmark(const ServerConfig* config) {
   uint64_t elapsed_nanos;
 
   ShroomWorldInitWithSeed(&world, 42u + config->benchmark_bots);
+  if (!ShroomSnapshotSchedulerInit(&snapshot_scheduler, (uint32_t)SHROOM_SERVER_TICK_RATE,
+                                   config->snapshot_rate)) {
+    return 1;
+  }
   if (config->benchmark_bots > 0u) {
     replication_states = calloc(config->benchmark_bots, sizeof(*replication_states));
     replication_records = malloc(SHROOM_MAX_WORLD_STATE_RECORDS * sizeof(*replication_records));
@@ -490,7 +530,7 @@ static int RunServerBenchmark(const ServerConfig* config) {
       sim_peak_ms = sim_ms;
     }
 
-    if ((snapshot_interval_ticks > 0u) && ((world.tick % snapshot_interval_ticks) == 0u)) {
+    if (ShroomSnapshotSchedulerStep(&snapshot_scheduler)) {
       estimated_packet_count += config->benchmark_bots;
       estimated_snapshot_bytes +=
           (uint64_t)config->benchmark_bots *
@@ -570,6 +610,8 @@ static void SendWelcome(ENetPeer* peer) {
   const ShroomWelcomePacket packet = {
       .header = {SHROOM_PACKET_WELCOME, SHROOM_ENET_CHANNEL_CONTROL, sizeof(ShroomWelcomePacket)},
       .protocol_version = SHROOM_PROTOCOL_VERSION,
+      .server_tick_rate = (uint16_t)SHROOM_SERVER_TICK_RATE,
+      .snapshot_rate = g_snapshot_rate,
   };
 
   SendPacket(peer, SHROOM_ENET_CHANNEL_CONTROL, SHROOM_PACKET_WELCOME,
@@ -937,7 +979,7 @@ static void SendLobbyJoined(ENetPeer* peer, const ServerSession* session,
   packet.player_id = session->player_id;
   packet.entity_id = session->player != NULL ? session->player->entity_id : 0u;
   packet.server_tick_rate = (uint16_t)SHROOM_SERVER_TICK_RATE;
-  packet.snapshot_rate = SHROOM_SNAPSHOT_RATE;
+  packet.snapshot_rate = g_snapshot_rate;
   packet.max_players = (uint16_t)SHROOM_MAX_PLAYABLE_PARTICIPANTS;
   packet.world_width = lobby->world.width;
   packet.world_height = lobby->world.height;
@@ -1732,6 +1774,8 @@ static ShroomLobby* CreateLobby(ShroomLobby* lobbies, uint32_t lobby_id, const c
       ShroomWorldInit(&lobby->world);
       ShroomWorldSetGameMode(&lobby->world, game_mode);
       ShroomWorldSetMatchDuration(&lobby->world, g_match_duration_seconds);
+      ShroomSnapshotSchedulerInit(&lobby->snapshot_scheduler, (uint32_t)SHROOM_SERVER_TICK_RATE,
+                                  g_snapshot_rate);
       BeginLobbyPersistenceRound(lobby);
       InitializeLobbyBots(lobby, next_player_id);
       LOG_INFO("lobby created: id=%u name=%.31s dynamic=%d", lobby_id, lobby->name,
@@ -2278,8 +2322,6 @@ static void DirectoryAdvertiserShutdown(DirectoryAdvertiser* advertiser) {
 
 int main(int argc, char** argv) {
   const uint64_t tick_interval_nanos = 1000000000ull / (uint64_t)SHROOM_SERVER_TICK_RATE;
-  const uint64_t snapshot_interval_ticks =
-      (uint64_t)(SHROOM_SERVER_TICK_RATE / (float)SHROOM_SNAPSHOT_RATE);
   const uint64_t spore_interval_ticks =
       (uint64_t)(SHROOM_SERVER_TICK_RATE / (float)SHROOM_WORLD_REPLICATION_RATE);
   ENetAddress address = {0};
@@ -2310,6 +2352,7 @@ int main(int argc, char** argv) {
   }
 
   g_match_duration_seconds = config.match_duration_seconds;
+  g_snapshot_rate = config.snapshot_rate;
 
   if (config.benchmark) {
     return RunServerBenchmark(&config);
@@ -2371,7 +2414,8 @@ int main(int argc, char** argv) {
   }
 
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_START);
-  LOG_INFO("shroomio server listening on %s:%u/udp", config.bind_host, config.port);
+  LOG_INFO("shroomio server listening on %s:%u/udp snapshot_rate=%u", config.bind_host, config.port,
+           config.snapshot_rate);
   DirectoryAdvertiserInit(&directory_advertiser, &config, GetTimeMillis());
   if (config.smoke_test) {
     ShroomLifecycleRequestShutdown(&g_lifecycle);
@@ -2545,7 +2589,7 @@ int main(int argc, char** argv) {
         }
 
         phase_start_nanos = profile_enabled ? GetTimeNanos() : 0ull;
-        if ((snapshot_interval_ticks > 0) && ((lobby->world.tick % snapshot_interval_ticks) == 0)) {
+        if (ShroomSnapshotSchedulerStep(&lobby->snapshot_scheduler)) {
           for (pi = 0; pi < host->peerCount; ++pi) {
             ServerSession* s = (ServerSession*)host->peers[pi].data;
 

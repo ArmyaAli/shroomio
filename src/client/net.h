@@ -43,6 +43,8 @@ typedef struct ClientNetState {
   char player_name[SHROOM_MAX_NAME_LENGTH];
   char server_host[64];
   uint16_t server_port;
+  uint16_t server_tick_rate;
+  uint16_t snapshot_rate;
   char chat_cache_path[256];
   uint32_t player_id;
   uint32_t entity_id;
@@ -134,6 +136,7 @@ void ClientNetConsumeIntermission(ClientNetState* net);
 
 #ifdef TEST_MODE
 void ClientNetTestBuildHello(const ClientNetState* net, ShroomHelloPacket* packet);
+void ClientNetTestHandleWelcome(ClientNetState* net, const ENetPacket* enet_packet);
 bool ClientNetTestCompletePendingPing(ClientNetState* net, uint32_t nonce, uint32_t now_ms);
 void ClientNetTestClearStalePendingPing(ClientNetState* net, uint32_t now_ms);
 void ClientNetTestCheckConnectTimeout(ClientNetState* net, uint32_t now_ms);
