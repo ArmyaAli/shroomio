@@ -5,7 +5,7 @@
 
 #include "shared/world.h"
 
-bool ShroomMatchFeedbackNeedsRebaseline(ShroomMatchPhase previous_phase,
-                                        ShroomMatchPhase current_phase);
+bool ShroomMatchPresentationNeedsReset(ShroomMatchPhase previous_phase,
+                                       ShroomMatchPhase current_phase);
 
 #endif
