@@ -300,6 +300,14 @@ void ShroomImGui_End(void) { ImGui::End(); }
 
 void ShroomImGui_SetNextItemWidth(float width) { ImGui::SetNextItemWidth(width); }
 
+float ShroomImGui_GetContentRegionAvailWidth(void) { return ImGui::GetContentRegionAvail().x; }
+
+float ShroomImGui_CalcTextWidth(const char* text) {
+  return text != nullptr ? ImGui::CalcTextSize(text).x : 0.0f;
+}
+
+float ShroomImGui_GetItemInnerSpacingX(void) { return ImGui::GetStyle().ItemInnerSpacing.x; }
+
 void ShroomImGui_Text(const char* text) { ImGui::TextUnformatted(text); }
 
 void ShroomImGui_TextWrapped(const char* text) { ImGui::TextWrapped("%s", text); }

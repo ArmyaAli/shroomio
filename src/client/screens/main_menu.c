@@ -69,7 +69,7 @@ static void MainMenuDraw(ShroomScreenManager* manager) {
       return;
     }
     ShroomLayoutHeading("Choose Player Name");
-    ShroomImGui_SetNextItemWidth(-1.0f);
+    ShroomLayoutSetNextLabeledItemWidth("Player Name");
     ShroomImGui_InputText("Player Name", g_player_name_input, sizeof(g_player_name_input));
     ShroomImGui_BeginDisabled(sanitized[0] == '\0');
     if (ShroomLayoutButtonFullWidth("Continue", 38.0f)) {

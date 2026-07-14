@@ -28,10 +28,28 @@ void test_fitted_metrics_stay_inside_viewport_margins(void) {
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, ShroomLayoutFitMetric(100.0f, 1.6f, 20.0f, 16.0f));
 }
 
+void test_labeled_item_width_reserves_label_and_spacing(void) {
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 241.0f,
+                           ShroomLayoutLabeledItemWidth(340.0f, 89.0f, 10.0f));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 385.6f,
+                           ShroomLayoutLabeledItemWidth(544.0f, 142.4f, 16.0f));
+}
+
+void test_labeled_item_width_handles_constrained_or_invalid_metrics(void) {
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f,
+                           ShroomLayoutLabeledItemWidth(80.0f, 100.0f, 10.0f));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 200.0f,
+                           ShroomLayoutLabeledItemWidth(200.0f, NAN, NAN));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f,
+                           ShroomLayoutLabeledItemWidth(NAN, 20.0f, 4.0f));
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_scale_clamps_to_documented_endpoints);
   RUN_TEST(test_metrics_scale_at_supported_values);
   RUN_TEST(test_fitted_metrics_stay_inside_viewport_margins);
+  RUN_TEST(test_labeled_item_width_reserves_label_and_spacing);
+  RUN_TEST(test_labeled_item_width_handles_constrained_or_invalid_metrics);
   return UNITY_END();
 }
