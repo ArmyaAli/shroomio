@@ -14,6 +14,7 @@
 #include "match_presentation.h"
 #include "raymath.h"
 #include "render_lod.h"
+#include "spectator_target.h"
 #include "shared/config.h"
 #include "shared/protocol.h"
 #include "shared/profiler.h"
@@ -658,17 +659,81 @@ static bool IsDeathCutsceneOpen(const Game* game) {
          (game->death_cutscene_timer < game->death_cutscene_duration + 20.0f);
 }
 
+static ShroomPlayerId GetSpectatorExcludedPlayerId(const Game* game) {
+  if (game == NULL) {
+    return 0u;
+  }
+  if (IsOnlineMode(game->active_mode)) {
+    return game->net.player_id;
+  }
+  return game->local_player != NULL ? game->local_player->player_id : 0u;
+}
+
 static const ShroomPlayerState* FindSpectatorTarget(const Game* game) {
   if (game == NULL) {
     return NULL;
   }
   for (size_t index = 0; index < game->world.player_count; ++index) {
     const ShroomPlayerState* player = &game->world.players[index];
-    if (player->alive && (player->entity_id == game->spectated_entity_id)) {
+    if ((player->entity_id == game->spectated_entity_id) &&
+        ShroomSpectatorTargetIsEligible(player, GetSpectatorExcludedPlayerId(game))) {
       return player;
     }
   }
   return NULL;
+}
+
+static ShroomPlayerState GetPreviousPlayerState(const Game* game, size_t index) {
+  ShroomPlayerState player = {0};
+
+  if ((game == NULL) || (index >= SHROOM_MAX_PLAYER_ENTITIES)) {
+    return player;
+  }
+  player.player_id = game->previous_player_ids[index];
+  player.entity_id = game->previous_player_entity_ids[index];
+  player.position = game->previous_player_positions[index];
+  player.mass = game->previous_player_masses[index];
+  player.alive = game->previous_player_alive[index];
+  player.piece_index = game->previous_player_piece_indices[index];
+  player.life_generation = game->previous_player_life_generations[index];
+  return player;
+}
+
+static void ReconcileSpectatorTarget(Game* game) {
+  const ShroomPlayerState* current;
+  ShroomPlayerState previous = {0};
+  bool previous_found = false;
+  bool life_ended = false;
+
+  if ((game == NULL) || !game->spectator_mode || !game->spectator_follow_mode) {
+    return;
+  }
+
+  current = FindSpectatorTarget(game);
+  if (game->particle_baseline_ready && (game->spectated_entity_id != 0u)) {
+    for (size_t index = 0u; index < SHROOM_MAX_PLAYER_ENTITIES; ++index) {
+      if (game->previous_player_entity_ids[index] == game->spectated_entity_id) {
+        previous = GetPreviousPlayerState(game, index);
+        previous_found = true;
+        break;
+      }
+    }
+  }
+  if (previous_found) {
+    life_ended = ShroomSpectatorTargetLifeEnded(&previous, current);
+  }
+
+  if (life_ended || (current == NULL)) {
+    const ShroomEntityId previous_target = game->spectated_entity_id;
+    game->spectated_entity_id = ShroomSpectatorSelectNextTarget(
+        game->world.players, game->world.player_count, previous_target,
+        GetSpectatorExcludedPlayerId(game), life_ended ? previous_target : 0u, 1);
+    if (life_ended) {
+      game->death_cutscene_timer = 0.0f;
+      game->death_cutscene_duration = 0.0f;
+      game->death_camera_hold_timer = 0.0f;
+    }
+  }
 }
 
 static const ShroomLobbyEntry* FindCurrentLobbyEntry(const Game* game, int* current_index) {
@@ -717,35 +782,12 @@ static void GameSwitchSpectatorLobby(Game* game, int direction) {
 }
 
 void GameCycleSpectatorTarget(Game* game, int direction) {
-  uint32_t targets[SHROOM_MAX_PLAYER_ENTITIES];
-  int target_count = 0;
-  int current_index = -1;
-
   if (game == NULL) {
     return;
   }
-  for (size_t index = 0; index < game->world.player_count; ++index) {
-    const ShroomPlayerState* player = &game->world.players[index];
-    if (!player->alive || (player == game->local_player)) {
-      continue;
-    }
-    if (target_count < (int)SHROOM_MAX_PLAYER_ENTITIES) {
-      if (player->entity_id == game->spectated_entity_id) {
-        current_index = target_count;
-      }
-      targets[target_count++] = player->entity_id;
-    }
-  }
-  if (target_count <= 0) {
-    game->spectated_entity_id = 0;
-    game->spectator_follow_mode = false;
-    return;
-  }
-  if (current_index < 0) {
-    current_index = direction < 0 ? 0 : target_count - 1;
-  }
-  game->spectated_entity_id =
-      targets[(current_index + target_count + (direction < 0 ? -1 : 1)) % target_count];
+  game->spectated_entity_id = ShroomSpectatorSelectNextTarget(
+      game->world.players, game->world.player_count, game->spectated_entity_id,
+      GetSpectatorExcludedPlayerId(game), 0u, direction);
   game->spectator_follow_mode = true;
 }
 
@@ -876,6 +918,7 @@ static void CaptureParticleBaselines(Game* game) {
     game->previous_player_masses[index] = player->mass;
     game->previous_player_alive[index] = player->alive;
     game->previous_player_piece_indices[index] = player->piece_index;
+    game->previous_player_life_generations[index] = player->life_generation;
   }
   for (index = 0; index < SHROOM_MAX_POWERUPS; ++index) {
     const ShroomPowerupState* powerup = &game->world.powerups[index];
@@ -950,8 +993,8 @@ static void EmitGameplayEventParticles(Game* game) {
       (ShroomDistanceSqr(current_local_primary->position,
                          game->previous_player_positions[previous_local_primary_index]) > 2500.0f);
   const bool local_primary_consumed =
-      had_previous_local_primary && game->previous_player_alive[previous_local_primary_index] &&
-      !IsDeathCutsceneOpen(game) &&
+      !game->spectator_mode && had_previous_local_primary &&
+      game->previous_player_alive[previous_local_primary_index] && !IsDeathCutsceneOpen(game) &&
       (local_primary_missing || local_primary_entity_changed || local_primary_respawned);
   bool local_kill_feed_reported = false;
   bool local_kill_reported = false;
@@ -1720,6 +1763,8 @@ static void ApplyNetworkSnapshot(Game* game) {
         .radius = snapshot_player->radius,
         .alive = snapshot_player->alive != 0,
         .is_bot = snapshot_player->is_bot != 0,
+        .piece_index = snapshot_player->piece_index,
+        .life_generation = snapshot_player->life_generation,
         .speed_powerup_timer =
             (snapshot_player->effect_flags & SHROOM_POWERUP_EFFECT_SPEED) != 0u ? 1.0f : 0.0f,
         .shield_powerup_timer =
@@ -3862,7 +3907,9 @@ static void UpdateSpectatorCamera(Game* game, float delta_time) {
     return;
   }
 
-  game->spectator_follow_mode = false;
+  if (game->spectator_follow_mode) {
+    return;
+  }
   if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT)) {
     pan.x += 1.0f;
   }
@@ -4206,6 +4253,7 @@ void GameUpdate(Game* game, float delta_time) {
     }
   }
 
+  ReconcileSpectatorTarget(game);
   EmitGameplayEventParticles(game);
   DispatchQueuedGameplayEvents(game);
   UpdateAmbientParticles(game, delta_time);

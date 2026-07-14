@@ -825,13 +825,16 @@ void test_consuming_primary_clears_old_split_fragments_after_respawn(void) {
   victim = ShroomWorldSpawnPlayer(&world, 2, false);
   TEST_ASSERT_NOT_NULL(attacker);
   TEST_ASSERT_NOT_NULL(victim);
+  TEST_ASSERT_EQUAL_UINT8(1u, victim->life_generation);
 
+  victim->life_generation = UINT8_MAX;
   victim->mass = SplitRequiredPreCostMass();
   victim->radius = ShroomMassToRadius(victim->mass);
   victim->position = (ShroomVec2){3000.0f, 3000.0f};
   TEST_ASSERT_TRUE(ShroomWorldSplitPlayer(&world, victim));
   fragment = FindSplitPiece(victim->player_id);
   TEST_ASSERT_NOT_NULL(fragment);
+  TEST_ASSERT_EQUAL_UINT8(UINT8_MAX, fragment->life_generation);
   victim->merge_timer = 0.0f;
   fragment->merge_timer = 0.0f;
   victim->spawn_protection_timer = 0.0f;
@@ -846,9 +849,16 @@ void test_consuming_primary_clears_old_split_fragments_after_respawn(void) {
   TEST_ASSERT_TRUE(victim->alive);
   TEST_ASSERT_EQUAL_UINT32(2u, victim->player_id);
   TEST_ASSERT_EQUAL_UINT8(0u, victim->piece_index);
+  TEST_ASSERT_EQUAL_UINT8(1u, victim->life_generation);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, SHROOM_DEFAULT_PLAYER_MASS, victim->mass);
   TEST_ASSERT_EQUAL_size_t(1, CountAlivePieces(victim->player_id));
   TEST_ASSERT_NULL(FindSplitPiece(victim->player_id));
+}
+
+void test_life_generation_advances_and_reserves_zero(void) {
+  TEST_ASSERT_EQUAL_UINT8(1u, ShroomNextLifeGeneration(0u));
+  TEST_ASSERT_EQUAL_UINT8(2u, ShroomNextLifeGeneration(1u));
+  TEST_ASSERT_EQUAL_UINT8(1u, ShroomNextLifeGeneration(UINT8_MAX));
 }
 
 void test_world_step_decays_oversized_player_and_ejects_spore_mass(void) {
@@ -1707,6 +1717,7 @@ int main(void) {
   RUN_TEST(test_player_cannot_voluntarily_split_below_large_colony_threshold);
   RUN_TEST(test_split_pieces_wait_to_merge_until_cooldown_and_proximity);
   RUN_TEST(test_consuming_primary_clears_old_split_fragments_after_respawn);
+  RUN_TEST(test_life_generation_advances_and_reserves_zero);
   RUN_TEST(test_world_step_decays_oversized_player_and_ejects_spore_mass);
   RUN_TEST(test_outer_zone_disables_decay_for_oversized_player);
   RUN_TEST(test_center_zone_decay_starts_at_lower_threshold);

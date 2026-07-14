@@ -140,6 +140,7 @@ typedef struct Game {
   float previous_player_masses[SHROOM_MAX_PLAYER_ENTITIES];
   bool previous_player_alive[SHROOM_MAX_PLAYER_ENTITIES];
   uint8_t previous_player_piece_indices[SHROOM_MAX_PLAYER_ENTITIES];
+  uint8_t previous_player_life_generations[SHROOM_MAX_PLAYER_ENTITIES];
   ShroomVec2 previous_powerup_positions[SHROOM_MAX_POWERUPS];
   ShroomEntityId previous_powerup_entity_ids[SHROOM_MAX_POWERUPS];
   bool previous_powerup_active[SHROOM_MAX_POWERUPS];

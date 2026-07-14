@@ -219,6 +219,7 @@ CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/net.c \
 	$(CLIENT_SRC_DIR)/prediction.c \
 	$(CLIENT_SRC_DIR)/render_lod.c \
+	$(CLIENT_SRC_DIR)/spectator_target.c \
 	$(CLIENT_SRC_DIR)/results_summary.c \
 	$(CLIENT_SRC_DIR)/results_transition.c \
 	$(CLIENT_SRC_DIR)/screen.c \
@@ -313,6 +314,7 @@ IMGUI_TEST_CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/net.c \
 	$(CLIENT_SRC_DIR)/prediction.c \
 	$(CLIENT_SRC_DIR)/render_lod.c \
+	$(CLIENT_SRC_DIR)/spectator_target.c \
 	$(CLIENT_SRC_DIR)/results_summary.c \
 	$(CLIENT_SRC_DIR)/results_transition.c \
 	$(CLIENT_SRC_DIR)/screen.c \
@@ -869,6 +871,9 @@ test_connection) \
 		test_input_admission) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(SERVER_SRC_DIR)/input_admission.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+		test_spectator_target) \
+			$(LINUX_CC) $(COVERAGE_CFLAGS) \
+				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/spectator_target.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_chat_cache) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/chat_cache.c -o $$test_bin $(COVERAGE_LIBS) ;; \
@@ -973,6 +978,10 @@ $(TEST_BUILD_DIR)/test_results_summary: $(UNIT_TESTS_DIR)/test_results_summary.c
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
 $(TEST_BUILD_DIR)/test_results_transition: $(UNIT_TESTS_DIR)/test_results_transition.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/results_transition.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_spectator_target: $(UNIT_TESTS_DIR)/test_spectator_target.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/spectator_target.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
