@@ -112,8 +112,17 @@ static bool HandlePacket(SnapshotProbe* probe, const ENetPacket* packet) {
   case SHROOM_PACKET_SNAPSHOT: {
     const ShroomSnapshotPacket* snapshot = (const ShroomSnapshotPacket*)packet->data;
     const uint32_t now = enet_time_get();
-    if ((packet->dataLength < offsetof(ShroomSnapshotPacket, players)) ||
-        ((probe->snapshot_count > 0u) && (snapshot->tick <= probe->last_snapshot_tick))) {
+    if ((packet->dataLength > SHROOM_MAX_UNRELIABLE_PACKET_SIZE) ||
+        (packet->dataLength < offsetof(ShroomSnapshotPacket, players)) ||
+        (snapshot->header.size != packet->dataLength) ||
+        (snapshot->player_count > SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK) ||
+        (packet->dataLength != offsetof(ShroomSnapshotPacket, players) +
+                                   (size_t)snapshot->player_count * sizeof(snapshot->players[0]))) {
+      fprintf(stderr, "invalid snapshot chunk size: wire=%zu header=%u players=%u\n",
+              packet->dataLength, snapshot->header.size, snapshot->player_count);
+      return false;
+    }
+    if ((probe->snapshot_count > 0u) && (snapshot->tick <= probe->last_snapshot_tick)) {
       break;
     }
     if (probe->snapshot_count == 0u) {

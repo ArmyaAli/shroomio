@@ -24,6 +24,7 @@ static void ResetIntermissionLifecycle(ClientNetState* net) {
 
 static void ResetWorldReplication(ClientNetState* net) {
   net->world_replication = (ShroomWorldReplicationClientState){0};
+  net->snapshot_assembly = (ShroomSnapshotAssembly){0};
   net->spore_count = 0u;
   net->powerup_count = 0u;
   memset(net->snapshot_spores, 0, sizeof(net->snapshot_spores));
@@ -330,41 +331,37 @@ static void HandleIntermissionStatus(ClientNetState* net, const ENetPacket* enet
 
 static void HandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet) {
   const ShroomSnapshotPacket* packet = (const ShroomSnapshotPacket*)enet_packet->data;
-  uint16_t player_count;
+  ShroomSnapshotFrameMetadata metadata;
+  uint16_t player_count = 0u;
+  ShroomSnapshotAssemblyResult result;
   const size_t min_size = offsetof(ShroomSnapshotPacket, players);
 
   if (enet_packet->dataLength < min_size) {
     return;
   }
-  player_count = packet->player_count;
-  if (player_count > SHROOM_MAX_SNAPSHOT_PLAYERS) {
-    player_count = SHROOM_MAX_SNAPSHOT_PLAYERS;
-  }
-  if (enet_packet->dataLength < min_size + (size_t)player_count * sizeof(packet->players[0])) {
-    return;
-  }
   if (net->snapshot_received && (packet->tick <= net->last_snapshot_tick)) {
     return;
   }
+  result = ShroomSnapshotAssemblyPush(&net->snapshot_assembly, packet, enet_packet->dataLength,
+                                      &metadata, net->snapshot_players, &player_count);
+  if (result != SHROOM_SNAPSHOT_ASSEMBLY_COMPLETE) {
+    return;
+  }
 
-  net->last_snapshot_tick = packet->tick;
+  net->last_snapshot_tick = metadata.tick;
   net->snapshot_received = true;
-  net->last_processed_input_sequence = packet->last_processed_input_sequence;
-  net->match_phase = packet->match_phase;
-  net->game_mode = packet->game_mode;
-  net->match_time_remaining = packet->match_time_remaining;
-  net->objective_target_score = packet->objective_target_score;
-  net->objective_controller_id = packet->objective_controller_id;
-  net->objective_contested = packet->objective_contested != 0u;
+  net->last_processed_input_sequence = metadata.last_processed_input_sequence;
+  net->match_phase = metadata.match_phase;
+  net->game_mode = metadata.game_mode;
+  net->match_time_remaining = metadata.match_time_remaining;
+  net->objective_target_score = metadata.objective_target_score;
+  net->objective_controller_id = metadata.objective_controller_id;
+  net->objective_contested = metadata.objective_contested != 0u;
   for (uint32_t i = 0; i < SHROOM_MATCH_PODIUM_COUNT; ++i) {
-    net->podium_player_ids[i] = packet->podium_player_ids[i];
-    net->podium_masses[i] = packet->podium_masses[i];
+    net->podium_player_ids[i] = metadata.podium_player_ids[i];
+    net->podium_masses[i] = metadata.podium_masses[i];
   }
   net->snapshot_player_count = player_count;
-  if (player_count > 0) {
-    memcpy(net->snapshot_players, packet->players,
-           (size_t)player_count * sizeof(packet->players[0]));
-  }
 }
 
 static void HandleChat(ClientNetState* net, const ENetPacket* enet_packet) {

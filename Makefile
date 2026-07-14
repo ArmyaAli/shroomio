@@ -248,6 +248,7 @@ CLIENT_SOURCES := \
 	$(SHARED_SRC_DIR)/intermission.c \
 	$(SHARED_SRC_DIR)/lifecycle.c \
 	$(SHARED_SRC_DIR)/net_telemetry.c \
+	$(SHARED_SRC_DIR)/snapshot_replication.c \
 	$(SHARED_SRC_DIR)/world_replication.c \
 	$(SHARED_SRC_DIR)/connection.c
 
@@ -267,6 +268,7 @@ SERVER_SOURCES := \
 	$(SHARED_SRC_DIR)/intermission.c \
 	$(SHARED_SRC_DIR)/lifecycle.c \
 	$(SHARED_SRC_DIR)/net_telemetry.c \
+	$(SHARED_SRC_DIR)/snapshot_replication.c \
 	$(SHARED_SRC_DIR)/snapshot_scheduler.c \
 	$(SHARED_SRC_DIR)/world_replication.c \
 	$(SHARED_SRC_DIR)/connection.c
@@ -281,6 +283,7 @@ SHARED_HEADERS := \
 	$(SHARED_SRC_DIR)/protocol.h \
 	$(SHARED_SRC_DIR)/profiler.h \
 	$(SHARED_SRC_DIR)/net_telemetry.h \
+	$(SHARED_SRC_DIR)/snapshot_replication.h \
 	$(SHARED_SRC_DIR)/snapshot_scheduler.h \
 	$(SHARED_SRC_DIR)/world_replication.h \
 	$(SHARED_SRC_DIR)/lifecycle.h \
@@ -360,6 +363,7 @@ IMGUI_TEST_CLIENT_SOURCES := \
 	$(SHARED_SRC_DIR)/sim.c \
 	$(SHARED_SRC_DIR)/lifecycle.c \
 	$(SHARED_SRC_DIR)/net_telemetry.c \
+	$(SHARED_SRC_DIR)/snapshot_replication.c \
 	$(SHARED_SRC_DIR)/world_replication.c \
 	$(SHARED_SRC_DIR)/connection.c
 # C test driver sources (plain C11 — no C++ in the test logic)
@@ -494,6 +498,10 @@ network-benchmark: $(NETWORK_BENCH_BIN)
 
 network-benchmark-test: NETWORK_BENCH_DURATION_MS=500
 network-benchmark-test: network-benchmark
+	./$(NETWORK_BENCH_BIN) --clients 64 --participants 64 --split-pieces 4 \
+		--duration-ms 250 --port 39889 --min-input-hz 0 --min-snapshot-hz 0 \
+		--max-drop-percent 100 --max-deadline-failures 100000 >/dev/null
+	@echo "Maximum-population snapshot MTU check passed."
 
 input-flood-test: $(SERVER_LINUX_BIN) $(INPUT_FLOOD_CLIENT_BIN)
 	@set -eu; \
@@ -962,7 +970,10 @@ test_connection) \
 				$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/intermission.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_client_net) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) \
-				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/input_scheduler.c $(CLIENT_SRC_DIR)/chat_cache.c $(CLIENT_SRC_DIR)/results_transition.c $(SHARED_SRC_DIR)/net_telemetry.c $(SHARED_SRC_DIR)/world_replication.c -o $$test_bin $(COVERAGE_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lenet ;; \
+				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/input_scheduler.c $(CLIENT_SRC_DIR)/chat_cache.c $(CLIENT_SRC_DIR)/results_transition.c $(SHARED_SRC_DIR)/net_telemetry.c $(SHARED_SRC_DIR)/snapshot_replication.c $(SHARED_SRC_DIR)/world_replication.c -o $$test_bin $(COVERAGE_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lenet ;; \
+		test_snapshot_replication) \
+			$(LINUX_CC) $(COVERAGE_CFLAGS) \
+				$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/snapshot_replication.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_input_scheduler) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/input_scheduler.c -o $$test_bin $(COVERAGE_LIBS) ;; \
@@ -1116,9 +1127,13 @@ $(TEST_BUILD_DIR)/test_prediction: $(UNIT_TESTS_DIR)/test_prediction.c $(UNITY_S
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
-$(TEST_BUILD_DIR)/test_client_net: $(UNIT_TESTS_DIR)/test_client_net.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/input_scheduler.c $(CLIENT_SRC_DIR)/chat_cache.c $(CLIENT_SRC_DIR)/results_transition.c $(SHARED_SRC_DIR)/net_telemetry.c $(SHARED_SRC_DIR)/world_replication.c | $(UNITY_DIR)
+$(TEST_BUILD_DIR)/test_client_net: $(UNIT_TESTS_DIR)/test_client_net.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/input_scheduler.c $(CLIENT_SRC_DIR)/chat_cache.c $(CLIENT_SRC_DIR)/results_transition.c $(SHARED_SRC_DIR)/net_telemetry.c $(SHARED_SRC_DIR)/snapshot_replication.c $(SHARED_SRC_DIR)/world_replication.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) $^ -o $@ $(TEST_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lenet
+
+$(TEST_BUILD_DIR)/test_snapshot_replication: $(UNIT_TESTS_DIR)/test_snapshot_replication.c $(UNITY_SRC) $(SHARED_SRC_DIR)/snapshot_replication.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
 $(TEST_BUILD_DIR)/test_input_scheduler: $(UNIT_TESTS_DIR)/test_input_scheduler.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/input_scheduler.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)

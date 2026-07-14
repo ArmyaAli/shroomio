@@ -9,6 +9,7 @@
 
 #include "shared/protocol.h"
 #include "shared/net_telemetry.h"
+#include "shared/snapshot_replication.h"
 #include "shared/vec2.h"
 #include "shared/world_replication.h"
 
@@ -67,6 +68,7 @@ typedef struct ClientNetState {
   uint8_t mushroom_species_count;
   bool mushroom_species_catalog_received;
   ShroomSnapshotPlayerState snapshot_players[SHROOM_MAX_SNAPSHOT_PLAYERS];
+  ShroomSnapshotAssembly snapshot_assembly;
   ShroomSnapshotSporeState snapshot_spores[SHROOM_MAX_SPORES];
   ShroomSnapshotPowerupState snapshot_powerups[SHROOM_MAX_POWERUPS];
   ShroomWorldReplicationClientState world_replication;
