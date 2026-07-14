@@ -3088,8 +3088,9 @@ static void DrawDiagnosticsOverlay(const Game* game) {
   snprintf(transport_text, sizeof(transport_text), "Loss: %.2f%%  Queue: %u%s",
            (double)telemetry.maximum_loss_basis_points / 100.0, telemetry.queue_packets,
            telemetry.congested_peers > 0u ? " (congested)" : "");
-  snprintf(cadence_text, sizeof(cadence_text), "Cadence: %u Hz  Catch-up suppressed: %llu",
-           SHROOM_CLIENT_INPUT_RATE_HZ,
+  snprintf(cadence_text, sizeof(cadence_text),
+           "Cadence: %u Hz  Snapshot target: %u Hz  Suppressed: %llu", SHROOM_CLIENT_INPUT_RATE_HZ,
+           game->net.snapshot_rate,
            (unsigned long long)game->net.input_scheduler.suppressed_catchup_count);
   snprintf(action_text, sizeof(action_text), "Action queue: %u/%u  Drops: %llu",
            game->net.input_scheduler.action_queue_count, SHROOM_CLIENT_ACTION_QUEUE_CAPACITY,

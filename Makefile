@@ -62,6 +62,7 @@ SERVER_MACOS_BIN := $(DIST_DIR)/macos/server/$(PROJECT)-server
 NETWORK_BENCH_BIN := $(BUILD_DIR)/benchmarks/network-benchmark
 INPUT_FLOOD_CLIENT_BIN := $(BUILD_DIR)/tests/input-flood-client
 DIRECTORY_QUERY_CLIENT_BIN := $(BUILD_DIR)/tests/directory-query-client
+SNAPSHOT_RATE_PROBE_BIN := $(BUILD_DIR)/tests/snapshot-rate-probe
 INPUT_FLOOD_PORT ?=
 NETWORK_BENCH_CLIENTS ?= 1,64,256
 NETWORK_BENCH_DURATION_MS ?= 1500
@@ -266,6 +267,7 @@ SERVER_SOURCES := \
 	$(SHARED_SRC_DIR)/intermission.c \
 	$(SHARED_SRC_DIR)/lifecycle.c \
 	$(SHARED_SRC_DIR)/net_telemetry.c \
+	$(SHARED_SRC_DIR)/snapshot_scheduler.c \
 	$(SHARED_SRC_DIR)/world_replication.c \
 	$(SHARED_SRC_DIR)/connection.c
 
@@ -279,6 +281,7 @@ SHARED_HEADERS := \
 	$(SHARED_SRC_DIR)/protocol.h \
 	$(SHARED_SRC_DIR)/profiler.h \
 	$(SHARED_SRC_DIR)/net_telemetry.h \
+	$(SHARED_SRC_DIR)/snapshot_scheduler.h \
 	$(SHARED_SRC_DIR)/world_replication.h \
 	$(SHARED_SRC_DIR)/lifecycle.h \
 	$(SHARED_SRC_DIR)/connection.h \
@@ -569,6 +572,34 @@ directory-integration-test: $(SERVER_LINUX_BIN) $(DIRECTORY_QUERY_CLIENT_BIN)
 	./$(DIRECTORY_QUERY_CLIENT_BIN) 127.0.0.1 $$directory_port 1; \
 	echo "Directory integration passed: two live servers registered and stopped server expired without player sessions."
 
+snapshot-rate-integration-test: $(SERVER_LINUX_BIN) $(SNAPSHOT_RATE_PROBE_BIN)
+	@set -eu; \
+	tmp=/tmp/shroomio-snapshot-rate-$$$$; mkdir -p "$$tmp"; server_pid=""; \
+	cleanup() { \
+		if [ -n "$$server_pid" ]; then kill "$$server_pid" >/dev/null 2>&1 || true; wait "$$server_pid" >/dev/null 2>&1 || true; fi; \
+		rm -rf "$$tmp"; \
+	}; \
+	trap cleanup EXIT INT TERM; \
+	if ./$(SERVER_LINUX_BIN) --smoke-test --snapshot-rate 14 >"$$tmp/invalid-cli.log" 2>&1; then \
+		echo "Server accepted invalid --snapshot-rate 14"; exit 1; \
+	fi; \
+	if SHROOM_SERVER_SNAPSHOT_RATE=21 ./$(SERVER_LINUX_BIN) --smoke-test >"$$tmp/invalid-env.log" 2>&1; then \
+		echo "Server accepted invalid SHROOM_SERVER_SNAPSHOT_RATE=21"; exit 1; \
+	fi; \
+	for rate in 15 20; do \
+		port=$$((40000 + ($$$$ * 1103 + rate * 7919) % 20000)); \
+		db="$$tmp/rate-$$rate.db"; log="$$tmp/rate-$$rate.log"; \
+		./$(SERVER_LINUX_BIN) --bind 127.0.0.1 --port "$$port" --database "$$db" \
+			--snapshot-rate "$$rate" >"$$log" 2>&1 & server_pid=$$!; \
+		ready=0; for attempt in $$(seq 1 200); do \
+			if grep -q "snapshot_rate=$$rate" "$$log"; then ready=1; break; fi; \
+			if ! kill -0 "$$server_pid" >/dev/null 2>&1; then break; fi; sleep 0.01; \
+		done; \
+		if [ $$ready -ne 1 ]; then echo "Snapshot-rate server failed to start"; cat "$$log"; exit 1; fi; \
+		./$(SNAPSHOT_RATE_PROBE_BIN) "$$port" "$$rate"; \
+		kill "$$server_pid"; wait "$$server_pid" >/dev/null 2>&1 || true; server_pid=""; \
+	done
+
 run-windows:
 	@command -v $(WINDOWS_CXX) >/dev/null 2>&1 || (printf '%s\n' 'Error: $(WINDOWS_CXX) not found. Install mingw-w64:' '  Ubuntu/Debian: sudo apt install mingw-w64' '  Fedora:       sudo dnf install mingw64-gcc-c++' '  Arch:         sudo pacman -S mingw-w64-gcc' && exit 1)
 	@test -f $(VCPKG_WINDOWS_STAMP) || (printf '%s\n' 'Error: Windows vcpkg dependencies not installed.' 'Run: make vcpkg-install-windows' && exit 1)
@@ -614,6 +645,10 @@ $(INPUT_FLOOD_CLIENT_BIN): tools/input_flood_client.c $(SHARED_HEADERS) | $(VCPK
 	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) $< -o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet
 
 $(DIRECTORY_QUERY_CLIENT_BIN): tools/directory_query_client.c $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) $< -o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet
+
+$(SNAPSHOT_RATE_PROBE_BIN): tools/snapshot_rate_probe.c $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) $< -o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet
 
@@ -766,9 +801,9 @@ $(UNITY_DIR):
 # =============================================================================
 # 8. Test Targets
 # =============================================================================
-.PHONY: test unit-test imgui-test directory-integration-test valgrind-test valgrind-unit-test valgrind-server-smoke valgrind-imgui-test test-coverage test-clean
+.PHONY: test unit-test imgui-test directory-integration-test snapshot-rate-integration-test valgrind-test valgrind-unit-test valgrind-server-smoke valgrind-imgui-test test-coverage test-clean
 
-test: unit-test imgui-test input-flood-test directory-integration-test
+test: unit-test imgui-test input-flood-test directory-integration-test snapshot-rate-integration-test
 
 unit-test: $(TEST_BINS)
 	@echo "Running unit tests..."
@@ -946,6 +981,9 @@ test_connection) \
 		test_net_telemetry) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/net_telemetry.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+		test_snapshot_scheduler) \
+			$(LINUX_CC) $(COVERAGE_CFLAGS) \
+				$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/snapshot_scheduler.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_world_replication) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/world_replication.c -o $$test_bin $(COVERAGE_LIBS) ;; \
@@ -1099,6 +1137,10 @@ $(TEST_BUILD_DIR)/test_chat_cache: $(UNIT_TESTS_DIR)/test_chat_cache.c $(UNITY_S
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
 $(TEST_BUILD_DIR)/test_net_telemetry: $(UNIT_TESTS_DIR)/test_net_telemetry.c $(UNITY_SRC) $(SHARED_SRC_DIR)/net_telemetry.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_snapshot_scheduler: $(UNIT_TESTS_DIR)/test_snapshot_scheduler.c $(UNITY_SRC) $(SHARED_SRC_DIR)/snapshot_scheduler.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 

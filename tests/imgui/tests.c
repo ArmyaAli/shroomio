@@ -1719,6 +1719,7 @@ static void Test_GameplayDiagnosticsAndConnectionOverlays(ImGuiTestContext* ctx)
 
   SetupOnlineGame();
   g_imgui_test_app.game.diagnostics_overlay_open = true;
+  g_imgui_test_app.game.net.snapshot_rate = 15u;
   g_imgui_test_app.game.net.rtt_ms = 15000u;
   g_imgui_test_app.game.net.rtt_average_ms = 14000u;
   for (size_t index = 0u; index < 30u; ++index) {
@@ -1739,7 +1740,12 @@ static void Test_GameplayDiagnosticsAndConnectionOverlays(ImGuiTestContext* ctx)
   IM_CHECK_STR_EQ(ShroomTestGetDiagnosticsRatesText(), "Input: 30 Hz  Snapshot: 15 Hz");
   IM_CHECK_STR_EQ(ShroomTestGetDiagnosticsBandwidthText(), "In: 15.0 KiB/s  Out: 15.0 KiB/s");
   IM_CHECK_STR_EQ(ShroomTestGetDiagnosticsTransportText(), "Loss: 2.50%  Queue: 70 (congested)");
-  IM_CHECK_STR_EQ(ShroomTestGetDiagnosticsCadenceText(), "Cadence: 30 Hz  Catch-up suppressed: 0");
+  IM_CHECK_STR_EQ(ShroomTestGetDiagnosticsCadenceText(),
+                  "Cadence: 30 Hz  Snapshot target: 15 Hz  Suppressed: 0");
+  g_imgui_test_app.game.net.snapshot_rate = 20u;
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_STR_EQ(ShroomTestGetDiagnosticsCadenceText(),
+                  "Cadence: 30 Hz  Snapshot target: 20 Hz  Suppressed: 0");
   IM_CHECK_STR_EQ(ShroomTestGetDiagnosticsActionsText(), "Action queue: 0/16  Drops: 0");
 
   g_imgui_test_app.game.diagnostics_overlay_open = false;
@@ -1752,6 +1758,65 @@ static void Test_GameplayDiagnosticsAndConnectionOverlays(ImGuiTestContext* ctx)
   IM_CHECK(ShroomTeImGui_WindowIsActive("Connection Status"));
   IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Retry"));
   IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Back To Menu"));
+}
+
+static void Test_GameplayNegotiatedSnapshotCadenceStaysInterpolated(ImGuiTestContext* ctx) {
+  static const uint16_t rates[] = {15u, 20u};
+
+  for (size_t rate_index = 0u; rate_index < sizeof(rates) / sizeof(rates[0]); ++rate_index) {
+    ClientNetState* net;
+    float target_x = 400.0f;
+    float previous_render_x;
+    const uint32_t frame_interval = 60u / rates[rate_index];
+
+    SetupOnlineGame();
+    net = &g_imgui_test_app.game.net;
+    net->snapshot_rate = rates[rate_index];
+    net->snapshot_player_count = 2u;
+    net->snapshot_players[0] = (ShroomSnapshotPlayerState){
+        .player_id = 1u,
+        .entity_id = 10u,
+        .position_x = 200.0f,
+        .position_y = 200.0f,
+        .mass = SHROOM_DEFAULT_PLAYER_MASS,
+        .radius = ShroomMassToRadius(SHROOM_DEFAULT_PLAYER_MASS),
+        .alive = 1u,
+    };
+    net->snapshot_players[1] = (ShroomSnapshotPlayerState){
+        .player_id = 2u,
+        .entity_id = 20u,
+        .position_x = target_x,
+        .position_y = 200.0f,
+        .mass = SHROOM_DEFAULT_PLAYER_MASS,
+        .radius = ShroomMassToRadius(SHROOM_DEFAULT_PLAYER_MASS),
+        .alive = 1u,
+    };
+    net->last_snapshot_tick = 1u;
+    ShroomTeCtx_Yield(ctx, 2);
+    IM_CHECK(g_imgui_test_app.game.render_position_initialized[1]);
+    previous_render_x = g_imgui_test_app.game.render_positions[1].x;
+
+    for (uint32_t frame = 1u; frame <= 24u; ++frame) {
+      if ((frame % frame_interval) == 0u) {
+        target_x += 120.0f;
+        net->snapshot_players[1].position_x = target_x;
+        net->last_snapshot_tick += 1u;
+        ShroomTeCtx_Yield(ctx, 1);
+        IM_CHECK(g_imgui_test_app.game.render_positions[1].x > previous_render_x);
+        IM_CHECK(g_imgui_test_app.game.render_positions[1].x < target_x);
+        previous_render_x = g_imgui_test_app.game.render_positions[1].x;
+      } else {
+        ShroomTeCtx_Yield(ctx, 1);
+      }
+    }
+
+    g_imgui_test_app.game.diagnostics_overlay_open = true;
+    ShroomTeCtx_SetRef(ctx, "Diagnostics");
+    ShroomTeCtx_Yield(ctx, 2);
+    IM_CHECK(strstr(ShroomTestGetDiagnosticsCadenceText(),
+                    rates[rate_index] == 15u ? "Snapshot target: 15 Hz"
+                                            : "Snapshot target: 20 Hz") != NULL);
+  }
 }
 
 static void Test_GameplayInputCadenceFakeTransportSoak(ImGuiTestContext* ctx) {
@@ -1797,7 +1862,9 @@ static void Test_GameplayInputCadenceFakeTransportSoak(ImGuiTestContext* ctx) {
   g_imgui_test_app.game.diagnostics_overlay_open = true;
   ShroomTeCtx_SetRef(ctx, "Diagnostics");
   ShroomTeCtx_Yield(ctx, 2);
-  snprintf(expected_cadence, sizeof(expected_cadence), "Cadence: 30 Hz  Catch-up suppressed: %llu",
+  snprintf(expected_cadence, sizeof(expected_cadence),
+           "Cadence: 30 Hz  Snapshot target: %u Hz  Suppressed: %llu",
+           g_imgui_test_app.game.net.snapshot_rate,
            (unsigned long long)scheduler->suppressed_catchup_count);
   IM_CHECK_STR_EQ(ShroomTestGetDiagnosticsCadenceText(), expected_cadence);
   IM_CHECK_STR_EQ(ShroomTestGetDiagnosticsActionsText(), "Action queue: 0/16  Drops: 0");
@@ -3009,6 +3076,9 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_GameplayLeaveConfirmationStayAndLeave);
   ShroomTeEngine_RegisterTest(engine, "screens", "gameplay_diagnostics_and_connection_overlays",
                               Test_GameplayDiagnosticsAndConnectionOverlays);
+  ShroomTeEngine_RegisterTest(engine, "screens",
+                              "gameplay_negotiated_snapshot_cadence_stays_interpolated",
+                              Test_GameplayNegotiatedSnapshotCadenceStaysInterpolated);
   ShroomTeEngine_RegisterTest(engine, "screens", "gameplay_input_cadence_fake_transport_soak",
                               Test_GameplayInputCadenceFakeTransportSoak);
   ShroomTeEngine_RegisterTest(engine, "screens", "gameplay_offline_menu_return_requests_results",

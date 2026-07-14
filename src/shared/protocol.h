@@ -23,6 +23,8 @@
 /* Includes participant and spectator peers across all lobbies. */
 #define SHROOM_SERVER_MAX_CLIENTS 1024u
 #define SHROOM_SNAPSHOT_RATE 15u
+#define SHROOM_SNAPSHOT_RATE_MIN 15u
+#define SHROOM_SNAPSHOT_RATE_MAX 20u
 #define SHROOM_MAX_SNAPSHOT_PLAYERS SHROOM_MAX_PLAYER_ENTITIES
 #define SHROOM_MAX_SNAPSHOT_PACKET_SIZE                                                            \
   (offsetof(ShroomSnapshotPacket, players) +                                                       \

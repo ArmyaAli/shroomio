@@ -195,9 +195,16 @@ static void HandleWelcome(ClientNetState* net, const ENetPacket* enet_packet) {
     SetStatus(net, CLIENT_NET_ERROR, "Protocol mismatch");
     return;
   }
+  if ((packet->server_tick_rate == 0u) || (packet->snapshot_rate < SHROOM_SNAPSHOT_RATE_MIN) ||
+      (packet->snapshot_rate > SHROOM_SNAPSHOT_RATE_MAX) ||
+      (packet->snapshot_rate > packet->server_tick_rate)) {
+    SetStatus(net, CLIENT_NET_ERROR, "Invalid server cadence");
+    return;
+  }
 
-  /* WELCOME is now a lightweight version handshake only.
-   * welcome_received and player_id are set by LOBBY_JOINED. */
+  net->server_tick_rate = packet->server_tick_rate;
+  net->snapshot_rate = packet->snapshot_rate;
+  /* welcome_received and player_id are set by LOBBY_JOINED. */
   net->handshake_received = true;
   SetStatus(net, CLIENT_NET_CONNECTED, "Connected");
 }
@@ -230,6 +237,12 @@ static void HandleLobbyJoined(ClientNetState* net, const ENetPacket* enet_packet
   if (enet_packet->dataLength < sizeof(*packet)) {
     return;
   }
+  if ((packet->server_tick_rate == 0u) || (packet->snapshot_rate < SHROOM_SNAPSHOT_RATE_MIN) ||
+      (packet->snapshot_rate > SHROOM_SNAPSHOT_RATE_MAX) ||
+      (packet->snapshot_rate > packet->server_tick_rate)) {
+    SetStatus(net, CLIENT_NET_ERROR, "Invalid server cadence");
+    return;
+  }
 
   ResetIntermissionLifecycle(net);
   ResetWorldReplication(net);
@@ -239,6 +252,8 @@ static void HandleLobbyJoined(ClientNetState* net, const ENetPacket* enet_packet
   net->world_width = packet->world_width;
   net->world_height = packet->world_height;
   net->lobby_max_players = packet->max_players;
+  net->server_tick_rate = packet->server_tick_rate;
+  net->snapshot_rate = packet->snapshot_rate;
   net->match_entry_sent = false;
   net->lobby_roster_received = false;
   net->lobby_match_started = false;
@@ -772,6 +787,9 @@ void ClientNetTestBuildHello(const ClientNetState* net, ShroomHelloPacket* packe
   if ((net != NULL) && (packet != NULL)) {
     BuildHelloPacket(net, packet);
   }
+}
+void ClientNetTestHandleWelcome(ClientNetState* net, const ENetPacket* enet_packet) {
+  HandleWelcome(net, enet_packet);
 }
 bool ClientNetTestCompletePendingPing(ClientNetState* net, uint32_t nonce, uint32_t now_ms) {
   return CompletePendingPing(net, nonce, now_ms);
