@@ -21,6 +21,12 @@ static bool g_client_audio_initialized;
 static bool g_client_audio_device_owned;
 static bool g_client_audio_assets_loaded;
 static char g_client_audio_status[128] = "Audio is not initialized.";
+static bool g_client_audio_recovery_scheduled;
+static double g_client_audio_next_retry_at;
+static double g_client_audio_retry_delay_seconds;
+
+#define SHROOM_AUDIO_RETRY_INITIAL_SECONDS 1.0
+#define SHROOM_AUDIO_RETRY_MAX_SECONDS 8.0
 
 typedef struct ClientAudioBackend {
   void* context;
@@ -31,6 +37,7 @@ typedef struct ClientAudioBackend {
   void (*unload_assets)(void* context);
   void (*apply_settings)(void* context, const ClientSettings* settings);
   void (*update_music)(void* context, const ClientSettings* settings);
+  double (*now_seconds)(void* context);
 } ClientAudioBackend;
 
 static bool ProductionInitDevice(void* context);
@@ -40,6 +47,7 @@ static bool ProductionLoadAssets(void* context);
 static void ProductionUnloadAssets(void* context);
 static void ProductionApplySettings(void* context, const ClientSettings* settings);
 static void ProductionUpdateMusic(void* context, const ClientSettings* settings);
+static double ProductionNowSeconds(void* context);
 
 static ClientAudioBackend g_client_audio_backend = {
     .init_device = ProductionInitDevice,
@@ -49,6 +57,7 @@ static ClientAudioBackend g_client_audio_backend = {
     .unload_assets = ProductionUnloadAssets,
     .apply_settings = ProductionApplySettings,
     .update_music = ProductionUpdateMusic,
+    .now_seconds = ProductionNowSeconds,
 };
 static bool g_client_audio_uses_production_backend = true;
 
@@ -372,15 +381,13 @@ static void ProductionUpdateMusic(void* context, const ClientSettings* settings)
   }
 }
 
-void ShroomClientAudioUpdateMusic(const ClientSettings* settings) {
-  if ((settings == NULL) || !g_client_audio_initialized ||
-      (g_client_audio_backend.update_music == NULL)) {
-    return;
-  }
-  g_client_audio_backend.update_music(g_client_audio_backend.context, settings);
+static double ProductionNowSeconds(void* context) {
+  (void)context;
+  return GetTime();
 }
 
 static void ClearClientAssetHandles(void) {
+  free(g_client_music_wav_data);
   memset(g_client_sfx, 0, sizeof(g_client_sfx));
   memset(g_client_sfx_loaded, 0, sizeof(g_client_sfx_loaded));
   memset(g_client_sfx_last_played_at, 0, sizeof(g_client_sfx_last_played_at));
@@ -491,6 +498,42 @@ static void SetAudioStatus(const char* status) {
   snprintf(g_client_audio_status, sizeof(g_client_audio_status), "%s", status);
 }
 
+static double AudioNowSeconds(void) {
+  if (g_client_audio_backend.now_seconds == NULL) {
+    return 0.0;
+  }
+  return g_client_audio_backend.now_seconds(g_client_audio_backend.context);
+}
+
+static void ResetAudioRecovery(void) {
+  g_client_audio_recovery_scheduled = false;
+  g_client_audio_next_retry_at = 0.0;
+  g_client_audio_retry_delay_seconds = SHROOM_AUDIO_RETRY_INITIAL_SECONDS;
+}
+
+static void ScheduleAudioRecovery(double now_seconds, const char* status) {
+  double delay = g_client_audio_retry_delay_seconds;
+
+  if (delay < SHROOM_AUDIO_RETRY_INITIAL_SECONDS) {
+    delay = SHROOM_AUDIO_RETRY_INITIAL_SECONDS;
+  }
+  g_client_audio_recovery_scheduled = true;
+  g_client_audio_next_retry_at = now_seconds + delay;
+  g_client_audio_retry_delay_seconds = fmin(delay * 2.0, SHROOM_AUDIO_RETRY_MAX_SECONDS);
+  SetAudioStatus(status);
+}
+
+static void QuarantineLostAudioDevice(double now_seconds) {
+  ClearClientAssetHandles();
+  g_client_audio_initialized = false;
+  if (g_client_audio_device_owned && (g_client_audio_backend.close_device != NULL)) {
+    g_client_audio_backend.close_device(g_client_audio_backend.context);
+  }
+  g_client_audio_device_owned = false;
+  ResetAudioRecovery();
+  ScheduleAudioRecovery(now_seconds, "Audio device lost. Retrying automatically.");
+}
+
 static bool StartClientAudio(const ClientSettings* settings) {
   if ((settings == NULL) || (g_client_audio_backend.init_device == NULL) ||
       !g_client_audio_backend.init_device(g_client_audio_backend.context)) {
@@ -510,6 +553,10 @@ static bool StartClientAudio(const ClientSettings* settings) {
     }
     ClearClientAssetHandles();
     g_client_audio_initialized = false;
+    if (g_client_audio_device_owned && (g_client_audio_backend.close_device != NULL)) {
+      g_client_audio_backend.close_device(g_client_audio_backend.context);
+    }
+    g_client_audio_device_owned = false;
     SetAudioStatus("Audio assets failed to load. Restart Audio to retry.");
     return false;
   }
@@ -522,6 +569,34 @@ static bool StartClientAudio(const ClientSettings* settings) {
   return true;
 }
 
+void ShroomClientAudioUpdateMusic(const ClientSettings* settings) {
+  const double now_seconds = AudioNowSeconds();
+
+  if (settings == NULL) {
+    return;
+  }
+  if (g_client_audio_initialized) {
+    if (!AudioBackendReady()) {
+      QuarantineLostAudioDevice(now_seconds);
+      return;
+    }
+    if (g_client_audio_backend.update_music != NULL) {
+      g_client_audio_backend.update_music(g_client_audio_backend.context, settings);
+    }
+    return;
+  }
+  if (!g_client_audio_recovery_scheduled || (now_seconds < g_client_audio_next_retry_at)) {
+    return;
+  }
+  g_client_audio_recovery_scheduled = false;
+  if (StartClientAudio(settings)) {
+    ResetAudioRecovery();
+    return;
+  }
+  ScheduleAudioRecovery(now_seconds,
+                        "Audio unavailable. Retrying automatically; use Restart Audio.");
+}
+
 bool ShroomClientAudioInit(const ClientSettings* settings) {
   if (g_client_audio_initialized && g_client_audio_assets_loaded && AudioBackendReady()) {
     if (g_client_audio_backend.apply_settings != NULL) {
@@ -532,7 +607,13 @@ bool ShroomClientAudioInit(const ClientSettings* settings) {
   if (g_client_audio_device_owned) {
     return ShroomClientAudioRestart(settings);
   }
-  return StartClientAudio(settings);
+  ResetAudioRecovery();
+  if (StartClientAudio(settings)) {
+    return true;
+  }
+  ScheduleAudioRecovery(AudioNowSeconds(),
+                        "Audio initialization failed; retrying automatically; use Restart Audio.");
+  return false;
 }
 
 bool ShroomClientAudioRestart(const ClientSettings* settings) {
@@ -546,7 +627,13 @@ bool ShroomClientAudioRestart(const ClientSettings* settings) {
     g_client_audio_backend.close_device(g_client_audio_backend.context);
   }
   g_client_audio_device_owned = false;
-  return StartClientAudio(settings);
+  ResetAudioRecovery();
+  if (StartClientAudio(settings)) {
+    return true;
+  }
+  ScheduleAudioRecovery(AudioNowSeconds(),
+                        "Audio initialization failed; retrying automatically; use Restart Audio.");
+  return false;
 }
 
 bool ShroomClientAudioIsReady(void) {
@@ -566,6 +653,7 @@ void ShroomClientAudioShutdown(void) {
     g_client_audio_backend.close_device(g_client_audio_backend.context);
   }
   g_client_audio_device_owned = false;
+  ResetAudioRecovery();
   SetAudioStatus("Audio is not initialized.");
 }
 
@@ -627,6 +715,7 @@ void ShroomClientAudioTestSetBackend(const ShroomClientAudioTestBackend* backend
         .unload_assets = ProductionUnloadAssets,
         .apply_settings = ProductionApplySettings,
         .update_music = ProductionUpdateMusic,
+        .now_seconds = ProductionNowSeconds,
     };
     g_client_audio_uses_production_backend = true;
     return;
@@ -640,6 +729,7 @@ void ShroomClientAudioTestSetBackend(const ShroomClientAudioTestBackend* backend
       .unload_assets = backend->unload_assets,
       .apply_settings = backend->apply_settings,
       .update_music = backend->update_music,
+      .now_seconds = backend->now_seconds,
   };
   g_client_audio_uses_production_backend = false;
 }

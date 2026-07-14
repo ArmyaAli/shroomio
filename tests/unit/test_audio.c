@@ -14,6 +14,7 @@ typedef struct FakeAudioBackend {
   int unload_count;
   int apply_count;
   int update_count;
+  double now_seconds;
   ClientSettings applied_settings;
 } FakeAudioBackend;
 
@@ -62,6 +63,8 @@ static void FakeUpdate(void* context, const ClientSettings* settings) {
   backend->applied_settings = *settings;
 }
 
+static double FakeNow(void* context) { return ((FakeAudioBackend*)context)->now_seconds; }
+
 static void InstallFakeBackend(void) {
   const ShroomClientAudioTestBackend backend = {
       .context = &fake,
@@ -72,6 +75,7 @@ static void InstallFakeBackend(void) {
       .unload_assets = FakeUnload,
       .apply_settings = FakeApply,
       .update_music = FakeUpdate,
+      .now_seconds = FakeNow,
   };
   ShroomClientAudioTestSetBackend(&backend);
 }
@@ -307,6 +311,107 @@ static void test_music_update_is_serviced_once_per_explicit_frame(void) {
   TEST_ASSERT_EQUAL_INT(180, fake.update_count);
 }
 
+static void test_runtime_device_loss_recovers_without_using_stale_handles(void) {
+  ClientSettings settings = TestSettings();
+
+  fake.now_seconds = 10.0;
+  InstallFakeBackend();
+  TEST_ASSERT_TRUE(ShroomClientAudioInit(&settings));
+  ShroomClientAudioUpdateMusic(&settings);
+  TEST_ASSERT_EQUAL_INT(1, fake.update_count);
+
+  fake.ready = false;
+  fake.fail_init = true;
+  fake.now_seconds = 10.1;
+  ShroomClientAudioUpdateMusic(&settings);
+  TEST_ASSERT_FALSE(ShroomClientAudioIsReady());
+  TEST_ASSERT_FALSE(ShroomClientAudioTestAssetsLoaded());
+  TEST_ASSERT_EQUAL_INT(1, fake.update_count);
+  TEST_ASSERT_EQUAL_INT(1, fake.close_count);
+  TEST_ASSERT_EQUAL_INT(0, fake.unload_count);
+  TEST_ASSERT_NOT_NULL(strstr(ShroomClientAudioGetStatus(), "lost"));
+
+  fake.now_seconds = 11.0;
+  ShroomClientAudioUpdateMusic(&settings);
+  TEST_ASSERT_EQUAL_INT(1, fake.init_count);
+  fake.now_seconds = 11.1;
+  ShroomClientAudioUpdateMusic(&settings);
+  TEST_ASSERT_EQUAL_INT(2, fake.init_count);
+  TEST_ASSERT_EQUAL_INT(1, fake.load_count);
+
+  settings.master_volume_percent = 31;
+  settings.music_volume_percent = 42;
+  settings.effects_volume_percent = 53;
+  fake.fail_init = false;
+  fake.now_seconds = 13.0;
+  ShroomClientAudioUpdateMusic(&settings);
+  TEST_ASSERT_EQUAL_INT(2, fake.init_count);
+  fake.now_seconds = 13.2;
+  ShroomClientAudioUpdateMusic(&settings);
+  TEST_ASSERT_TRUE(ShroomClientAudioIsReady());
+  TEST_ASSERT_EQUAL_INT(3, fake.init_count);
+  TEST_ASSERT_EQUAL_INT(2, fake.load_count);
+  TEST_ASSERT_EQUAL_INT(2, fake.apply_count);
+  TEST_ASSERT_EQUAL_INT(31, fake.applied_settings.master_volume_percent);
+  TEST_ASSERT_EQUAL_INT(42, fake.applied_settings.music_volume_percent);
+  TEST_ASSERT_EQUAL_INT(53, fake.applied_settings.effects_volume_percent);
+  TEST_ASSERT_EQUAL_STRING("Audio ready.", ShroomClientAudioGetStatus());
+
+  ShroomClientAudioUpdateMusic(&settings);
+  TEST_ASSERT_EQUAL_INT(2, fake.update_count);
+}
+
+static void test_recovery_backoff_is_bounded_and_repeated_loss_is_idempotent(void) {
+  ClientSettings settings = TestSettings();
+
+  fake.now_seconds = 20.0;
+  InstallFakeBackend();
+  TEST_ASSERT_TRUE(ShroomClientAudioInit(&settings));
+  fake.ready = false;
+  fake.fail_init = true;
+  ShroomClientAudioUpdateMusic(&settings);
+  ShroomClientAudioUpdateMusic(&settings);
+  TEST_ASSERT_EQUAL_INT(1, fake.close_count);
+
+  fake.now_seconds = 21.0;
+  ShroomClientAudioUpdateMusic(&settings);
+  TEST_ASSERT_EQUAL_INT(2, fake.init_count);
+  fake.now_seconds = 23.0;
+  ShroomClientAudioUpdateMusic(&settings);
+  TEST_ASSERT_EQUAL_INT(3, fake.init_count);
+  fake.now_seconds = 27.0;
+  ShroomClientAudioUpdateMusic(&settings);
+  TEST_ASSERT_EQUAL_INT(4, fake.init_count);
+  fake.now_seconds = 35.0;
+  ShroomClientAudioUpdateMusic(&settings);
+  TEST_ASSERT_EQUAL_INT(5, fake.init_count);
+  fake.now_seconds = 42.9;
+  ShroomClientAudioUpdateMusic(&settings);
+  TEST_ASSERT_EQUAL_INT(5, fake.init_count);
+  fake.now_seconds = 43.0;
+  ShroomClientAudioUpdateMusic(&settings);
+  TEST_ASSERT_EQUAL_INT(6, fake.init_count);
+  TEST_ASSERT_EQUAL_INT(1, fake.close_count);
+
+  fake.fail_init = false;
+  fake.now_seconds = 51.0;
+  ShroomClientAudioUpdateMusic(&settings);
+  TEST_ASSERT_TRUE(ShroomClientAudioIsReady());
+  TEST_ASSERT_EQUAL_INT(7, fake.init_count);
+  TEST_ASSERT_EQUAL_INT(2, fake.load_count);
+
+  fake.ready = false;
+  fake.now_seconds = 60.0;
+  ShroomClientAudioUpdateMusic(&settings);
+  ShroomClientAudioUpdateMusic(&settings);
+  TEST_ASSERT_EQUAL_INT(2, fake.close_count);
+  fake.now_seconds = 61.0;
+  ShroomClientAudioUpdateMusic(&settings);
+  TEST_ASSERT_TRUE(ShroomClientAudioIsReady());
+  TEST_ASSERT_EQUAL_INT(8, fake.init_count);
+  TEST_ASSERT_EQUAL_INT(3, fake.load_count);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_spore_sfx_is_throttled_during_rapid_growth);
@@ -323,5 +428,7 @@ int main(void) {
   RUN_TEST(test_shutdown_without_init_is_safe);
   RUN_TEST(test_multiple_shutdown_calls_are_idempotent);
   RUN_TEST(test_music_update_is_serviced_once_per_explicit_frame);
+  RUN_TEST(test_runtime_device_loss_recovers_without_using_stale_handles);
+  RUN_TEST(test_recovery_backoff_is_bounded_and_repeated_loss_is_idempotent);
   return UNITY_END();
 }
