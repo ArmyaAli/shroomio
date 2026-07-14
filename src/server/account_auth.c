@@ -367,6 +367,8 @@ ShroomAccountResult ShroomAccountRegister(ShroomAccountAuth* auth, const char* u
     OPENSSL_cleanse(encoded_password, sizeof(encoded_password));
     return duplicate;
   }
+
+  // Create the profile rows before the user because users owns the player foreign key.
   if (sqlite3_prepare_v2(auth->db,
                          "INSERT INTO players (player_uuid, display_name) "
                          "VALUES (lower(hex(randomblob(16))), ?)",
@@ -402,6 +404,8 @@ ShroomAccountResult ShroomAccountRegister(ShroomAccountAuth* auth, const char* u
   sqlite3_bind_int64(statement, 1, player_id);
   sqlite3_bind_text(statement, 2, username, -1, SQLITE_TRANSIENT);
   sqlite3_bind_text(statement, 3, normalized_email, -1, SQLITE_TRANSIENT);
+  // encoded_password is an Argon2id verifier produced with a random salt, not plaintext.
+  // codeql[cpp/cleartext-storage-database]
   sqlite3_bind_text(statement, 4, encoded_password, -1, SQLITE_TRANSIENT);
   if (sqlite3_step(statement) != SQLITE_DONE) {
     goto database_failure;
@@ -410,6 +414,7 @@ ShroomAccountResult ShroomAccountRegister(ShroomAccountAuth* auth, const char* u
   statement = NULL;
   user_id = sqlite3_last_insert_rowid(auth->db);
 
+  // Issue both digested session tokens inside the registration transaction.
   if (!IssueTokenPair(auth->db, (uint32_t)user_id, family, tokens, refresh_digest) ||
       sqlite3_prepare_v2(auth->db,
                          "SELECT p.player_uuid, u.created_at FROM users u "
