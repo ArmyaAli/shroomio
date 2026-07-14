@@ -39,6 +39,7 @@ typedef struct ShroomServerDiscoveryState {
   uint64_t started_ms;
   uint32_t received_directory_chunks;
   uint8_t directory_chunk_count;
+  size_t full_server_count;
   size_t candidate_count;
   ShroomDiscoveryCandidate candidates[SHROOM_DIRECTORY_MAX_ENTRIES];
 } ShroomServerDiscoveryState;

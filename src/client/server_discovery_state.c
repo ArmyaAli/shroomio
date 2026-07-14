@@ -43,6 +43,13 @@ static void AddDirectoryEntry(ShroomServerDiscoveryState* state,
                               const ShroomDirectoryServerEntry* source) {
   ShroomDirectoryServerEntry entry = *source;
 
+  if ((entry.capacity > 0u) && (entry.player_count == entry.capacity) &&
+      (entry.player_count <= SHROOM_SERVER_MAX_CLIENTS) &&
+      TextIsTerminated(entry.name, sizeof(entry.name)) &&
+      TextIsTerminated(entry.host, sizeof(entry.host)) && (entry.server_id != 0ull) &&
+      (entry.port != 0u)) {
+    ++state->full_server_count;
+  }
   if (!NormalizeEntry(&entry)) {
     return;
   }

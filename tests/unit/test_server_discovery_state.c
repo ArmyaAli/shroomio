@@ -73,6 +73,7 @@ void test_directory_chunks_deduplicate_clamp_and_filter_full_entries(void) {
       &state, &packet, SHROOM_DIRECTORY_LIST_PACKET_SIZE(3u), 1020ull));
   TEST_ASSERT_EQUAL(SHROOM_DISCOVERY_PROBING, state.phase);
   TEST_ASSERT_EQUAL_size_t(3u, state.candidate_count);
+  TEST_ASSERT_EQUAL_size_t(1u, state.full_server_count);
   TEST_ASSERT_EQUAL_UINT16(SHROOM_SERVER_MAX_CLIENTS, state.candidates[2].server.capacity);
 }
 
