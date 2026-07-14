@@ -23,6 +23,7 @@
 #define SHROOM_VOICE_OUTBOUND_QUEUE_CAPACITY 32u
 #define SHROOM_VOICE_RECOVERY_DELAY_MS 1000u
 #define SHROOM_VOICE_WORKER_START_TIMEOUT_MS 250u
+#define SHROOM_VOICE_TALKING_TIMEOUT_MS 350u
 
 typedef struct ShroomVoicePcmFrame {
   float samples[SHROOM_VOICE_FRAME_SAMPLES];
@@ -74,6 +75,12 @@ typedef struct ShroomVoiceRemote {
   ShroomVoiceJitterBuffer jitter;
 } ShroomVoiceRemote;
 
+typedef struct ShroomVoiceActivity {
+  atomic_uint player_id;
+  atomic_uint_fast64_t last_talking_ms;
+  atomic_bool muted;
+} ShroomVoiceActivity;
+
 typedef struct ShroomVoiceAtomicStats {
   atomic_uint_fast64_t captured_frames;
   atomic_uint_fast64_t encoded_frames;
@@ -102,6 +109,7 @@ typedef struct ShroomVoiceRuntime {
   ShroomVoiceInboundQueue inbound_queue;
   ShroomVoiceWireQueue outbound_queue;
   ShroomVoiceRemote remotes[SHROOM_MAX_PARTICIPANTS];
+  ShroomVoiceActivity activity[SHROOM_MAX_PARTICIPANTS];
   ShroomVoiceAtomicStats stats;
   float capture_partial[SHROOM_VOICE_FRAME_SAMPLES];
   uint32_t capture_partial_count;
@@ -110,6 +118,8 @@ typedef struct ShroomVoiceRuntime {
   bool playback_partial_valid;
   atomic_bool configured;
   atomic_bool session_active;
+  atomic_bool mic_test_active;
+  atomic_bool self_muted;
   atomic_bool transmitting;
   atomic_bool device_lost;
   atomic_bool worker_should_run;
@@ -117,6 +127,9 @@ typedef struct ShroomVoiceRuntime {
   atomic_bool worker_failed;
   atomic_bool running;
   atomic_int status;
+  atomic_uint output_volume_percent;
+  atomic_uint capture_level_milli;
+  char capture_device[SHROOM_VOICE_DEVICE_NAME_LENGTH];
   uint64_t retry_at_ms;
 } ShroomVoiceRuntime;
 
@@ -137,6 +150,50 @@ static uint64_t DefaultNowMs(void) {
 static uint64_t VoiceNowMs(void) {
   return g_voice.backend.now_ms != NULL ? g_voice.backend.now_ms(g_voice.backend.context)
                                         : DefaultNowMs();
+}
+
+static ShroomVoiceActivity* FindActivity(uint32_t player_id, bool create) {
+  ShroomVoiceActivity* empty = NULL;
+
+  if (player_id == 0u) {
+    return NULL;
+  }
+  for (size_t index = 0u; index < SHROOM_MAX_PARTICIPANTS; ++index) {
+    ShroomVoiceActivity* activity = &g_voice.activity[index];
+    const uint32_t current = atomic_load(&activity->player_id);
+    if (current == player_id) {
+      return activity;
+    }
+    if ((empty == NULL) && (current == 0u)) {
+      empty = activity;
+    }
+  }
+  if (create && (empty != NULL)) {
+    uint32_t expected = 0u;
+    if (atomic_compare_exchange_strong(&empty->player_id, &expected, player_id) ||
+        (expected == player_id)) {
+      return empty;
+    }
+    return FindActivity(player_id, false);
+  }
+  return NULL;
+}
+
+static void ClearActivity(uint32_t player_id) {
+  ShroomVoiceActivity* activity = FindActivity(player_id, false);
+  if (activity != NULL) {
+    atomic_store(&activity->last_talking_ms, 0u);
+    atomic_store(&activity->muted, false);
+    atomic_store(&activity->player_id, 0u);
+  }
+}
+
+static void ClearAllActivity(void) {
+  for (size_t index = 0u; index < SHROOM_MAX_PARTICIPANTS; ++index) {
+    atomic_store(&g_voice.activity[index].last_talking_ms, 0u);
+    atomic_store(&g_voice.activity[index].muted, false);
+    atomic_store(&g_voice.activity[index].player_id, 0u);
+  }
 }
 
 static void ClearQueues(void) {
@@ -240,6 +297,14 @@ static void ProcessAudio(void* context, float* output, const float* input, uint3
   }
 
   if (input != NULL) {
+    float peak = 0.0f;
+    for (uint32_t index = 0u; index < frame_count; ++index) {
+      const float amplitude = fabsf(input[index]);
+      if (amplitude > peak) {
+        peak = amplitude;
+      }
+    }
+    atomic_store(&voice->capture_level_milli, (unsigned)(fminf(peak, 1.0f) * 1000.0f));
     while (offset < frame_count) {
       const uint32_t available = SHROOM_VOICE_FRAME_SAMPLES - voice->capture_partial_count;
       const uint32_t copy_count =
@@ -356,6 +421,10 @@ static void HandleInboundFrame(const ShroomVoiceWireFrame* wire) {
   }
   result = ShroomVoiceJitterPush(&remote->jitter, packet, wire->wire_size, DefaultNowMs());
   if (result == SHROOM_VOICE_JITTER_PUSH_ACCEPTED) {
+    ShroomVoiceActivity* activity = FindActivity(packet->sender_id, true);
+    if (activity != NULL) {
+      atomic_store(&activity->last_talking_ms, VoiceNowMs());
+    }
     atomic_fetch_add(&g_voice.stats.received_frames, 1u);
   } else if (result == SHROOM_VOICE_JITTER_PUSH_LATE) {
     atomic_fetch_add(&g_voice.stats.late_drops, 1u);
@@ -382,9 +451,11 @@ static void ProcessInbound(void) {
     } break;
     case SHROOM_VOICE_INBOUND_REMOVE:
       DestroyRemote(FindRemote(item.player_id, false));
+      ClearActivity(item.player_id);
       break;
     case SHROOM_VOICE_INBOUND_RESET:
       DestroyAllRemotes();
+      ClearAllActivity();
       break;
     default:
       break;
@@ -394,6 +465,7 @@ static void ProcessInbound(void) {
 
 static void ProcessPlayback(uint64_t now_ms) {
   ShroomVoicePcmFrame mixed = {0};
+  const float output_gain = (float)atomic_load(&g_voice.output_volume_percent) / 100.0f;
   bool decoded_any = false;
 
   for (size_t index = 0u; index < SHROOM_MAX_PARTICIPANTS; ++index) {
@@ -431,7 +503,8 @@ static void ProcessPlayback(uint64_t now_ms) {
     }
     if (decoded_samples > 0) {
       if (!remote->muted) {
-        ShroomVoiceMixAdd(mixed.samples, decoded, (size_t)decoded_samples, remote->volume);
+        ShroomVoiceMixAdd(mixed.samples, decoded, (size_t)decoded_samples,
+                          remote->volume * output_gain);
       }
       decoded_any = true;
       atomic_fetch_add(&g_voice.stats.decoded_frames, 1u);
@@ -611,6 +684,7 @@ bool ShroomVoiceConfigure(const ShroomVoiceBackend* backend) {
     return false;
   }
   g_voice.backend = *backend;
+  atomic_store(&g_voice.output_volume_percent, 100u);
   atomic_store(&g_voice.configured, true);
   atomic_store(&g_voice.status, SHROOM_VOICE_STATUS_IDLE);
   return true;
@@ -618,16 +692,18 @@ bool ShroomVoiceConfigure(const ShroomVoiceBackend* backend) {
 
 void ShroomVoiceSetSessionActive(bool active) {
   atomic_store(&g_voice.session_active, active);
-  if (!active) {
+  if (!active && !atomic_load(&g_voice.mic_test_active)) {
     StopRuntime();
     atomic_store(&g_voice.status, atomic_load(&g_voice.configured)
                                       ? SHROOM_VOICE_STATUS_IDLE
                                       : SHROOM_VOICE_STATUS_UNCONFIGURED);
+    ClearAllActivity();
   }
 }
 
 void ShroomVoiceUpdate(bool push_to_talk, ShroomVoiceSendFn send_fn, void* send_context) {
   const bool session_active = atomic_load(&g_voice.session_active);
+  const bool runtime_active = session_active || atomic_load(&g_voice.mic_test_active);
   const uint64_t now_ms = VoiceNowMs();
   ShroomVoiceWireFrame wire;
 
@@ -638,7 +714,7 @@ void ShroomVoiceUpdate(bool push_to_talk, ShroomVoiceSendFn send_fn, void* send_
     g_voice.retry_at_ms = now_ms + SHROOM_VOICE_RECOVERY_DELAY_MS;
     atomic_store(&g_voice.status, SHROOM_VOICE_STATUS_RECOVERING);
   }
-  if (session_active && !atomic_load(&g_voice.running) && (now_ms >= g_voice.retry_at_ms)) {
+  if (runtime_active && !atomic_load(&g_voice.running) && (now_ms >= g_voice.retry_at_ms)) {
     if (!StartRuntime()) {
       g_voice.retry_at_ms = now_ms + SHROOM_VOICE_RECOVERY_DELAY_MS;
       atomic_store(&g_voice.status, SHROOM_VOICE_STATUS_RECOVERING);
@@ -647,8 +723,8 @@ void ShroomVoiceUpdate(bool push_to_talk, ShroomVoiceSendFn send_fn, void* send_
     }
   }
 
-  atomic_store(&g_voice.transmitting,
-               session_active && atomic_load(&g_voice.running) && push_to_talk);
+  atomic_store(&g_voice.transmitting, session_active && atomic_load(&g_voice.running) &&
+                                          push_to_talk && !atomic_load(&g_voice.self_muted));
   while (WireQueuePop(&g_voice.outbound_queue, &wire)) {
     if ((send_fn != NULL) && send_fn(send_context, wire.bytes, wire.wire_size)) {
       atomic_fetch_add(&g_voice.stats.sent_frames, 1u);
@@ -677,7 +753,35 @@ bool ShroomVoiceSetPlayerMuted(uint32_t player_id, bool muted) {
       .player_id = player_id,
       .muted = muted,
   };
-  return (player_id != 0u) && InboundQueuePush(&item);
+  if ((player_id == 0u) || !InboundQueuePush(&item)) {
+    return false;
+  }
+  {
+    ShroomVoiceActivity* activity = FindActivity(player_id, true);
+    if (activity != NULL) {
+      atomic_store(&activity->muted, muted);
+    }
+  }
+  return true;
+}
+
+bool ShroomVoiceIsPlayerMuted(uint32_t player_id) {
+  const ShroomVoiceActivity* activity = FindActivity(player_id, false);
+  return (activity != NULL) && atomic_load(&activity->muted);
+}
+
+bool ShroomVoiceIsPlayerTalking(uint32_t player_id) {
+  const ShroomVoiceActivity* activity = FindActivity(player_id, false);
+  uint64_t last_talking_ms;
+  uint64_t now_ms;
+
+  if ((activity == NULL) || atomic_load(&activity->muted)) {
+    return false;
+  }
+  last_talking_ms = atomic_load(&activity->last_talking_ms);
+  now_ms = VoiceNowMs();
+  return (last_talking_ms != 0u) && (now_ms >= last_talking_ms) &&
+         ((now_ms - last_talking_ms) <= SHROOM_VOICE_TALKING_TIMEOUT_MS);
 }
 
 bool ShroomVoiceRemovePlayer(uint32_t player_id) {
@@ -694,7 +798,7 @@ bool ShroomVoiceResetSession(void) {
 }
 
 bool ShroomVoiceRestart(void) {
-  if (!atomic_load(&g_voice.session_active)) {
+  if (!atomic_load(&g_voice.session_active) && !atomic_load(&g_voice.mic_test_active)) {
     return false;
   }
   StopRuntime();
@@ -702,9 +806,41 @@ bool ShroomVoiceRestart(void) {
   return StartRuntime();
 }
 
+bool ShroomVoiceBeginMicTest(void) {
+  if (!atomic_load(&g_voice.configured)) {
+    return false;
+  }
+  atomic_store(&g_voice.mic_test_active, true);
+  atomic_store(&g_voice.capture_level_milli, 0u);
+  g_voice.retry_at_ms = 0u;
+  if (!StartRuntime()) {
+    atomic_store(&g_voice.mic_test_active, false);
+    return false;
+  }
+  return true;
+}
+
+void ShroomVoiceEndMicTest(void) {
+  atomic_store(&g_voice.mic_test_active, false);
+  atomic_store(&g_voice.capture_level_milli, 0u);
+  if (!atomic_load(&g_voice.session_active)) {
+    StopRuntime();
+    atomic_store(&g_voice.status, atomic_load(&g_voice.configured)
+                                      ? SHROOM_VOICE_STATUS_IDLE
+                                      : SHROOM_VOICE_STATUS_UNCONFIGURED);
+  }
+}
+
+bool ShroomVoiceIsMicTestActive(void) { return atomic_load(&g_voice.mic_test_active); }
+
+float ShroomVoiceGetCaptureLevel(void) {
+  return (float)atomic_load(&g_voice.capture_level_milli) / 1000.0f;
+}
+
 void ShroomVoiceShutdown(void) {
   StopRuntime();
   atomic_store(&g_voice.session_active, false);
+  atomic_store(&g_voice.mic_test_active, false);
   atomic_store(&g_voice.configured, false);
   atomic_store(&g_voice.status, SHROOM_VOICE_STATUS_UNCONFIGURED);
   g_voice.retry_at_ms = 0u;
@@ -736,6 +872,49 @@ bool ShroomVoiceIsRunning(void) { return atomic_load(&g_voice.running); }
 
 bool ShroomVoiceIsTransmitting(void) { return atomic_load(&g_voice.transmitting); }
 
+void ShroomVoiceSetSelfMuted(bool muted) {
+  atomic_store(&g_voice.self_muted, muted);
+  if (muted) {
+    atomic_store(&g_voice.transmitting, false);
+  }
+}
+
+void ShroomVoiceSetOutputVolume(int volume_percent) {
+  if (volume_percent < 0) {
+    volume_percent = 0;
+  } else if (volume_percent > 100) {
+    volume_percent = 100;
+  }
+  atomic_store(&g_voice.output_volume_percent, (unsigned)volume_percent);
+}
+
+size_t ShroomVoiceListCaptureDevices(char names[][SHROOM_VOICE_DEVICE_NAME_LENGTH],
+                                     size_t capacity) {
+  if ((names == NULL) || (capacity == 0u) || (g_voice.backend.capture_devices == NULL)) {
+    return 0u;
+  }
+  return g_voice.backend.capture_devices(g_voice.backend.context, names, capacity);
+}
+
+bool ShroomVoiceSelectCaptureDevice(const char* device_name) {
+  const char* selected = device_name != NULL ? device_name : "";
+  const bool was_running = atomic_load(&g_voice.running);
+
+  if (strcmp(g_voice.capture_device, selected) == 0) {
+    return true;
+  }
+  if ((g_voice.backend.select_capture_device == NULL) ||
+      !g_voice.backend.select_capture_device(g_voice.backend.context, selected)) {
+    return false;
+  }
+  if (was_running) {
+    StopRuntime();
+  }
+  snprintf(g_voice.capture_device, sizeof(g_voice.capture_device), "%s", selected);
+  g_voice.retry_at_ms = 0u;
+  return !was_running || StartRuntime();
+}
+
 ShroomVoiceStats ShroomVoiceGetStats(void) {
   return (ShroomVoiceStats){
       .captured_frames = atomic_load(&g_voice.stats.captured_frames),
@@ -762,6 +941,7 @@ ShroomVoiceStats ShroomVoiceGetStats(void) {
 void ShroomVoiceTestReset(void) {
   ShroomVoiceShutdown();
   memset(&g_voice, 0, sizeof(g_voice));
+  atomic_store(&g_voice.output_volume_percent, 100u);
   atomic_store(&g_voice.status, SHROOM_VOICE_STATUS_UNCONFIGURED);
 }
 #endif

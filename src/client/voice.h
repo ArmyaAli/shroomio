@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #include "voice_codec.h"
+#include "shared/config.h"
 
 typedef void (*ShroomVoiceAudioProcessFn)(void* context, float* output, const float* input,
                                           uint32_t frame_count);
@@ -18,6 +19,9 @@ typedef struct ShroomVoiceBackend {
   void (*stop)(void* context);
   bool (*healthy)(void* context);
   uint64_t (*now_ms)(void* context);
+  size_t (*capture_devices)(void* context, char names[][SHROOM_VOICE_DEVICE_NAME_LENGTH],
+                            size_t capacity);
+  bool (*select_capture_device)(void* context, const char* device_name);
 } ShroomVoiceBackend;
 
 typedef bool (*ShroomVoiceSendFn)(void* context, const void* data, size_t wire_size);
@@ -56,14 +60,25 @@ void ShroomVoiceSetSessionActive(bool active);
 void ShroomVoiceUpdate(bool push_to_talk, ShroomVoiceSendFn send_fn, void* send_context);
 bool ShroomVoiceSubmitFrame(const void* data, size_t wire_size);
 bool ShroomVoiceSetPlayerMuted(uint32_t player_id, bool muted);
+bool ShroomVoiceIsPlayerMuted(uint32_t player_id);
+bool ShroomVoiceIsPlayerTalking(uint32_t player_id);
 bool ShroomVoiceRemovePlayer(uint32_t player_id);
 bool ShroomVoiceResetSession(void);
 bool ShroomVoiceRestart(void);
+bool ShroomVoiceBeginMicTest(void);
+void ShroomVoiceEndMicTest(void);
+bool ShroomVoiceIsMicTestActive(void);
+float ShroomVoiceGetCaptureLevel(void);
 void ShroomVoiceShutdown(void);
 ShroomVoiceStatus ShroomVoiceGetStatus(void);
 const char* ShroomVoiceGetStatusText(void);
 bool ShroomVoiceIsRunning(void);
 bool ShroomVoiceIsTransmitting(void);
+void ShroomVoiceSetSelfMuted(bool muted);
+void ShroomVoiceSetOutputVolume(int volume_percent);
+size_t ShroomVoiceListCaptureDevices(char names[][SHROOM_VOICE_DEVICE_NAME_LENGTH],
+                                     size_t capacity);
+bool ShroomVoiceSelectCaptureDevice(const char* device_name);
 ShroomVoiceStats ShroomVoiceGetStats(void);
 
 #ifdef TEST_MODE

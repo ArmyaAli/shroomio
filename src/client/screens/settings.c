@@ -4,11 +4,13 @@
 #include "screen.h"
 #include "screen_background.h"
 #include "settings_session.h"
+#include "voice.h"
 
 #include "imgui_wrapper.h"
 #include "raylib.h"
 
 #include <stdio.h>
+#include <string.h>
 
 #define SHROOM_KEYBINDING_SLOT_COUNT 4
 
@@ -24,6 +26,10 @@ typedef struct SettingsScreenState {
   bool rebind_armed;
   int rebind_conflict_slot; /* -1 if no conflict, else the slot that owns the pressed key */
   int rebind_reserved_key;  /* KEY_NULL if the last captured key was assignable */
+  char capture_devices[SHROOM_VOICE_MAX_CAPTURE_DEVICES + 1u][SHROOM_VOICE_DEVICE_NAME_LENGTH];
+  size_t capture_device_count;
+  int selected_capture_device;
+  bool capture_device_fallback;
 } SettingsScreenState;
 
 static SettingsScreenState g_settings_screen;
@@ -62,6 +68,9 @@ static const ShroomMushroomSpeciesEntry* FindSpeciesEntry(const ClientNetState* 
 static void ApplySettings(Game* game, const ClientSettings* settings) {
   game->settings = *settings;
   ShroomClientAudioInit(&game->settings);
+  ShroomVoiceSetSelfMuted(game->settings.voice_self_muted);
+  ShroomVoiceSetOutputVolume(game->settings.voice_output_volume_percent);
+  (void)ShroomVoiceSelectCaptureDevice(game->settings.voice_capture_device);
 }
 
 static void DiscardAndGoBack(ShroomScreenManager* manager) {
@@ -118,6 +127,21 @@ static bool SettingsInit(ShroomScreenManager* manager) {
   g_settings_screen.rebind_armed = false;
   g_settings_screen.rebind_conflict_slot = -1;
   g_settings_screen.rebind_reserved_key = KEY_NULL;
+  snprintf(g_settings_screen.capture_devices[0], sizeof(g_settings_screen.capture_devices[0]), "%s",
+           "System Default");
+  g_settings_screen.capture_device_count =
+      1u + ShroomVoiceListCaptureDevices(&g_settings_screen.capture_devices[1],
+                                         SHROOM_VOICE_MAX_CAPTURE_DEVICES);
+  g_settings_screen.selected_capture_device = 0;
+  g_settings_screen.capture_device_fallback = game->settings.voice_capture_device[0] != '\0';
+  for (size_t index = 1u; index < g_settings_screen.capture_device_count; ++index) {
+    if (strcmp(game->settings.voice_capture_device, g_settings_screen.capture_devices[index]) ==
+        0) {
+      g_settings_screen.selected_capture_device = (int)index;
+      g_settings_screen.capture_device_fallback = false;
+      break;
+    }
+  }
   return true;
 }
 
@@ -178,11 +202,16 @@ static void SettingsDraw(ShroomScreenManager* manager) {
   const char* species_items[CLIENT_MUSHROOM_COUNT];
   char species_fallback_items[CLIENT_MUSHROOM_COUNT][24];
   const ShroomMushroomSpeciesEntry* selected_species;
+  const char* capture_device_items[SHROOM_VOICE_MAX_CAPTURE_DEVICES + 1u];
   const int screen_width = GetScreenWidth();
   const int screen_height = GetScreenHeight();
 
   if (game == NULL) {
     return;
+  }
+
+  for (size_t index = 0u; index < g_settings_screen.capture_device_count; ++index) {
+    capture_device_items[index] = g_settings_screen.capture_devices[index];
   }
 
   for (int index = 0; index < CLIENT_MUSHROOM_COUNT; ++index) {
@@ -243,6 +272,52 @@ static void SettingsDraw(ShroomScreenManager* manager) {
   } else {
     ShroomImGui_TextColored((ShroomImGuiColor){1.0f, 0.45f, 0.4f, 1.0f},
                             ShroomClientAudioGetStatus());
+  }
+
+  ShroomImGui_Separator();
+  ShroomImGui_Text("Voice Chat");
+  changed |=
+      ShroomImGui_Checkbox("Enable Voice Chat", &g_settings_screen.session.pending.voice_enabled);
+  changed |= ShroomImGui_Checkbox("Self Mute", &g_settings_screen.session.pending.voice_self_muted);
+  changed |= ShroomImGui_SliderInt("Voice Output Volume",
+                                   &g_settings_screen.session.pending.voice_output_volume_percent,
+                                   0, 100, "%d%%");
+  if (ShroomImGui_Combo("Capture Device", &g_settings_screen.selected_capture_device,
+                        capture_device_items, (int)g_settings_screen.capture_device_count)) {
+    const int selected = g_settings_screen.selected_capture_device;
+    snprintf(g_settings_screen.session.pending.voice_capture_device,
+             sizeof(g_settings_screen.session.pending.voice_capture_device), "%s",
+             selected > 0 ? g_settings_screen.capture_devices[selected] : "");
+    g_settings_screen.capture_device_fallback = false;
+    changed = true;
+  }
+  if (g_settings_screen.capture_device_fallback) {
+    ShroomImGui_TextColored((ShroomImGuiColor){1.0f, 0.65f, 0.3f, 1.0f},
+                            "Saved capture device unavailable; using System Default.");
+  } else if (g_settings_screen.capture_device_count == 1u) {
+    ShroomImGui_TextColored((ShroomImGuiColor){1.0f, 0.65f, 0.3f, 1.0f},
+                            "No capture devices detected; System Default will be retried.");
+  }
+  if (ShroomVoiceIsMicTestActive()) {
+    ShroomVoiceUpdate(false, NULL, NULL);
+    if (ShroomImGui_Button("Stop Microphone Test", 190.0f, 32.0f)) {
+      ShroomVoiceEndMicTest();
+    }
+    ShroomImGui_SameLine();
+    ShroomImGui_Text(TextFormat("Input level: %d%%", (int)(ShroomVoiceGetCaptureLevel() * 100.0f)));
+  } else if (ShroomImGui_Button(((ShroomVoiceGetStatus() == SHROOM_VOICE_STATUS_ERROR) ||
+                                 (ShroomVoiceGetStatus() == SHROOM_VOICE_STATUS_RECOVERING))
+                                    ? "Retry Microphone"
+                                    : "Test Microphone",
+                                170.0f, 32.0f)) {
+    (void)ShroomVoiceSelectCaptureDevice(g_settings_screen.session.pending.voice_capture_device);
+    (void)ShroomVoiceBeginMicTest();
+  }
+  if ((ShroomVoiceGetStatus() == SHROOM_VOICE_STATUS_RECOVERING) ||
+      (ShroomVoiceGetStatus() == SHROOM_VOICE_STATUS_ERROR) ||
+      (ShroomVoiceGetStatus() == SHROOM_VOICE_STATUS_UNCONFIGURED)) {
+    ShroomImGui_TextColored((ShroomImGuiColor){1.0f, 0.45f, 0.4f, 1.0f},
+                            ShroomVoiceGetStatusText());
   }
 
   ShroomImGui_Separator();
@@ -416,12 +491,21 @@ int ShroomTestSettingsPendingKey(int slot) {
 }
 
 const char* ShroomTestGetSettingsRebindError(void) { return SettingsRebindErrorText(); }
+
+bool ShroomTestSettingsUsesCaptureFallback(void) {
+  return g_settings_screen.capture_device_fallback;
+}
 #endif
 
 static void SettingsHandleInput(ShroomScreenManager* manager) {
   if (IsKeyPressed(KEY_ESCAPE)) {
     HandleSettingsEscape(manager);
   }
+}
+
+static void SettingsCleanup(ShroomScreenManager* manager) {
+  (void)manager;
+  ShroomVoiceEndMicTest();
 }
 
 void ShroomScreenRegisterSettings(ShroomScreenManager* manager) {
@@ -437,4 +521,5 @@ void ShroomScreenRegisterSettings(ShroomScreenManager* manager) {
   screen->init = SettingsInit;
   screen->draw = SettingsDraw;
   screen->handle_input = SettingsHandleInput;
+  screen->cleanup = SettingsCleanup;
 }

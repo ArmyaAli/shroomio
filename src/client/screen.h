@@ -99,6 +99,7 @@ void ShroomTestSettingsBeginRebind(int slot);
 void ShroomTestSettingsCaptureKey(int key);
 int ShroomTestSettingsPendingKey(int slot);
 const char* ShroomTestGetSettingsRebindError(void);
+bool ShroomTestSettingsUsesCaptureFallback(void);
 #endif
 
 #endif

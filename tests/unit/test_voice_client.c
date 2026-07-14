@@ -3,6 +3,7 @@
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "client/voice.h"
@@ -24,6 +25,8 @@ typedef struct FakeVoiceBackend {
   uint32_t stop_count;
   bool healthy;
   bool fail_start;
+  bool fail_select;
+  char selected_device[SHROOM_VOICE_DEVICE_NAME_LENGTH];
 } FakeVoiceBackend;
 
 typedef struct FakeTransport {
@@ -36,7 +39,7 @@ static FakeVoiceBackend fake_backend;
 
 void setUp(void) {
   ShroomVoiceTestReset();
-  fake_backend = (FakeVoiceBackend){.healthy = true};
+  fake_backend = (FakeVoiceBackend){.healthy = true, .now_ms = 100u};
 }
 
 void tearDown(void) { ShroomVoiceTestReset(); }
@@ -100,6 +103,27 @@ static bool FakeHealthy(void* context) { return ((FakeVoiceBackend*)context)->he
 
 static uint64_t FakeNowMs(void* context) { return ((FakeVoiceBackend*)context)->now_ms; }
 
+static size_t FakeCaptureDevices(void* context,
+                                 char names[][SHROOM_VOICE_DEVICE_NAME_LENGTH], size_t capacity) {
+  (void)context;
+  if (capacity > 0u) {
+    snprintf(names[0], SHROOM_VOICE_DEVICE_NAME_LENGTH, "%s", "Built-in Mic");
+  }
+  if (capacity > 1u) {
+    snprintf(names[1], SHROOM_VOICE_DEVICE_NAME_LENGTH, "%s", "USB Mic");
+  }
+  return capacity < 2u ? capacity : 2u;
+}
+
+static bool FakeSelectCaptureDevice(void* context, const char* device_name) {
+  FakeVoiceBackend* fake = context;
+  if (fake->fail_select) {
+    return false;
+  }
+  snprintf(fake->selected_device, sizeof(fake->selected_device), "%s", device_name);
+  return true;
+}
+
 static ShroomVoiceBackend MakeBackend(void) {
   return (ShroomVoiceBackend){
       .context = &fake_backend,
@@ -107,6 +131,8 @@ static ShroomVoiceBackend MakeBackend(void) {
       .stop = FakeStop,
       .healthy = FakeHealthy,
       .now_ms = FakeNowMs,
+      .capture_devices = FakeCaptureDevices,
+      .select_capture_device = FakeSelectCaptureDevice,
   };
 }
 
@@ -313,6 +339,126 @@ void test_runtime_captures_transmits_plays_back_recovers_and_stops(void) {
   TEST_ASSERT_EQUAL_UINT32(0u, ShroomVoiceGetStats().active_decoders);
 }
 
+void test_runtime_preferences_control_device_mic_test_and_self_mute(void) {
+  const ShroomVoiceBackend backend = MakeBackend();
+  char devices[SHROOM_VOICE_MAX_CAPTURE_DEVICES][SHROOM_VOICE_DEVICE_NAME_LENGTH];
+  float captured[SHROOM_VOICE_FRAME_SAMPLES];
+  float output[SHROOM_VOICE_FRAME_SAMPLES];
+
+  TEST_ASSERT_TRUE(ShroomVoiceConfigure(&backend));
+  TEST_ASSERT_EQUAL_size_t(2u,
+                           ShroomVoiceListCaptureDevices(devices,
+                                                         SHROOM_VOICE_MAX_CAPTURE_DEVICES));
+  TEST_ASSERT_EQUAL_STRING("Built-in Mic", devices[0]);
+  TEST_ASSERT_EQUAL_STRING("USB Mic", devices[1]);
+  TEST_ASSERT_TRUE(ShroomVoiceSelectCaptureDevice("USB Mic"));
+  TEST_ASSERT_EQUAL_STRING("USB Mic", fake_backend.selected_device);
+
+  TEST_ASSERT_TRUE(ShroomVoiceBeginMicTest());
+  TEST_ASSERT_TRUE(ShroomVoiceIsMicTestActive());
+  TEST_ASSERT_TRUE(ShroomVoiceIsRunning());
+  FillSine(captured, 0.42f, 0.0f);
+  fake_backend.process(fake_backend.callback_context, output, captured,
+                       SHROOM_VOICE_FRAME_SAMPLES);
+  TEST_ASSERT_GREATER_THAN_FLOAT(0.35f, ShroomVoiceGetCaptureLevel());
+  TEST_ASSERT_FALSE(ShroomVoiceIsTransmitting());
+  ShroomVoiceEndMicTest();
+  TEST_ASSERT_FALSE(ShroomVoiceIsRunning());
+
+  ShroomVoiceSetSessionActive(true);
+  ShroomVoiceSetSelfMuted(true);
+  ShroomVoiceUpdate(true, NULL, NULL);
+  TEST_ASSERT_FALSE(ShroomVoiceIsTransmitting());
+  ShroomVoiceSetSelfMuted(false);
+  ShroomVoiceUpdate(true, NULL, NULL);
+  TEST_ASSERT_TRUE(ShroomVoiceIsTransmitting());
+}
+
+void test_runtime_remote_mute_and_output_volume_silence_decoded_audio(void) {
+  const ShroomVoiceBackend backend = MakeBackend();
+  FakeTransport transport = {0};
+  float captured[SHROOM_VOICE_FRAME_SAMPLES];
+  float output[SHROOM_VOICE_FRAME_SAMPLES];
+  uint64_t decoded_before;
+
+  TEST_ASSERT_TRUE(ShroomVoiceConfigure(&backend));
+  ShroomVoiceSetSessionActive(true);
+  ShroomVoiceUpdate(true, CaptureSend, &transport);
+  for (uint32_t frame = 0u; frame < 3u; ++frame) {
+    FillSine(captured, 0.35f, (float)frame);
+    fake_backend.process(fake_backend.callback_context, output, captured,
+                         SHROOM_VOICE_FRAME_SAMPLES);
+  }
+  TEST_ASSERT_TRUE(WaitForEncoded(&transport, 3u, true));
+
+  TEST_ASSERT_TRUE(ShroomVoiceSetPlayerMuted(77u, true));
+  decoded_before = ShroomVoiceGetStats().decoded_frames;
+  for (size_t index = 0u; index < 3u; ++index) {
+    ((ShroomVoiceFramePacket*)transport.frames[index].bytes)->sender_id = 77u;
+    TEST_ASSERT_TRUE(ShroomVoiceSubmitFrame(transport.frames[index].bytes,
+                                            transport.sizes[index]));
+  }
+  for (uint32_t attempt = 0u;
+       (attempt < 250u) && (ShroomVoiceGetStats().decoded_frames < decoded_before + 3u);
+       ++attempt) {
+    memset(output, 0, sizeof(output));
+    fake_backend.process(fake_backend.callback_context, output, NULL,
+                         SHROOM_VOICE_FRAME_SAMPLES);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, SignalEnergy(output));
+    ShroomVoiceThreadSleepMs(1u);
+  }
+  TEST_ASSERT_GREATER_OR_EQUAL_UINT64(decoded_before + 3u,
+                                      ShroomVoiceGetStats().decoded_frames);
+
+  TEST_ASSERT_TRUE(ShroomVoiceResetSession());
+  ShroomVoiceSetOutputVolume(0);
+  decoded_before = ShroomVoiceGetStats().decoded_frames;
+  for (size_t index = 0u; index < 3u; ++index) {
+    ((ShroomVoiceFramePacket*)transport.frames[index].bytes)->sender_id = 78u;
+    TEST_ASSERT_TRUE(ShroomVoiceSubmitFrame(transport.frames[index].bytes,
+                                            transport.sizes[index]));
+  }
+  for (uint32_t attempt = 0u;
+       (attempt < 250u) && (ShroomVoiceGetStats().decoded_frames < decoded_before + 3u);
+       ++attempt) {
+    memset(output, 0, sizeof(output));
+    fake_backend.process(fake_backend.callback_context, output, NULL,
+                         SHROOM_VOICE_FRAME_SAMPLES);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, SignalEnergy(output));
+    ShroomVoiceThreadSleepMs(1u);
+  }
+  TEST_ASSERT_GREATER_OR_EQUAL_UINT64(decoded_before + 3u,
+                                      ShroomVoiceGetStats().decoded_frames);
+}
+
+void test_remote_mute_and_talking_activity_expire_and_reset_deterministically(void) {
+  const ShroomVoiceBackend backend = MakeBackend();
+  TestVoiceWire wire;
+  ShroomVoiceFramePacket* packet =
+      BuildFrame(&wire, 73u, 1u, 0u, SHROOM_VOICE_FLAG_START);
+
+  TEST_ASSERT_TRUE(ShroomVoiceConfigure(&backend));
+  ShroomVoiceSetSessionActive(true);
+  ShroomVoiceUpdate(false, NULL, NULL);
+  TEST_ASSERT_TRUE(ShroomVoiceSubmitFrame(packet, ShroomVoiceFramePacketSize(8u)));
+  for (uint32_t attempt = 0u;
+       (attempt < 100u) && (ShroomVoiceGetStats().received_frames == 0u); ++attempt) {
+    ShroomVoiceThreadSleepMs(1u);
+  }
+  TEST_ASSERT_TRUE(ShroomVoiceIsPlayerTalking(73u));
+  TEST_ASSERT_TRUE(ShroomVoiceSetPlayerMuted(73u, true));
+  TEST_ASSERT_TRUE(ShroomVoiceIsPlayerMuted(73u));
+  TEST_ASSERT_FALSE(ShroomVoiceIsPlayerTalking(73u));
+  TEST_ASSERT_TRUE(ShroomVoiceSetPlayerMuted(73u, false));
+  TEST_ASSERT_FALSE(ShroomVoiceIsPlayerMuted(73u));
+  TEST_ASSERT_TRUE(ShroomVoiceIsPlayerTalking(73u));
+  fake_backend.now_ms += 351u;
+  TEST_ASSERT_FALSE(ShroomVoiceIsPlayerTalking(73u));
+  ShroomVoiceSetSessionActive(false);
+  TEST_ASSERT_FALSE(ShroomVoiceIsPlayerMuted(73u));
+  TEST_ASSERT_FALSE(ShroomVoiceIsPlayerTalking(73u));
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_opus_round_trip_and_packet_loss_concealment_produce_bounded_audio);
@@ -321,5 +467,8 @@ int main(void) {
   RUN_TEST(test_jitter_buffer_rejects_duplicates_and_bounds_overflow);
   RUN_TEST(test_mixer_applies_mute_volume_and_clamps_invalid_samples);
   RUN_TEST(test_runtime_captures_transmits_plays_back_recovers_and_stops);
+  RUN_TEST(test_runtime_preferences_control_device_mic_test_and_self_mute);
+  RUN_TEST(test_runtime_remote_mute_and_output_volume_silence_decoded_audio);
+  RUN_TEST(test_remote_mute_and_talking_activity_expire_and_reset_deterministically);
   return UNITY_END();
 }

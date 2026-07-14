@@ -30,6 +30,11 @@ static ClientSettings ExampleSettings(int scale, int volume, const char* name) {
   ClientSettingsSetDefaults(&settings);
   settings.ui_scale_percent = scale;
   settings.master_volume_percent = volume;
+  settings.voice_enabled = false;
+  settings.voice_self_muted = true;
+  settings.voice_output_volume_percent = 37;
+  snprintf(settings.voice_capture_device, sizeof(settings.voice_capture_device), "%s",
+           "Studio Mic");
   snprintf(settings.player_name, sizeof(settings.player_name), "%s", name);
   return settings;
 }
@@ -95,7 +100,11 @@ void test_versioned_round_trip_leaves_no_temporary_file(void) {
   TEST_ASSERT_EQUAL_INT(130, loaded.ui_scale_percent);
   TEST_ASSERT_EQUAL_INT(64, loaded.master_volume_percent);
   TEST_ASSERT_EQUAL_STRING("Versioned Player", loaded.player_name);
-  TEST_ASSERT_TRUE(FileContains(settings_path, "schema_version=1\n"));
+  TEST_ASSERT_FALSE(loaded.voice_enabled);
+  TEST_ASSERT_TRUE(loaded.voice_self_muted);
+  TEST_ASSERT_EQUAL_INT(37, loaded.voice_output_volume_percent);
+  TEST_ASSERT_EQUAL_STRING("Studio Mic", loaded.voice_capture_device);
+  TEST_ASSERT_TRUE(FileContains(settings_path, "schema_version=2\n"));
   TEST_ASSERT_EQUAL_INT(0, stat(settings_path, &status));
   TEST_ASSERT_EQUAL_INT(0, status.st_mode & (S_IRWXG | S_IRWXO));
   SidePath(temporary, sizeof(temporary), ".tmp");
@@ -124,7 +133,11 @@ void test_complete_unversioned_file_migrates_to_current_schema(void) {
   TEST_ASSERT_TRUE(ClientSettingsLoadFromPath(&loaded, settings_path));
   TEST_ASSERT_EQUAL_INT(140, loaded.ui_scale_percent);
   TEST_ASSERT_EQUAL_STRING("Legacy Player", loaded.player_name);
-  TEST_ASSERT_TRUE(FileContains(settings_path, "schema_version=1\n"));
+  TEST_ASSERT_TRUE(loaded.voice_enabled);
+  TEST_ASSERT_FALSE(loaded.voice_self_muted);
+  TEST_ASSERT_EQUAL_INT(80, loaded.voice_output_volume_percent);
+  TEST_ASSERT_EQUAL_STRING("", loaded.voice_capture_device);
+  TEST_ASSERT_TRUE(FileContains(settings_path, "schema_version=2\n"));
 }
 
 void test_corrupt_primary_recovers_prior_valid_backup(void) {
@@ -137,13 +150,13 @@ void test_corrupt_primary_recovers_prior_valid_backup(void) {
   TEST_ASSERT_TRUE(ClientSettingsSaveToPath(&second, settings_path));
   file = fopen(settings_path, "wb");
   TEST_ASSERT_NOT_NULL(file);
-  fputs("schema_version=1\nui_scale_percent=truncated", file);
+  fputs("schema_version=2\nui_scale_percent=truncated", file);
   fclose(file);
 
   TEST_ASSERT_TRUE(ClientSettingsLoadFromPath(&loaded, settings_path));
   TEST_ASSERT_EQUAL_INT(125, loaded.ui_scale_percent);
   TEST_ASSERT_EQUAL_STRING("Backup Player", loaded.player_name);
-  TEST_ASSERT_TRUE(FileContains(settings_path, "schema_version=1\n"));
+  TEST_ASSERT_TRUE(FileContains(settings_path, "schema_version=2\n"));
 }
 
 void test_truncated_files_fall_back_to_validated_defaults(void) {

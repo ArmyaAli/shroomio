@@ -38,6 +38,8 @@ typedef struct ImGuiVoiceBackend {
   int start_count;
   int stop_count;
   bool healthy;
+  bool fail_start;
+  char selected_device[SHROOM_VOICE_DEVICE_NAME_LENGTH];
 } ImGuiVoiceBackend;
 
 static ImGuiVoiceBackend g_imgui_voice_backend;
@@ -50,6 +52,12 @@ static bool ImGuiVoiceStart(void* context, ShroomVoiceAudioProcessFn process,
   backend->callback_context = callback_context;
   backend->healthy = true;
   ++backend->start_count;
+  if (backend->fail_start) {
+    backend->process = NULL;
+    backend->device_lost = NULL;
+    backend->callback_context = NULL;
+    return false;
+  }
   return true;
 }
 
@@ -64,6 +72,24 @@ static void ImGuiVoiceStop(void* context) {
 static bool ImGuiVoiceHealthy(void* context) { return ((ImGuiVoiceBackend*)context)->healthy; }
 
 static uint64_t ImGuiVoiceNowMs(void* context) { return ((ImGuiVoiceBackend*)context)->now_ms; }
+
+static size_t ImGuiVoiceCaptureDevices(
+    void* context, char names[][SHROOM_VOICE_DEVICE_NAME_LENGTH], size_t capacity) {
+  (void)context;
+  if (capacity > 0u) {
+    snprintf(names[0], SHROOM_VOICE_DEVICE_NAME_LENGTH, "%s", "Built-in Mic");
+  }
+  if (capacity > 1u) {
+    snprintf(names[1], SHROOM_VOICE_DEVICE_NAME_LENGTH, "%s", "USB Mic");
+  }
+  return capacity < 2u ? capacity : 2u;
+}
+
+static bool ImGuiVoiceSelectDevice(void* context, const char* device_name) {
+  ImGuiVoiceBackend* backend = context;
+  snprintf(backend->selected_device, sizeof(backend->selected_device), "%s", device_name);
+  return true;
+}
 
 static bool ImGuiAudioInit(void* context) {
   ImGuiAudioBackend* backend = context;
@@ -883,6 +909,8 @@ static void Test_VoicePttFollowsOnlineSessionLifecycle(ImGuiTestContext* ctx) {
       .stop = ImGuiVoiceStop,
       .healthy = ImGuiVoiceHealthy,
       .now_ms = ImGuiVoiceNowMs,
+      .capture_devices = ImGuiVoiceCaptureDevices,
+      .select_capture_device = ImGuiVoiceSelectDevice,
   };
   float captured[SHROOM_VOICE_FRAME_SAMPLES];
   float output[SHROOM_VOICE_FRAME_SAMPLES];
@@ -947,6 +975,139 @@ static void Test_VoicePttFollowsOnlineSessionLifecycle(ImGuiTestContext* ctx) {
   IM_CHECK(!ShroomVoiceIsRunning());
   IM_CHECK_EQ(g_imgui_voice_backend.stop_count, 2);
   GameTestSetPushToTalk(false, false);
+  ShroomVoiceTestReset();
+}
+
+static void Test_VoiceSettingsMicTestAndUnavailableFeedback(ImGuiTestContext* ctx) {
+  const ShroomVoiceBackend backend = {
+      .context = &g_imgui_voice_backend,
+      .start = ImGuiVoiceStart,
+      .stop = ImGuiVoiceStop,
+      .healthy = ImGuiVoiceHealthy,
+      .now_ms = ImGuiVoiceNowMs,
+      .capture_devices = ImGuiVoiceCaptureDevices,
+      .select_capture_device = ImGuiVoiceSelectDevice,
+  };
+  float captured[SHROOM_VOICE_FRAME_SAMPLES];
+  float output[SHROOM_VOICE_FRAME_SAMPLES];
+
+  ShroomImGuiTestAppReset(true);
+  ShroomVoiceTestReset();
+  memset(&g_imgui_voice_backend, 0, sizeof(g_imgui_voice_backend));
+  g_imgui_voice_backend.healthy = true;
+  snprintf(g_imgui_test_app.game.settings.voice_capture_device,
+           sizeof(g_imgui_test_app.game.settings.voice_capture_device), "%s", "Missing Mic");
+  IM_CHECK(ShroomVoiceConfigure(&backend));
+
+  ShroomTeCtx_SetRef(ctx, "Main Menu");
+  ShroomTeCtx_ItemClick(ctx, "Settings");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(ShroomTeCtx_SetRefWindow(ctx, "//Settings/SettingsContent"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Enable Voice Chat"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Self Mute"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Voice Output Volume"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Capture Device"));
+  IM_CHECK(ShroomTestSettingsUsesCaptureFallback());
+  ShroomTeCtx_ItemClick(ctx, "Test Microphone");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(ShroomVoiceIsMicTestActive());
+  IM_CHECK_EQ(g_imgui_voice_backend.start_count, 1);
+  IM_CHECK(g_imgui_voice_backend.process != NULL);
+
+  for (size_t index = 0u; index < SHROOM_VOICE_FRAME_SAMPLES; ++index) {
+    captured[index] = 0.5f * sinf((float)index * 0.071f);
+  }
+  g_imgui_voice_backend.process(g_imgui_voice_backend.callback_context, output, captured,
+                                SHROOM_VOICE_FRAME_SAMPLES);
+  ShroomTeCtx_Yield(ctx, 1);
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Stop Microphone Test"));
+  IM_CHECK(ShroomVoiceGetCaptureLevel() > 0.4f);
+  ShroomTeCtx_ItemClick(ctx, "Stop Microphone Test");
+  ShroomTeCtx_Yield(ctx, 1);
+  IM_CHECK(!ShroomVoiceIsMicTestActive());
+  IM_CHECK_EQ(g_imgui_voice_backend.stop_count, 1);
+
+  g_imgui_voice_backend.fail_start = true;
+  ShroomTeCtx_ItemClick(ctx, "Test Microphone");
+  ShroomTeCtx_Yield(ctx, 1);
+  IM_CHECK((ShroomVoiceGetStatus() == SHROOM_VOICE_STATUS_ERROR) ||
+           (ShroomVoiceGetStatus() == SHROOM_VOICE_STATUS_RECOVERING));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Retry Microphone"));
+  IM_CHECK(!ShroomVoiceIsRunning());
+
+  ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_MAIN_MENU);
+  ShroomTeCtx_Yield(ctx, 1);
+  IM_CHECK(!ShroomVoiceIsMicTestActive());
+  ShroomVoiceTestReset();
+}
+
+static void Test_VoiceRosterMuteActivityAndDisconnectCleanup(ImGuiTestContext* ctx) {
+  const ShroomVoiceBackend backend = {
+      .context = &g_imgui_voice_backend,
+      .start = ImGuiVoiceStart,
+      .stop = ImGuiVoiceStop,
+      .healthy = ImGuiVoiceHealthy,
+      .now_ms = ImGuiVoiceNowMs,
+      .capture_devices = ImGuiVoiceCaptureDevices,
+      .select_capture_device = ImGuiVoiceSelectDevice,
+  };
+  ShroomVoiceFramePacket frame = {0};
+  const size_t wire_size = ShroomVoiceFramePacketSize(8u);
+
+  ShroomImGuiTestAppReset(false);
+  ShroomVoiceTestReset();
+  memset(&g_imgui_voice_backend, 0, sizeof(g_imgui_voice_backend));
+  g_imgui_voice_backend.healthy = true;
+  g_imgui_voice_backend.now_ms = 100u;
+  IM_CHECK(ShroomVoiceConfigure(&backend));
+
+  g_imgui_test_app.game.active_mode = SHROOM_SESSION_MODE_LOBBY_PLAY;
+  g_imgui_test_app.game.net.status = CLIENT_NET_CONNECTED;
+  g_imgui_test_app.game.net.handshake_received = true;
+  g_imgui_test_app.game.net.welcome_received = true;
+  g_imgui_test_app.game.net.lobby_id = 41u;
+  g_imgui_test_app.game.net.player_id = 1u;
+  g_imgui_test_app.game.net.lobby_roster_received = true;
+  g_imgui_test_app.game.net.lobby_roster_count = 2u;
+  g_imgui_test_app.game.net.lobby_roster[0] =
+      (ShroomLobbyRosterEntry){.player_id = 1u, .is_ready = 1u};
+  g_imgui_test_app.game.net.lobby_roster[1] =
+      (ShroomLobbyRosterEntry){.player_id = 2u, .is_ready = 1u};
+  g_imgui_test_app.game.net.snapshot_player_count = 2u;
+  g_imgui_test_app.game.net.snapshot_players[0].player_id = 1u;
+  g_imgui_test_app.game.net.snapshot_players[1].player_id = 2u;
+  ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_LOBBY_ROSTER);
+  ShroomTeCtx_Yield(ctx, 3);
+  IM_CHECK(ShroomVoiceIsRunning());
+  IM_CHECK(ShroomTeCtx_SetRefWindow(ctx, "//Lobby Roster"));
+  IM_CHECK_EQ(g_imgui_test_app.game.net.snapshot_player_count, 2u);
+  IM_CHECK(ShroomVoiceSetPlayerMuted(2u, true));
+  ShroomTeCtx_Yield(ctx, 1);
+  IM_CHECK(ShroomVoiceIsPlayerMuted(2u));
+  IM_CHECK(ShroomVoiceSetPlayerMuted(2u, false));
+  ShroomTeCtx_Yield(ctx, 1);
+  IM_CHECK(!ShroomVoiceIsPlayerMuted(2u));
+
+  ShroomPacketHeaderInit(&frame.header, SHROOM_PACKET_VOICE_FRAME, (uint16_t)wire_size);
+  frame.sender_id = 2u;
+  frame.stream_id = 1u;
+  frame.payload_size = 8u;
+  frame.flags = SHROOM_VOICE_FLAG_START;
+  IM_CHECK(ShroomVoiceSubmitFrame(&frame, wire_size));
+  for (int attempt = 0; (attempt < 100) && !ShroomVoiceIsPlayerTalking(2u); ++attempt) {
+    ShroomVoiceThreadSleepMs(1u);
+  }
+  ShroomTeCtx_Yield(ctx, 1);
+  IM_CHECK(ShroomVoiceIsPlayerTalking(2u));
+  g_imgui_voice_backend.now_ms += 351u;
+  ShroomTeCtx_Yield(ctx, 1);
+  IM_CHECK(!ShroomVoiceIsPlayerTalking(2u));
+
+  g_imgui_test_app.game.net.status = CLIENT_NET_DISCONNECTED;
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(!ShroomVoiceIsRunning());
+  IM_CHECK(!ShroomVoiceIsPlayerMuted(2u));
+  IM_CHECK(!ShroomVoiceIsPlayerTalking(2u));
   ShroomVoiceTestReset();
 }
 
@@ -1130,6 +1291,9 @@ static void Test_SettingsPersistence(ImGuiTestContext* ctx) {
   ShroomTeCtx_ItemCheckbox(ctx, "Show Diagnostics On Launch");
   ShroomTeCtx_ItemCheckbox(ctx, "Show Ping In HUD");
   ShroomTeCtx_ItemCheckbox(ctx, "Animated Menu Backgrounds");
+  ShroomTeCtx_ItemUncheckbox(ctx, "Enable Voice Chat");
+  ShroomTeCtx_ItemCheckbox(ctx, "Self Mute");
+  ShroomTeCtx_ItemInputValueInt(ctx, "Voice Output Volume", 33);
   ShroomTeCtx_SetRef(ctx, "Settings");
   ShroomTeCtx_ItemClick(ctx, "Save");
 
@@ -1142,6 +1306,9 @@ static void Test_SettingsPersistence(ImGuiTestContext* ctx) {
   IM_CHECK(loaded.diagnostics_enabled);
   IM_CHECK(loaded.show_ping_ms);
   IM_CHECK(loaded.menu_animations_enabled);
+  IM_CHECK(!loaded.voice_enabled);
+  IM_CHECK(loaded.voice_self_muted);
+  IM_CHECK_EQ(loaded.voice_output_volume_percent, 33);
 }
 
 static bool RewriteSettingsAsUnversioned(void) {
@@ -1190,7 +1357,7 @@ static void Test_MigratedSettingsSurviveCrossScreenWorkflow(ImGuiTestContext* ct
     IM_CHECK(fgets(schema_line, sizeof(schema_line), file) != NULL);
     fclose(file);
   }
-  IM_CHECK_STR_EQ(schema_line, "schema_version=1\n");
+  IM_CHECK_STR_EQ(schema_line, "schema_version=2\n");
   IM_CHECK_EQ(g_imgui_test_app.game.settings.ui_scale_percent, 110);
   IM_CHECK_EQ(g_imgui_test_app.game.settings.master_volume_percent, 63);
   IM_CHECK_EQ(g_imgui_test_app.game.settings.key_chat_open, KEY_Y);
@@ -3360,6 +3527,10 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_AudioRecoversFromDeviceLossAcrossScreens);
   ShroomTeEngine_RegisterTest(engine, "screens", "voice_ptt_online_session_lifecycle",
                               Test_VoicePttFollowsOnlineSessionLifecycle);
+  ShroomTeEngine_RegisterTest(engine, "screens", "voice_settings_mic_test_and_unavailable",
+                              Test_VoiceSettingsMicTestAndUnavailableFeedback);
+  ShroomTeEngine_RegisterTest(engine, "lobby", "voice_mute_activity_disconnect_cleanup",
+                              Test_VoiceRosterMuteActivityAndDisconnectCleanup);
   ShroomTeEngine_RegisterTest(engine, "screens", "settings_persistence", Test_SettingsPersistence);
   ShroomTeEngine_RegisterTest(engine, "screens", "migrated_settings_cross_screen_workflow",
                               Test_MigratedSettingsSurviveCrossScreenWorkflow);
