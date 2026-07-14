@@ -9,6 +9,7 @@
 #include <time.h>
 
 #include "shared/protocol.h"
+#include "shared/snapshot_replication.h"
 
 #define FLOOD_PACKET_COUNT 5000u
 #define TEST_TIMEOUT_MS 10000u
@@ -23,6 +24,9 @@ typedef struct FloodClient {
   uint32_t last_acknowledged_sequence;
   uint32_t pong_nonce;
   float player_x;
+  ShroomSnapshotAssembly snapshot_assembly;
+  ShroomSnapshotHistory snapshot_history;
+  ShroomSnapshotPlayerState snapshot_players[SHROOM_MAX_SNAPSHOT_PLAYERS];
   bool joined;
   bool snapshot_received;
   bool player_position_received;
@@ -82,6 +86,12 @@ static bool SendPing(FloodClient* client, uint32_t nonce) {
   return SendPacket(client, SHROOM_ENET_CHANNEL_CONTROL, &packet, sizeof(packet));
 }
 
+static bool SendSnapshotAck(FloodClient* client, uint64_t tick) {
+  ShroomSnapshotAckPacket packet = {.tick = tick};
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_SNAPSHOT_ACK, sizeof(packet));
+  return SendPacket(client, SHROOM_ENET_CHANNEL_INPUT, &packet, sizeof(packet));
+}
+
 static bool HandleReceive(FloodClient* client, const ENetPacket* packet) {
   const ShroomPacketHeader* header;
 
@@ -105,21 +115,32 @@ static bool HandleReceive(FloodClient* client, const ENetPacket* packet) {
   }
   case SHROOM_PACKET_SNAPSHOT: {
     const ShroomSnapshotPacket* snapshot;
-    const size_t minimum_size = offsetof(ShroomSnapshotPacket, players);
+    ShroomSnapshotAssemblyResult result;
+    ShroomSnapshotFrameMetadata metadata;
+    uint16_t player_count = 0u;
+    const size_t minimum_size = offsetof(ShroomSnapshotPacket, payload);
     if (packet->dataLength < minimum_size) {
       return false;
     }
     snapshot = (const ShroomSnapshotPacket*)packet->data;
-    client->last_acknowledged_sequence = snapshot->last_processed_input_sequence;
+    result = ShroomSnapshotAssemblyPush(&client->snapshot_assembly, snapshot, packet->dataLength,
+                                        &client->snapshot_history, &metadata,
+                                        client->snapshot_players, &player_count);
+    if (result == SHROOM_SNAPSHOT_ASSEMBLY_REJECTED) {
+      return false;
+    }
+    if (result == SHROOM_SNAPSHOT_ASSEMBLY_PENDING) {
+      break;
+    }
+    client->last_acknowledged_sequence = metadata.last_processed_input_sequence;
     client->snapshot_received = true;
-    for (uint16_t index = 0u; index < snapshot->player_count; ++index) {
-      const size_t required = minimum_size + ((size_t)index + 1u) * sizeof(snapshot->players[0]);
-      if (packet->dataLength < required) {
-        return false;
-      }
-      if ((snapshot->players[index].player_id == client->player_id) &&
-          snapshot->players[index].alive) {
-        client->player_x = snapshot->players[index].position_x;
+    if (!SendSnapshotAck(client, metadata.tick)) {
+      return false;
+    }
+    for (uint16_t index = 0u; index < player_count; ++index) {
+      if ((client->snapshot_players[index].player_id == client->player_id) &&
+          client->snapshot_players[index].alive) {
+        client->player_x = client->snapshot_players[index].position_x;
         client->player_position_received = true;
         break;
       }

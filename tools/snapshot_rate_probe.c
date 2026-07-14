@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "shared/protocol.h"
+#include "shared/snapshot_replication.h"
 
 #define PROBE_TIMEOUT_MS 10000u
 #define SAMPLE_DURATION_MS 2000u
@@ -22,6 +23,9 @@ typedef struct SnapshotProbe {
   uint32_t last_snapshot_ms;
   uint32_t snapshot_count;
   uint64_t last_snapshot_tick;
+  ShroomSnapshotAssembly snapshot_assembly;
+  ShroomSnapshotHistory snapshot_history;
+  ShroomSnapshotPlayerState snapshot_players[SHROOM_MAX_SNAPSHOT_PLAYERS];
   bool welcome_received;
   bool joined;
   bool failed;
@@ -71,6 +75,21 @@ static bool SendReadyAndEnter(SnapshotProbe* probe) {
          SendReliable(probe, &enter, sizeof(enter));
 }
 
+static bool SendSnapshotAck(SnapshotProbe* probe, uint64_t tick) {
+  ShroomSnapshotAckPacket ack = {.tick = tick};
+  ENetPacket* packet;
+  ShroomPacketHeaderInit(&ack.header, SHROOM_PACKET_SNAPSHOT_ACK, sizeof(ack));
+  packet = enet_packet_create(&ack, sizeof(ack), 0u);
+  if ((packet == NULL) ||
+      (enet_peer_send(probe->peer, SHROOM_ENET_CHANNEL_INPUT, packet) != 0)) {
+    if (packet != NULL) {
+      enet_packet_destroy(packet);
+    }
+    return false;
+  }
+  return true;
+}
+
 static bool ValidateCadence(const SnapshotProbe* probe, uint16_t tick_rate,
                             uint16_t snapshot_rate, const char* packet_name) {
   if ((tick_rate == 0u) || (snapshot_rate != probe->expected_rate)) {
@@ -111,24 +130,37 @@ static bool HandlePacket(SnapshotProbe* probe, const ENetPacket* packet) {
   }
   case SHROOM_PACKET_SNAPSHOT: {
     const ShroomSnapshotPacket* snapshot = (const ShroomSnapshotPacket*)packet->data;
+    ShroomSnapshotAssemblyResult assembly_result;
+    ShroomSnapshotFrameMetadata metadata;
+    uint16_t player_count = 0u;
     const uint32_t now = enet_time_get();
     if ((packet->dataLength > SHROOM_MAX_UNRELIABLE_PACKET_SIZE) ||
-        (packet->dataLength < offsetof(ShroomSnapshotPacket, players)) ||
-        (snapshot->header.size != packet->dataLength) ||
-        (snapshot->player_count > SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK) ||
-        (packet->dataLength != offsetof(ShroomSnapshotPacket, players) +
-                                   (size_t)snapshot->player_count * sizeof(snapshot->players[0]))) {
-      fprintf(stderr, "invalid snapshot chunk size: wire=%zu header=%u players=%u\n",
-              packet->dataLength, snapshot->header.size, snapshot->player_count);
+        (packet->dataLength < offsetof(ShroomSnapshotPacket, payload)) ||
+        (snapshot->header.size != packet->dataLength)) {
+      fprintf(stderr, "invalid snapshot chunk size: wire=%zu header=%u\n", packet->dataLength,
+              snapshot->header.size);
       return false;
     }
-    if ((probe->snapshot_count > 0u) && (snapshot->tick <= probe->last_snapshot_tick)) {
+    if ((probe->snapshot_count > 0u) &&
+        !ShroomSnapshotTickIsNewer(snapshot->tick, probe->last_snapshot_tick)) {
       break;
+    }
+    assembly_result = ShroomSnapshotAssemblyPush(
+        &probe->snapshot_assembly, snapshot, packet->dataLength, &probe->snapshot_history,
+        &metadata, probe->snapshot_players, &player_count);
+    if (assembly_result == SHROOM_SNAPSHOT_ASSEMBLY_REJECTED) {
+      return false;
+    }
+    if (assembly_result == SHROOM_SNAPSHOT_ASSEMBLY_PENDING) {
+      break;
+    }
+    if (!SendSnapshotAck(probe, metadata.tick)) {
+      return false;
     }
     if (probe->snapshot_count == 0u) {
       probe->first_snapshot_ms = now;
     }
-    probe->last_snapshot_tick = snapshot->tick;
+    probe->last_snapshot_tick = metadata.tick;
     probe->last_snapshot_ms = now;
     probe->snapshot_count += 1u;
   } break;
