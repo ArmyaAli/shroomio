@@ -25,6 +25,7 @@
 #include "match_persistence.h"
 #include "session_cleanup.h"
 #include "snapshot_stats.h"
+#include "input_admission.h"
 #include "voice_relay.h"
 
 static const char* const kBotNamePrefixes[] = {
@@ -61,6 +62,7 @@ typedef struct ServerSession {
   uint32_t player_id;
   uint32_t user_id;
   uint32_t last_processed_input_sequence;
+  ShroomInputAdmission input_admission;
   uint32_t last_logged_rtt_ms;
   uint32_t chat_message_count;
   uint32_t focused_entity_id; /* entity_id of piece being controlled; 0 = primary */
@@ -95,6 +97,9 @@ typedef struct ServerProfileStats {
 
 static ServerProfileStats g_server_profile;
 static ShroomNetTelemetry g_server_net_telemetry;
+static uint64_t g_server_event_budget_exhaustions;
+static uint64_t g_server_input_stale_rejections;
+static uint64_t g_server_input_rate_rejections;
 
 static float g_match_duration_seconds = SHROOM_MATCH_DURATION_SECONDS;
 
@@ -1985,6 +1990,30 @@ static void HandlePacket(ENetHost* host, ENetPeer* peer, ServerSession* session,
     return;
   }
 
+  if (packet_type == SHROOM_PACKET_INPUT) {
+    ShroomInputAdmissionResult admission_result;
+    const ShroomInputPacket* input = (const ShroomInputPacket*)enet_packet->data;
+
+    if ((session == NULL) || !session->active || session->spectating || !session->entered_match ||
+        (session->player == NULL)) {
+      ShroomNetTelemetryRecordDrop(&g_server_net_telemetry, peer_index, channel_id, packet_type,
+                                   enet_packet->dataLength, now_ms);
+      return;
+    }
+    admission_result =
+        ShroomInputAdmissionCheck(&session->input_admission, input->sequence, now_ms);
+    if (admission_result != SHROOM_INPUT_ADMITTED) {
+      if (admission_result == SHROOM_INPUT_REJECTED_STALE) {
+        g_server_input_stale_rejections += 1u;
+      } else {
+        g_server_input_rate_rejections += 1u;
+      }
+      ShroomNetTelemetryRecordDrop(&g_server_net_telemetry, peer_index, channel_id, packet_type,
+                                   enet_packet->dataLength, now_ms);
+      return;
+    }
+  }
+
   ShroomNetTelemetryRecordAccepted(&g_server_net_telemetry, peer_index, channel_id, packet_type,
                                    enet_packet->dataLength, now_ms);
 
@@ -2107,8 +2136,11 @@ int main(int argc, char** argv) {
     const bool profile_enabled = ShroomProfileEnabled();
     const uint64_t tick_start_nanos = profile_enabled ? GetTimeNanos() : 0ull;
     uint64_t phase_start_nanos = tick_start_nanos;
+    uint32_t serviced_event_count = 0u;
 
-    while (enet_host_service(host, &event, 0) > 0) {
+    while ((serviced_event_count < SHROOM_SERVER_MAX_ENET_EVENTS_PER_TICK) &&
+           (enet_host_service(host, &event, 0) > 0)) {
+      serviced_event_count += 1u;
       switch (event.type) {
       case ENET_EVENT_TYPE_CONNECT:
         if (event.peer->incomingPeerID < SHROOM_SERVER_MAX_CLIENTS) {
@@ -2153,6 +2185,9 @@ int main(int argc, char** argv) {
       default:
         break;
       }
+    }
+    if (serviced_event_count == SHROOM_SERVER_MAX_ENET_EVENTS_PER_TICK) {
+      g_server_event_budget_exhaustions += 1u;
     }
     for (size_t peer_index = 0u; peer_index < host->peerCount; ++peer_index) {
       ENetPeer* peer = &host->peers[peer_index];
@@ -2298,8 +2333,16 @@ int main(int argc, char** argv) {
     /* Session health log every 60 s. */
     if ((now_ms - last_health_log_ms) >= 60000ull) {
       size_t li;
+      const uint64_t input_accepted =
+          g_server_net_telemetry.by_type[SHROOM_PACKET_INPUT].accepted.packets;
 
       last_health_log_ms = now_ms;
+      LOG_INFO("health input_accepted=%llu input_stale=%llu input_rate_limited=%llu "
+               "event_budget_exhaustions=%llu",
+               (unsigned long long)input_accepted,
+               (unsigned long long)g_server_input_stale_rejections,
+               (unsigned long long)g_server_input_rate_rejections,
+               (unsigned long long)g_server_event_budget_exhaustions);
       for (li = 0; li < SHROOM_MAX_LOBBIES; ++li) {
         if (lobbies[li].active) {
           uint16_t real = CountLobbyRealPlayers(host, lobbies[li].lobby_id);

@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "client/net.h"
+#include "shared/world.h"
 
 void setUp(void) {}
 void tearDown(void) {}
@@ -375,7 +376,12 @@ static void test_client_net_rejects_invalid_lobby_roster(void) {
 }
 
 static void test_gameplay_input_requires_explicit_match_entry(void) {
-  ClientNetState net = {.welcome_received = true};
+  ENetPeer peer = {.state = ENET_PEER_STATE_CONNECTED};
+  ClientNetState net = {
+      .peer = &peer,
+      .welcome_received = true,
+      .match_phase = SHROOM_MATCH_PHASE_RUNNING,
+  };
   TEST_ASSERT_FALSE(ClientNetTestCanSendGameplayInput(&net));
   net.match_entry_sent = true;
   TEST_ASSERT_TRUE(ClientNetTestCanSendGameplayInput(&net));

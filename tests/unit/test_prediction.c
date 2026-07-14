@@ -33,6 +33,20 @@ static void test_acknowledged_inputs_drop_while_lost_inputs_replay(void) {
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 101.0f, replayed.y);
 }
 
+static void test_acknowledgement_discard_is_sequence_wrap_aware(void) {
+  ShroomPendingInput inputs[3] = {
+      {.sequence = UINT32_MAX, .direction = {1.0f, 0.0f}},
+      {.sequence = 1u, .direction = {0.0f, 1.0f}},
+      {.sequence = 2u, .direction = {1.0f, 0.0f}},
+  };
+  uint32_t count = 3u;
+
+  ShroomPredictionDiscardAcknowledged(inputs, &count, 1u);
+
+  TEST_ASSERT_EQUAL_UINT32(1u, count);
+  TEST_ASSERT_EQUAL_UINT32(2u, inputs[0].sequence);
+}
+
 static void test_small_error_smooths_without_immediate_snap(void) {
   ShroomVec2 rendered = {100.0f, 100.0f};
 
@@ -55,6 +69,7 @@ int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_input_applies_immediately_and_clamps_to_world);
   RUN_TEST(test_acknowledged_inputs_drop_while_lost_inputs_replay);
+  RUN_TEST(test_acknowledgement_discard_is_sequence_wrap_aware);
   RUN_TEST(test_small_error_smooths_without_immediate_snap);
   RUN_TEST(test_large_error_hard_snaps);
   return UNITY_END();
