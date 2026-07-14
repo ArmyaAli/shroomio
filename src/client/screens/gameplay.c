@@ -81,9 +81,6 @@ static void GameplayUpdate(ShroomScreenManager* manager, float delta_time) {
 
   if (IsOnlineSession(game) && game->net.welcome_received &&
       (game->world.match_phase == SHROOM_MATCH_PHASE_RESULTS)) {
-    if (game->net.intermission_received && game->net.intermission.resolved) {
-      game->net.intermission_received = false;
-    }
     CaptureAuthoritativeResults(game);
     game->authoritative_round_resume_pending = true;
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_RESULTS);

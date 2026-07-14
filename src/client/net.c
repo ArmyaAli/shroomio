@@ -1,4 +1,5 @@
 #include "net.h"
+#include "results_transition.h"
 #include "shared/player_identity.h"
 
 #include <stddef.h>
@@ -12,6 +13,13 @@
 static void SetStatus(ClientNetState* net, ClientNetStatus status, const char* text) {
   net->status = status;
   snprintf(net->status_text, sizeof(net->status_text), "%s", text);
+}
+
+static void ResetIntermissionLifecycle(ClientNetState* net) {
+  memset(&net->intermission, 0, sizeof(net->intermission));
+  net->intermission_received = false;
+  net->consumed_intermission_round_id = 0u;
+  net->consumed_intermission_round_valid = false;
 }
 
 static ENetPacket* CreatePacket(const void* data, size_t size, enet_uint32 flags) {
@@ -215,6 +223,7 @@ static void HandleLobbyJoined(ClientNetState* net, const ENetPacket* enet_packet
     return;
   }
 
+  ResetIntermissionLifecycle(net);
   net->lobby_id = packet->lobby_id;
   net->spectating = (packet->spectating != 0);
   net->game_mode = packet->game_mode;
@@ -283,6 +292,12 @@ static void HandleIntermissionStatus(ClientNetState* net, const ENetPacket* enet
       (const ShroomIntermissionStatusPacket*)enet_packet->data;
 
   if (enet_packet->dataLength < sizeof(*packet)) {
+    return;
+  }
+  if ((net->consumed_intermission_round_valid &&
+       !ShroomIntermissionRoundIsNewer(packet->round_id, net->consumed_intermission_round_id)) ||
+      (net->intermission_received && packet->round_id != net->intermission.round_id &&
+       !ShroomIntermissionRoundIsNewer(packet->round_id, net->intermission.round_id))) {
     return;
   }
   net->intermission = *packet;
@@ -704,6 +719,15 @@ void ClientNetSendRematchVote(ClientNetState* net, ShroomRematchVote vote) {
              CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_REMATCH_VOTE));
 }
 
+void ClientNetConsumeIntermission(ClientNetState* net) {
+  if ((net == NULL) || !net->intermission_received) {
+    return;
+  }
+  net->consumed_intermission_round_id = net->intermission.round_id;
+  net->consumed_intermission_round_valid = true;
+  net->intermission_received = false;
+}
+
 #ifdef TEST_MODE
 void ClientNetTestBuildHello(const ClientNetState* net, ShroomHelloPacket* packet) {
   if ((net != NULL) && (packet != NULL)) {
@@ -837,6 +861,7 @@ void ClientNetSendLobbyLeave(ClientNetState* net) {
   net->lobby_roster_count = 0;
   net->lobby_id = 0;
   net->spectating = false;
+  ResetIntermissionLifecycle(net);
 }
 
 void ClientNetSendLobbyCreate(ClientNetState* net, const char* name, uint16_t max_players,

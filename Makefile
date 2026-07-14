@@ -219,6 +219,7 @@ CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/prediction.c \
 	$(CLIENT_SRC_DIR)/render_lod.c \
 	$(CLIENT_SRC_DIR)/results_summary.c \
+	$(CLIENT_SRC_DIR)/results_transition.c \
 	$(CLIENT_SRC_DIR)/screen.c \
 	$(CLIENT_SRC_DIR)/server_browser_model.c \
 	$(CLIENT_SRC_DIR)/settings_session.c \
@@ -311,6 +312,7 @@ IMGUI_TEST_CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/prediction.c \
 	$(CLIENT_SRC_DIR)/render_lod.c \
 	$(CLIENT_SRC_DIR)/results_summary.c \
+	$(CLIENT_SRC_DIR)/results_transition.c \
 	$(CLIENT_SRC_DIR)/screen.c \
 	$(CLIENT_SRC_DIR)/server_browser_model.c \
 	$(CLIENT_SRC_DIR)/settings_session.c \
@@ -838,6 +840,9 @@ test_connection) \
 		test_results_summary) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/results_summary.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+		test_results_transition) \
+			$(LINUX_CC) $(COVERAGE_CFLAGS) \
+				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/results_transition.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_layout_metrics) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/layout_metrics.c -o $$test_bin $(COVERAGE_LIBS) ;; \
@@ -852,7 +857,7 @@ test_connection) \
 				$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/intermission.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_client_net) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) \
-				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/input_scheduler.c $(CLIENT_SRC_DIR)/chat_cache.c $(SHARED_SRC_DIR)/net_telemetry.c -o $$test_bin $(COVERAGE_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lenet ;; \
+				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/input_scheduler.c $(CLIENT_SRC_DIR)/chat_cache.c $(CLIENT_SRC_DIR)/results_transition.c $(SHARED_SRC_DIR)/net_telemetry.c -o $$test_bin $(COVERAGE_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lenet ;; \
 		test_input_scheduler) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/input_scheduler.c -o $$test_bin $(COVERAGE_LIBS) ;; \
@@ -962,6 +967,10 @@ $(TEST_BUILD_DIR)/test_results_summary: $(UNIT_TESTS_DIR)/test_results_summary.c
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
+$(TEST_BUILD_DIR)/test_results_transition: $(UNIT_TESTS_DIR)/test_results_transition.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/results_transition.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
 $(TEST_BUILD_DIR)/test_layout_metrics: $(UNIT_TESTS_DIR)/test_layout_metrics.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/layout_metrics.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
@@ -974,7 +983,7 @@ $(TEST_BUILD_DIR)/test_prediction: $(UNIT_TESTS_DIR)/test_prediction.c $(UNITY_S
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
-$(TEST_BUILD_DIR)/test_client_net: $(UNIT_TESTS_DIR)/test_client_net.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/input_scheduler.c $(CLIENT_SRC_DIR)/chat_cache.c $(SHARED_SRC_DIR)/net_telemetry.c | $(UNITY_DIR)
+$(TEST_BUILD_DIR)/test_client_net: $(UNIT_TESTS_DIR)/test_client_net.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/input_scheduler.c $(CLIENT_SRC_DIR)/chat_cache.c $(CLIENT_SRC_DIR)/results_transition.c $(SHARED_SRC_DIR)/net_telemetry.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) $^ -o $@ $(TEST_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lenet
 
