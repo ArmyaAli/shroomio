@@ -453,10 +453,12 @@ static void test_client_net_accepts_authoritative_lobby_roster(void) {
   ClientNetState net = {.lobby_id = 9u};
   ShroomLobbyRosterPacket roster = {0};
   ENetPacket packet = {0};
-  const size_t packet_size =
-      offsetof(ShroomLobbyRosterPacket, players) + sizeof(ShroomLobbyRosterEntry);
+  const size_t packet_size = SHROOM_LOBBY_ROSTER_PACKET_SIZE(1u);
   roster.lobby_id = 9u;
-  roster.player_count = 1u;
+  roster.generation = 1u;
+  roster.total_player_count = 1u;
+  roster.chunk_count = 1u;
+  roster.entry_count = 1u;
   roster.match_started = 1u;
   roster.players[0] = (ShroomLobbyRosterEntry){.player_id = 42u, .is_ready = 1u};
   packet.data = (enet_uint8*)&roster;
@@ -472,7 +474,11 @@ static void test_client_net_accepts_authoritative_lobby_roster(void) {
 
 static void test_client_net_rejects_invalid_lobby_roster(void) {
   ClientNetState net = {.lobby_id = 9u};
-  ShroomLobbyRosterPacket roster = {.lobby_id = 8u, .player_count = 1u};
+  ShroomLobbyRosterPacket roster = {.lobby_id = 8u,
+                                    .generation = 1u,
+                                    .total_player_count = 1u,
+                                    .chunk_count = 1u,
+                                    .entry_count = 1u};
   ENetPacket packet = {.data = (enet_uint8*)&roster,
                        .dataLength = offsetof(ShroomLobbyRosterPacket, players)};
   ClientNetTestHandleLobbyRoster(&net, &packet);
@@ -481,6 +487,37 @@ static void test_client_net_rejects_invalid_lobby_roster(void) {
   roster.lobby_id = 9u;
   ClientNetTestHandleLobbyRoster(&net, &packet);
   TEST_ASSERT_FALSE(net.lobby_roster_received);
+}
+
+static void test_client_net_assembles_256_player_roster_chunks(void) {
+  ClientNetState net = {.lobby_id = 9u};
+  ShroomLobbyRosterPacket roster = {.lobby_id = 9u,
+                                    .generation = 42u,
+                                    .total_player_count = SHROOM_MAX_PARTICIPANTS,
+                                    .chunk_count = SHROOM_LOBBY_ROSTER_MAX_CHUNKS,
+                                    .entry_count = SHROOM_LOBBY_ROSTER_ENTRIES_PER_PACKET};
+  ENetPacket packet = {.data = (enet_uint8*)&roster,
+                       .dataLength = SHROOM_LOBBY_ROSTER_PACKET_SIZE(
+                           SHROOM_LOBBY_ROSTER_ENTRIES_PER_PACKET)};
+
+  roster.chunk_index = 1u;
+  for (uint16_t index = 0u; index < roster.entry_count; ++index) {
+    roster.players[index].player_id = SHROOM_LOBBY_ROSTER_ENTRIES_PER_PACKET + index + 1u;
+  }
+  ClientNetTestHandleLobbyRoster(&net, &packet);
+  TEST_ASSERT_FALSE(net.lobby_roster_received);
+
+  roster.chunk_index = 0u;
+  for (uint16_t index = 0u; index < roster.entry_count; ++index) {
+    roster.players[index].player_id = index + 1u;
+  }
+  ClientNetTestHandleLobbyRoster(&net, &packet);
+
+  TEST_ASSERT_TRUE(net.lobby_roster_received);
+  TEST_ASSERT_EQUAL_UINT16(SHROOM_MAX_PARTICIPANTS, net.lobby_roster_count);
+  TEST_ASSERT_EQUAL_UINT32(1u, net.lobby_roster[0].player_id);
+  TEST_ASSERT_EQUAL_UINT32(SHROOM_MAX_PARTICIPANTS,
+                           net.lobby_roster[SHROOM_MAX_PARTICIPANTS - 1u].player_id);
 }
 
 static void test_gameplay_input_requires_explicit_match_entry(void) {
@@ -649,6 +686,7 @@ int main(void) {
   RUN_TEST(test_client_net_shutdown_clears_session_state);
   RUN_TEST(test_client_net_accepts_authoritative_lobby_roster);
   RUN_TEST(test_client_net_rejects_invalid_lobby_roster);
+  RUN_TEST(test_client_net_assembles_256_player_roster_chunks);
   RUN_TEST(test_gameplay_input_requires_explicit_match_entry);
   RUN_TEST(test_lobby_session_resume_requires_live_connection_and_identity);
   RUN_TEST(test_spectator_lobby_session_can_resume_without_player_identity);

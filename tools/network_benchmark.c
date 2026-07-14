@@ -12,6 +12,7 @@
 #include "shared/net_telemetry.h"
 #include "shared/protocol.h"
 #include "shared/snapshot_replication.h"
+#include "shared/snapshot_scheduler.h"
 
 typedef struct BenchmarkConfig {
   uint32_t clients;
@@ -19,8 +20,10 @@ typedef struct BenchmarkConfig {
   uint32_t split_pieces;
   uint32_t duration_ms;
   uint16_t port;
+  uint16_t snapshot_rate;
   double min_input_hz;
   double min_snapshot_hz;
+  double min_total_message_hz;
   double max_drop_percent;
   uint32_t max_deadline_failures;
 } BenchmarkConfig;
@@ -74,8 +77,10 @@ static bool LoadConfig(BenchmarkConfig* config, int argc, char** argv) {
       .split_pieces = 1u,
       .duration_ms = 1500u,
       .port = 39777u,
+      .snapshot_rate = SHROOM_SNAPSHOT_RATE,
       .min_input_hz = 20.0,
       .min_snapshot_hz = 10.0,
+      .min_total_message_hz = 0.0,
       .max_drop_percent = 1.0,
       .max_deadline_failures = 5u,
   };
@@ -122,6 +127,18 @@ static bool LoadConfig(BenchmarkConfig* config, int argc, char** argv) {
       if (!ParseDouble(argv[index], 0.0, &config->min_snapshot_hz)) {
         return false;
       }
+    } else if (strcmp(argv[index], "--min-total-message-hz") == 0) {
+      NEXT_VALUE();
+      if (!ParseDouble(argv[index], 0.0, &config->min_total_message_hz)) {
+        return false;
+      }
+    } else if (strcmp(argv[index], "--snapshot-rate") == 0) {
+      NEXT_VALUE();
+      if (!ParseUnsigned(argv[index], SHROOM_SNAPSHOT_RATE_MIN, SHROOM_SNAPSHOT_RATE_MAX,
+                         &parsed)) {
+        return false;
+      }
+      config->snapshot_rate = (uint16_t)parsed;
     } else if (strcmp(argv[index], "--max-drop-percent") == 0) {
       NEXT_VALUE();
       if (!ParseDouble(argv[index], 0.0, &config->max_drop_percent)) {
@@ -242,9 +259,9 @@ static int RunBenchmark(const BenchmarkConfig* config) {
   uint64_t started;
   uint64_t next_tick;
   uint64_t tick_index = 0u;
+  uint64_t measurement_elapsed_nanos = 0u;
   const uint64_t tick_interval_nanos = (uint64_t)(1000000000.0 / (double)SHROOM_SERVER_TICK_RATE);
-  const uint32_t snapshot_interval_ticks =
-      (uint32_t)(SHROOM_SERVER_TICK_RATE / (float)SHROOM_SNAPSHOT_RATE);
+  ShroomSnapshotScheduler snapshot_scheduler;
   ShroomSnapshotPlayerState snapshot_players[SHROOM_MAX_SNAPSHOT_PLAYERS] = {0};
   ShroomSnapshotFrame snapshot_baseline = {0};
   ShroomSnapshotEncodedFrame encoded_snapshot = {0};
@@ -254,6 +271,10 @@ static int RunBenchmark(const BenchmarkConfig* config) {
   int exit_code = 1;
 
   ShroomNetTelemetryReset(&telemetry);
+  if (!ShroomSnapshotSchedulerInit(&snapshot_scheduler, (uint32_t)SHROOM_SERVER_TICK_RATE,
+                                   config->snapshot_rate)) {
+    goto cleanup;
+  }
   if (snapshot_player_count > SHROOM_MAX_SNAPSHOT_PLAYERS) {
     goto cleanup;
   }
@@ -315,7 +336,7 @@ static int RunBenchmark(const BenchmarkConfig* config) {
                      enet_packet_create(&input, sizeof(input), 0u), now_ms);
         }
       }
-      if ((tick_index % snapshot_interval_ticks) == 0u) {
+      if (ShroomSnapshotSchedulerStep(&snapshot_scheduler)) {
         ShroomSnapshotFrameMetadata metadata = {.tick = tick_index + 1u};
         const bool keyframe = (snapshot_baseline.tick == 0u) ||
                               ((metadata.tick % SHROOM_SNAPSHOT_KEYFRAME_TICKS) == 0u);
@@ -366,16 +387,22 @@ static int RunBenchmark(const BenchmarkConfig* config) {
       next_tick += tick_interval_nanos;
     }
   }
-  for (uint32_t drain = 0u; drain < 100u; ++drain) {
+  measurement_elapsed_nanos = TimeNanos() - started;
+  for (uint32_t drain = 0u; drain < 1000u; ++drain) {
+    const struct timespec delay = {.tv_nsec = 1000000l};
     const uint64_t now_ms = TimeNanos() / 1000000ull;
     ServiceHost(server, &telemetry, true, &server_connected, &invalid_snapshot_packets, now_ms);
     ServiceHost(clients, &telemetry, false, &client_connected, &invalid_snapshot_packets, now_ms);
     enet_host_flush(server);
     enet_host_flush(clients);
+    if (telemetry.totals.accepted.packets >= telemetry.totals.sent.packets) {
+      break;
+    }
+    nanosleep(&delay, NULL);
   }
   {
     ShroomNetTelemetryWindow transport;
-    const double elapsed_seconds = (double)(TimeNanos() - started) / 1000000000.0;
+    const double elapsed_seconds = (double)measurement_elapsed_nanos / 1000000000.0;
     const double input_rate =
         (double)telemetry.by_type[SHROOM_PACKET_INPUT].accepted.packets / elapsed_seconds;
     const double snapshot_rate =
@@ -388,6 +415,11 @@ static int RunBenchmark(const BenchmarkConfig* config) {
             : 0.0;
     const double input_per_client = input_rate / config->clients;
     const double snapshot_per_client = snapshot_rate / config->clients;
+    const double total_message_rate = input_rate + snapshot_rate;
+    const double logical_message_rate =
+        ((double)telemetry.by_type[SHROOM_PACKET_INPUT].sent.packets +
+         (double)snapshot_scheduler.emission_count * config->clients) /
+        ((double)config->duration_ms / 1000.0);
     const uint64_t actual_snapshot_bytes =
         telemetry.by_type[SHROOM_PACKET_SNAPSHOT].sent.bytes;
     const double snapshot_byte_reduction_percent =
@@ -402,9 +434,11 @@ static int RunBenchmark(const BenchmarkConfig* config) {
            "snapshot_sent_messages,snapshot_messages,snapshot_messages_per_sec,"
            "snapshot_bytes_per_sec,keyframe_only_snapshot_bytes,"
            "snapshot_byte_reduction_percent,dropped_packets,drop_percent,queue_high_water,"
-           "tick_deadline_failures,threshold_pass\n");
+           "tick_deadline_failures,total_messages_per_sec,logical_messages_per_sec,"
+           "snapshot_rate_hz,threshold_pass\n");
     exit_code = (input_per_client >= config->min_input_hz) &&
                         (snapshot_per_client >= config->min_snapshot_hz) &&
+                        (logical_message_rate >= config->min_total_message_hz) &&
                         (drop_percent <= config->max_drop_percent) &&
                         (actual_snapshot_bytes < keyframe_only_snapshot_bytes) &&
                         (tick_deadline_failures <= config->max_deadline_failures) &&
@@ -412,7 +446,7 @@ static int RunBenchmark(const BenchmarkConfig* config) {
                     ? 0
                     : 2;
     printf("enet_loopback,%u,%u,%u,%u,%u,%llu,%llu,%.3f,%.3f,%llu,%llu,%.3f,%.3f,%llu,"
-           "%.3f,%llu,%.3f,%u,%u,%s\n",
+           "%.3f,%llu,%.3f,%u,%u,%.3f,%.3f,%u,%s\n",
            config->clients, config->participants, config->clients - config->participants,
            config->split_pieces, config->duration_ms,
            (unsigned long long)telemetry.by_type[SHROOM_PACKET_INPUT].sent.packets,
@@ -424,13 +458,15 @@ static int RunBenchmark(const BenchmarkConfig* config) {
            (double)telemetry.by_type[SHROOM_PACKET_SNAPSHOT].accepted.bytes / elapsed_seconds,
            (unsigned long long)keyframe_only_snapshot_bytes, snapshot_byte_reduction_percent,
            (unsigned long long)dropped_packets, drop_percent, transport.queue_high_water,
-           tick_deadline_failures, exit_code == 0 ? "true" : "false");
+           tick_deadline_failures, total_message_rate, logical_message_rate, config->snapshot_rate,
+           exit_code == 0 ? "true" : "false");
     if (exit_code != 0) {
       fprintf(
           stderr,
-          "threshold failure: input/client=%.2f snapshot/client=%.2f drops=%.2f%% deadlines=%u "
-          "oversized_snapshots=%u\n",
-          input_per_client, snapshot_per_client, drop_percent, tick_deadline_failures,
+          "threshold failure: input/client=%.2f snapshot/client=%.2f logical=%.2f drops=%.2f%% "
+          "deadlines=%u oversized_snapshots=%u\n",
+          input_per_client, snapshot_per_client, logical_message_rate, drop_percent,
+          tick_deadline_failures,
           invalid_snapshot_packets);
     }
   }

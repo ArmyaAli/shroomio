@@ -9,7 +9,7 @@
 #include "config.h"
 #include "intermission.h"
 
-#define SHROOM_PROTOCOL_VERSION 15u
+#define SHROOM_PROTOCOL_VERSION 16u
 #define SHROOM_SERVER_PORT 7777u
 #define SHROOM_DIRECTORY_PORT 7778u
 #define SHROOM_DIRECTORY_PROTOCOL_VERSION 1u
@@ -21,13 +21,13 @@
 #define SHROOM_MAX_PASSWORD_LENGTH 64u
 #define SHROOM_AUTH_TOKEN_LENGTH 64u
 /* Includes participant and spectator peers across all lobbies. */
-#define SHROOM_SERVER_MAX_CLIENTS 1024u
+#define SHROOM_SERVER_MAX_CLIENTS 256u
 #define SHROOM_SNAPSHOT_RATE 15u
 #define SHROOM_SNAPSHOT_RATE_MIN 15u
 #define SHROOM_SNAPSHOT_RATE_MAX 20u
 #define SHROOM_MAX_SNAPSHOT_PLAYERS SHROOM_MAX_PLAYER_ENTITIES
 #define SHROOM_SNAPSHOT_PAYLOAD_SIZE 1100u
-#define SHROOM_SNAPSHOT_MAX_CHUNKS 32u
+#define SHROOM_SNAPSHOT_MAX_CHUNKS 128u
 #define SHROOM_SNAPSHOT_KEYFRAME_TICKS 30u
 #define SHROOM_SPORE_STATE_RATE 5u
 #define SHROOM_WORLD_REPLICATION_RATE SHROOM_SPORE_STATE_RATE
@@ -519,14 +519,34 @@ typedef struct ShroomLobbyRosterEntry {
   uint8_t reserved;
 } ShroomLobbyRosterEntry;
 
+#define SHROOM_LOBBY_ROSTER_ENTRIES_PER_PACKET 128u
+#define SHROOM_LOBBY_ROSTER_MAX_CHUNKS                                                             \
+  ((SHROOM_MAX_PARTICIPANTS + SHROOM_LOBBY_ROSTER_ENTRIES_PER_PACKET - 1u) /                       \
+   SHROOM_LOBBY_ROSTER_ENTRIES_PER_PACKET)
+
 typedef struct ShroomLobbyRosterPacket {
   ShroomPacketHeader header;
   uint32_t lobby_id;
-  uint16_t player_count;
+  uint32_t generation;
+  uint16_t total_player_count;
+  uint16_t chunk_index;
+  uint16_t chunk_count;
+  uint16_t entry_count;
   uint8_t match_started;
-  uint8_t reserved;
-  ShroomLobbyRosterEntry players[SHROOM_MAX_PARTICIPANTS];
+  uint8_t reserved[3];
+  ShroomLobbyRosterEntry players[SHROOM_LOBBY_ROSTER_ENTRIES_PER_PACKET];
 } ShroomLobbyRosterPacket;
+
+#define SHROOM_LOBBY_ROSTER_PACKET_SIZE(count)                                                     \
+  (offsetof(ShroomLobbyRosterPacket, players) + (size_t)(count) * sizeof(ShroomLobbyRosterEntry))
+
+#if defined(__cplusplus)
+static_assert(sizeof(ShroomLobbyRosterPacket) <= SHROOM_MAX_UNRELIABLE_PACKET_SIZE,
+              "roster chunks must fit the application MTU");
+#else
+_Static_assert(sizeof(ShroomLobbyRosterPacket) <= SHROOM_MAX_UNRELIABLE_PACKET_SIZE,
+               "roster chunks must fit the application MTU");
+#endif
 
 typedef struct ShroomRematchVotePacket {
   ShroomPacketHeader header;

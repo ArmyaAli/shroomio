@@ -348,12 +348,12 @@ void test_spawn_density_tightens_with_large_lobbies(void) {
 
   ResetWorldForPlayers();
 
-  for (size_t index = 0; index < 200u; ++index) {
+  for (size_t index = 0; index < SHROOM_MAX_PARTICIPANTS; ++index) {
     player = ShroomWorldSpawnPlayer(&world, (ShroomPlayerId)(index + 1u), false);
     TEST_ASSERT_NOT_NULL(player);
     TEST_ASSERT_EQUAL(SHROOM_ZONE_OUTER, ShroomGetZoneAtPosition(&world, player->position));
 
-    if (index >= SHROOM_SPAWN_MEDIUM_LOBBY_PLAYERS) {
+    if (index >= 200u) {
       largest_late_spawn_radius =
           fmaxf(largest_late_spawn_radius, DistanceFromWorldCenter(&world, player->position));
     }

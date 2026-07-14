@@ -121,6 +121,41 @@ static void test_spectator_focus_and_max_population_are_supported(void) {
                                    sizeof(ShroomSnapshotPacket));
 }
 
+static void test_max_population_keyframe_round_trips_across_all_chunks(void) {
+  static ShroomSnapshotAssembly assembly;
+  static ShroomSnapshotHistory history;
+  static ShroomSnapshotEncodedFrame encoded;
+  static ShroomSnapshotPlayerState source[SHROOM_MAX_SNAPSHOT_PLAYERS];
+  static ShroomSnapshotPlayerState players[SHROOM_MAX_SNAPSHOT_PLAYERS];
+  ShroomSnapshotFrameMetadata metadata = {0};
+  ShroomSnapshotFrameMetadata source_metadata = Metadata(11u);
+  uint16_t count = 0u;
+
+  memset(&assembly, 0, sizeof(assembly));
+  memset(&history, 0, sizeof(history));
+  for (uint16_t index = 0u; index < SHROOM_MAX_SNAPSHOT_PLAYERS; ++index) {
+    source[index] = SnapshotPlayer((uint32_t)index + 1u, (float)index);
+  }
+
+  TEST_ASSERT_TRUE(ShroomSnapshotEncodeFrame(&source_metadata, source,
+                                             SHROOM_MAX_SNAPSHOT_PLAYERS, NULL, true,
+                                             &encoded));
+  TEST_ASSERT_EQUAL_UINT16(ShroomSnapshotChunkCount(SHROOM_MAX_SNAPSHOT_PLAYERS),
+                           encoded.packet_count);
+  for (uint16_t index = 0u; index < encoded.packet_count; ++index) {
+    ShroomSnapshotAssemblyResult expected =
+        index + 1u == encoded.packet_count ? SHROOM_SNAPSHOT_ASSEMBLY_COMPLETE
+                                          : SHROOM_SNAPSHOT_ASSEMBLY_PENDING;
+    TEST_ASSERT_LESS_OR_EQUAL_UINT32(SHROOM_MAX_UNRELIABLE_PACKET_SIZE,
+                                     encoded.packets[index].header.size);
+    TEST_ASSERT_EQUAL(expected, Push(&assembly, &history, &encoded.packets[index],
+                                     &metadata, players, &count));
+  }
+  TEST_ASSERT_EQUAL_UINT16(SHROOM_MAX_SNAPSHOT_PLAYERS, count);
+  TEST_ASSERT_EQUAL_UINT32(1u, players[0].entity_id);
+  TEST_ASSERT_EQUAL_UINT32(SHROOM_MAX_SNAPSHOT_PLAYERS, players[count - 1u].entity_id);
+}
+
 static void test_keyframe_round_trip_is_atomic_out_of_order_and_duplicate_safe(void) {
   ShroomSnapshotAssembly assembly = {0};
   ShroomSnapshotHistory history = {0};
@@ -256,6 +291,7 @@ int main(void) {
   RUN_TEST(test_selection_keeps_self_splits_objective_threats_and_nearby_in_stable_order);
   RUN_TEST(test_hysteresis_retains_boundary_crossing_then_removes_far_entity);
   RUN_TEST(test_spectator_focus_and_max_population_are_supported);
+  RUN_TEST(test_max_population_keyframe_round_trips_across_all_chunks);
   RUN_TEST(test_keyframe_round_trip_is_atomic_out_of_order_and_duplicate_safe);
   RUN_TEST(test_delta_suppresses_unchanged_components_and_reduces_bytes);
   RUN_TEST(test_delta_applies_spawn_update_and_despawn_against_baseline);

@@ -34,7 +34,7 @@ def main() -> int:
     output.mkdir(parents=True, exist_ok=True)
     rows: list[dict[str, str]] = []
     for offset, clients in enumerate(args.clients):
-        participants = min(clients, 64)
+        participants = clients
         command = [
             str(binary),
             "--clients",

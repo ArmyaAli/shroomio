@@ -547,7 +547,8 @@ ShroomSnapshotAssemblyResult ShroomSnapshotAssemblyPush(
     ShroomSnapshotHistory* history, ShroomSnapshotFrameMetadata* completed_metadata,
     ShroomSnapshotPlayerState* completed_players, uint16_t* completed_player_count) {
   const size_t header_size = offsetof(ShroomSnapshotPacket, payload);
-  uint32_t chunk_bit;
+  const size_t receipt_word = packet != NULL ? packet->chunk_index / 64u : 0u;
+  const uint64_t chunk_bit = packet != NULL ? 1ull << (packet->chunk_index % 64u) : 0ull;
 
   if ((assembly == NULL) || (packet == NULL) || (completed_metadata == NULL) || (history == NULL) ||
       (completed_players == NULL) || (completed_player_count == NULL) ||
@@ -581,14 +582,14 @@ ShroomSnapshotAssemblyResult ShroomSnapshotAssemblyPush(
              (packet->flags != assembly->flags) || !MetadataMatches(&assembly->metadata, packet)) {
     return SHROOM_SNAPSHOT_ASSEMBLY_REJECTED;
   }
-  chunk_bit = 1u << packet->chunk_index;
-  if ((assembly->received_chunks & chunk_bit) == 0u) {
+  if ((assembly->received_chunks[receipt_word] & chunk_bit) == 0u) {
     assembly->chunks[packet->chunk_index] = *packet;
-    assembly->received_chunks |= chunk_bit;
+    assembly->received_chunks[receipt_word] |= chunk_bit;
   }
-  if (assembly->received_chunks !=
-      (assembly->chunk_count == 32u ? UINT32_MAX : (1u << assembly->chunk_count) - 1u)) {
-    return SHROOM_SNAPSHOT_ASSEMBLY_PENDING;
+  for (uint16_t index = 0u; index < assembly->chunk_count; ++index) {
+    if ((assembly->received_chunks[index / 64u] & (1ull << (index % 64u))) == 0u) {
+      return SHROOM_SNAPSHOT_ASSEMBLY_PENDING;
+    }
   }
   *completed_metadata = assembly->metadata;
   if (!ApplyChunks(assembly, history, completed_players, completed_player_count)) {

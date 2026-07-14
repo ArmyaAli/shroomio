@@ -1381,6 +1381,7 @@ static void Test_LobbyRosterScrollKeepsActionsUsable(ImGuiTestContext* ctx) {
     ShroomTeCtx_SetRef(ctx, "Lobby Roster");
     ShroomTeCtx_Yield(ctx, 3);
 
+    IM_CHECK_EQ(g_imgui_test_app.game.net.lobby_roster_count, 256u);
     IM_CHECK(ShroomTeImGui_WindowFitsViewport("Lobby Roster"));
     IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Ready to enter"));
     IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Leave Lobby"));
@@ -1718,8 +1719,8 @@ static void Test_LobbyEmptyAndFullStatesRender(ImGuiTestContext* ctx) {
   g_imgui_test_app.game.net.lobby_list[0].lobby_id = 77u;
   snprintf(g_imgui_test_app.game.net.lobby_list[0].name,
            sizeof(g_imgui_test_app.game.net.lobby_list[0].name), "Full Lobby");
-  g_imgui_test_app.game.net.lobby_list[0].player_count = 32u;
-  g_imgui_test_app.game.net.lobby_list[0].max_players = 32u;
+  g_imgui_test_app.game.net.lobby_list[0].player_count = 256u;
+  g_imgui_test_app.game.net.lobby_list[0].max_players = 256u;
   ShroomTeCtx_Yield(ctx, 3);
 
   IM_CHECK(!ShroomTeCtx_ItemExists(ctx, "Join##77"));
@@ -3039,7 +3040,7 @@ static void Test_LateIntermissionJoinerWaitsForExplicitMatchEntry(ImGuiTestConte
   ENetPacket roster_packet = {
       .data = (enet_uint8*)&roster,
       .dataLength =
-          offsetof(ShroomLobbyRosterPacket, players) + (2u * sizeof(ShroomLobbyRosterEntry)),
+          SHROOM_LOBBY_ROSTER_PACKET_SIZE(2u),
   };
   ENetPacket intermission_packet = {
       .data = (enet_uint8*)&intermission,
@@ -3064,7 +3065,10 @@ static void Test_LateIntermissionJoinerWaitsForExplicitMatchEntry(ImGuiTestConte
   ClientNetTestHandleIntermissionStatus(net, &intermission_packet);
 
   roster.lobby_id = net->lobby_id;
-  roster.player_count = 2u;
+  roster.generation = 1u;
+  roster.total_player_count = 2u;
+  roster.chunk_count = 1u;
+  roster.entry_count = 2u;
   roster.match_started = 1u;
   roster.players[0] =
       (ShroomLobbyRosterEntry){.player_id = 3u, .is_ready = 0u, .entered_match = 1u};

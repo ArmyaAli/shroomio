@@ -64,13 +64,16 @@ are regression gates, not internet latency or packet-loss claims; loopback canno
 ### Scale assumptions
 
 - One process owns both ENet hosts to isolate serialization, delivery, dispatch, and queue cost.
-- Up to 64 clients are participants; additional clients in the 256-client scenario are spectators.
+- Every client is an active participant, including the canonical 256-client scenario.
 - Every connected client receives snapshots. Snapshot payloads contain
-  `participants * split_pieces` entities, bounded by 64 participants and four pieces each.
+  `participants * split_pieces` entities, bounded by 256 participants and four pieces each.
 - Inputs and snapshots use their production unreliable channels and production wire structs.
   Player frames use component-masked keyframe/delta records in unreliable-unsequenced chunks.
-- `make network-benchmark-test` includes a 256-entity loopback case and fails if any generated or
-  received player snapshot exceeds the 1,200-byte application MTU budget.
+- `make network-benchmark-test` runs 256 active clients at 30 Hz input against both 15 Hz and 20 Hz
+  snapshot schedules. The 20 Hz scenario must schedule at least 12,800 logical input/snapshot
+  messages/s, while both scenarios enforce accepted-packet, congestion, and tick-deadline limits.
+  Unit coverage separately verifies maximum 1,024-entity snapshot chunking stays within the
+  1,200-byte application MTU budget.
 - Simulation, SQLite, rendering, authentication, and WAN behavior are intentionally excluded. Use
   `make benchmark` and production profiling separately for those costs.
 

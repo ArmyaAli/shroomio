@@ -267,6 +267,7 @@ SERVER_SOURCES := \
 	$(SERVER_SRC_DIR)/match_persistence.c \
 	$(SERVER_SRC_DIR)/auth.c \
 	$(SERVER_SRC_DIR)/input_admission.c \
+	$(SERVER_SRC_DIR)/lobby_capacity.c \
 	$(SERVER_SRC_DIR)/session_cleanup.c \
 	$(SERVER_SRC_DIR)/snapshot_stats.c \
 	$(SERVER_SRC_DIR)/voice_relay.c \
@@ -311,6 +312,7 @@ SHARED_HEADERS := \
 	$(SERVER_SRC_DIR)/match_persistence.h \
 	$(SERVER_SRC_DIR)/auth.h \
 	$(SERVER_SRC_DIR)/input_admission.h \
+	$(SERVER_SRC_DIR)/lobby_capacity.h \
 	$(SERVER_SRC_DIR)/session_cleanup.h \
 	$(SERVER_SRC_DIR)/snapshot_stats.h \
 	$(SERVER_SRC_DIR)/voice_relay.h
@@ -508,10 +510,13 @@ network-benchmark: $(NETWORK_BENCH_BIN)
 
 network-benchmark-test: NETWORK_BENCH_DURATION_MS=500
 network-benchmark-test: network-benchmark
-	./$(NETWORK_BENCH_BIN) --clients 64 --participants 64 --split-pieces 4 \
-		--duration-ms 250 --port 39889 --min-input-hz 0 --min-snapshot-hz 0 \
-		--max-drop-percent 100 --max-deadline-failures 100000 >/dev/null
-	@echo "Maximum-population snapshot MTU check passed."
+	./$(NETWORK_BENCH_BIN) --clients 256 --participants 256 --split-pieces 1 \
+		--duration-ms 500 --port 39889 --snapshot-rate 15 \
+		--max-deadline-failures 5 >/dev/null
+	./$(NETWORK_BENCH_BIN) --clients 256 --participants 256 --split-pieces 1 \
+		--duration-ms 500 --port 39890 --snapshot-rate 20 --min-total-message-hz 12800 \
+		--max-deadline-failures 5 >/dev/null
+	@echo "Canonical 256-participant 15/20 Hz throughput gates passed."
 
 input-flood-test: $(SERVER_LINUX_BIN) $(INPUT_FLOOD_CLIENT_BIN)
 	@set -eu; \
@@ -656,10 +661,11 @@ $(SERVER_MACOS_BIN): $(SERVER_MACOS_OBJECTS) $(VCPKG_MACOS_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(MACOS_CC) $(SERVER_MACOS_OBJECTS) -o $@ $(MACOS_SERVER_LIBS)
 
-$(NETWORK_BENCH_BIN): tools/network_benchmark.c $(SHARED_SRC_DIR)/net_telemetry.c $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
+$(NETWORK_BENCH_BIN): tools/network_benchmark.c $(SHARED_SRC_DIR)/net_telemetry.c $(SHARED_SRC_DIR)/snapshot_scheduler.c $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) tools/network_benchmark.c \
 		$(SHARED_SRC_DIR)/net_telemetry.c $(SHARED_SRC_DIR)/snapshot_replication.c \
+		$(SHARED_SRC_DIR)/snapshot_scheduler.c \
 		-o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet -lm
 
 $(INPUT_FLOOD_CLIENT_BIN): tools/input_flood_client.c $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
@@ -946,6 +952,9 @@ test-coverage: $(UNITY_DIR) $(VCPKG_LINUX_STAMP)
 		test_bin=$(TEST_BUILD_DIR)/$$test_name; \
 		total=$$((total + 1)); \
 		case $$test_name in \
+			test_lobby_capacity) \
+				$(LINUX_CC) $(COVERAGE_CFLAGS) \
+					$$src $(UNITY_SRC) $(SERVER_SRC_DIR)/lobby_capacity.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 			test_auth) \
 				$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(SERVER_SRC_DIR) -I$(VCPKG_LINUX_INCLUDE_DIR) \
 					$$src $(UNITY_SRC) $(SERVER_SRC_DIR)/auth.c $(SERVER_SRC_DIR)/logger.c -o $$test_bin $(COVERAGE_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lsqlite3 ;; \
@@ -1090,6 +1099,10 @@ test-clean:
 
 # Specific test targets with explicit dependencies
 $(TEST_BUILD_DIR)/test_lifecycle: $(UNIT_TESTS_DIR)/test_lifecycle.c $(UNITY_SRC) $(SHARED_SRC_DIR)/lifecycle.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_lobby_capacity: $(UNIT_TESTS_DIR)/test_lobby_capacity.c $(UNITY_SRC) $(SERVER_SRC_DIR)/lobby_capacity.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
