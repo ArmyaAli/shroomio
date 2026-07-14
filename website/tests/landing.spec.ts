@@ -44,3 +44,28 @@ test("navigation reaches the gameplay section", async ({ page, isMobile }) => {
   await expect(page).toHaveURL(/#gameplay$/);
   await expect(page.getByRole("heading", { name: "Small spore. Big ambition." })).toBeInViewport();
 });
+
+test("loads responsive gameplay screenshots without shifting the layout", async ({ page }) => {
+  await page.goto("/");
+
+  const gallery = page.getByRole("region", { name: "Gameplay screenshots" });
+  const screenshots = gallery.getByRole("img");
+  await gallery.scrollIntoViewIfNeeded();
+  await expect(gallery).toBeVisible();
+  await expect(screenshots).toHaveCount(3);
+
+  for (const screenshot of await screenshots.all()) {
+    await expect(screenshot).toBeVisible();
+    await expect
+      .poll(() => screenshot.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0))
+      .toBe(true);
+    const box = await screenshot.boundingBox();
+    expect(box?.width).toBeGreaterThan(200);
+    expect(box?.height).toBeGreaterThan(100);
+  }
+
+  const hasHorizontalOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  );
+  expect(hasHorizontalOverflow).toBe(false);
+});
