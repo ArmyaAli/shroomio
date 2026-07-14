@@ -1599,6 +1599,25 @@ static void Test_ServerBrowserDirectoryUnavailableAndEmptyStates(ImGuiTestContex
   unsetenv("SHROOM_DIRECTORY_HOST");
 }
 
+static void Test_ServerBrowserDiscoveryCanBeCancelled(ImGuiTestContext* ctx) {
+  unsetenv("SHROOM_DIRECTORY_HOST");
+  ShroomImGuiTestAppReset(true);
+  ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager,
+                                SHROOM_SCREEN_SERVER_BROWSER);
+  ShroomTeCtx_Yield(ctx, 2);
+  ShroomTeCtx_SetRef(ctx, "Server Browser");
+
+  ShroomTeCtx_ItemClick(ctx, "Refresh");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_EQ(ShroomTestGetServerBrowserDiscoveryState(), SHROOM_SERVER_DISCOVERY_LOADING);
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Cancel"));
+  ShroomTeCtx_ItemClick(ctx, "Cancel");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_EQ(ShroomTestGetServerBrowserDiscoveryState(), SHROOM_SERVER_DISCOVERY_CANCELLED);
+  IM_CHECK_STR_EQ(ShroomTestGetServerBrowserStatusText(), "Refresh cancelled.");
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Refresh"));
+}
+
 static void Test_LobbyConnectionModalStates(ImGuiTestContext* ctx) {
   ShroomImGuiTestAppReset(false);
   ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_LOBBY);
@@ -3268,6 +3287,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_ServerBrowserDiscoveryStatesAndSorting);
   ShroomTeEngine_RegisterTest(engine, "screens", "server_browser_directory_unavailable_and_empty",
                               Test_ServerBrowserDirectoryUnavailableAndEmptyStates);
+  ShroomTeEngine_RegisterTest(engine, "screens", "server_browser_discovery_can_be_cancelled",
+                              Test_ServerBrowserDiscoveryCanBeCancelled);
   ShroomTeEngine_RegisterTest(engine, "screens", "lobby_connection_modal_states",
                               Test_LobbyConnectionModalStates);
   ShroomTeEngine_RegisterTest(engine, "screens", "lobby_unreachable_server_friendly_error",

@@ -444,7 +444,7 @@ All multiplayer communication uses ENet over UDP on port 7777. ENet provides mul
 \hline
 \textbf{Channel} & \textbf{ID} & \textbf{QoS} & \textbf{Purpose} \\
 \hline
-Control & 0 & Reliable, ordered & Hello, Welcome, Ping, Pong, Auth, lobby control \\
+Control & 0 & Reliable, ordered & Hello, Welcome, Ping, Pong, server probes, Auth, lobby control \\
 \hline
 Snapshot & 1 & Unreliable & Unsequenced player snapshot chunks; sequenced world-state updates \\
 \hline
@@ -475,7 +475,7 @@ ShroomPacketHeader {
 \begin{verbatim}
 ShroomHelloPacket {
     ShroomPacketHeader header;
-    uint32_t protocol_version;    // SHROOM_PROTOCOL_VERSION (14)
+    uint32_t protocol_version;    // SHROOM_PROTOCOL_VERSION (15)
     char     name[32];            // player-chosen display name
 }
 \end{verbatim}
@@ -608,6 +608,14 @@ ShroomPongPacket  { ShroomPacketHeader; uint32_t nonce; }
 \end{verbatim}
 
 Used for latency measurement. The server echoes Pong with the same nonce. Not yet wired to a visible RTT display on the client.
+
+\subsubsection{Stateless server probe (type = 31, 32)}
+
+The server browser queries the directory, then connects to every bounded candidate in parallel and
+sends a versioned probe containing a discovery generation and nonce. The response echoes both and
+returns the current player count and capacity. The server answers before Hello, so probing never
+activates a player session. Individual probes expire after two seconds and the whole refresh after
+five seconds; full, stale, duplicate, and unreachable candidates are not published.
 
 \subsection{Snapshot Capacity Constraint}
 

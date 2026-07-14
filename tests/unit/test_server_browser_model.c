@@ -39,10 +39,17 @@ void test_sort_selection_resets_direction_and_repeated_key_toggles(void) {
   TEST_ASSERT_EQUAL_STRING("Name", ShroomServerBrowserSortLabel(model.sort_key));
 }
 
+void test_loading_refresh_can_be_cancelled(void) {
+  ShroomServerBrowserBeginRefresh(&model);
+  ShroomServerBrowserCancelRefresh(&model);
+  TEST_ASSERT_EQUAL(SHROOM_SERVER_DISCOVERY_CANCELLED, model.discovery_state);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_refresh_states_distinguish_empty_ready_and_failure);
   RUN_TEST(test_only_ready_results_become_stale);
   RUN_TEST(test_sort_selection_resets_direction_and_repeated_key_toggles);
+  RUN_TEST(test_loading_refresh_can_be_cancelled);
   return UNITY_END();
 }

@@ -1161,6 +1161,28 @@ static void SendPong(ENetPeer* peer, uint32_t nonce) {
              CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_PONG));
 }
 
+static uint16_t CountAdvertisedPlayers(const ENetHost* host);
+
+static void SendServerProbeResponse(const ENetHost* host, ENetPeer* peer,
+                                    const ShroomServerProbePacket* probe) {
+  ShroomServerProbeResponsePacket response = {0};
+
+  if ((host == NULL) || (peer == NULL) || (probe == NULL) ||
+      (probe->protocol_version != SHROOM_PROTOCOL_VERSION) || (probe->generation == 0u) ||
+      (probe->nonce == 0u)) {
+    return;
+  }
+  ShroomPacketHeaderInit(&response.header, SHROOM_PACKET_SERVER_PROBE_RESPONSE, sizeof(response));
+  response.protocol_version = SHROOM_PROTOCOL_VERSION;
+  response.generation = probe->generation;
+  response.nonce = probe->nonce;
+  response.player_count = CountAdvertisedPlayers(host);
+  response.capacity = SHROOM_SERVER_MAX_CLIENTS;
+  SendPacket(
+      peer, SHROOM_ENET_CHANNEL_CONTROL, SHROOM_PACKET_SERVER_PROBE_RESPONSE,
+      CreateProtocolPacket(&response, sizeof(response), SHROOM_PACKET_SERVER_PROBE_RESPONSE));
+}
+
 static void SendAuthResponse(ENetPeer* peer, ShroomAuthResult result, uint32_t player_id,
                              const char* token, const char* message) {
   ShroomAuthResponsePacket packet = {0};
@@ -1383,6 +1405,7 @@ static void HandleHelloPacket(ENetPeer* peer, ServerSession* session, sqlite3* d
 
   session->active = true;
   session->handshake_received = true;
+  LOG_INFO("session activated: slot=%u", (unsigned)peer->incomingPeerID);
   if (session->display_name[0] == '\0') {
     snprintf(session->display_name, sizeof(session->display_name), "Player");
   }
@@ -1992,6 +2015,13 @@ static void DispatchPingPacket(ServerPacketContext* context) {
   SendPong(context->peer, ((const ShroomPingPacket*)context->enet_packet->data)->nonce);
 }
 
+static void DispatchServerProbePacket(ServerPacketContext* context) {
+  if (context->enet_packet->dataLength == sizeof(ShroomServerProbePacket)) {
+    SendServerProbeResponse(context->host, context->peer,
+                            (const ShroomServerProbePacket*)context->enet_packet->data);
+  }
+}
+
 static void DispatchChatPacket(ServerPacketContext* context) {
   HandleChatPacket(context->host, context->session, context->enet_packet, context->now_ms);
 }
@@ -2052,6 +2082,7 @@ static const ServerPacketDispatchEntry kServerPacketDispatch[] = {
     {SHROOM_PACKET_SNAPSHOT_ACK, DispatchSnapshotAckPacket},
     {SHROOM_PACKET_AUTH_REQUEST, DispatchAuthRequestPacket},
     {SHROOM_PACKET_PING, DispatchPingPacket},
+    {SHROOM_PACKET_SERVER_PROBE, DispatchServerProbePacket},
     {SHROOM_PACKET_CHAT, DispatchChatPacket},
     {SHROOM_PACKET_VOICE_FRAME, DispatchVoiceFramePacket},
     {SHROOM_PACKET_LOBBY_LIST_QUERY, DispatchLobbyListQuery},

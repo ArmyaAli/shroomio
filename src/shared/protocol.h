@@ -9,7 +9,7 @@
 #include "config.h"
 #include "intermission.h"
 
-#define SHROOM_PROTOCOL_VERSION 14u
+#define SHROOM_PROTOCOL_VERSION 15u
 #define SHROOM_SERVER_PORT 7777u
 #define SHROOM_DIRECTORY_PORT 7778u
 #define SHROOM_DIRECTORY_PROTOCOL_VERSION 1u
@@ -89,6 +89,8 @@ typedef enum ShroomPacketType {
   SHROOM_PACKET_DIRECTORY_LIST = 28,
   SHROOM_PACKET_WORLD_STATE = 29,
   SHROOM_PACKET_SNAPSHOT_ACK = 30,
+  SHROOM_PACKET_SERVER_PROBE = 31,
+  SHROOM_PACKET_SERVER_PROBE_RESPONSE = 32,
 } ShroomPacketType;
 
 typedef enum ShroomAuthMethod {
@@ -231,6 +233,22 @@ typedef struct ShroomPongPacket {
   ShroomPacketHeader header;
   uint32_t nonce;
 } ShroomPongPacket;
+
+typedef struct ShroomServerProbePacket {
+  ShroomPacketHeader header;
+  uint32_t protocol_version;
+  uint32_t generation;
+  uint32_t nonce;
+} ShroomServerProbePacket;
+
+typedef struct ShroomServerProbeResponsePacket {
+  ShroomPacketHeader header;
+  uint32_t protocol_version;
+  uint32_t generation;
+  uint32_t nonce;
+  uint16_t player_count;
+  uint16_t capacity;
+} ShroomServerProbeResponsePacket;
 
 typedef struct ShroomDirectoryServerEntry {
   uint64_t server_id;
@@ -540,6 +558,10 @@ typedef struct ShroomIntermissionStatusPacket {
   X(SHROOM_PACKET_SNAPSHOT_ACK, SHROOM_ENET_CHANNEL_INPUT, false, sizeof(ShroomSnapshotAckPacket)) \
   X(SHROOM_PACKET_PING, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomPingPacket))               \
   X(SHROOM_PACKET_PONG, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomPongPacket))               \
+  X(SHROOM_PACKET_SERVER_PROBE, SHROOM_ENET_CHANNEL_CONTROL, true,                                 \
+    sizeof(ShroomServerProbePacket))                                                               \
+  X(SHROOM_PACKET_SERVER_PROBE_RESPONSE, SHROOM_ENET_CHANNEL_CONTROL, true,                        \
+    sizeof(ShroomServerProbeResponsePacket))                                                       \
   X(SHROOM_PACKET_SPORE_STATE, SHROOM_ENET_CHANNEL_SNAPSHOT, false,                                \
     offsetof(ShroomSporeStatePacket, spores))                                                      \
   X(SHROOM_PACKET_AUTH_REQUEST, SHROOM_ENET_CHANNEL_CONTROL, true,                                 \

@@ -104,6 +104,13 @@ and game port, so a game server cannot claim another host's endpoint. Open the d
 clients and game servers; the game port remains separate. If `SHROOM_DIRECTORY_HOST` is absent, the
 server runs normally without advertising and clients report that no directory is configured.
 
+Set `SHROOM_DIRECTORY_HOST` and optionally `SHROOM_DIRECTORY_PORT` for clients as well. A browser
+refresh assembles the current directory generation, probes up to 32 unique non-full endpoints in
+parallel, and publishes only responses received within the two-second peer and five-second overall
+deadlines. Probes do not send `HELLO` or activate player sessions. Verify this path with
+`make directory-integration-test`; it starts a directory and two servers, measures both candidates,
+and confirms their advertised player counts remain zero.
+
 ### Docker (Recommended)
 
 **Build the image:**

@@ -37,6 +37,12 @@ void ShroomServerBrowserMarkStale(ShroomServerBrowserModel* model) {
   }
 }
 
+void ShroomServerBrowserCancelRefresh(ShroomServerBrowserModel* model) {
+  if ((model != NULL) && (model->discovery_state == SHROOM_SERVER_DISCOVERY_LOADING)) {
+    model->discovery_state = SHROOM_SERVER_DISCOVERY_CANCELLED;
+  }
+}
+
 void ShroomServerBrowserSetSort(ShroomServerBrowserModel* model, ShroomServerSortKey key) {
   if ((model == NULL) || (key < SHROOM_SERVER_SORT_NAME) || (key > SHROOM_SERVER_SORT_PING)) {
     return;
