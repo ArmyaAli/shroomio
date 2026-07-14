@@ -9,7 +9,7 @@
 #include "config.h"
 #include "intermission.h"
 
-#define SHROOM_PROTOCOL_VERSION 10u
+#define SHROOM_PROTOCOL_VERSION 12u
 #define SHROOM_SERVER_PORT 7777u
 #define SHROOM_DIRECTORY_PORT 7778u
 #define SHROOM_DIRECTORY_PROTOCOL_VERSION 1u
@@ -28,6 +28,8 @@
   (offsetof(ShroomSnapshotPacket, players) +                                                       \
    (SHROOM_MAX_SNAPSHOT_PLAYERS * sizeof(ShroomSnapshotPlayerState)))
 #define SHROOM_SPORE_STATE_RATE 5u
+#define SHROOM_WORLD_REPLICATION_RATE SHROOM_SPORE_STATE_RATE
+#define SHROOM_WORLD_REPLICATION_KEYFRAME_TICKS 30u
 #define SHROOM_POWERUP_EFFECT_SPEED 0x0001u
 #define SHROOM_POWERUP_EFFECT_SHIELD 0x0002u
 #define SHROOM_POWERUP_EFFECT_MAGNET 0x0004u
@@ -83,6 +85,7 @@ typedef enum ShroomPacketType {
   SHROOM_PACKET_DIRECTORY_HEARTBEAT = 26,
   SHROOM_PACKET_DIRECTORY_QUERY = 27,
   SHROOM_PACKET_DIRECTORY_LIST = 28,
+  SHROOM_PACKET_WORLD_STATE = 29,
 } ShroomPacketType;
 
 typedef enum ShroomAuthMethod {
@@ -270,6 +273,41 @@ typedef struct ShroomPowerupStatePacket {
   uint16_t reserved;
   ShroomSnapshotPowerupState powerups[SHROOM_MAX_POWERUPS];
 } ShroomPowerupStatePacket;
+
+typedef enum ShroomWorldEntityKind {
+  SHROOM_WORLD_ENTITY_SPORE = 1,
+  SHROOM_WORLD_ENTITY_POWERUP = 2,
+} ShroomWorldEntityKind;
+
+typedef enum ShroomWorldRecordOperation {
+  SHROOM_WORLD_RECORD_SPAWN = 1,
+  SHROOM_WORLD_RECORD_UPDATE = 2,
+  SHROOM_WORLD_RECORD_REMOVE = 3,
+} ShroomWorldRecordOperation;
+
+#define SHROOM_WORLD_STATE_FLAG_KEYFRAME 0x01u
+
+typedef struct ShroomWorldStateRecord {
+  uint32_t entity_id;
+  float position_x;
+  float position_y;
+  uint16_t value;
+  uint8_t entity_kind;
+  uint8_t operation;
+  uint8_t powerup_type;
+  uint8_t reserved[3];
+} ShroomWorldStateRecord;
+
+typedef struct ShroomWorldStatePacket {
+  ShroomPacketHeader header;
+  uint64_t tick;
+  uint16_t chunk_index;
+  uint16_t chunk_count;
+  uint8_t flags;
+  uint8_t record_count;
+  uint16_t reserved;
+  ShroomWorldStateRecord records[1];
+} ShroomWorldStatePacket;
 
 typedef struct ShroomMushroomSpeciesEntry {
   uint8_t species_id;
@@ -501,7 +539,9 @@ typedef struct ShroomIntermissionStatusPacket {
   X(SHROOM_PACKET_DIRECTORY_QUERY, SHROOM_ENET_CHANNEL_CONTROL, true,                              \
     sizeof(ShroomDirectoryQueryPacket))                                                            \
   X(SHROOM_PACKET_DIRECTORY_LIST, SHROOM_ENET_CHANNEL_CONTROL, true,                               \
-    SHROOM_DIRECTORY_LIST_HEADER_SIZE)
+    SHROOM_DIRECTORY_LIST_HEADER_SIZE)                                                             \
+  X(SHROOM_PACKET_WORLD_STATE, SHROOM_ENET_CHANNEL_SNAPSHOT, false,                                \
+    offsetof(ShroomWorldStatePacket, records))
 
 static inline uint8_t ShroomPacketTypeToChannel(ShroomPacketType type) {
   switch (type) {
@@ -557,6 +597,15 @@ static inline uint16_t ShroomSporeStatePacketMaxSpores(void) {
                                : 0u;
 
   return (uint16_t)(available / sizeof(ShroomSnapshotSporeState));
+}
+
+static inline uint16_t ShroomWorldStatePacketMaxRecords(void) {
+  const size_t header_size = offsetof(ShroomWorldStatePacket, records);
+  const size_t available = SHROOM_MAX_UNRELIABLE_PACKET_SIZE > header_size
+                               ? SHROOM_MAX_UNRELIABLE_PACKET_SIZE - header_size
+                               : 0u;
+
+  return (uint16_t)(available / sizeof(ShroomWorldStateRecord));
 }
 
 static inline size_t ShroomVoiceFramePacketSize(uint16_t payload_size) {

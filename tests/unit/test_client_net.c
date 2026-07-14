@@ -205,6 +205,72 @@ static void test_client_net_zero_spore_state_clears_stale_spores(void) {
   TEST_ASSERT_EQUAL_UINT32(0u, net.snapshot_spores[0].entity_id);
 }
 
+static void test_client_net_applies_mixed_world_state_packet(void) {
+  ClientNetState net = {0};
+  ShroomWorldStatePacket world_state = {0};
+  const size_t packet_size =
+      offsetof(ShroomWorldStatePacket, records) + sizeof(ShroomWorldStateRecord);
+  ENetPacket packet = {.data = (enet_uint8*)&world_state, .dataLength = packet_size};
+
+  ShroomPacketHeaderInit(&world_state.header, SHROOM_PACKET_WORLD_STATE, (uint16_t)packet_size);
+  world_state.tick = 60u;
+  world_state.chunk_count = 1u;
+  world_state.flags = SHROOM_WORLD_STATE_FLAG_KEYFRAME;
+  world_state.record_count = 1u;
+  world_state.records[0] = (ShroomWorldStateRecord){
+      .entity_id = 808u,
+      .position_x = 123.0f,
+      .position_y = 456.0f,
+      .value = 9u,
+      .entity_kind = SHROOM_WORLD_ENTITY_SPORE,
+      .operation = SHROOM_WORLD_RECORD_SPAWN};
+
+  ClientNetTestHandleWorldState(&net, &packet);
+
+  TEST_ASSERT_EQUAL_UINT16(1u, net.spore_count);
+  TEST_ASSERT_EQUAL_UINT32(808u, net.snapshot_spores[0].entity_id);
+  TEST_ASSERT_EQUAL_FLOAT(123.0f, net.snapshot_spores[0].position_x);
+  TEST_ASSERT_EQUAL_UINT16(0u, net.powerup_count);
+}
+
+static void test_lobby_join_resets_world_replication_tick_and_collectibles(void) {
+  ClientNetState net = {0};
+  ShroomLobbyJoinedPacket joined = {0};
+  ShroomWorldStatePacket world_state = {0};
+  const size_t packet_size =
+      offsetof(ShroomWorldStatePacket, records) + sizeof(ShroomWorldStateRecord);
+  ENetPacket joined_packet = {.data = (enet_uint8*)&joined, .dataLength = sizeof(joined)};
+  ENetPacket world_packet = {.data = (enet_uint8*)&world_state, .dataLength = packet_size};
+
+  net.world_replication.tick_received = true;
+  net.world_replication.latest_tick = 9000u;
+  net.spore_count = 1u;
+  net.snapshot_spores[0].entity_id = 99u;
+  ShroomPacketHeaderInit(&joined.header, SHROOM_PACKET_LOBBY_JOINED, sizeof(joined));
+  joined.lobby_id = 7u;
+  joined.player_id = 1u;
+  joined.entity_id = 2u;
+  ClientNetTestHandleLobbyJoined(&net, &joined_packet);
+
+  TEST_ASSERT_FALSE(net.world_replication.tick_received);
+  TEST_ASSERT_EQUAL_UINT16(0u, net.spore_count);
+  TEST_ASSERT_EQUAL_UINT32(0u, net.snapshot_spores[0].entity_id);
+
+  ShroomPacketHeaderInit(&world_state.header, SHROOM_PACKET_WORLD_STATE, (uint16_t)packet_size);
+  world_state.tick = 1u;
+  world_state.chunk_count = 1u;
+  world_state.flags = SHROOM_WORLD_STATE_FLAG_KEYFRAME;
+  world_state.record_count = 1u;
+  world_state.records[0] = (ShroomWorldStateRecord){
+      .entity_id = 100u,
+      .entity_kind = SHROOM_WORLD_ENTITY_SPORE,
+      .operation = SHROOM_WORLD_RECORD_SPAWN};
+  ClientNetTestHandleWorldState(&net, &world_packet);
+
+  TEST_ASSERT_EQUAL_UINT16(1u, net.spore_count);
+  TEST_ASSERT_EQUAL_UINT32(100u, net.snapshot_spores[0].entity_id);
+}
+
 static void test_client_net_accepts_trimmed_lobby_list_packet(void) {
   ClientNetState net = {0};
   ShroomLobbyListPacket list = {0};
@@ -521,6 +587,8 @@ int main(void) {
   RUN_TEST(test_client_net_accepts_chunked_spore_state_packet);
   RUN_TEST(test_client_net_ignores_misaligned_spore_state_packet);
   RUN_TEST(test_client_net_zero_spore_state_clears_stale_spores);
+  RUN_TEST(test_client_net_applies_mixed_world_state_packet);
+  RUN_TEST(test_lobby_join_resets_world_replication_tick_and_collectibles);
   RUN_TEST(test_client_net_accepts_trimmed_lobby_list_packet);
   RUN_TEST(test_client_net_ignores_truncated_lobby_list_entries);
   RUN_TEST(test_client_net_accepts_trimmed_mushroom_species_catalog_packet);

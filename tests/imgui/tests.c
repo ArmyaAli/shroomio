@@ -150,6 +150,26 @@ static void SetupOnlineGame(void) {
            "Connected");
 }
 
+static void InjectWorldStateChunk(uint64_t tick, uint16_t chunk_index, uint16_t chunk_count,
+                                  bool keyframe, const ShroomWorldStateRecord* record) {
+  ShroomWorldStatePacket packet = {0};
+  const uint8_t record_count = record != NULL ? 1u : 0u;
+  const size_t packet_size = offsetof(ShroomWorldStatePacket, records) +
+                             (size_t)record_count * sizeof(ShroomWorldStateRecord);
+  ENetPacket enet_packet = {.data = (enet_uint8*)&packet, .dataLength = packet_size};
+
+  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_WORLD_STATE, (uint16_t)packet_size);
+  packet.tick = tick;
+  packet.chunk_index = chunk_index;
+  packet.chunk_count = chunk_count;
+  packet.flags = keyframe ? SHROOM_WORLD_STATE_FLAG_KEYFRAME : 0u;
+  packet.record_count = record_count;
+  if (record != NULL) {
+    packet.records[0] = *record;
+  }
+  ClientNetTestHandleWorldState(&g_imgui_test_app.game.net, &enet_packet);
+}
+
 static void InjectFeedbackSnapshot(ShroomMatchPhase phase, uint32_t local_entity_id,
                                    ShroomVec2 local_position, float local_mass,
                                    ShroomVec2 opponent_position, float opponent_mass) {
@@ -2118,6 +2138,73 @@ static void Test_OnlinePredictionMovesImmediatelyAndReconciles(ImGuiTestContext*
               SHROOM_SCREEN_GAME);
 }
 
+static void Test_OnlineWorldReplicationRepairsDroppedCollectibleChunks(ImGuiTestContext* ctx) {
+  const ShroomWorldStateRecord spore_spawn = {.entity_id = 500u,
+                                               .position_x = 1210.0f,
+                                               .position_y = 1400.0f,
+                                               .value = 7u,
+                                               .entity_kind = SHROOM_WORLD_ENTITY_SPORE,
+                                               .operation = SHROOM_WORLD_RECORD_SPAWN};
+  const ShroomWorldStateRecord powerup_spawn = {.entity_id = 600u,
+                                                 .position_x = 1250.0f,
+                                                 .position_y = 1400.0f,
+                                                 .entity_kind = SHROOM_WORLD_ENTITY_POWERUP,
+                                                 .operation = SHROOM_WORLD_RECORD_SPAWN,
+                                                 .powerup_type = SHROOM_POWERUP_SPEED};
+  const ShroomWorldStateRecord spore_update = {.entity_id = 500u,
+                                                .position_x = 1225.0f,
+                                                .position_y = 1405.0f,
+                                                .value = 14u,
+                                                .entity_kind = SHROOM_WORLD_ENTITY_SPORE,
+                                                .operation = SHROOM_WORLD_RECORD_UPDATE};
+  Game* game;
+
+  SetupOnlineGame();
+  game = &g_imgui_test_app.game;
+  game->net.snapshot_player_count = 1u;
+  game->net.snapshot_players[0] = (ShroomSnapshotPlayerState){
+      .player_id = 1u,
+      .entity_id = 42u,
+      .position_x = 1200.0f,
+      .position_y = 1400.0f,
+      .mass = SHROOM_DEFAULT_PLAYER_MASS,
+      .radius = ShroomMassToRadius(SHROOM_DEFAULT_PLAYER_MASS),
+      .alive = 1u};
+  game->net.snapshot_spores[0] = (ShroomSnapshotSporeState){
+      .entity_id = 999u, .position_x = 5900.0f, .position_y = 5900.0f, .value = 7u};
+  game->net.spore_count = 1u;
+
+  /* One lost keyframe chunk cannot clear the distant stale entity. */
+  InjectWorldStateChunk(30u, 1u, 2u, true, &powerup_spawn);
+  game->net.last_snapshot_tick = 31u;
+  ShroomTeCtx_Yield(ctx, 1);
+  IM_CHECK_EQ(game->world.spore_count, 1u);
+  IM_CHECK_EQ(game->world.spores[0].entity_id, 999u);
+
+  /* Reordered completion installs nearby state and removes distant state. */
+  InjectWorldStateChunk(30u, 0u, 2u, true, &spore_spawn);
+  game->net.last_snapshot_tick = 32u;
+  ShroomTeCtx_Yield(ctx, 1);
+  IM_CHECK_EQ(game->world.spore_count, 1u);
+  IM_CHECK_EQ(game->world.spores[0].entity_id, 500u);
+  IM_CHECK_EQ(game->world.powerup_count, 1u);
+  IM_CHECK_EQ(game->world.powerups[0].entity_id, 600u);
+
+  InjectWorldStateChunk(36u, 0u, 1u, false, &spore_update);
+  game->net.last_snapshot_tick = 37u;
+  ShroomTeCtx_Yield(ctx, 1);
+  IM_CHECK_EQ(game->world.spores[0].value, 14u);
+  IM_CHECK_EQ(game->world.spores[0].position.x, 1225.0f);
+
+  /* Simulate a dropped pickup remove; the next complete repair keyframe clears it. */
+  InjectWorldStateChunk(60u, 0u, 1u, true, &spore_update);
+  game->net.last_snapshot_tick = 61u;
+  ShroomTeCtx_Yield(ctx, 1);
+  IM_CHECK_EQ(game->world.powerup_count, 0u);
+  IM_CHECK_EQ(game->world.spore_count, 1u);
+  IM_CHECK(ShroomScreenManagerIsRunning(&g_imgui_test_app.screen_manager));
+}
+
 static void Test_SpectatorCyclesWhenWatchedPlayerIsConsumed(ImGuiTestContext* ctx) {
   ClientNetState* net;
 
@@ -2942,6 +3029,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_PlayAgainResetsTransientMatchPresentation);
   ShroomTeEngine_RegisterTest(engine, "screens", "online_prediction_moves_and_reconciles",
                               Test_OnlinePredictionMovesImmediatelyAndReconciles);
+  ShroomTeEngine_RegisterTest(engine, "screens", "online_world_replication_repairs_loss",
+                              Test_OnlineWorldReplicationRepairsDroppedCollectibleChunks);
   ShroomTeEngine_RegisterTest(engine, "screens", "spectator_cycles_consumed_target",
                               Test_SpectatorCyclesWhenWatchedPlayerIsConsumed);
   ShroomTeEngine_RegisterTest(engine, "screens", "authoritative_results_two_round_cycle",
