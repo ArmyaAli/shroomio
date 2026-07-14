@@ -9,7 +9,7 @@
 #include "config.h"
 #include "intermission.h"
 
-#define SHROOM_PROTOCOL_VERSION 13u
+#define SHROOM_PROTOCOL_VERSION 14u
 #define SHROOM_SERVER_PORT 7777u
 #define SHROOM_DIRECTORY_PORT 7778u
 #define SHROOM_DIRECTORY_PROTOCOL_VERSION 1u
@@ -26,10 +26,9 @@
 #define SHROOM_SNAPSHOT_RATE_MIN 15u
 #define SHROOM_SNAPSHOT_RATE_MAX 20u
 #define SHROOM_MAX_SNAPSHOT_PLAYERS SHROOM_MAX_PLAYER_ENTITIES
-#define SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK 15u
-#define SHROOM_SNAPSHOT_MAX_CHUNKS                                                                 \
-  ((SHROOM_MAX_SNAPSHOT_PLAYERS + SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK - 1u) /                        \
-   SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK)
+#define SHROOM_SNAPSHOT_PAYLOAD_SIZE 1100u
+#define SHROOM_SNAPSHOT_MAX_CHUNKS 32u
+#define SHROOM_SNAPSHOT_KEYFRAME_TICKS 30u
 #define SHROOM_SPORE_STATE_RATE 5u
 #define SHROOM_WORLD_REPLICATION_RATE SHROOM_SPORE_STATE_RATE
 #define SHROOM_WORLD_REPLICATION_KEYFRAME_TICKS 30u
@@ -89,6 +88,7 @@ typedef enum ShroomPacketType {
   SHROOM_PACKET_DIRECTORY_QUERY = 27,
   SHROOM_PACKET_DIRECTORY_LIST = 28,
   SHROOM_PACKET_WORLD_STATE = 29,
+  SHROOM_PACKET_SNAPSHOT_ACK = 30,
 } ShroomPacketType;
 
 typedef enum ShroomAuthMethod {
@@ -162,18 +162,43 @@ typedef struct ShroomSnapshotPlayerState {
   float objective_score;
 } ShroomSnapshotPlayerState;
 
+typedef enum ShroomSnapshotRecordOperation {
+  SHROOM_SNAPSHOT_RECORD_SPAWN = 1,
+  SHROOM_SNAPSHOT_RECORD_UPDATE = 2,
+  SHROOM_SNAPSHOT_RECORD_DESPAWN = 3,
+} ShroomSnapshotRecordOperation;
+
+#define SHROOM_SNAPSHOT_COMPONENT_IDENTITY 0x0001u
+#define SHROOM_SNAPSHOT_COMPONENT_TRANSFORM 0x0002u
+#define SHROOM_SNAPSHOT_COMPONENT_MASS 0x0004u
+#define SHROOM_SNAPSHOT_COMPONENT_EFFECTS 0x0008u
+#define SHROOM_SNAPSHOT_COMPONENT_STATS 0x0010u
+#define SHROOM_SNAPSHOT_COMPONENT_ALL 0x001fu
+#define SHROOM_SNAPSHOT_FLAG_KEYFRAME 0x01u
+
+typedef struct ShroomSnapshotRecordHeader {
+  uint32_t entity_id;
+  uint16_t component_mask;
+  uint8_t operation;
+  uint8_t size;
+} ShroomSnapshotRecordHeader;
+
 typedef struct ShroomSnapshotPacket {
   ShroomPacketHeader header;
   uint64_t tick;
+  uint64_t baseline_tick;
   uint32_t last_processed_input_sequence;
   uint32_t player_id;
   uint32_t entity_id;
-  uint16_t player_count;
   uint16_t total_player_count;
   uint16_t chunk_index;
   uint16_t chunk_count;
+  uint16_t record_count;
+  uint16_t payload_size;
+  uint8_t flags;
   uint8_t match_phase;
   uint8_t game_mode;
+  uint8_t reserved;
   float match_time_remaining;
   float objective_target_score;
   uint32_t objective_controller_id;
@@ -181,8 +206,13 @@ typedef struct ShroomSnapshotPacket {
   uint8_t objective_reserved[3];
   uint32_t podium_player_ids[SHROOM_MATCH_PODIUM_COUNT];
   float podium_masses[SHROOM_MATCH_PODIUM_COUNT];
-  ShroomSnapshotPlayerState players[SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK];
+  uint8_t payload[SHROOM_SNAPSHOT_PAYLOAD_SIZE];
 } ShroomSnapshotPacket;
+
+typedef struct ShroomSnapshotAckPacket {
+  ShroomPacketHeader header;
+  uint64_t tick;
+} ShroomSnapshotAckPacket;
 
 #if defined(__cplusplus)
 static_assert(sizeof(ShroomSnapshotPacket) <= SHROOM_MAX_UNRELIABLE_PACKET_SIZE,
@@ -506,7 +536,8 @@ typedef struct ShroomIntermissionStatusPacket {
   X(SHROOM_PACKET_WELCOME, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomWelcomePacket))         \
   X(SHROOM_PACKET_INPUT, SHROOM_ENET_CHANNEL_INPUT, false, sizeof(ShroomInputPacket))              \
   X(SHROOM_PACKET_SNAPSHOT, SHROOM_ENET_CHANNEL_SNAPSHOT, false,                                   \
-    offsetof(ShroomSnapshotPacket, players))                                                       \
+    offsetof(ShroomSnapshotPacket, payload))                                                       \
+  X(SHROOM_PACKET_SNAPSHOT_ACK, SHROOM_ENET_CHANNEL_INPUT, false, sizeof(ShroomSnapshotAckPacket)) \
   X(SHROOM_PACKET_PING, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomPingPacket))               \
   X(SHROOM_PACKET_PONG, SHROOM_ENET_CHANNEL_CONTROL, true, sizeof(ShroomPongPacket))               \
   X(SHROOM_PACKET_SPORE_STATE, SHROOM_ENET_CHANNEL_SNAPSHOT, false,                                \

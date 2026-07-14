@@ -1,6 +1,7 @@
 #include "unity.h"
 
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "shared/snapshot_replication.h"
@@ -23,40 +24,33 @@ static ShroomWorldState World(void) {
   return (ShroomWorldState){.width = 6000.0f, .height = 6000.0f};
 }
 
-static ShroomSnapshotPacket Packet(uint64_t tick, uint16_t total, uint16_t chunk_index) {
-  ShroomSnapshotPacket packet = {
-      .tick = tick,
-      .last_processed_input_sequence = 77u,
-      .player_id = 5u,
-      .entity_id = 50u,
-      .total_player_count = total,
-      .chunk_index = chunk_index,
-      .chunk_count = (uint16_t)ShroomSnapshotChunkCount(total),
-      .match_phase = SHROOM_MATCH_PHASE_RUNNING,
-  };
-  const size_t offset = (size_t)chunk_index * SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK;
-  packet.player_count =
-      (uint16_t)(total > offset + SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK
-                     ? SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK
-                     : total - offset);
-  for (uint16_t index = 0u; index < packet.player_count; ++index) {
-    packet.players[index].entity_id = (uint32_t)(offset + index + 1u);
-    packet.players[index].player_id = packet.players[index].entity_id;
-    packet.players[index].alive = 1u;
-  }
-  ShroomPacketHeaderInit(
-      &packet.header, SHROOM_PACKET_SNAPSHOT,
-      (uint16_t)(offsetof(ShroomSnapshotPacket, players) +
-                 (size_t)packet.player_count * sizeof(ShroomSnapshotPlayerState)));
-  return packet;
+static ShroomSnapshotPlayerState SnapshotPlayer(uint32_t entity_id, float x) {
+  ShroomSnapshotPlayerState player = {.player_id = entity_id,
+                                      .entity_id = entity_id,
+                                      .position_x = x,
+                                      .position_y = 20.0f,
+                                      .mass = 30.0f,
+                                      .radius = 4.0f,
+                                      .alive = 1u};
+  snprintf(player.name, sizeof(player.name), "Player %u", entity_id);
+  return player;
+}
+
+static ShroomSnapshotFrameMetadata Metadata(uint64_t tick) {
+  return (ShroomSnapshotFrameMetadata){.tick = tick,
+                                       .last_processed_input_sequence = 77u,
+                                       .player_id = 5u,
+                                       .entity_id = 50u,
+                                       .match_phase = SHROOM_MATCH_PHASE_RUNNING};
 }
 
 static ShroomSnapshotAssemblyResult Push(ShroomSnapshotAssembly* assembly,
+                                         ShroomSnapshotHistory* history,
                                          ShroomSnapshotPacket* packet,
                                          ShroomSnapshotFrameMetadata* metadata,
                                          ShroomSnapshotPlayerState* players, uint16_t* count) {
-  return ShroomSnapshotAssemblyPush(assembly, packet, packet->header.size, metadata, players,
-                                    count);
+  return ShroomSnapshotAssemblyPush(assembly, packet, packet->header.size, history, metadata,
+                                    players, count);
 }
 
 static void test_selection_keeps_self_splits_objective_threats_and_nearby_in_stable_order(void) {
@@ -121,58 +115,140 @@ static void test_spectator_focus_and_max_population_are_supported(void) {
       ShroomSnapshotSelectPlayers(&state, &world, 0u, world.players[100].entity_id, true,
                                   selected, SHROOM_MAX_PLAYER_ENTITIES));
   TEST_ASSERT_EQUAL_UINT16(100u, selected[0]);
-  TEST_ASSERT_EQUAL_size_t(SHROOM_SNAPSHOT_MAX_CHUNKS,
-                           ShroomSnapshotChunkCount(SHROOM_MAX_PLAYER_ENTITIES));
+  TEST_ASSERT_LESS_OR_EQUAL_size_t(SHROOM_SNAPSHOT_MAX_CHUNKS,
+                                   ShroomSnapshotChunkCount(SHROOM_MAX_PLAYER_ENTITIES));
   TEST_ASSERT_LESS_OR_EQUAL_UINT32(SHROOM_MAX_UNRELIABLE_PACKET_SIZE,
                                    sizeof(ShroomSnapshotPacket));
 }
 
-static void test_assembly_is_atomic_out_of_order_and_duplicate_safe(void) {
+static void test_keyframe_round_trip_is_atomic_out_of_order_and_duplicate_safe(void) {
   ShroomSnapshotAssembly assembly = {0};
+  ShroomSnapshotHistory history = {0};
   ShroomSnapshotFrameMetadata metadata = {0};
+  ShroomSnapshotFrameMetadata source_metadata = Metadata(10u);
+  ShroomSnapshotEncodedFrame encoded;
+  ShroomSnapshotPlayerState source[20];
   ShroomSnapshotPlayerState players[SHROOM_MAX_SNAPSHOT_PLAYERS] = {0};
   uint16_t count = 99u;
-  ShroomSnapshotPacket first = Packet(10u, 16u, 0u);
-  ShroomSnapshotPacket second = Packet(10u, 16u, 1u);
-
+  for (uint16_t index = 0u; index < 20u; ++index) {
+    source[index] = SnapshotPlayer((uint32_t)index + 1u, (float)index);
+  }
+  TEST_ASSERT_TRUE(ShroomSnapshotEncodeFrame(&source_metadata, source, 20u, NULL, true, &encoded));
+  TEST_ASSERT_GREATER_THAN_UINT16(1u, encoded.packet_count);
   TEST_ASSERT_EQUAL(SHROOM_SNAPSHOT_ASSEMBLY_PENDING,
-                    Push(&assembly, &second, &metadata, players, &count));
+                    Push(&assembly, &history, &encoded.packets[1], &metadata, players, &count));
   TEST_ASSERT_EQUAL_UINT16(99u, count);
   TEST_ASSERT_EQUAL(SHROOM_SNAPSHOT_ASSEMBLY_PENDING,
-                    Push(&assembly, &second, &metadata, players, &count));
+                    Push(&assembly, &history, &encoded.packets[1], &metadata, players, &count));
   TEST_ASSERT_EQUAL(SHROOM_SNAPSHOT_ASSEMBLY_COMPLETE,
-                    Push(&assembly, &first, &metadata, players, &count));
-  TEST_ASSERT_EQUAL_UINT16(16u, count);
+                    Push(&assembly, &history, &encoded.packets[0], &metadata, players, &count));
+  TEST_ASSERT_EQUAL_UINT16(20u, count);
   TEST_ASSERT_EQUAL_UINT64(10u, metadata.tick);
   for (uint16_t index = 0u; index < count; ++index) {
     TEST_ASSERT_EQUAL_UINT32((uint32_t)index + 1u, players[index].entity_id);
   }
 }
 
-static void test_missing_chunk_is_superseded_and_malformed_chunks_are_rejected(void) {
+static void test_delta_suppresses_unchanged_components_and_reduces_bytes(void) {
+  ShroomSnapshotFrameMetadata first_metadata = Metadata(20u);
+  ShroomSnapshotFrameMetadata second_metadata = Metadata(21u);
+  ShroomSnapshotEncodedFrame keyframe;
+  ShroomSnapshotEncodedFrame delta;
+  ShroomSnapshotPlayerState players[8];
+  ShroomSnapshotFrame baseline = {.tick = 20u, .player_count = 8u};
+  for (uint16_t index = 0u; index < 8u; ++index) {
+    players[index] = SnapshotPlayer((uint32_t)index + 1u, (float)index);
+    baseline.players[index] = players[index];
+  }
+  TEST_ASSERT_TRUE(ShroomSnapshotEncodeFrame(&first_metadata, players, 8u, NULL, true, &keyframe));
+  players[3].position_x = 99.0f;
+  TEST_ASSERT_TRUE(
+      ShroomSnapshotEncodeFrame(&second_metadata, players, 8u, &baseline, false, &delta));
+  TEST_ASSERT_EQUAL_UINT16(1u, delta.packets[0].record_count);
+  TEST_ASSERT_LESS_THAN_size_t(keyframe.wire_bytes, delta.wire_bytes);
+  {
+    ShroomSnapshotRecordHeader record;
+    memcpy(&record, delta.packets[0].payload, sizeof(record));
+    TEST_ASSERT_EQUAL_UINT16(SHROOM_SNAPSHOT_COMPONENT_TRANSFORM, record.component_mask);
+    TEST_ASSERT_EQUAL_UINT8(SHROOM_SNAPSHOT_RECORD_UPDATE, record.operation);
+  }
+}
+
+static void test_delta_applies_spawn_update_and_despawn_against_baseline(void) {
   ShroomSnapshotAssembly assembly = {0};
+  ShroomSnapshotHistory history = {0};
   ShroomSnapshotFrameMetadata metadata = {0};
+  ShroomSnapshotFrameMetadata source_metadata = Metadata(31u);
+  ShroomSnapshotEncodedFrame encoded;
+  ShroomSnapshotPlayerState baseline_players[3] = {
+      SnapshotPlayer(1u, 1.0f), SnapshotPlayer(2u, 2.0f), SnapshotPlayer(3u, 3.0f)};
+  ShroomSnapshotPlayerState current[3] = {
+      SnapshotPlayer(1u, 10.0f), SnapshotPlayer(3u, 3.0f), SnapshotPlayer(4u, 4.0f)};
   ShroomSnapshotPlayerState players[SHROOM_MAX_SNAPSHOT_PLAYERS] = {0};
   uint16_t count = 0u;
-  ShroomSnapshotPacket old_first = Packet(20u, 16u, 0u);
-  ShroomSnapshotPacket new_single = Packet(21u, 1u, 0u);
-  ShroomSnapshotPacket malformed = Packet(22u, 16u, 0u);
-
-  TEST_ASSERT_EQUAL(SHROOM_SNAPSHOT_ASSEMBLY_PENDING,
-                    Push(&assembly, &old_first, &metadata, players, &count));
+  const ShroomSnapshotFrame* baseline;
+  ShroomSnapshotHistoryStore(&history, 30u, baseline_players, 3u);
+  baseline = ShroomSnapshotHistoryFind(&history, 30u);
+  TEST_ASSERT_TRUE(
+      ShroomSnapshotEncodeFrame(&source_metadata, current, 3u, baseline, false, &encoded));
   TEST_ASSERT_EQUAL(SHROOM_SNAPSHOT_ASSEMBLY_COMPLETE,
-                    Push(&assembly, &new_single, &metadata, players, &count));
-  TEST_ASSERT_EQUAL_UINT64(21u, metadata.tick);
-  TEST_ASSERT_EQUAL_UINT16(1u, count);
+                    Push(&assembly, &history, &encoded.packets[0], &metadata, players, &count));
+  TEST_ASSERT_EQUAL_UINT16(3u, count);
+  TEST_ASSERT_EQUAL_FLOAT(10.0f, players[0].position_x);
+  TEST_ASSERT_EQUAL_UINT32(3u, players[1].entity_id);
+  TEST_ASSERT_EQUAL_UINT32(4u, players[2].entity_id);
+}
 
-  malformed.chunk_count = 1u;
+static void test_missing_baseline_is_rejected_then_keyframe_recovers(void) {
+  ShroomSnapshotAssembly assembly = {0};
+  ShroomSnapshotHistory history = {0};
+  ShroomSnapshotFrameMetadata metadata = {0};
+  ShroomSnapshotFrameMetadata source_metadata = Metadata(41u);
+  ShroomSnapshotEncodedFrame encoded;
+  ShroomSnapshotPlayerState source = SnapshotPlayer(1u, 1.0f);
+  ShroomSnapshotPlayerState players[SHROOM_MAX_SNAPSHOT_PLAYERS] = {0};
+  ShroomSnapshotFrame missing = {.tick = 40u, .player_count = 1u, .players = {source}};
+  uint16_t count = 0u;
+
+  source.position_x = 2.0f;
+  TEST_ASSERT_TRUE(
+      ShroomSnapshotEncodeFrame(&source_metadata, &source, 1u, &missing, false, &encoded));
   TEST_ASSERT_EQUAL(SHROOM_SNAPSHOT_ASSEMBLY_REJECTED,
-                    Push(&assembly, &malformed, &metadata, players, &count));
-  malformed = Packet(22u, 16u, 0u);
-  malformed.header.size -= 1u;
+                    Push(&assembly, &history, &encoded.packets[0], &metadata, players, &count));
+  source_metadata.tick = 42u;
+  TEST_ASSERT_TRUE(ShroomSnapshotEncodeFrame(&source_metadata, &source, 1u, NULL, true, &encoded));
+  TEST_ASSERT_EQUAL(SHROOM_SNAPSHOT_ASSEMBLY_COMPLETE,
+                    Push(&assembly, &history, &encoded.packets[0], &metadata, players, &count));
+  TEST_ASSERT_EQUAL_UINT64(42u, metadata.tick);
+  TEST_ASSERT_EQUAL_FLOAT(2.0f, players[0].position_x);
+}
+
+static void test_history_expiry_and_tick_wrap_are_bounded(void) {
+  ShroomSnapshotHistory history = {0};
+  ShroomSnapshotPlayerState player = SnapshotPlayer(1u, 1.0f);
+  for (uint64_t tick = 1u; tick <= SHROOM_SNAPSHOT_HISTORY_SIZE + 1u; ++tick) {
+    ShroomSnapshotHistoryStore(&history, tick, &player, 1u);
+  }
+  TEST_ASSERT_NULL(ShroomSnapshotHistoryFind(&history, 1u));
+  TEST_ASSERT_NOT_NULL(ShroomSnapshotHistoryFind(&history, SHROOM_SNAPSHOT_HISTORY_SIZE + 1u));
+  TEST_ASSERT_TRUE(ShroomSnapshotTickIsNewer(0u, UINT64_MAX));
+  TEST_ASSERT_FALSE(ShroomSnapshotTickIsNewer(UINT64_MAX, 0u));
+}
+
+static void test_malformed_payload_is_rejected(void) {
+  ShroomSnapshotAssembly assembly = {0};
+  ShroomSnapshotHistory history = {0};
+  ShroomSnapshotFrameMetadata metadata = {0};
+  ShroomSnapshotFrameMetadata source_metadata = Metadata(50u);
+  ShroomSnapshotEncodedFrame encoded;
+  ShroomSnapshotPlayerState source = SnapshotPlayer(1u, 1.0f);
+  ShroomSnapshotPlayerState players[SHROOM_MAX_SNAPSHOT_PLAYERS] = {0};
+  uint16_t count = 0u;
+
+  TEST_ASSERT_TRUE(ShroomSnapshotEncodeFrame(&source_metadata, &source, 1u, NULL, true, &encoded));
+  encoded.packets[0].payload[offsetof(ShroomSnapshotRecordHeader, size)] = 1u;
   TEST_ASSERT_EQUAL(SHROOM_SNAPSHOT_ASSEMBLY_REJECTED,
-                    ShroomSnapshotAssemblyPush(&assembly, &malformed, malformed.header.size,
-                                               &metadata, players, &count));
+                    Push(&assembly, &history, &encoded.packets[0], &metadata, players, &count));
 }
 
 int main(void) {
@@ -180,7 +256,11 @@ int main(void) {
   RUN_TEST(test_selection_keeps_self_splits_objective_threats_and_nearby_in_stable_order);
   RUN_TEST(test_hysteresis_retains_boundary_crossing_then_removes_far_entity);
   RUN_TEST(test_spectator_focus_and_max_population_are_supported);
-  RUN_TEST(test_assembly_is_atomic_out_of_order_and_duplicate_safe);
-  RUN_TEST(test_missing_chunk_is_superseded_and_malformed_chunks_are_rejected);
+  RUN_TEST(test_keyframe_round_trip_is_atomic_out_of_order_and_duplicate_safe);
+  RUN_TEST(test_delta_suppresses_unchanged_components_and_reduces_bytes);
+  RUN_TEST(test_delta_applies_spawn_update_and_despawn_against_baseline);
+  RUN_TEST(test_missing_baseline_is_rejected_then_keyframe_recovers);
+  RUN_TEST(test_history_expiry_and_tick_wrap_are_bounded);
+  RUN_TEST(test_malformed_payload_is_rejected);
   return UNITY_END();
 }

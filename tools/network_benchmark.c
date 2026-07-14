@@ -11,6 +11,7 @@
 
 #include "shared/net_telemetry.h"
 #include "shared/protocol.h"
+#include "shared/snapshot_replication.h"
 
 typedef struct BenchmarkConfig {
   uint32_t clients;
@@ -244,22 +245,30 @@ static int RunBenchmark(const BenchmarkConfig* config) {
   const uint64_t tick_interval_nanos = (uint64_t)(1000000000.0 / (double)SHROOM_SERVER_TICK_RATE);
   const uint32_t snapshot_interval_ticks =
       (uint32_t)(SHROOM_SERVER_TICK_RATE / (float)SHROOM_SNAPSHOT_RATE);
-  ShroomSnapshotPacket snapshot = {0};
+  ShroomSnapshotPlayerState snapshot_players[SHROOM_MAX_SNAPSHOT_PLAYERS] = {0};
+  ShroomSnapshotFrame snapshot_baseline = {0};
+  ShroomSnapshotEncodedFrame encoded_snapshot = {0};
+  ShroomSnapshotEncodedFrame keyframe_snapshot = {0};
+  uint64_t keyframe_only_snapshot_bytes = 0u;
   const size_t snapshot_player_count = (size_t)config->participants * config->split_pieces;
-  const size_t snapshot_chunk_count =
-      snapshot_player_count == 0u
-          ? 1u
-          : (snapshot_player_count + SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK - 1u) /
-                SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK;
   int exit_code = 1;
 
   ShroomNetTelemetryReset(&telemetry);
-  if ((snapshot_player_count > SHROOM_MAX_SNAPSHOT_PLAYERS) ||
-      (snapshot_chunk_count > SHROOM_SNAPSHOT_MAX_CHUNKS)) {
+  if (snapshot_player_count > SHROOM_MAX_SNAPSHOT_PLAYERS) {
     goto cleanup;
   }
-  snapshot.total_player_count = (uint16_t)snapshot_player_count;
-  snapshot.chunk_count = (uint16_t)snapshot_chunk_count;
+  for (size_t index = 0u; index < snapshot_player_count; ++index) {
+    snapshot_players[index] = (ShroomSnapshotPlayerState){
+        .player_id = (uint32_t)(index / config->split_pieces) + 1u,
+        .entity_id = (uint32_t)index + 1u,
+        .position_x = (float)(index % 32u) * 100.0f,
+        .position_y = (float)(index / 32u) * 100.0f,
+        .mass = 100.0f,
+        .radius = 20.0f,
+        .alive = 1u,
+        .piece_index = (uint8_t)(index % config->split_pieces),
+    };
+  }
   server = enet_host_create(&address, config->clients, SHROOM_ENET_CHANNEL_COUNT, 0u, 0u);
   clients = enet_host_create(NULL, config->clients, SHROOM_ENET_CHANNEL_COUNT, 0u, 0u);
   if ((server == NULL) || (clients == NULL) ||
@@ -307,37 +316,44 @@ static int RunBenchmark(const BenchmarkConfig* config) {
         }
       }
       if ((tick_index % snapshot_interval_ticks) == 0u) {
-        snapshot.tick = tick_index;
-        for (size_t chunk_index = 0u; chunk_index < snapshot_chunk_count; ++chunk_index) {
-          const size_t player_offset = chunk_index * SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK;
-          const size_t remaining = snapshot_player_count - player_offset;
-          const size_t snapshot_size =
-              offsetof(ShroomSnapshotPacket, players) +
-              (remaining < SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK
-                   ? remaining
-                   : SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK) *
-                  sizeof(ShroomSnapshotPlayerState);
-          snapshot.chunk_index = (uint16_t)chunk_index;
-          snapshot.player_count = (uint16_t)((snapshot_size -
-                                              offsetof(ShroomSnapshotPacket, players)) /
-                                             sizeof(ShroomSnapshotPlayerState));
-          if (snapshot_size > SHROOM_MAX_UNRELIABLE_PACKET_SIZE) {
-            ++invalid_snapshot_packets;
-            continue;
-          }
-          ShroomPacketHeaderInit(&snapshot.header, SHROOM_PACKET_SNAPSHOT,
-                                 (uint16_t)snapshot_size);
+        ShroomSnapshotFrameMetadata metadata = {.tick = tick_index + 1u};
+        const bool keyframe = (snapshot_baseline.tick == 0u) ||
+                              ((metadata.tick % SHROOM_SNAPSHOT_KEYFRAME_TICKS) == 0u);
+        for (size_t player = 0u; player < snapshot_player_count; ++player) {
+          snapshot_players[player].position_x += 1.0f;
+        }
+        if (!ShroomSnapshotEncodeFrame(
+                &metadata, snapshot_players, (uint16_t)snapshot_player_count,
+                keyframe ? NULL : &snapshot_baseline, keyframe, &encoded_snapshot)) {
+          ++invalid_snapshot_packets;
+          goto cleanup;
+        }
+        if (!ShroomSnapshotEncodeFrame(&metadata, snapshot_players,
+                                       (uint16_t)snapshot_player_count, NULL, true,
+                                       &keyframe_snapshot)) {
+          ++invalid_snapshot_packets;
+          goto cleanup;
+        }
+        keyframe_only_snapshot_bytes += keyframe_snapshot.wire_bytes * config->clients;
+        for (uint16_t chunk_index = 0u; chunk_index < encoded_snapshot.packet_count;
+             ++chunk_index) {
+          const ShroomSnapshotPacket* snapshot = &encoded_snapshot.packets[chunk_index];
+          const size_t snapshot_size = snapshot->header.size;
           for (size_t index = 0u; index < server->peerCount; ++index) {
             ENetPeer* peer = &server->peers[index];
             if (peer->state == ENET_PEER_STATE_CONNECTED) {
               RecordSend(&telemetry, peer, SHROOM_ENET_CHANNEL_SNAPSHOT,
                          SHROOM_PACKET_SNAPSHOT,
-                         enet_packet_create(&snapshot, snapshot_size,
+                         enet_packet_create(snapshot, snapshot_size,
                                             ENET_PACKET_FLAG_UNSEQUENCED),
                          now_ms);
             }
           }
         }
+        snapshot_baseline = (ShroomSnapshotFrame){
+            .tick = metadata.tick, .player_count = (uint16_t)snapshot_player_count};
+        memcpy(snapshot_baseline.players, snapshot_players,
+               snapshot_player_count * sizeof(snapshot_players[0]));
       }
       enet_host_flush(clients);
       enet_host_flush(server);
@@ -372,22 +388,31 @@ static int RunBenchmark(const BenchmarkConfig* config) {
             : 0.0;
     const double input_per_client = input_rate / config->clients;
     const double snapshot_per_client = snapshot_rate / config->clients;
+    const uint64_t actual_snapshot_bytes =
+        telemetry.by_type[SHROOM_PACKET_SNAPSHOT].sent.bytes;
+    const double snapshot_byte_reduction_percent =
+        keyframe_only_snapshot_bytes > 0u
+            ? (double)(keyframe_only_snapshot_bytes - actual_snapshot_bytes) * 100.0 /
+                  (double)keyframe_only_snapshot_bytes
+            : 0.0;
     ShroomNetTelemetryReadWindow(&telemetry, TimeNanos() / 1000000ull,
                                  SHROOM_NET_TELEMETRY_WINDOW_MS, &transport);
     printf("scenario,clients,participants,spectators,split_pieces,duration_ms,"
            "input_sent_messages,input_messages,input_messages_per_sec,input_bytes_per_sec,"
            "snapshot_sent_messages,snapshot_messages,snapshot_messages_per_sec,"
-           "snapshot_bytes_per_sec,dropped_packets,drop_percent,queue_high_water,"
+           "snapshot_bytes_per_sec,keyframe_only_snapshot_bytes,"
+           "snapshot_byte_reduction_percent,dropped_packets,drop_percent,queue_high_water,"
            "tick_deadline_failures,threshold_pass\n");
     exit_code = (input_per_client >= config->min_input_hz) &&
                         (snapshot_per_client >= config->min_snapshot_hz) &&
                         (drop_percent <= config->max_drop_percent) &&
+                        (actual_snapshot_bytes < keyframe_only_snapshot_bytes) &&
                         (tick_deadline_failures <= config->max_deadline_failures) &&
                         (invalid_snapshot_packets == 0u)
                     ? 0
                     : 2;
     printf("enet_loopback,%u,%u,%u,%u,%u,%llu,%llu,%.3f,%.3f,%llu,%llu,%.3f,%.3f,%llu,"
-           "%.3f,%u,%u,%s\n",
+           "%.3f,%llu,%.3f,%u,%u,%s\n",
            config->clients, config->participants, config->clients - config->participants,
            config->split_pieces, config->duration_ms,
            (unsigned long long)telemetry.by_type[SHROOM_PACKET_INPUT].sent.packets,
@@ -397,6 +422,7 @@ static int RunBenchmark(const BenchmarkConfig* config) {
            (unsigned long long)telemetry.by_type[SHROOM_PACKET_SNAPSHOT].accepted.packets,
            snapshot_rate,
            (double)telemetry.by_type[SHROOM_PACKET_SNAPSHOT].accepted.bytes / elapsed_seconds,
+           (unsigned long long)keyframe_only_snapshot_bytes, snapshot_byte_reduction_percent,
            (unsigned long long)dropped_packets, drop_percent, transport.queue_high_water,
            tick_deadline_failures, exit_code == 0 ? "true" : "false");
     if (exit_code != 0) {
