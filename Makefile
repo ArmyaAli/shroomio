@@ -651,7 +651,8 @@ $(NETWORK_BENCH_BIN): tools/network_benchmark.c $(SHARED_SRC_DIR)/net_telemetry.
 
 $(INPUT_FLOOD_CLIENT_BIN): tools/input_flood_client.c $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
-	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) $< -o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet
+	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) $< $(SHARED_SRC_DIR)/snapshot_replication.c \
+		-o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet -lm
 
 $(DIRECTORY_QUERY_CLIENT_BIN): tools/directory_query_client.c $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
@@ -659,7 +660,8 @@ $(DIRECTORY_QUERY_CLIENT_BIN): tools/directory_query_client.c $(SHARED_HEADERS) 
 
 $(SNAPSHOT_RATE_PROBE_BIN): tools/snapshot_rate_probe.c $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
-	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) $< -o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet
+	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) $< $(SHARED_SRC_DIR)/snapshot_replication.c \
+		-o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet -lm
 
 # Client object compilation
 $(LINUX_BUILD_DIR)/client/%.o: $(CLIENT_SRC_DIR)/%.c $(CLIENT_SRC_DIR)/game.h $(CLIENT_SRC_DIR)/net.h $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
