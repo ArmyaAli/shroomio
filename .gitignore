@@ -20,6 +20,8 @@ vcpkg_installed/
 website/.astro/
 website/dist/
 website/node_modules/
+website/playwright-report/
+website/test-results/
 .opencode/*
 !.opencode/agents/
 .opencode/agents/*
