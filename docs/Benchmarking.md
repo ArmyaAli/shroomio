@@ -52,8 +52,9 @@ The default run creates real ENet loopback connections for 1, 64, and 256 client
 scenario CSVs and `summary.csv` under `build/benchmarks/network/`. The harness sends client input at
 30 Hz and server snapshots at 15 Hz, then reports messages/s and payload bytes/s from packets actually
 accepted by the opposite ENet host. It also reports rejected sends/packets, outgoing queue high-water,
-and network-loop tick deadline failures. An intentionally impossible threshold is run last to verify
-that threshold failures return a nonzero status.
+network-loop tick deadline failures, and byte reduction against encoding every frame as a keyframe.
+The gate fails unless production delta traffic is smaller than that in-run keyframe-only control. An
+intentionally impossible threshold is run last to verify that threshold failures return a nonzero status.
 
 Default pass thresholds are at least 20 accepted inputs/client/s, 10 accepted snapshots/client/s,
 at most 1% application-level drops, and at most five 33.3 ms network-loop deadline failures. Override
@@ -67,7 +68,7 @@ are regression gates, not internet latency or packet-loss claims; loopback canno
 - Every connected client receives snapshots. Snapshot payloads contain
   `participants * split_pieces` entities, bounded by 64 participants and four pieces each.
 - Inputs and snapshots use their production unreliable channels and production wire structs.
-  Player frames are divided into 15-entity, unreliable-unsequenced chunks.
+  Player frames use component-masked keyframe/delta records in unreliable-unsequenced chunks.
 - `make network-benchmark-test` includes a 256-entity loopback case and fails if any generated or
   received player snapshot exceeds the 1,200-byte application MTU budget.
 - Simulation, SQLite, rendering, authentication, and WAN behavior are intentionally excluded. Use

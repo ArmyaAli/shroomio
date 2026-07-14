@@ -69,6 +69,7 @@ typedef struct ClientNetState {
   bool mushroom_species_catalog_received;
   ShroomSnapshotPlayerState snapshot_players[SHROOM_MAX_SNAPSHOT_PLAYERS];
   ShroomSnapshotAssembly snapshot_assembly;
+  ShroomSnapshotHistory snapshot_history;
   ShroomSnapshotSporeState snapshot_spores[SHROOM_MAX_SPORES];
   ShroomSnapshotPowerupState snapshot_powerups[SHROOM_MAX_POWERUPS];
   ShroomWorldReplicationClientState world_replication;

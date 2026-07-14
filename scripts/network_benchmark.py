@@ -77,7 +77,9 @@ def main() -> int:
     for row in rows:
         print(
             "clients={clients} input/s={input_messages_per_sec} "
-            "snapshot/s={snapshot_messages_per_sec} deadlines={tick_deadline_failures}".format(
+            "snapshot/s={snapshot_messages_per_sec} "
+            "snapshot_reduction={snapshot_byte_reduction_percent}% "
+            "deadlines={tick_deadline_failures}".format(
                 **row
             )
         )

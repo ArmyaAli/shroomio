@@ -448,7 +448,7 @@ Control & 0 & Reliable, ordered & Hello, Welcome, Ping, Pong, Auth, lobby contro
 \hline
 Snapshot & 1 & Unreliable & Unsequenced player snapshot chunks; sequenced world-state updates \\
 \hline
-Input & 2 & Unreliable, sequenced & Player directional input \\
+Input & 2 & Unreliable, sequenced & Player input and snapshot acknowledgements \\
 \hline
 Chat & 3 & Reliable, ordered & Text chat messages \\
 \hline
@@ -475,7 +475,7 @@ ShroomPacketHeader {
 \begin{verbatim}
 ShroomHelloPacket {
     ShroomPacketHeader header;
-    uint32_t protocol_version;    // SHROOM_PROTOCOL_VERSION (13)
+    uint32_t protocol_version;    // SHROOM_PROTOCOL_VERSION (14)
     char     name[32];            // player-chosen display name
 }
 \end{verbatim}
@@ -523,34 +523,35 @@ Sent per tick at the server tick rate (30~Hz). The server clamps and normalizes 
 ShroomSnapshotPacket {
     ShroomPacketHeader              header;
     uint64_t                        tick;
+    uint64_t                        baseline_tick;    // 0 for keyframes
     uint32_t                        last_processed_input_sequence;
     uint32_t                        player_id;        // this client's player
     uint32_t                        entity_id;
-    uint16_t                        player_count;
     uint16_t                        total_player_count;
     uint16_t                        chunk_index;
     uint16_t                        chunk_count;
+    uint16_t                        record_count;
+    uint16_t                        payload_size;
+    uint8_t                         flags;            // keyframe bit
     // match, objective, and podium metadata
-    ShroomSnapshotPlayerState       players[SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK];
+    uint8_t                         payload[1100];
 }
 
-ShroomSnapshotPlayerState {
-    uint32_t player_id;
+ShroomSnapshotRecordHeader {
     uint32_t entity_id;
-    float    position_x;
-    float    position_y;
-    float    mass;
-    float    radius;
-    char     name[32];
-    uint8_t  alive;
-    uint8_t  is_bot;
-    uint16_t effect_flags;
+    uint16_t component_mask;
+    uint8_t  operation;           // spawn, update, or despawn
+    uint8_t  size;
 }
+
+ShroomSnapshotAckPacket { ShroomPacketHeader header; uint64_t tick; }
 \end{verbatim}
 
 Sent per peer at the negotiated 15--20~Hz snapshot rate. Interest selection always includes the peer's full colony, objective controllers, immediate threats, and nearby entities. Stable tie-breaking and a distance hysteresis band prevent boundary flicker. Spectators center interest on the watched player or a deterministic alive fallback.
 
-Each unreliable, unsequenced chunk is bounded by 	exttt{SHROOM\_MAX\_UNRELIABLE\_PACKET\_SIZE} (1,200 bytes). Chunks repeat their tick and frame metadata. The client accepts reordered and duplicate chunks but publishes a frame only after every chunk for that tick arrives; a newer tick supersedes an incomplete older frame.
+Each unreliable, unsequenced chunk is bounded by \texttt{SHROOM\_MAX\_UNRELIABLE\_PACKET\_SIZE} (1,200 bytes). Variable records carry only changed identity, transform, mass, effects, or statistics components. Spawns carry every component and despawns carry only an entity ID. The client publishes only complete frames whose acknowledged baseline is still available.
+
+After publishing, the client sends type 30 on the input channel. The server retains four bounded sent frames per peer and only creates deltas against an acknowledged frame. Missing or expired baselines reject the delta without changing rendered state; a full keyframe every 30 simulation ticks restores convergence and removes ghosts.
 
 Spores and powerups are replicated through separate server-to-client world-state packets (\texttt{SHROOM\_PACKET\_SPORE\_STATE} and \texttt{SHROOM\_PACKET\_POWERUP\_STATE}). The server remains authoritative for collection and powerup effects; clients apply these packets to render the online world state between player snapshots.
 
@@ -610,7 +611,7 @@ Used for latency measurement. The server echoes Pong with the same nonce. Not ye
 
 \subsection{Snapshot Capacity Constraint}
 
-The simulation and assembled snapshot frame support up to 256 player entities. A wire packet carries at most 15 entries, so a maximum frame uses 18 MTU-bounded chunks. Per-peer interest normally keeps the transmitted set below that maximum while preserving gameplay-critical entities.
+The simulation and assembled snapshot frame support up to 256 player entities. Variable records are never split between packets, and a frame is bounded to 32 MTU-safe chunks. Per-peer interest normally keeps the transmitted set below that maximum while preserving gameplay-critical entities.
 
 %---------------------------------------------------------------------
 \section{Simulation Rules}
@@ -699,7 +700,7 @@ Max players (sim) & 256 & \texttt{config.h:4} \\
 \hline
 Max spores & 4096 & \texttt{config.h:5} \\
 \hline
-Max snapshot players & 256 (15 per chunk) & \texttt{protocol.h} \\
+Max snapshot players & 256 (32 chunks maximum) & \texttt{protocol.h} \\
 \hline
 Center zone radius & 900 & \texttt{config.h:10} \\
 \hline

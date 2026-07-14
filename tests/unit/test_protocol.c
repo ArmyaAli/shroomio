@@ -49,10 +49,9 @@ void test_participant_and_entity_capacities_are_separate_and_bounded(void) {
   TEST_ASSERT_EQUAL_UINT32(SHROOM_MAX_PLAYER_ENTITIES, SHROOM_MAX_SNAPSHOT_PLAYERS);
   TEST_ASSERT_EQUAL_size_t(SHROOM_MAX_PARTICIPANTS, sizeof(((ShroomLobbyRosterPacket*)0)->players) /
                                                         sizeof(ShroomLobbyRosterEntry));
-  TEST_ASSERT_EQUAL_size_t(SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK,
-                           sizeof(((ShroomSnapshotPacket*)0)->players) /
-                               sizeof(ShroomSnapshotPlayerState));
-  TEST_ASSERT_EQUAL_UINT32(18u, SHROOM_SNAPSHOT_MAX_CHUNKS);
+  TEST_ASSERT_EQUAL_size_t(SHROOM_SNAPSHOT_PAYLOAD_SIZE,
+                           sizeof(((ShroomSnapshotPacket*)0)->payload));
+  TEST_ASSERT_EQUAL_UINT32(32u, SHROOM_SNAPSHOT_MAX_CHUNKS);
   TEST_ASSERT_TRUE(sizeof(ShroomSnapshotPacket) <= SHROOM_MAX_UNRELIABLE_PACKET_SIZE);
 }
 
@@ -219,7 +218,7 @@ void test_lobby_config_constants(void) {
 
 void test_protocol_constants(void) {
   TEST_ASSERT_EQUAL(7777, SHROOM_SERVER_PORT);
-  TEST_ASSERT_EQUAL(13, SHROOM_PROTOCOL_VERSION);
+  TEST_ASSERT_EQUAL(14, SHROOM_PROTOCOL_VERSION);
   TEST_ASSERT_EQUAL(32, SHROOM_MAX_NAME_LENGTH);
   TEST_ASSERT_EQUAL(15, SHROOM_SNAPSHOT_RATE);
   TEST_ASSERT_EQUAL(256, SHROOM_MAX_SNAPSHOT_PLAYERS);
@@ -236,6 +235,8 @@ void test_packet_channel_mapping(void) {
   TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CONTROL, ShroomPacketTypeToChannel(SHROOM_PACKET_HELLO));
   TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CONTROL, ShroomPacketTypeToChannel(SHROOM_PACKET_WELCOME));
   TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_INPUT, ShroomPacketTypeToChannel(SHROOM_PACKET_INPUT));
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_INPUT,
+                    ShroomPacketTypeToChannel(SHROOM_PACKET_SNAPSHOT_ACK));
   TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_SNAPSHOT,
                     ShroomPacketTypeToChannel(SHROOM_PACKET_SNAPSHOT));
   TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_SNAPSHOT,
@@ -254,6 +255,7 @@ void test_packet_channel_mapping(void) {
 void test_packet_reliability_mapping(void) {
   TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_HELLO));
   TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_WELCOME));
+  TEST_ASSERT_FALSE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_SNAPSHOT_ACK));
   TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_PING));
   TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_AUTH_REQUEST));
   TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_CHAT));
@@ -277,8 +279,10 @@ void test_packet_minimum_size_mapping(void) {
   TEST_ASSERT_EQUAL(sizeof(ShroomWelcomePacket),
                     ShroomPacketTypeMinimumSize(SHROOM_PACKET_WELCOME));
   TEST_ASSERT_EQUAL(sizeof(ShroomInputPacket), ShroomPacketTypeMinimumSize(SHROOM_PACKET_INPUT));
-  TEST_ASSERT_EQUAL(offsetof(ShroomSnapshotPacket, players),
+  TEST_ASSERT_EQUAL(offsetof(ShroomSnapshotPacket, payload),
                     ShroomPacketTypeMinimumSize(SHROOM_PACKET_SNAPSHOT));
+  TEST_ASSERT_EQUAL(sizeof(ShroomSnapshotAckPacket),
+                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_SNAPSHOT_ACK));
   TEST_ASSERT_EQUAL(sizeof(ShroomPingPacket), ShroomPacketTypeMinimumSize(SHROOM_PACKET_PING));
   TEST_ASSERT_EQUAL(sizeof(ShroomPongPacket), ShroomPacketTypeMinimumSize(SHROOM_PACKET_PONG));
   TEST_ASSERT_EQUAL(offsetof(ShroomSporeStatePacket, spores),

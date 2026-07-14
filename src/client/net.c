@@ -25,6 +25,7 @@ static void ResetIntermissionLifecycle(ClientNetState* net) {
 static void ResetWorldReplication(ClientNetState* net) {
   net->world_replication = (ShroomWorldReplicationClientState){0};
   net->snapshot_assembly = (ShroomSnapshotAssembly){0};
+  net->snapshot_history = (ShroomSnapshotHistory){0};
   net->spore_count = 0u;
   net->powerup_count = 0u;
   memset(net->snapshot_spores, 0, sizeof(net->snapshot_spores));
@@ -329,21 +330,32 @@ static void HandleIntermissionStatus(ClientNetState* net, const ENetPacket* enet
   net->intermission_received = true;
 }
 
+static void SendSnapshotAck(ClientNetState* net, uint64_t tick) {
+  ShroomSnapshotAckPacket ack = {.tick = tick};
+  if ((net == NULL) || (net->peer == NULL)) {
+    return;
+  }
+  ShroomPacketHeaderInit(&ack.header, SHROOM_PACKET_SNAPSHOT_ACK, sizeof(ack));
+  SendPacket(net, SHROOM_ENET_CHANNEL_INPUT, SHROOM_PACKET_SNAPSHOT_ACK,
+             CreateProtocolPacket(&ack, sizeof(ack), SHROOM_PACKET_SNAPSHOT_ACK));
+}
+
 static void HandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet) {
   const ShroomSnapshotPacket* packet = (const ShroomSnapshotPacket*)enet_packet->data;
   ShroomSnapshotFrameMetadata metadata;
   uint16_t player_count = 0u;
   ShroomSnapshotAssemblyResult result;
-  const size_t min_size = offsetof(ShroomSnapshotPacket, players);
+  const size_t min_size = offsetof(ShroomSnapshotPacket, payload);
 
   if (enet_packet->dataLength < min_size) {
     return;
   }
-  if (net->snapshot_received && (packet->tick <= net->last_snapshot_tick)) {
+  if (net->snapshot_received && !ShroomSnapshotTickIsNewer(packet->tick, net->last_snapshot_tick)) {
     return;
   }
   result = ShroomSnapshotAssemblyPush(&net->snapshot_assembly, packet, enet_packet->dataLength,
-                                      &metadata, net->snapshot_players, &player_count);
+                                      &net->snapshot_history, &metadata, net->snapshot_players,
+                                      &player_count);
   if (result != SHROOM_SNAPSHOT_ASSEMBLY_COMPLETE) {
     return;
   }
@@ -362,6 +374,7 @@ static void HandleSnapshot(ClientNetState* net, const ENetPacket* enet_packet) {
     net->podium_masses[i] = metadata.podium_masses[i];
   }
   net->snapshot_player_count = player_count;
+  SendSnapshotAck(net, metadata.tick);
 }
 
 static void HandleChat(ClientNetState* net, const ENetPacket* enet_packet) {

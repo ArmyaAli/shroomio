@@ -646,7 +646,8 @@ $(SERVER_MACOS_BIN): $(SERVER_MACOS_OBJECTS) $(VCPKG_MACOS_STAMP)
 $(NETWORK_BENCH_BIN): tools/network_benchmark.c $(SHARED_SRC_DIR)/net_telemetry.c $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) tools/network_benchmark.c \
-		$(SHARED_SRC_DIR)/net_telemetry.c -o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet
+		$(SHARED_SRC_DIR)/net_telemetry.c $(SHARED_SRC_DIR)/snapshot_replication.c \
+		-o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet -lm
 
 $(INPUT_FLOOD_CLIENT_BIN): tools/input_flood_client.c $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)

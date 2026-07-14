@@ -17,10 +17,17 @@ static ClientNetState MakePendingPing(uint32_t nonce, uint32_t sent_time_ms) {
   return net;
 }
 
-static void FinalizeSingleSnapshot(ShroomSnapshotPacket* snapshot, size_t packet_size) {
-  snapshot->total_player_count = snapshot->player_count;
-  snapshot->chunk_count = 1u;
-  ShroomPacketHeaderInit(&snapshot->header, SHROOM_PACKET_SNAPSHOT, (uint16_t)packet_size);
+static ShroomSnapshotPacket BuildSnapshot(uint64_t tick,
+                                          const ShroomSnapshotPlayerState* player) {
+  ShroomSnapshotFrameMetadata metadata = {.tick = tick,
+                                          .last_processed_input_sequence = 77u,
+                                          .game_mode = SHROOM_GAME_MODE_KING_OF_HILL,
+                                          .objective_target_score = SHROOM_KOTH_TARGET_SCORE,
+                                          .objective_controller_id = 42u};
+  ShroomSnapshotEncodedFrame encoded;
+  TEST_ASSERT_TRUE(ShroomSnapshotEncodeFrame(&metadata, player, player != NULL ? 1u : 0u, NULL,
+                                             true, &encoded));
+  return encoded.packets[0];
 }
 
 static void test_client_net_negotiates_welcome_cadence(void) {
@@ -95,28 +102,19 @@ static void test_client_net_accepts_trimmed_snapshot_packet(void) {
   ClientNetState net = {0};
   ShroomSnapshotPacket snapshot = {0};
   ENetPacket packet = {0};
-  const size_t packet_size =
-      offsetof(ShroomSnapshotPacket, players) + sizeof(ShroomSnapshotPlayerState);
+  ShroomSnapshotPlayerState player = {.player_id = 42u,
+                                      .entity_id = 43u,
+                                      .position_x = 10.0f,
+                                      .position_y = 20.0f,
+                                      .mass = 30.0f,
+                                      .radius = 4.0f,
+                                      .alive = 1u,
+                                      .objective_score = 12.5f};
 
-  snapshot.tick = 123u;
-  snapshot.last_processed_input_sequence = 77u;
-  snapshot.player_count = 1u;
-  snapshot.game_mode = SHROOM_GAME_MODE_KING_OF_HILL;
-  snapshot.objective_target_score = SHROOM_KOTH_TARGET_SCORE;
-  snapshot.objective_controller_id = 42u;
-  snapshot.objective_contested = 0u;
-  snapshot.players[0].player_id = 42u;
-  snapshot.players[0].entity_id = 43u;
-  snapshot.players[0].position_x = 10.0f;
-  snapshot.players[0].position_y = 20.0f;
-  snapshot.players[0].mass = 30.0f;
-  snapshot.players[0].radius = 4.0f;
-  snapshot.players[0].alive = 1u;
-  snapshot.players[0].objective_score = 12.5f;
-  FinalizeSingleSnapshot(&snapshot, packet_size);
+  snapshot = BuildSnapshot(123u, &player);
 
   packet.data = (enet_uint8*)&snapshot;
-  packet.dataLength = packet_size;
+  packet.dataLength = snapshot.header.size;
 
   ClientNetTestHandleSnapshot(&net, &packet);
 
@@ -148,14 +146,12 @@ static void test_client_net_ignores_truncated_snapshot_players(void) {
   ClientNetState net = {0};
   ShroomSnapshotPacket snapshot = {0};
   ENetPacket packet = {0};
-  const size_t packet_size = offsetof(ShroomSnapshotPacket, players);
+  ShroomSnapshotPlayerState player = {.entity_id = 1u, .alive = 1u};
 
   net.snapshot_player_count = 9u;
-  snapshot.tick = 123u;
-  snapshot.player_count = 1u;
-  FinalizeSingleSnapshot(&snapshot, packet_size + sizeof(ShroomSnapshotPlayerState));
+  snapshot = BuildSnapshot(123u, &player);
   packet.data = (enet_uint8*)&snapshot;
-  packet.dataLength = packet_size;
+  packet.dataLength = snapshot.header.size - 1u;
 
   ClientNetTestHandleSnapshot(&net, &packet);
 
@@ -165,27 +161,25 @@ static void test_client_net_ignores_truncated_snapshot_players(void) {
 static void test_client_net_ignores_duplicate_and_out_of_order_snapshots(void) {
   ClientNetState net = {0};
   ShroomSnapshotPacket snapshot = {0};
-  ENetPacket packet = {
-      .data = (enet_uint8*)&snapshot,
-      .dataLength = offsetof(ShroomSnapshotPacket, players) + sizeof(snapshot.players[0]),
-  };
+  ShroomSnapshotPlayerState player = {.entity_id = 1u, .position_x = 200.0f, .alive = 1u};
+  ENetPacket packet = {.data = (enet_uint8*)&snapshot};
 
-  snapshot.tick = 20u;
-  snapshot.player_count = 1u;
-  snapshot.players[0].position_x = 200.0f;
-  FinalizeSingleSnapshot(&snapshot, packet.dataLength);
+  snapshot = BuildSnapshot(20u, &player);
+  packet.dataLength = snapshot.header.size;
   ClientNetTestHandleSnapshot(&net, &packet);
   TEST_ASSERT_TRUE(net.snapshot_received);
   TEST_ASSERT_EQUAL_FLOAT(200.0f, net.snapshot_players[0].position_x);
 
-  snapshot.tick = 19u;
-  snapshot.players[0].position_x = 19.0f;
+  player.position_x = 19.0f;
+  snapshot = BuildSnapshot(19u, &player);
+  packet.dataLength = snapshot.header.size;
   ClientNetTestHandleSnapshot(&net, &packet);
   TEST_ASSERT_EQUAL_UINT64(20u, net.last_snapshot_tick);
   TEST_ASSERT_EQUAL_FLOAT(200.0f, net.snapshot_players[0].position_x);
 
-  snapshot.tick = 20u;
-  snapshot.players[0].position_x = 20.0f;
+  player.position_x = 20.0f;
+  snapshot = BuildSnapshot(20u, &player);
+  packet.dataLength = snapshot.header.size;
   ClientNetTestHandleSnapshot(&net, &packet);
   TEST_ASSERT_EQUAL_FLOAT(200.0f, net.snapshot_players[0].position_x);
 }
@@ -286,6 +280,8 @@ static void test_lobby_join_resets_world_replication_tick_and_collectibles(void)
 
   net.world_replication.tick_received = true;
   net.world_replication.latest_tick = 9000u;
+  net.snapshot_history.frames[0].tick = 9000u;
+  net.snapshot_assembly.active = true;
   net.spore_count = 1u;
   net.snapshot_spores[0].entity_id = 99u;
   ShroomPacketHeaderInit(&joined.header, SHROOM_PACKET_LOBBY_JOINED, sizeof(joined));
@@ -297,6 +293,8 @@ static void test_lobby_join_resets_world_replication_tick_and_collectibles(void)
   ClientNetTestHandleLobbyJoined(&net, &joined_packet);
 
   TEST_ASSERT_FALSE(net.world_replication.tick_received);
+  TEST_ASSERT_NULL(ShroomSnapshotHistoryFind(&net.snapshot_history, 9000u));
+  TEST_ASSERT_FALSE(net.snapshot_assembly.active);
   TEST_ASSERT_EQUAL_UINT16(0u, net.spore_count);
   TEST_ASSERT_EQUAL_UINT32(0u, net.snapshot_spores[0].entity_id);
 

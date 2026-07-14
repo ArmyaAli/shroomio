@@ -174,26 +174,60 @@ static void InjectPlayerSnapshotChunk(uint64_t tick, uint16_t total_player_count
                                       uint16_t chunk_index, uint16_t chunk_count,
                                       const ShroomSnapshotPlayerState* players,
                                       uint16_t player_count) {
-  ShroomSnapshotPacket packet = {0};
-  const size_t packet_size = offsetof(ShroomSnapshotPacket, players) +
-                             (size_t)player_count * sizeof(packet.players[0]);
-  ENetPacket enet_packet = {.data = (enet_uint8*)&packet, .dataLength = packet_size};
+  ShroomSnapshotFrameMetadata metadata = {
+      .tick = tick,
+      .player_id = g_imgui_test_app.game.net.player_id,
+      .entity_id = 101u,
+      .match_phase = SHROOM_MATCH_PHASE_RUNNING,
+      .game_mode = SHROOM_GAME_MODE_FFA,
+      .match_time_remaining = 120.0f,
+  };
+  ShroomSnapshotEncodedFrame encoded = {0};
+  ShroomSnapshotPacket packet;
+  ENetPacket enet_packet;
 
-  ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_SNAPSHOT, (uint16_t)packet_size);
-  packet.tick = tick;
-  packet.player_id = g_imgui_test_app.game.net.player_id;
-  packet.entity_id = 101u;
-  packet.match_phase = SHROOM_MATCH_PHASE_RUNNING;
-  packet.game_mode = SHROOM_GAME_MODE_FFA;
-  packet.match_time_remaining = 120.0f;
+  if (!ShroomSnapshotEncodeFrame(&metadata, players, player_count, NULL, true, &encoded)) {
+    return;
+  }
+  if (encoded.packet_count > 1u) {
+    for (uint16_t index = 0u; index < encoded.packet_count; ++index) {
+      enet_packet = (ENetPacket){.data = (enet_uint8*)&encoded.packets[index],
+                                 .dataLength = encoded.packets[index].header.size};
+      ClientNetTestHandleSnapshot(&g_imgui_test_app.game.net, &enet_packet);
+    }
+    return;
+  }
+  packet = encoded.packets[0];
   packet.total_player_count = total_player_count;
   packet.chunk_index = chunk_index;
   packet.chunk_count = chunk_count;
-  packet.player_count = player_count;
-  if ((players != NULL) && (player_count > 0u)) {
-    memcpy(packet.players, players, (size_t)player_count * sizeof(packet.players[0]));
-  }
+  enet_packet = (ENetPacket){.data = (enet_uint8*)&packet, .dataLength = packet.header.size};
   ClientNetTestHandleSnapshot(&g_imgui_test_app.game.net, &enet_packet);
+}
+
+static bool InjectPlayerSnapshotFrame(uint64_t tick, const ShroomSnapshotPlayerState* players,
+                                      uint16_t player_count,
+                                      const ShroomSnapshotFrame* baseline, bool keyframe,
+                                      bool reverse_chunks) {
+  ShroomSnapshotFrameMetadata metadata = {
+      .tick = tick,
+      .player_id = g_imgui_test_app.game.net.player_id,
+      .entity_id = 101u,
+      .match_phase = SHROOM_MATCH_PHASE_RUNNING,
+      .game_mode = SHROOM_GAME_MODE_FFA,
+      .match_time_remaining = 120.0f,
+  };
+  ShroomSnapshotEncodedFrame encoded = {0};
+  if (!ShroomSnapshotEncodeFrame(&metadata, players, player_count, baseline, keyframe, &encoded)) {
+    return false;
+  }
+  for (uint16_t sent = 0u; sent < encoded.packet_count; ++sent) {
+    const uint16_t index = reverse_chunks ? (uint16_t)(encoded.packet_count - sent - 1u) : sent;
+    ENetPacket packet = {.data = (enet_uint8*)&encoded.packets[index],
+                         .dataLength = encoded.packets[index].header.size};
+    ClientNetTestHandleSnapshot(&g_imgui_test_app.game.net, &packet);
+  }
+  return true;
 }
 
 static size_t BuildSelectedSnapshotPlayers(ShroomSnapshotInterestState* interest,
@@ -2327,6 +2361,10 @@ static void Test_OnlineInterestSnapshotsApplyAtomicallyWithoutGhosts(ImGuiTestCo
   ShroomWorldState server_world = {.width = SHROOM_WORLD_WIDTH, .height = SHROOM_WORLD_HEIGHT};
   ShroomSnapshotInterestState interest = {0};
   ShroomSnapshotPlayerState players[SHROOM_MAX_SNAPSHOT_PLAYERS] = {0};
+  ShroomSnapshotFrame baseline = {0};
+  ShroomSnapshotFrame next_baseline = {0};
+  ShroomSnapshotEncodedFrame dropped_delta = {0};
+  ShroomSnapshotFrameMetadata dropped_metadata = {.tick = 102u};
   size_t selected_count;
   uint16_t initial_world_player_count;
   Game* game;
@@ -2392,36 +2430,45 @@ static void Test_OnlineInterestSnapshotsApplyAtomicallyWithoutGhosts(ImGuiTestCo
   selected_count = BuildSelectedSnapshotPlayers(&interest, &server_world, players);
   IM_CHECK_EQ(selected_count, 16u);
   InjectPlayerSnapshotChunk(100u, (uint16_t)selected_count, 1u, 2u,
-                            &players[SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK], 1u);
+                            &players[14u], 2u);
   ShroomTeCtx_Yield(ctx, 1);
   IM_CHECK_EQ(game->net.last_snapshot_tick, 0u);
   IM_CHECK_EQ(game->world.player_count, initial_world_player_count);
 
   InjectPlayerSnapshotChunk(100u, (uint16_t)selected_count, 0u, 2u, players,
-                            SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK);
+                            14u);
   ShroomTeCtx_Yield(ctx, 1);
   IM_CHECK_EQ(game->net.last_snapshot_tick, 100u);
   IM_CHECK_EQ(game->world.player_count, selected_count);
   IM_CHECK_EQ(game->world.players[1].entity_id, 102u);
   IM_CHECK_EQ(game->world.players[2].entity_id, 301u);
+  baseline.tick = 100u;
+  baseline.player_count = (uint16_t)selected_count;
+  memcpy(baseline.players, players, selected_count * sizeof(players[0]));
 
   server_world.players[3].position.x =
       100.0f + SHROOM_WORLD_REPLICATION_INTEREST_RADIUS + 100.0f;
   selected_count = BuildSelectedSnapshotPlayers(&interest, &server_world, players);
   IM_CHECK_EQ(selected_count, 16u);
-  InjectPlayerSnapshotChunk(101u, (uint16_t)selected_count, 0u, 2u, players,
-                            SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK);
-  InjectPlayerSnapshotChunk(101u, (uint16_t)selected_count, 1u, 2u,
-                            &players[SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK], 1u);
+  IM_CHECK(InjectPlayerSnapshotFrame(101u, players, (uint16_t)selected_count, &baseline, false,
+                                     true));
   ShroomTeCtx_Yield(ctx, 1);
+  IM_CHECK_EQ(game->net.last_snapshot_tick, 101u);
   IM_CHECK_EQ(game->world.player_count, 16u);
+  next_baseline.tick = 101u;
+  next_baseline.player_count = (uint16_t)selected_count;
+  memcpy(next_baseline.players, players, selected_count * sizeof(players[0]));
 
   server_world.players[3].position.x = 100.0f + SHROOM_WORLD_REPLICATION_INTEREST_RADIUS +
                                        SHROOM_SNAPSHOT_INTEREST_HYSTERESIS + 1.0f;
   selected_count = BuildSelectedSnapshotPlayers(&interest, &server_world, players);
   IM_CHECK_EQ(selected_count, 15u);
-  InjectPlayerSnapshotChunk(102u, (uint16_t)selected_count, 0u, 1u, players,
-                            (uint16_t)selected_count);
+  IM_CHECK(ShroomSnapshotEncodeFrame(&dropped_metadata, players, (uint16_t)selected_count,
+                                     &next_baseline, false, &dropped_delta));
+  ShroomTeCtx_Yield(ctx, 1);
+  IM_CHECK_EQ(game->net.last_snapshot_tick, 101u);
+  IM_CHECK_EQ(game->world.player_count, 16u);
+  IM_CHECK(InjectPlayerSnapshotFrame(103u, players, (uint16_t)selected_count, NULL, true, true));
   ShroomTeCtx_Yield(ctx, 1);
   IM_CHECK_EQ(game->world.player_count, 15u);
   for (uint16_t index = 0u; index < game->world.player_count; ++index) {
