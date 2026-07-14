@@ -532,20 +532,20 @@ directory-integration-test: $(SERVER_LINUX_BIN) $(DIRECTORY_QUERY_CLIENT_BIN)
 		if ! kill -0 "$$directory_pid" >/dev/null 2>&1; then break; fi; sleep 0.01; \
 	done; \
 	if [ $$ready -ne 1 ]; then echo "Directory failed to start"; cat "$$tmp/directory.log"; exit 1; fi; \
-	SHROOM_DIRECTORY_HOST=127.0.0.1 SHROOM_DIRECTORY_PORT=$$directory_port SHROOM_SERVER_ID=101 SHROOM_SERVER_NAME="Integration One" SHROOM_SERVER_PUBLIC_HOST=127.0.0.1 \
+	SHROOM_DIRECTORY_HOST=127.0.0.1 SHROOM_DIRECTORY_PORT=$$directory_port SHROOM_SERVER_NAME="Integration One" \
 		./$(SERVER_LINUX_BIN) --bind 127.0.0.1 --port $$game_one_port --database "$$tmp/one.db" >"$$tmp/one.log" 2>&1 & game_one_pid=$$!; \
-	SHROOM_DIRECTORY_HOST=127.0.0.1 SHROOM_DIRECTORY_PORT=$$directory_port SHROOM_SERVER_ID=202 SHROOM_SERVER_NAME="Integration Two" SHROOM_SERVER_PUBLIC_HOST=127.0.0.1 \
+	SHROOM_DIRECTORY_HOST=127.0.0.1 SHROOM_DIRECTORY_PORT=$$directory_port SHROOM_SERVER_NAME="Integration Two" \
 		./$(SERVER_LINUX_BIN) --bind 127.0.0.1 --port $$game_two_port --database "$$tmp/two.db" >"$$tmp/two.log" 2>&1 & game_two_pid=$$!; \
 	registered=0; for attempt in $$(seq 1 700); do \
-		if [ "$$(grep -c "directory heartbeat server_id=" "$$tmp/directory.log" || true)" -ge 2 ]; then registered=1; break; fi; \
+		if [ "$$(grep -c "directory heartbeat endpoint=" "$$tmp/directory.log" || true)" -ge 2 ]; then registered=1; break; fi; \
 		if ! kill -0 "$$game_one_pid" >/dev/null 2>&1 || ! kill -0 "$$game_two_pid" >/dev/null 2>&1; then break; fi; sleep 0.01; \
 	done; \
 	if [ $$registered -ne 1 ]; then echo "Game servers did not register"; cat "$$tmp/directory.log" "$$tmp/one.log" "$$tmp/two.log"; exit 1; fi; \
-	./$(DIRECTORY_QUERY_CLIENT_BIN) 127.0.0.1 $$directory_port 2 --expect-id 101; \
+	./$(DIRECTORY_QUERY_CLIENT_BIN) 127.0.0.1 $$directory_port 2; \
 	if grep -q "peer connected:" "$$tmp/one.log" || grep -q "peer connected:" "$$tmp/two.log"; then echo "Directory traffic allocated a player peer"; exit 1; fi; \
 	kill "$$game_one_pid"; wait "$$game_one_pid" >/dev/null 2>&1 || true; game_one_pid=""; \
 	sleep 16; \
-	./$(DIRECTORY_QUERY_CLIENT_BIN) 127.0.0.1 $$directory_port 1 --expect-id 202; \
+	./$(DIRECTORY_QUERY_CLIENT_BIN) 127.0.0.1 $$directory_port 1; \
 	echo "Directory integration passed: two live servers registered and stopped server expired without player sessions."
 
 run-windows:

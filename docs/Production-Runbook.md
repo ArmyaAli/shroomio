@@ -91,16 +91,14 @@ Configure each public game server to advertise every five seconds:
 ```bash
 SHROOM_DIRECTORY_HOST=directory.example.com \
 SHROOM_DIRECTORY_PORT=7778 \
-SHROOM_SERVER_PUBLIC_HOST=game-1.example.com \
-SHROOM_SERVER_ID=1001 \
 SHROOM_SERVER_NAME="East Arena" \
 ./dist/linux/server/shroomio-server --port 7777 --database ./shroomio.db
 ```
 
-`SHROOM_SERVER_ID` must be a stable nonzero integer for that deployment. When omitted, the server
-derives it from the advertised host and game port. Open the directory port to clients and game
-servers; the game port remains separate. If `SHROOM_DIRECTORY_HOST` is absent, the server runs
-normally without advertising and clients report that no directory is configured.
+The directory derives each advertised host and stable identity from the observed heartbeat source
+and game port, so a game server cannot claim another host's endpoint. Open the directory port to
+clients and game servers; the game port remains separate. If `SHROOM_DIRECTORY_HOST` is absent, the
+server runs normally without advertising and clients report that no directory is configured.
 
 ### Docker (Recommended)
 

@@ -1,6 +1,7 @@
 #include "directory_registry.h"
 
 #include <ctype.h>
+#include <stdio.h>
 #include <string.h>
 
 static bool IsTerminatedPrintableText(const char* text, size_t capacity) {
@@ -42,6 +43,17 @@ static bool EndpointMatches(const ShroomDirectoryServerEntry* left,
   return (left->port == right->port) && (strncmp(left->host, right->host, sizeof(left->host)) == 0);
 }
 
+static uint64_t StableEndpointId(const char* host, uint16_t port) {
+  uint64_t hash = 1469598103934665603ull;
+
+  for (const unsigned char* cursor = (const unsigned char*)host; *cursor != '\0'; ++cursor) {
+    hash = (hash ^ *cursor) * 1099511628211ull;
+  }
+  hash = (hash ^ (uint8_t)(port >> 8u)) * 1099511628211ull;
+  hash = (hash ^ (uint8_t)port) * 1099511628211ull;
+  return hash == 0ull ? 1ull : hash;
+}
+
 static bool ValidateAndClampEntry(ShroomDirectoryServerEntry* entry) {
   if ((entry->server_id == 0ull) || !IsTerminatedPrintableText(entry->name, sizeof(entry->name)) ||
       !IsValidAdvertisedHost(entry->host, sizeof(entry->host)) || (entry->port == 0u) ||
@@ -65,14 +77,15 @@ void ShroomDirectoryRegistryInit(ShroomDirectoryRegistry* registry) {
 
 bool ShroomDirectoryRegistryRegister(ShroomDirectoryRegistry* registry,
                                      const ShroomDirectoryHeartbeatPacket* heartbeat,
-                                     size_t packet_size, uint64_t now_ms) {
+                                     size_t packet_size, const char* observed_host,
+                                     uint64_t now_ms) {
   ShroomDirectoryServerEntry entry;
   size_t id_match = SHROOM_DIRECTORY_MAX_ENTRIES;
   size_t endpoint_match = SHROOM_DIRECTORY_MAX_ENTRIES;
   size_t available = SHROOM_DIRECTORY_MAX_ENTRIES;
   size_t target = SHROOM_DIRECTORY_MAX_ENTRIES;
 
-  if ((registry == NULL) || (heartbeat == NULL) ||
+  if ((registry == NULL) || (heartbeat == NULL) || (observed_host == NULL) ||
       (packet_size != sizeof(ShroomDirectoryHeartbeatPacket)) ||
       (heartbeat->header.type != SHROOM_PACKET_DIRECTORY_HEARTBEAT) ||
       (heartbeat->header.size != sizeof(ShroomDirectoryHeartbeatPacket)) ||
@@ -81,6 +94,11 @@ bool ShroomDirectoryRegistryRegister(ShroomDirectoryRegistry* registry,
   }
 
   entry = heartbeat->server;
+  const int host_length = snprintf(entry.host, sizeof(entry.host), "%s", observed_host);
+  if ((host_length < 0) || ((size_t)host_length >= sizeof(entry.host))) {
+    return false;
+  }
+  entry.server_id = StableEndpointId(entry.host, entry.port);
   if (!ValidateAndClampEntry(&entry)) {
     return false;
   }
