@@ -456,6 +456,59 @@ static void test_client_net_rejects_truncated_intermission_status(void) {
   TEST_ASSERT_FALSE(net.intermission_received);
 }
 
+static void test_client_net_intermission_lifecycle_rejects_consumed_and_stale_rounds(void) {
+  ClientNetState net = {0};
+  ShroomIntermissionStatusPacket status = {.round_id = 12u};
+  ENetPacket packet = {.data = (enet_uint8*)&status, .dataLength = sizeof(status)};
+
+  ClientNetTestHandleIntermissionStatus(&net, &packet);
+  status.resolved = 1u;
+  status.decision = SHROOM_REMATCH_VOTE_RETURN_TO_LOBBY;
+  ClientNetTestHandleIntermissionStatus(&net, &packet);
+  TEST_ASSERT_TRUE(net.intermission_received);
+  TEST_ASSERT_EQUAL_UINT8(1u, net.intermission.resolved);
+
+  ClientNetConsumeIntermission(&net);
+  TEST_ASSERT_FALSE(net.intermission_received);
+  TEST_ASSERT_TRUE(net.consumed_intermission_round_valid);
+  TEST_ASSERT_EQUAL_UINT32(12u, net.consumed_intermission_round_id);
+
+  ClientNetTestHandleIntermissionStatus(&net, &packet);
+  TEST_ASSERT_FALSE(net.intermission_received);
+  status.round_id = 11u;
+  ClientNetTestHandleIntermissionStatus(&net, &packet);
+  TEST_ASSERT_FALSE(net.intermission_received);
+
+  status.round_id = 13u;
+  status.resolved = 0u;
+  ClientNetTestHandleIntermissionStatus(&net, &packet);
+  TEST_ASSERT_TRUE(net.intermission_received);
+  TEST_ASSERT_EQUAL_UINT32(13u, net.intermission.round_id);
+
+  status.round_id = 12u;
+  ClientNetTestHandleIntermissionStatus(&net, &packet);
+  TEST_ASSERT_EQUAL_UINT32(13u, net.intermission.round_id);
+}
+
+static void test_client_net_lobby_join_resets_round_scoped_intermission_state(void) {
+  ClientNetState net = {
+      .lobby_id = 4u,
+      .intermission_received = true,
+      .consumed_intermission_round_id = 12u,
+      .consumed_intermission_round_valid = true,
+  };
+  ShroomLobbyJoinedPacket joined = {.lobby_id = 9u};
+  ENetPacket packet = {.data = (enet_uint8*)&joined, .dataLength = sizeof(joined)};
+
+  net.intermission.round_id = 13u;
+  ClientNetTestHandleLobbyJoined(&net, &packet);
+
+  TEST_ASSERT_EQUAL_UINT32(9u, net.lobby_id);
+  TEST_ASSERT_FALSE(net.intermission_received);
+  TEST_ASSERT_FALSE(net.consumed_intermission_round_valid);
+  TEST_ASSERT_EQUAL_UINT32(0u, net.intermission.round_id);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_client_net_records_fresh_pong);
@@ -483,5 +536,7 @@ int main(void) {
   RUN_TEST(test_spectator_lobby_session_can_resume_without_player_identity);
   RUN_TEST(test_client_net_accepts_authoritative_intermission_status);
   RUN_TEST(test_client_net_rejects_truncated_intermission_status);
+  RUN_TEST(test_client_net_intermission_lifecycle_rejects_consumed_and_stale_rounds);
+  RUN_TEST(test_client_net_lobby_join_resets_round_scoped_intermission_state);
   return UNITY_END();
 }

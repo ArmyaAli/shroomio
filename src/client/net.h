@@ -98,6 +98,8 @@ typedef struct ClientNetState {
   float podium_masses[SHROOM_MATCH_PODIUM_COUNT];
   ShroomIntermissionStatusPacket intermission;
   bool intermission_received;
+  uint32_t consumed_intermission_round_id;
+  bool consumed_intermission_round_valid;
 } ClientNetState;
 
 bool ClientNetInit(ClientNetState* net, const char* host_name, uint16_t port,
@@ -118,6 +120,7 @@ void ClientNetSendLobbyCreate(ClientNetState* net, const char* name, uint16_t ma
 void ClientNetSendReadyState(ClientNetState* net, bool is_ready);
 void ClientNetSendEnterMatch(ClientNetState* net);
 void ClientNetSendRematchVote(ClientNetState* net, ShroomRematchVote vote);
+void ClientNetConsumeIntermission(ClientNetState* net);
 
 #ifdef TEST_MODE
 void ClientNetTestBuildHello(const ClientNetState* net, ShroomHelloPacket* packet);

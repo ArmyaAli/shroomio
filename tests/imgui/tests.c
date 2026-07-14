@@ -1989,6 +1989,60 @@ static void Test_AuthoritativeIntermissionMultiClientState(ImGuiTestContext* ctx
   IM_CHECK(g_imgui_test_app.game.net.welcome_received);
 }
 
+static void Test_ResolvedIntermissionBeforeResultsPreservesRoute(ImGuiTestContext* ctx) {
+  const ShroomVec2 local_position = {500.0f, 600.0f};
+  const ShroomVec2 opponent_position = {900.0f, 1000.0f};
+  ShroomIntermissionStatusPacket status = {
+      .round_id = 20u,
+      .resolved = 1u,
+      .decision = SHROOM_REMATCH_VOTE_RETURN_TO_LOBBY,
+  };
+  ENetPacket packet = {.data = (enet_uint8*)&status, .dataLength = sizeof(status)};
+
+  SetupOnlineGame();
+  ClientNetTestHandleIntermissionStatus(&g_imgui_test_app.game.net, &packet);
+  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESULTS, 101u, local_position, 300.0f,
+                         opponent_position, 200.0f);
+  ShroomTeCtx_Yield(ctx, 4);
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_LOBBY_ROSTER);
+  IM_CHECK(!g_imgui_test_app.game.net.intermission_received);
+  IM_CHECK_EQ(g_imgui_test_app.game.net.consumed_intermission_round_id, 20u);
+
+  SetupOnlineGame();
+  status.round_id = 21u;
+  status.decision = SHROOM_REMATCH_VOTE_SPECTATE;
+  ClientNetTestHandleIntermissionStatus(&g_imgui_test_app.game.net, &packet);
+  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESULTS, 101u, local_position, 300.0f,
+                         opponent_position, 200.0f);
+  ShroomTeCtx_Yield(ctx, 4);
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_LOBBY_ROSTER);
+  IM_CHECK(g_imgui_test_app.game.net.spectating);
+  IM_CHECK(!g_imgui_test_app.game.net.intermission_received);
+
+  SetupOnlineGame();
+  status.round_id = 22u;
+  status.decision = SHROOM_REMATCH_VOTE_PLAY_AGAIN;
+  ClientNetTestHandleIntermissionStatus(&g_imgui_test_app.game.net, &packet);
+  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESULTS, 101u, local_position, 300.0f,
+                         opponent_position, 200.0f);
+  ShroomTeCtx_Yield(ctx, 3);
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_RESULTS);
+  IM_CHECK(g_imgui_test_app.game.net.intermission_received);
+  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RESET, 101u, local_position, 300.0f,
+                         opponent_position, 200.0f);
+  ShroomTeCtx_Yield(ctx, 1);
+  InjectFeedbackSnapshot(SHROOM_MATCH_PHASE_RUNNING, 201u, local_position,
+                         SHROOM_DEFAULT_PLAYER_MASS, opponent_position,
+                         SHROOM_DEFAULT_PLAYER_MASS);
+  ShroomTeCtx_Yield(ctx, 3);
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_GAME);
+  IM_CHECK(!g_imgui_test_app.game.net.intermission_received);
+}
+
 /* chat: Chat dock is active in online mode. */
 static void Test_ChatDockVisibleOnline(ImGuiTestContext* ctx) {
   SetupOnlineGame();
@@ -2519,6 +2573,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_KingOfHillModeSelection);
   ShroomTeEngine_RegisterTest(engine, "screens", "authoritative_intermission_multi_client_state",
                               Test_AuthoritativeIntermissionMultiClientState);
+  ShroomTeEngine_RegisterTest(engine, "screens", "resolved_intermission_before_results",
+                              Test_ResolvedIntermissionBeforeResultsPreservesRoute);
   ShroomTeEngine_RegisterTest(engine, "chat", "dock_visible_in_online_mode",
                               Test_ChatDockVisibleOnline);
   ShroomTeEngine_RegisterTest(engine, "chat", "dock_hidden_in_offline_mode",

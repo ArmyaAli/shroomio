@@ -1,6 +1,7 @@
 #include "client/game.h"
 #include "client/layout.h"
 #include "client/results_summary.h"
+#include "client/results_transition.h"
 #include "client/screen.h"
 #include "client/screens/screen_background.h"
 #include "imgui_wrapper.h"
@@ -60,27 +61,27 @@ static bool ResultsVoteButton(const char* label, bool selected, float width, flo
 
 static void ResultsUpdate(ShroomScreenManager* manager, float delta_time) {
   Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
+  ShroomResultsRoute route;
 
   if ((game == NULL) || !IsAuthoritativeOnlineResults(game)) {
     return;
   }
 
   GameUpdate(game, delta_time);
-  if (game->net.intermission_received && game->net.intermission.resolved &&
-      (game->net.intermission.decision != SHROOM_REMATCH_VOTE_PLAY_AGAIN)) {
-    if (game->net.intermission.decision == SHROOM_REMATCH_VOTE_SPECTATE) {
-      game->net.spectating = true;
-    }
+  route = ShroomResultsResolveRoute(
+      game->world.match_phase, game->net.intermission_received, &game->net.intermission,
+      game->net.consumed_intermission_round_valid, game->net.consumed_intermission_round_id);
+  if ((route == SHROOM_RESULTS_ROUTE_LOBBY) || (route == SHROOM_RESULTS_ROUTE_SPECTATE)) {
+    game->net.spectating = route == SHROOM_RESULTS_ROUTE_SPECTATE;
+    ClientNetConsumeIntermission(&game->net);
     game->authoritative_round_resume_pending = false;
     game->resume_online_session_requested = true;
     game->show_results = false;
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_LOBBY);
     return;
   }
-  if ((game->world.match_phase == SHROOM_MATCH_PHASE_RUNNING) &&
-      (!game->net.intermission_received ||
-       (game->net.intermission.resolved &&
-        (game->net.intermission.decision == SHROOM_REMATCH_VOTE_PLAY_AGAIN)))) {
+  if (route == SHROOM_RESULTS_ROUTE_GAME) {
+    ClientNetConsumeIntermission(&game->net);
     game->show_results = false;
     game->session_start_time = (float)GetTime();
     game->session_duration_seconds = 0u;
