@@ -217,6 +217,7 @@ CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/input_scheduler.c \
 	$(CLIENT_SRC_DIR)/layout.c \
 	$(CLIENT_SRC_DIR)/layout_metrics.c \
+	$(CLIENT_SRC_DIR)/matchmaking_selector.c \
 	$(CLIENT_SRC_DIR)/match_feedback.c \
 	$(CLIENT_SRC_DIR)/match_presentation.c \
 	$(CLIENT_SRC_DIR)/net.c \
@@ -336,6 +337,7 @@ IMGUI_TEST_CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/input_scheduler.c \
 	$(CLIENT_SRC_DIR)/layout.c \
 	$(CLIENT_SRC_DIR)/layout_metrics.c \
+	$(CLIENT_SRC_DIR)/matchmaking_selector.c \
 	$(CLIENT_SRC_DIR)/match_feedback.c \
 	$(CLIENT_SRC_DIR)/match_presentation.c \
 	$(CLIENT_SRC_DIR)/net.c \
@@ -966,6 +968,9 @@ test_connection) \
 		test_server_discovery_state) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/server_discovery_state.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+		test_matchmaking_selector) \
+			$(LINUX_CC) $(COVERAGE_CFLAGS) \
+				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/matchmaking_selector.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_results_summary) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/results_summary.c -o $$test_bin $(COVERAGE_LIBS) ;; \
@@ -1119,6 +1124,10 @@ $(TEST_BUILD_DIR)/test_server_browser_model: $(UNIT_TESTS_DIR)/test_server_brows
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
 $(TEST_BUILD_DIR)/test_server_discovery_state: $(UNIT_TESTS_DIR)/test_server_discovery_state.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/server_discovery_state.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_matchmaking_selector: $(UNIT_TESTS_DIR)/test_matchmaking_selector.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/matchmaking_selector.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 

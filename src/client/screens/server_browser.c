@@ -1,4 +1,5 @@
 #include "game.h"
+#include "matchmaking_selector.h"
 #include "screen.h"
 #include "screen_background.h"
 #include "server_browser_model.h"
@@ -51,6 +52,10 @@ typedef struct ServerBrowserState {
   float result_age;
   bool demo_mode;
   bool directory_configured;
+  bool has_recommendation;
+  bool high_latency_recommendation;
+  char recommended_host[64];
+  uint16_t recommended_port;
   char directory_host[SHROOM_DIRECTORY_HOST_LENGTH];
   uint16_t directory_port;
   ServerBrowserEntry servers[SERVER_BROWSER_MAX_SERVERS];
@@ -100,6 +105,62 @@ static void CopyText(char* destination, size_t destination_size, const char* sou
   length = strnlen(source, destination_size - 1u);
   memcpy(destination, source, length);
   destination[length] = '\0';
+}
+
+static const ServerBrowserEntry* GetRecommendedServer(void) {
+  if (!g_server_browser.has_recommendation) {
+    return NULL;
+  }
+  for (size_t index = 0u; index < g_server_browser.server_count; ++index) {
+    const ServerBrowserEntry* entry = &g_server_browser.servers[index];
+    if ((entry->port == (int)g_server_browser.recommended_port) &&
+        (strcmp(entry->host, g_server_browser.recommended_host) == 0)) {
+      return entry;
+    }
+  }
+  return NULL;
+}
+
+static const char* MatchmakingRecommendationText(void) {
+  static char text[192];
+  const ServerBrowserEntry* recommended = GetRecommendedServer();
+
+  if (recommended == NULL) {
+    return "No joinable live server is available for matchmaking.";
+  }
+  snprintf(text, sizeof(text), "Recommended: %s (%d ms, %d/%d players)", recommended->name,
+           recommended->ping_ms, recommended->player_count, recommended->player_capacity);
+  return text;
+}
+
+static void UpdateMatchmakingRecommendation(void) {
+  ShroomMatchmakingCandidate candidates[SERVER_BROWSER_MAX_SERVERS];
+  ShroomMatchmakingSelection selection;
+
+  g_server_browser.has_recommendation = false;
+  g_server_browser.high_latency_recommendation = false;
+  g_server_browser.recommended_host[0] = '\0';
+  g_server_browser.recommended_port = 0u;
+  for (size_t index = 0u; index < g_server_browser.server_count; ++index) {
+    const ServerBrowserEntry* entry = &g_server_browser.servers[index];
+    candidates[index] = (ShroomMatchmakingCandidate){
+        .host = entry->host,
+        .port = entry->port > 0 ? (uint16_t)entry->port : 0u,
+        .latency_ms = entry->ping_ms >= 0 ? (uint16_t)entry->ping_ms : 0u,
+        .player_count = entry->player_count >= 0 ? (uint16_t)entry->player_count : 0u,
+        .capacity = entry->player_capacity > 0 ? (uint16_t)entry->player_capacity : 0u,
+        .reachable = entry->metadata_known && entry->reachable,
+    };
+  }
+  if (ShroomMatchmakingSelect(candidates, g_server_browser.server_count,
+                              ShroomMatchmakingDefaultWeights(), &selection)) {
+    const ServerBrowserEntry* entry = &g_server_browser.servers[selection.candidate_index];
+    g_server_browser.has_recommendation = true;
+    g_server_browser.high_latency_recommendation = selection.high_latency_fallback;
+    CopyText(g_server_browser.recommended_host, sizeof(g_server_browser.recommended_host),
+             entry->host);
+    g_server_browser.recommended_port = (uint16_t)entry->port;
+  }
 }
 
 static void SortEntries(ServerBrowserEntry* entries, size_t count) {
@@ -436,6 +497,7 @@ static void BeginDiscoveryRefresh(void) {
   g_server_browser.server_count = 0u;
   g_server_browser.selected_index = -1;
   g_server_browser.result_age = 0.0f;
+  UpdateMatchmakingRecommendation();
 #ifndef TEST_MODE
   if (!ShroomServerDiscoveryBegin(&g_server_browser.discovery, g_server_browser.directory_host,
                                   g_server_browser.directory_port, enet_time_get())) {
@@ -453,10 +515,13 @@ static void FinishDiscoveryRefresh(void) {
 
   if (g_server_browser.demo_mode) {
     LoadDemoServers();
+    UpdateMatchmakingRecommendation();
     ShroomServerBrowserFinishRefresh(&g_server_browser.model, true, g_server_browser.server_count);
   } else if (g_server_browser.directory_configured) {
+    UpdateMatchmakingRecommendation();
     ShroomServerBrowserFinishRefresh(&g_server_browser.model, true, 0u);
   } else {
+    UpdateMatchmakingRecommendation();
     ShroomServerBrowserFinishRefresh(&g_server_browser.model, false, 0u);
   }
 }
@@ -491,6 +556,7 @@ static void CopyDiscoveryResults(void) {
     entry->reachable = true;
   }
   SortServersPreservingSelection();
+  UpdateMatchmakingRecommendation();
 }
 
 static bool ServerBrowserInit(ShroomScreenManager* manager) {
@@ -625,6 +691,17 @@ static void ServerBrowserDraw(ShroomScreenManager* manager) {
                                 g_server_browser.result_age));
   } else {
     ShroomImGui_Text("Source: none | Last refresh: never completed");
+  }
+
+  {
+    ShroomImGui_Text("Matchmaking Recommendation");
+    ShroomImGui_Text(MatchmakingRecommendationText());
+    if (GetRecommendedServer() != NULL) {
+      if (g_server_browser.high_latency_recommendation) {
+        ShroomImGui_TextColored((ShroomImGuiColor){1.0f, 0.75f, 0.25f, 1.0f},
+                                "Warning: all reachable servers exceed 200 ms.");
+      }
+    }
   }
 
   if (g_server_browser.connection_error[0] != '\0') {
@@ -857,5 +934,39 @@ void ShroomTestMarkServerBrowserStale(void) {
 void ShroomTestCompleteServerBrowserRefresh(bool demo_mode) {
   g_server_browser.demo_mode = demo_mode;
   FinishDiscoveryRefresh();
+}
+
+void ShroomTestSetServerBrowserMatchmakingScenario(bool high_latency) {
+  g_server_browser.server_count = 2u;
+  g_server_browser.servers[0] = (ServerBrowserEntry){"Canopy Match",
+                                                     "canopy.test",
+                                                     8,
+                                                     32,
+                                                     high_latency ? 240 : 45,
+                                                     SHROOM_SERVER_PORT,
+                                                     "Live / Arena",
+                                                     SERVER_BROWSER_TYPE_OFFICIAL,
+                                                     true,
+                                                     true};
+  g_server_browser.servers[1] = (ServerBrowserEntry){"Spore Match",
+                                                     "spore.test",
+                                                     20,
+                                                     32,
+                                                     high_latency ? 280 : 90,
+                                                     SHROOM_SERVER_PORT,
+                                                     "Live / Arena",
+                                                     SERVER_BROWSER_TYPE_OFFICIAL,
+                                                     true,
+                                                     true};
+  ShroomServerBrowserFinishRefresh(&g_server_browser.model, true, g_server_browser.server_count);
+  UpdateMatchmakingRecommendation();
+}
+
+const char* ShroomTestGetServerBrowserRecommendationText(void) {
+  return MatchmakingRecommendationText();
+}
+
+bool ShroomTestServerBrowserRecommendationIsHighLatency(void) {
+  return g_server_browser.has_recommendation && g_server_browser.high_latency_recommendation;
 }
 #endif

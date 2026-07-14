@@ -83,6 +83,9 @@ const char* ShroomTestGetServerBrowserStatusText(void);
 bool ShroomTestGetServerBrowserSortDescending(void);
 void ShroomTestMarkServerBrowserStale(void);
 void ShroomTestCompleteServerBrowserRefresh(bool demo_mode);
+void ShroomTestSetServerBrowserMatchmakingScenario(bool high_latency);
+const char* ShroomTestGetServerBrowserRecommendationText(void);
+bool ShroomTestServerBrowserRecommendationIsHighLatency(void);
 
 struct Game;
 const char* ShroomTestGetResultsDurationText(const struct Game* game);
