@@ -1618,6 +1618,29 @@ static void Test_ServerBrowserDiscoveryCanBeCancelled(ImGuiTestContext* ctx) {
   IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Refresh"));
 }
 
+static void Test_ServerBrowserMatchmakingRecommendationStates(ImGuiTestContext* ctx) {
+  ShroomImGuiTestAppReset(true);
+  ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager,
+                                SHROOM_SCREEN_SERVER_BROWSER);
+  ShroomTeCtx_Yield(ctx, 2);
+  ShroomTeCtx_SetRef(ctx, "Server Browser");
+
+  IM_CHECK_STR_EQ(ShroomTestGetServerBrowserRecommendationText(),
+                  "No joinable live server is available for matchmaking.");
+
+  ShroomTestSetServerBrowserMatchmakingScenario(false);
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_STR_EQ(ShroomTestGetServerBrowserRecommendationText(),
+                  "Recommended: Canopy Match (45 ms, 8/32 players)");
+  IM_CHECK(!ShroomTestServerBrowserRecommendationIsHighLatency());
+
+  ShroomTestSetServerBrowserMatchmakingScenario(true);
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_STR_EQ(ShroomTestGetServerBrowserRecommendationText(),
+                  "Recommended: Canopy Match (240 ms, 8/32 players)");
+  IM_CHECK(ShroomTestServerBrowserRecommendationIsHighLatency());
+}
+
 static void Test_LobbyConnectionModalStates(ImGuiTestContext* ctx) {
   ShroomImGuiTestAppReset(false);
   ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_LOBBY);
@@ -3289,6 +3312,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_ServerBrowserDirectoryUnavailableAndEmptyStates);
   ShroomTeEngine_RegisterTest(engine, "screens", "server_browser_discovery_can_be_cancelled",
                               Test_ServerBrowserDiscoveryCanBeCancelled);
+  ShroomTeEngine_RegisterTest(engine, "screens", "server_browser_matchmaking_recommendations",
+                              Test_ServerBrowserMatchmakingRecommendationStates);
   ShroomTeEngine_RegisterTest(engine, "screens", "lobby_connection_modal_states",
                               Test_LobbyConnectionModalStates);
   ShroomTeEngine_RegisterTest(engine, "screens", "lobby_unreachable_server_friendly_error",

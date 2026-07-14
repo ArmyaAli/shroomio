@@ -1063,20 +1063,22 @@ Client UI for browsing available servers:
 
 \subsection{Basic Matchmaking}
 
-Automatic server assignment based on:
+Automatic server assignment uses only live, reachable servers with free capacity. The selector is
+deterministic and applies the following priorities:
 
 \begin{enumerate}
-  \item \textbf{Primary}: Lowest ping/latency (best connection quality)
-  \item \textbf{Secondary}: Lowest player count (balance load)
-  \item \textbf{Tertiary}: Server has space (< 256 players)
+  \item \textbf{Preferred pool}: Round-trip latency at or below 200ms
+  \item \textbf{Score}: Normalized latency and load ratio, weighted 0.7 and 0.3 by default
+  \item \textbf{Tie-break}: Latency, load ratio, host, then port
 \end{enumerate}
 
 \textbf{Scoring algorithm}:
 \begin{verbatim}
-score = (0.7 * ping_ms) + (0.3 * player_count)
+score = (0.7 * normalized_latency) + (0.3 * load_ratio)
 \end{verbatim}
 
-Lower score = better choice. Servers with ping > 200ms are excluded.
+Lower score is better. Servers above 200ms are considered only when no preferred candidate exists,
+and the client displays a high-latency warning for that fallback.
 
 %---------------------------------------------------------------------
 \section{Performance Targets}
@@ -1091,7 +1093,7 @@ Goal & < 100ms & Smooth gameplay \\
 \hline
 Warning & 150ms & Show "high latency" warning \\
 \hline
-Unplayable & > 200ms & Exclude from matchmaking, warn player \\
+Fallback & > 200ms & Use only when necessary and warn player \\
 \hline
 \end{longtable}
 
