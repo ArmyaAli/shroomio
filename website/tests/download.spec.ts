@@ -23,7 +23,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("shows direct downloads, release metadata, and verification links", async ({ page }, testInfo) => {
-  await page.goto("/download/");
+  await page.goto("download/");
 
   await expect(page.getByRole("heading", { level: 1, name: "Download Shroomio" })).toBeVisible();
   await expect(page.locator("[data-release-version]").first()).toHaveText("0.4.0");
@@ -58,7 +58,7 @@ test("keeps the checked-in stable release when GitHub is unavailable", async ({ 
   await page.route("https://api.github.com/repos/ArmyaAli/shroomio/releases/latest", (route) =>
     route.fulfill({ status: 503, body: "unavailable" }),
   );
-  await page.goto("/download/");
+  await page.goto("download/");
 
   await expect(page.locator("[data-release-version]").first()).toHaveText("0.3.0");
   await expect(page.getByRole("link", { name: "Download Windows" })).toHaveAttribute(

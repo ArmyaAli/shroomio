@@ -9,6 +9,7 @@
     "preview": "astro preview",
     "check": "astro check",
     "test:unit": "node --experimental-strip-types --test tests/releases.test.ts",
+    "test:build": "npm run build && node --test tests/build-output.test.mjs",
     "test:e2e": "npm run build && playwright test"
   },
   "dependencies": {
