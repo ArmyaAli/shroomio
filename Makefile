@@ -61,6 +61,7 @@ SERVER_WINDOWS_BIN := $(DIST_DIR)/windows/server/$(PROJECT)-server.exe
 SERVER_MACOS_BIN := $(DIST_DIR)/macos/server/$(PROJECT)-server
 NETWORK_BENCH_BIN := $(BUILD_DIR)/benchmarks/network-benchmark
 INPUT_FLOOD_CLIENT_BIN := $(BUILD_DIR)/tests/input-flood-client
+DIRECTORY_QUERY_CLIENT_BIN := $(BUILD_DIR)/tests/directory-query-client
 INPUT_FLOOD_PORT ?=
 NETWORK_BENCH_CLIENTS ?= 1,64,256
 NETWORK_BENCH_DURATION_MS ?= 1500
@@ -247,6 +248,7 @@ SERVER_SOURCES := \
 	$(SERVER_SRC_DIR)/main.c \
 	$(SERVER_SRC_DIR)/logger.c \
 	$(SERVER_SRC_DIR)/database.c \
+	$(SERVER_SRC_DIR)/directory_registry.c \
 	$(SERVER_SRC_DIR)/match_persistence.c \
 	$(SERVER_SRC_DIR)/auth.c \
 	$(SERVER_SRC_DIR)/input_admission.c \
@@ -278,6 +280,7 @@ SHARED_HEADERS := \
 	$(CLIENT_SRC_DIR)/layout.h \
 	$(CLIENT_SRC_DIR)/match_feedback.h \
 	$(SERVER_SRC_DIR)/database.h \
+	$(SERVER_SRC_DIR)/directory_registry.h \
 	$(SERVER_SRC_DIR)/match_persistence.h \
 	$(SERVER_SRC_DIR)/auth.h \
 	$(SERVER_SRC_DIR)/input_admission.h \
@@ -510,6 +513,41 @@ input-flood-test: $(SERVER_LINUX_BIN) $(INPUT_FLOOD_CLIENT_BIN)
 	fi; \
 	./$(INPUT_FLOOD_CLIENT_BIN) --port $$port
 
+directory-integration-test: $(SERVER_LINUX_BIN) $(DIRECTORY_QUERY_CLIENT_BIN)
+	@set -eu; \
+	base_port=$$((40000 + ($$$$ * 1103) % 20000)); directory_port=$$base_port; \
+	game_one_port=$$((base_port + 1)); game_two_port=$$((base_port + 2)); \
+	tmp=/tmp/shroomio-directory-$$$$; mkdir -p "$$tmp"; \
+	directory_pid=""; game_one_pid=""; game_two_pid=""; \
+	cleanup() { \
+		for pid in "$$game_one_pid" "$$game_two_pid" "$$directory_pid"; do \
+			if [ -n "$$pid" ]; then kill "$$pid" >/dev/null 2>&1 || true; wait "$$pid" >/dev/null 2>&1 || true; fi; \
+		done; \
+		rm -rf "$$tmp"; \
+	}; \
+	trap cleanup EXIT INT TERM; \
+	./$(SERVER_LINUX_BIN) --directory --bind 127.0.0.1 --directory-port $$directory_port >"$$tmp/directory.log" 2>&1 & directory_pid=$$!; \
+	ready=0; for attempt in $$(seq 1 200); do \
+		if grep -q "directory listening on 127.0.0.1:$$directory_port/udp" "$$tmp/directory.log"; then ready=1; break; fi; \
+		if ! kill -0 "$$directory_pid" >/dev/null 2>&1; then break; fi; sleep 0.01; \
+	done; \
+	if [ $$ready -ne 1 ]; then echo "Directory failed to start"; cat "$$tmp/directory.log"; exit 1; fi; \
+	SHROOM_DIRECTORY_HOST=127.0.0.1 SHROOM_DIRECTORY_PORT=$$directory_port SHROOM_SERVER_ID=101 SHROOM_SERVER_NAME="Integration One" SHROOM_SERVER_PUBLIC_HOST=127.0.0.1 \
+		./$(SERVER_LINUX_BIN) --bind 127.0.0.1 --port $$game_one_port --database "$$tmp/one.db" >"$$tmp/one.log" 2>&1 & game_one_pid=$$!; \
+	SHROOM_DIRECTORY_HOST=127.0.0.1 SHROOM_DIRECTORY_PORT=$$directory_port SHROOM_SERVER_ID=202 SHROOM_SERVER_NAME="Integration Two" SHROOM_SERVER_PUBLIC_HOST=127.0.0.1 \
+		./$(SERVER_LINUX_BIN) --bind 127.0.0.1 --port $$game_two_port --database "$$tmp/two.db" >"$$tmp/two.log" 2>&1 & game_two_pid=$$!; \
+	registered=0; for attempt in $$(seq 1 700); do \
+		if [ "$$(grep -c "directory heartbeat server_id=" "$$tmp/directory.log" || true)" -ge 2 ]; then registered=1; break; fi; \
+		if ! kill -0 "$$game_one_pid" >/dev/null 2>&1 || ! kill -0 "$$game_two_pid" >/dev/null 2>&1; then break; fi; sleep 0.01; \
+	done; \
+	if [ $$registered -ne 1 ]; then echo "Game servers did not register"; cat "$$tmp/directory.log" "$$tmp/one.log" "$$tmp/two.log"; exit 1; fi; \
+	./$(DIRECTORY_QUERY_CLIENT_BIN) 127.0.0.1 $$directory_port 2 --expect-id 101; \
+	if grep -q "peer connected:" "$$tmp/one.log" || grep -q "peer connected:" "$$tmp/two.log"; then echo "Directory traffic allocated a player peer"; exit 1; fi; \
+	kill "$$game_one_pid"; wait "$$game_one_pid" >/dev/null 2>&1 || true; game_one_pid=""; \
+	sleep 16; \
+	./$(DIRECTORY_QUERY_CLIENT_BIN) 127.0.0.1 $$directory_port 1 --expect-id 202; \
+	echo "Directory integration passed: two live servers registered and stopped server expired without player sessions."
+
 run-windows:
 	@command -v $(WINDOWS_CXX) >/dev/null 2>&1 || (printf '%s\n' 'Error: $(WINDOWS_CXX) not found. Install mingw-w64:' '  Ubuntu/Debian: sudo apt install mingw-w64' '  Fedora:       sudo dnf install mingw64-gcc-c++' '  Arch:         sudo pacman -S mingw-w64-gcc' && exit 1)
 	@test -f $(VCPKG_WINDOWS_STAMP) || (printf '%s\n' 'Error: Windows vcpkg dependencies not installed.' 'Run: make vcpkg-install-windows' && exit 1)
@@ -551,6 +589,10 @@ $(NETWORK_BENCH_BIN): tools/network_benchmark.c $(SHARED_SRC_DIR)/net_telemetry.
 		$(SHARED_SRC_DIR)/net_telemetry.c -o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet
 
 $(INPUT_FLOOD_CLIENT_BIN): tools/input_flood_client.c $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) $< -o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet
+
+$(DIRECTORY_QUERY_CLIENT_BIN): tools/directory_query_client.c $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) $< -o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet
 
@@ -703,9 +745,9 @@ $(UNITY_DIR):
 # =============================================================================
 # 8. Test Targets
 # =============================================================================
-.PHONY: test unit-test imgui-test valgrind-test valgrind-unit-test valgrind-server-smoke valgrind-imgui-test test-coverage test-clean
+.PHONY: test unit-test imgui-test directory-integration-test valgrind-test valgrind-unit-test valgrind-server-smoke valgrind-imgui-test test-coverage test-clean
 
-test: unit-test imgui-test input-flood-test
+test: unit-test imgui-test input-flood-test directory-integration-test
 
 unit-test: $(TEST_BINS)
 	@echo "Running unit tests..."
@@ -871,6 +913,9 @@ test_connection) \
 		test_input_admission) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(SERVER_SRC_DIR)/input_admission.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+		test_directory_registry) \
+			$(LINUX_CC) $(COVERAGE_CFLAGS) \
+				$$src $(UNITY_SRC) $(SERVER_SRC_DIR)/directory_registry.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_spectator_target) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/spectator_target.c -o $$test_bin $(COVERAGE_LIBS) ;; \
@@ -1010,6 +1055,10 @@ $(TEST_BUILD_DIR)/test_input_scheduler: $(UNIT_TESTS_DIR)/test_input_scheduler.c
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
 $(TEST_BUILD_DIR)/test_input_admission: $(UNIT_TESTS_DIR)/test_input_admission.c $(UNITY_SRC) $(SERVER_SRC_DIR)/input_admission.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_directory_registry: $(UNIT_TESTS_DIR)/test_directory_registry.c $(UNITY_SRC) $(SERVER_SRC_DIR)/directory_registry.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 

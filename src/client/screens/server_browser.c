@@ -50,6 +50,7 @@ typedef struct ServerBrowserState {
   float refresh_elapsed;
   float result_age;
   bool demo_mode;
+  bool directory_configured;
   ServerBrowserEntry servers[SERVER_BROWSER_MAX_SERVERS];
   ServerBrowserEntry recent_servers[SERVER_BROWSER_MAX_RECENTS];
 } ServerBrowserState;
@@ -57,6 +58,24 @@ typedef struct ServerBrowserState {
 static const char* kRecentServersPath = "server_browser_recent.txt";
 static const char* const kSortItems[] = {"Name", "Players", "Ping"};
 static ServerBrowserState g_server_browser;
+
+static const char* DiscoveryStatusText(void) {
+  switch (g_server_browser.model.discovery_state) {
+  case SHROOM_SERVER_DISCOVERY_LOADING:
+    return "Loading server directory...";
+  case SHROOM_SERVER_DISCOVERY_READY:
+    return "Demo results loaded; counts and ping are illustrative, not live.";
+  case SHROOM_SERVER_DISCOVERY_FAILED:
+    return "Refresh failed: no server directory is configured. Use Direct Connect.";
+  case SHROOM_SERVER_DISCOVERY_STALE:
+    return "Demo results are stale. Refresh before relying on them.";
+  case SHROOM_SERVER_DISCOVERY_EMPTY:
+  default:
+    return g_server_browser.directory_configured
+               ? "The server directory is empty. Use Direct Connect or try again later."
+               : "No discovery results. Use Direct Connect or a recent server.";
+  }
+}
 
 static void CopyText(char* destination, size_t destination_size, const char* source) {
   size_t length;
@@ -414,6 +433,8 @@ static void FinishDiscoveryRefresh(void) {
   if (g_server_browser.demo_mode) {
     LoadDemoServers();
     ShroomServerBrowserFinishRefresh(&g_server_browser.model, true, g_server_browser.server_count);
+  } else if (g_server_browser.directory_configured) {
+    ShroomServerBrowserFinishRefresh(&g_server_browser.model, true, 0u);
   } else {
     ShroomServerBrowserFinishRefresh(&g_server_browser.model, false, 0u);
   }
@@ -422,11 +443,13 @@ static void FinishDiscoveryRefresh(void) {
 static bool ServerBrowserInit(ShroomScreenManager* manager) {
   const Game* game = manager != NULL ? (const Game*)manager->user_data : NULL;
   const char* demo_mode = getenv("SHROOM_SERVER_BROWSER_DEMO");
+  const char* directory_host = getenv("SHROOM_DIRECTORY_HOST");
 
   g_server_browser = (ServerBrowserState){0};
   ShroomServerBrowserModelInit(&g_server_browser.model);
   g_server_browser.selected_index = -1;
   g_server_browser.demo_mode = (demo_mode != NULL) && (strcmp(demo_mode, "1") == 0);
+  g_server_browser.directory_configured = (directory_host != NULL) && (directory_host[0] != '\0');
   snprintf(g_server_browser.direct_host_input, sizeof(g_server_browser.direct_host_input), "%s",
            "127.0.0.1");
   snprintf(g_server_browser.direct_port_input, sizeof(g_server_browser.direct_port_input), "%u",
@@ -514,24 +537,7 @@ static void ServerBrowserDraw(ShroomScreenManager* manager) {
   ShroomImGui_EndDisabled();
 
   ShroomImGui_SameLine();
-  switch (g_server_browser.model.discovery_state) {
-  case SHROOM_SERVER_DISCOVERY_LOADING:
-    ShroomImGui_Text("Loading server directory...");
-    break;
-  case SHROOM_SERVER_DISCOVERY_READY:
-    ShroomImGui_Text("Demo results loaded; counts and ping are illustrative, not live.");
-    break;
-  case SHROOM_SERVER_DISCOVERY_FAILED:
-    ShroomImGui_Text("Refresh failed: no server directory is configured. Use Direct Connect.");
-    break;
-  case SHROOM_SERVER_DISCOVERY_STALE:
-    ShroomImGui_Text("Demo results are stale. Refresh before relying on them.");
-    break;
-  case SHROOM_SERVER_DISCOVERY_EMPTY:
-  default:
-    ShroomImGui_Text("No discovery results. Use Direct Connect or a recent server.");
-    break;
-  }
+  ShroomImGui_Text(DiscoveryStatusText());
 
   if ((g_server_browser.model.discovery_state == SHROOM_SERVER_DISCOVERY_READY) ||
       (g_server_browser.model.discovery_state == SHROOM_SERVER_DISCOVERY_STALE)) {
@@ -751,6 +757,8 @@ int ShroomTestGetServerBrowserDiscoveryState(void) {
 }
 
 int ShroomTestGetServerBrowserServerCount(void) { return (int)g_server_browser.server_count; }
+
+const char* ShroomTestGetServerBrowserStatusText(void) { return DiscoveryStatusText(); }
 
 bool ShroomTestGetServerBrowserSortDescending(void) {
   return g_server_browser.model.sort_descending;

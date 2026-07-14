@@ -21,6 +21,7 @@
 #include "shared/sim.h"
 #include "auth.h"
 #include "database.h"
+#include "directory_registry.h"
 #include "logger.h"
 #include "match_persistence.h"
 #include "session_cleanup.h"
@@ -78,14 +79,32 @@ static ShroomLifecycle g_lifecycle;
 typedef struct ServerConfig {
   char bind_host[64];
   char database_path[256];
+  char directory_host[SHROOM_DIRECTORY_HOST_LENGTH];
+  char public_host[SHROOM_DIRECTORY_HOST_LENGTH];
+  char server_name[SHROOM_DIRECTORY_SERVER_NAME_LENGTH];
   enet_uint32 bind_address;
   uint16_t port;
+  uint16_t directory_port;
+  uint64_t server_id;
   float match_duration_seconds;
+  bool directory_mode;
   bool smoke_test;
   bool benchmark;
   uint32_t benchmark_ticks;
   uint32_t benchmark_bots;
 } ServerConfig;
+
+typedef struct DirectoryAdvertiser {
+  ENetHost* host;
+  ENetPeer* peer;
+  uint64_t last_heartbeat_ms;
+  uint64_t last_connect_attempt_ms;
+  bool connected;
+} DirectoryAdvertiser;
+
+#define SHROOM_DIRECTORY_HEARTBEAT_INTERVAL_MS 5000ull
+#define SHROOM_DIRECTORY_RECONNECT_INTERVAL_MS 2000ull
+#define SHROOM_DIRECTORY_MAX_EVENTS_PER_TICK 128u
 
 typedef struct ServerProfileStats {
   ShroomProfileWindow tick;
@@ -137,6 +156,21 @@ static bool ParseUint32(const char* text, uint32_t* out_value) {
   return true;
 }
 
+static bool ParseUint64(const char* text, uint64_t* out_value) {
+  char* end = NULL;
+  unsigned long long value;
+
+  if ((text == NULL) || (text[0] == '\0')) {
+    return false;
+  }
+  value = strtoull(text, &end, 10);
+  if ((end == text) || (*end != '\0') || (value == 0ull)) {
+    return false;
+  }
+  *out_value = (uint64_t)value;
+  return true;
+}
+
 static void CopyConfigString(char* destination, size_t destination_size, const char* source) {
   if ((destination == NULL) || (destination_size == 0u)) {
     return;
@@ -155,6 +189,8 @@ static void PrintUsage(const char* program_name) {
   printf("  --bind ADDRESS    Local bind IP address, default 0.0.0.0\n");
   printf("  --port PORT       UDP listen port, default %u\n", SHROOM_SERVER_PORT);
   printf("  --database PATH   SQLite database path, default shroomio.db\n");
+  printf("  --directory       Run the bounded directory service instead of a game server\n");
+  printf("  --directory-port PORT  Directory UDP port, default %u\n", SHROOM_DIRECTORY_PORT);
   printf("  --match-duration SECONDS  Match duration in seconds, default %.0f\n",
          SHROOM_MATCH_DURATION_SECONDS);
   printf("  --smoke-test      Start, initialize subsystems, then shut down cleanly\n");
@@ -165,6 +201,36 @@ static void PrintUsage(const char* program_name) {
   printf("\n");
   printf("Environment overrides:\n");
   printf("  SHROOM_SERVER_BIND, SHROOM_SERVER_PORT, SHROOM_SERVER_DB_PATH\n");
+  printf("  SHROOM_DIRECTORY_HOST, SHROOM_DIRECTORY_PORT, SHROOM_SERVER_PUBLIC_HOST\n");
+  printf("  SHROOM_SERVER_ID, SHROOM_SERVER_NAME\n");
+}
+
+static uint64_t StableServerId(const char* host, uint16_t port) {
+  uint64_t hash = 1469598103934665603ull;
+
+  for (const unsigned char* cursor = (const unsigned char*)host; *cursor != '\0'; ++cursor) {
+    hash = (hash ^ *cursor) * 1099511628211ull;
+  }
+  hash = (hash ^ (uint8_t)(port & 0xffu)) * 1099511628211ull;
+  hash = (hash ^ (uint8_t)(port >> 8u)) * 1099511628211ull;
+  return hash == 0ull ? 1ull : hash;
+}
+
+static void SanitizeServerName(char* name) {
+  bool visible = false;
+
+  for (size_t index = 0u; name[index] != '\0'; ++index) {
+    const unsigned char character = (unsigned char)name[index];
+    if ((character < 32u) || (character > 126u)) {
+      name[index] = '_';
+    }
+    if (name[index] != ' ') {
+      visible = true;
+    }
+  }
+  if (!visible) {
+    CopyConfigString(name, SHROOM_DIRECTORY_SERVER_NAME_LENGTH, "Shroomio Server");
+  }
 }
 
 static bool ResolveBindAddress(const char* bind_value, enet_uint32* bind_address) {
@@ -200,13 +266,20 @@ static bool LoadServerConfig(ServerConfig* config, int argc, char** argv) {
   const char* env_bind = getenv("SHROOM_SERVER_BIND");
   const char* env_port = getenv("SHROOM_SERVER_PORT");
   const char* env_database = getenv("SHROOM_SERVER_DB_PATH");
+  const char* env_directory_host = getenv("SHROOM_DIRECTORY_HOST");
+  const char* env_directory_port = getenv("SHROOM_DIRECTORY_PORT");
+  const char* env_public_host = getenv("SHROOM_SERVER_PUBLIC_HOST");
+  const char* env_server_id = getenv("SHROOM_SERVER_ID");
+  const char* env_server_name = getenv("SHROOM_SERVER_NAME");
 
   *config = (ServerConfig){.port = (uint16_t)SHROOM_SERVER_PORT,
+                           .directory_port = (uint16_t)SHROOM_DIRECTORY_PORT,
                            .match_duration_seconds = SHROOM_MATCH_DURATION_SECONDS,
                            .benchmark_ticks = 600u,
                            .benchmark_bots = 8u};
   CopyConfigString(config->bind_host, sizeof(config->bind_host), "0.0.0.0");
   CopyConfigString(config->database_path, sizeof(config->database_path), "shroomio.db");
+  CopyConfigString(config->server_name, sizeof(config->server_name), "Shroomio Server");
 
   if ((env_bind != NULL) && (env_bind[0] != '\0')) {
     CopyConfigString(config->bind_host, sizeof(config->bind_host), env_bind);
@@ -216,6 +289,25 @@ static bool LoadServerConfig(ServerConfig* config, int argc, char** argv) {
   }
   if ((env_port != NULL) && (env_port[0] != '\0') && !ParsePort(env_port, &config->port)) {
     fprintf(stderr, "Invalid SHROOM_SERVER_PORT: %s\n", env_port);
+    return false;
+  }
+  if ((env_directory_host != NULL) && (env_directory_host[0] != '\0')) {
+    CopyConfigString(config->directory_host, sizeof(config->directory_host), env_directory_host);
+  }
+  if ((env_directory_port != NULL) && (env_directory_port[0] != '\0') &&
+      !ParsePort(env_directory_port, &config->directory_port)) {
+    fprintf(stderr, "Invalid SHROOM_DIRECTORY_PORT: %s\n", env_directory_port);
+    return false;
+  }
+  if ((env_public_host != NULL) && (env_public_host[0] != '\0')) {
+    CopyConfigString(config->public_host, sizeof(config->public_host), env_public_host);
+  }
+  if ((env_server_name != NULL) && (env_server_name[0] != '\0')) {
+    CopyConfigString(config->server_name, sizeof(config->server_name), env_server_name);
+  }
+  if ((env_server_id != NULL) && (env_server_id[0] != '\0') &&
+      !ParseUint64(env_server_id, &config->server_id)) {
+    fprintf(stderr, "Invalid SHROOM_SERVER_ID: %s\n", env_server_id);
     return false;
   }
 
@@ -248,6 +340,18 @@ static bool LoadServerConfig(ServerConfig* config, int argc, char** argv) {
       }
       ++i;
       CopyConfigString(config->database_path, sizeof(config->database_path), argv[i]);
+    } else if (strcmp(argv[i], "--directory") == 0) {
+      config->directory_mode = true;
+    } else if (strcmp(argv[i], "--directory-port") == 0) {
+      if ((i + 1) >= argc) {
+        fprintf(stderr, "Missing value for --directory-port\n");
+        return false;
+      }
+      ++i;
+      if (!ParsePort(argv[i], &config->directory_port)) {
+        fprintf(stderr, "Invalid --directory-port: %s\n", argv[i]);
+        return false;
+      }
     } else if (strcmp(argv[i], "--smoke-test") == 0) {
       config->smoke_test = true;
     } else if (strcmp(argv[i], "--benchmark") == 0) {
@@ -298,6 +402,14 @@ static bool LoadServerConfig(ServerConfig* config, int argc, char** argv) {
   if (!ResolveBindAddress(config->bind_host, &config->bind_address)) {
     fprintf(stderr, "Invalid bind address: %s\n", config->bind_host);
     return false;
+  }
+
+  if (config->public_host[0] == '\0') {
+    CopyConfigString(config->public_host, sizeof(config->public_host), config->bind_host);
+  }
+  SanitizeServerName(config->server_name);
+  if (config->server_id == 0ull) {
+    config->server_id = StableServerId(config->public_host, config->port);
   }
 
   return true;
@@ -2034,6 +2146,208 @@ static void HandlePacket(ENetHost* host, ENetPeer* peer, ServerSession* session,
   entry->handler(&context);
 }
 
+static void SendDirectoryList(ENetPeer* peer, const ShroomDirectoryRegistry* registry,
+                              uint32_t generation) {
+  ShroomDirectoryServerEntry entries[SHROOM_DIRECTORY_MAX_ENTRIES];
+  const size_t entry_count =
+      ShroomDirectoryRegistryCopyActive(registry, entries, SHROOM_DIRECTORY_MAX_ENTRIES);
+  const size_t chunk_count = ShroomDirectoryListChunkCount(entry_count);
+
+  for (size_t chunk_index = 0u; chunk_index < chunk_count; ++chunk_index) {
+    ShroomDirectoryListPacket packet = {0};
+    const size_t packet_size =
+        ShroomDirectoryBuildListPacket(entries, entry_count, generation, chunk_index, &packet);
+    SendPacket(peer, SHROOM_ENET_CHANNEL_CONTROL, SHROOM_PACKET_DIRECTORY_LIST,
+               CreateProtocolPacket(&packet, packet_size, SHROOM_PACKET_DIRECTORY_LIST));
+  }
+}
+
+static int RunDirectoryServer(const ServerConfig* config) {
+  ENetAddress address = {.host = config->bind_address, .port = config->directory_port};
+  ENetHost* host;
+  ShroomDirectoryRegistry registry;
+
+  if (enet_initialize() != 0) {
+    LOG_ERROR("failed to initialize ENet for directory service");
+    return 1;
+  }
+  host = enet_host_create(&address, 128u, SHROOM_ENET_CHANNEL_COUNT, 0u, 0u);
+  if (host == NULL) {
+    LOG_ERROR("failed to create directory ENet host");
+    enet_deinitialize();
+    return 1;
+  }
+
+  ShroomDirectoryRegistryInit(&registry);
+  ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_START);
+  LOG_INFO("shroomio directory listening on %s:%u/udp", config->bind_host, config->directory_port);
+  if (config->smoke_test) {
+    ShroomLifecycleRequestShutdown(&g_lifecycle);
+  }
+
+  while (ShroomLifecycleIsRunning(&g_lifecycle) &&
+         !ShroomLifecycleIsShutdownRequested(&g_lifecycle)) {
+    ENetEvent event;
+    const uint64_t now_ms = GetTimeMillis();
+    uint32_t serviced_events = 0u;
+
+    while ((serviced_events < SHROOM_DIRECTORY_MAX_EVENTS_PER_TICK) &&
+           (enet_host_service(host, &event, 10u) > 0)) {
+      ++serviced_events;
+      switch (event.type) {
+      case ENET_EVENT_TYPE_RECEIVE:
+        if ((event.channelID == SHROOM_ENET_CHANNEL_CONTROL) &&
+            (event.packet->dataLength >= sizeof(ShroomPacketHeader))) {
+          const ShroomPacketHeader* header = (const ShroomPacketHeader*)event.packet->data;
+          if ((header->type == SHROOM_PACKET_DIRECTORY_HEARTBEAT) &&
+              ShroomDirectoryRegistryRegister(
+                  &registry, (const ShroomDirectoryHeartbeatPacket*)event.packet->data,
+                  event.packet->dataLength, now_ms)) {
+            const ShroomDirectoryHeartbeatPacket* heartbeat =
+                (const ShroomDirectoryHeartbeatPacket*)event.packet->data;
+            LOG_INFO("directory heartbeat server_id=%llu endpoint=%s:%u players=%u/%u",
+                     (unsigned long long)heartbeat->server.server_id, heartbeat->server.host,
+                     heartbeat->server.port, heartbeat->server.player_count,
+                     heartbeat->server.capacity);
+          } else if ((header->type == SHROOM_PACKET_DIRECTORY_QUERY) &&
+                     ShroomDirectoryQueryIsValid(
+                         (const ShroomDirectoryQueryPacket*)event.packet->data,
+                         event.packet->dataLength)) {
+            const ShroomDirectoryQueryPacket* query =
+                (const ShroomDirectoryQueryPacket*)event.packet->data;
+            ShroomDirectoryRegistryEvictExpired(&registry, now_ms);
+            SendDirectoryList(event.peer, &registry, query->generation);
+            enet_host_flush(host);
+          }
+        }
+        enet_packet_destroy(event.packet);
+        break;
+      case ENET_EVENT_TYPE_CONNECT:
+      case ENET_EVENT_TYPE_DISCONNECT:
+      case ENET_EVENT_TYPE_NONE:
+      default:
+        break;
+      }
+    }
+    ShroomDirectoryRegistryEvictExpired(&registry, now_ms);
+  }
+
+  ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_STOP);
+  enet_host_destroy(host);
+  enet_deinitialize();
+  ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_SHUTDOWN);
+  LOG_INFO("shroomio directory shutting down");
+  return 0;
+}
+
+static uint16_t CountAdvertisedPlayers(const ENetHost* host) {
+  size_t count = 0u;
+
+  if (host == NULL) {
+    return 0u;
+  }
+  for (size_t index = 0u; index < host->peerCount; ++index) {
+    const ServerSession* session = (const ServerSession*)host->peers[index].data;
+    if ((host->peers[index].state == ENET_PEER_STATE_CONNECTED) && (session != NULL) &&
+        session->active && !session->spectating) {
+      ++count;
+    }
+  }
+  return count > UINT16_MAX ? UINT16_MAX : (uint16_t)count;
+}
+
+static void DirectoryAdvertiserConnect(DirectoryAdvertiser* advertiser, const ServerConfig* config,
+                                       uint64_t now_ms) {
+  ENetAddress address = {.port = config->directory_port};
+
+  advertiser->last_connect_attempt_ms = now_ms;
+  if (enet_address_set_host(&address, config->directory_host) != 0) {
+    LOG_WARN("directory host could not be resolved: %s", config->directory_host);
+    return;
+  }
+  advertiser->peer = enet_host_connect(advertiser->host, &address, SHROOM_ENET_CHANNEL_COUNT, 0u);
+  if (advertiser->peer == NULL) {
+    LOG_WARN("directory connection could not be started");
+  }
+}
+
+static bool DirectoryAdvertiserInit(DirectoryAdvertiser* advertiser, const ServerConfig* config,
+                                    uint64_t now_ms) {
+  *advertiser = (DirectoryAdvertiser){0};
+  if (config->directory_host[0] == '\0') {
+    return true;
+  }
+  if ((strcmp(config->public_host, "0.0.0.0") == 0) || (strcmp(config->public_host, "::") == 0) ||
+      (strcmp(config->public_host, "*") == 0)) {
+    LOG_WARN("SHROOM_SERVER_PUBLIC_HOST is required when advertising from a wildcard bind");
+    return false;
+  }
+  advertiser->host = enet_host_create(NULL, 1u, SHROOM_ENET_CHANNEL_COUNT, 0u, 0u);
+  if (advertiser->host == NULL) {
+    LOG_WARN("directory advertiser host could not be created");
+    return false;
+  }
+  DirectoryAdvertiserConnect(advertiser, config, now_ms);
+  return true;
+}
+
+static void DirectoryAdvertiserUpdate(DirectoryAdvertiser* advertiser, const ServerConfig* config,
+                                      const ENetHost* game_host, uint64_t now_ms) {
+  ENetEvent event;
+
+  if (advertiser->host == NULL) {
+    return;
+  }
+  while (enet_host_service(advertiser->host, &event, 0u) > 0) {
+    if (event.type == ENET_EVENT_TYPE_CONNECT) {
+      advertiser->connected = true;
+      advertiser->last_heartbeat_ms = 0ull;
+      LOG_INFO("connected to directory %s:%u", config->directory_host, config->directory_port);
+    } else if (event.type == ENET_EVENT_TYPE_DISCONNECT) {
+      advertiser->connected = false;
+      advertiser->peer = NULL;
+      LOG_WARN("directory connection lost");
+    } else if (event.type == ENET_EVENT_TYPE_RECEIVE) {
+      enet_packet_destroy(event.packet);
+    }
+  }
+
+  if ((advertiser->peer == NULL) &&
+      ((now_ms - advertiser->last_connect_attempt_ms) >= SHROOM_DIRECTORY_RECONNECT_INTERVAL_MS)) {
+    DirectoryAdvertiserConnect(advertiser, config, now_ms);
+  }
+  if (advertiser->connected &&
+      ((advertiser->last_heartbeat_ms == 0ull) ||
+       ((now_ms - advertiser->last_heartbeat_ms) >= SHROOM_DIRECTORY_HEARTBEAT_INTERVAL_MS))) {
+    ShroomDirectoryHeartbeatPacket heartbeat = {0};
+
+    ShroomPacketHeaderInit(&heartbeat.header, SHROOM_PACKET_DIRECTORY_HEARTBEAT, sizeof(heartbeat));
+    heartbeat.protocol_version = SHROOM_DIRECTORY_PROTOCOL_VERSION;
+    heartbeat.server.server_id = config->server_id;
+    CopyConfigString(heartbeat.server.name, sizeof(heartbeat.server.name), config->server_name);
+    CopyConfigString(heartbeat.server.host, sizeof(heartbeat.server.host), config->public_host);
+    heartbeat.server.port = config->port;
+    heartbeat.server.player_count = CountAdvertisedPlayers(game_host);
+    heartbeat.server.capacity = SHROOM_SERVER_MAX_CLIENTS;
+    SendPacket(
+        advertiser->peer, SHROOM_ENET_CHANNEL_CONTROL, SHROOM_PACKET_DIRECTORY_HEARTBEAT,
+        CreateProtocolPacket(&heartbeat, sizeof(heartbeat), SHROOM_PACKET_DIRECTORY_HEARTBEAT));
+    enet_host_flush(advertiser->host);
+    advertiser->last_heartbeat_ms = now_ms;
+  }
+}
+
+static void DirectoryAdvertiserShutdown(DirectoryAdvertiser* advertiser) {
+  if (advertiser->host == NULL) {
+    return;
+  }
+  if (advertiser->peer != NULL) {
+    enet_peer_disconnect_now(advertiser->peer, 0u);
+  }
+  enet_host_destroy(advertiser->host);
+  *advertiser = (DirectoryAdvertiser){0};
+}
+
 int main(int argc, char** argv) {
   const uint64_t tick_interval_nanos = 1000000000ull / (uint64_t)SHROOM_SERVER_TICK_RATE;
   const uint64_t snapshot_interval_ticks =
@@ -2052,6 +2366,7 @@ int main(int argc, char** argv) {
   sqlite3* db = NULL;
   ShroomAuthContext auth_ctx = {0};
   ServerConfig config;
+  DirectoryAdvertiser directory_advertiser = {0};
 
   ShroomLifecycleInit(&g_lifecycle);
   ShroomVoiceRelayInit(&voice_relay);
@@ -2070,6 +2385,9 @@ int main(int argc, char** argv) {
 
   if (config.benchmark) {
     return RunServerBenchmark(&config);
+  }
+  if (config.directory_mode) {
+    return RunDirectoryServer(&config);
   }
 
   if (sqlite3_open(config.database_path, &db) != SQLITE_OK) {
@@ -2126,6 +2444,7 @@ int main(int argc, char** argv) {
 
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_START);
   LOG_INFO("shroomio server listening on %s:%u/udp", config.bind_host, config.port);
+  DirectoryAdvertiserInit(&directory_advertiser, &config, GetTimeMillis());
   if (config.smoke_test) {
     ShroomLifecycleRequestShutdown(&g_lifecycle);
   }
@@ -2191,6 +2510,7 @@ int main(int argc, char** argv) {
     if (serviced_event_count == SHROOM_SERVER_MAX_ENET_EVENTS_PER_TICK) {
       g_server_event_budget_exhaustions += 1u;
     }
+    DirectoryAdvertiserUpdate(&directory_advertiser, &config, host, now_ms);
     for (size_t peer_index = 0u; peer_index < host->peerCount; ++peer_index) {
       ENetPeer* peer = &host->peers[peer_index];
       const bool active = peer->state == ENET_PEER_STATE_CONNECTED;
@@ -2368,6 +2688,7 @@ int main(int argc, char** argv) {
   }
 
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_STOP);
+  DirectoryAdvertiserShutdown(&directory_advertiser);
   for (size_t peer_index = 0; peer_index < host->peerCount; ++peer_index) {
     DisconnectSession((ServerSession*)host->peers[peer_index].data, lobbies);
     ShroomVoiceRelaySetPeer(&voice_relay, peer_index, false, 0u, 0u);

@@ -68,6 +68,7 @@ The server is self-hostable without recompiling. CLI flags override environment 
 | Bind address | `--bind ADDRESS` | `SHROOM_SERVER_BIND` | `0.0.0.0` |
 | UDP port | `--port PORT` | `SHROOM_SERVER_PORT` | `7777` |
 | SQLite database | `--database PATH` | `SHROOM_SERVER_DB_PATH` | `shroomio.db` |
+| Directory UDP port | `--directory-port PORT` | `SHROOM_DIRECTORY_PORT` | `7778` |
 
 Examples:
 
@@ -75,6 +76,31 @@ Examples:
 ./dist/linux/server/shroomio-server --bind 0.0.0.0 --port 7777 --database ./shroomio.db
 SHROOM_SERVER_PORT=9000 ./dist/linux/server/shroomio-server
 ```
+
+### Server Directory
+
+Run the bounded directory service on its own UDP port. It stores at most 32 live registrations in
+memory and expires a game server 15 seconds after its last heartbeat:
+
+```bash
+./dist/linux/server/shroomio-server --directory --bind 0.0.0.0 --directory-port 7778
+```
+
+Configure each public game server to advertise every five seconds:
+
+```bash
+SHROOM_DIRECTORY_HOST=directory.example.com \
+SHROOM_DIRECTORY_PORT=7778 \
+SHROOM_SERVER_PUBLIC_HOST=game-1.example.com \
+SHROOM_SERVER_ID=1001 \
+SHROOM_SERVER_NAME="East Arena" \
+./dist/linux/server/shroomio-server --port 7777 --database ./shroomio.db
+```
+
+`SHROOM_SERVER_ID` must be a stable nonzero integer for that deployment. When omitted, the server
+derives it from the advertised host and game port. Open the directory port to clients and game
+servers; the game port remains separate. If `SHROOM_DIRECTORY_HOST` is absent, the server runs
+normally without advertising and clients report that no directory is configured.
 
 ### Docker (Recommended)
 

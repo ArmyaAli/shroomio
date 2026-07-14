@@ -1312,6 +1312,7 @@ static void Test_ServerBrowserInvalidHostAndHostPortParsing(ImGuiTestContext* ct
 }
 
 static void Test_ServerBrowserDiscoveryStatesAndSorting(ImGuiTestContext* ctx) {
+  unsetenv("SHROOM_DIRECTORY_HOST");
   ShroomImGuiTestAppReset(true);
   ShroomTeCtx_SetRef(ctx, "Main Menu");
   ShroomTeCtx_ItemClick(ctx, "Custom Server");
@@ -1347,6 +1348,39 @@ static void Test_ServerBrowserDiscoveryStatesAndSorting(ImGuiTestContext* ctx) {
   ShroomTeCtx_ItemClick(ctx, "Join Selected");
   IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
               SHROOM_SCREEN_SERVER_BROWSER);
+}
+
+static void Test_ServerBrowserDirectoryUnavailableAndEmptyStates(ImGuiTestContext* ctx) {
+  unsetenv("SHROOM_DIRECTORY_HOST");
+  ShroomImGuiTestAppReset(true);
+  ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_SERVER_BROWSER);
+  ShroomTeCtx_Yield(ctx, 2);
+  ShroomTeCtx_SetRef(ctx, "Server Browser");
+  ShroomTeCtx_ItemClick(ctx, "Refresh");
+  IM_CHECK_EQ(ShroomTestGetServerBrowserDiscoveryState(), SHROOM_SERVER_DISCOVERY_LOADING);
+  ShroomTestCompleteServerBrowserRefresh(false);
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Server Browser"));
+  IM_CHECK_EQ(ShroomTestGetServerBrowserDiscoveryState(), SHROOM_SERVER_DISCOVERY_FAILED);
+  IM_CHECK_EQ(ShroomTestGetServerBrowserServerCount(), 0);
+  IM_CHECK_STR_EQ(ShroomTestGetServerBrowserStatusText(),
+                  "Refresh failed: no server directory is configured. Use Direct Connect.");
+
+  setenv("SHROOM_DIRECTORY_HOST", "directory.shroomio.test", 1);
+  ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_MAIN_MENU);
+  ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_SERVER_BROWSER);
+  ShroomTeCtx_Yield(ctx, 2);
+  ShroomTeCtx_SetRef(ctx, "Server Browser");
+  ShroomTeCtx_ItemClick(ctx, "Refresh");
+  ShroomTestCompleteServerBrowserRefresh(false);
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Server Browser"));
+  IM_CHECK_EQ(ShroomTestGetServerBrowserDiscoveryState(), SHROOM_SERVER_DISCOVERY_EMPTY);
+  IM_CHECK_EQ(ShroomTestGetServerBrowserServerCount(), 0);
+  IM_CHECK_STR_EQ(ShroomTestGetServerBrowserStatusText(),
+                  "The server directory is empty. Use Direct Connect or try again later.");
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Join Host"));
+  unsetenv("SHROOM_DIRECTORY_HOST");
 }
 
 static void Test_LobbyConnectionModalStates(ImGuiTestContext* ctx) {
@@ -2759,6 +2793,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_ServerBrowserInvalidHostAndHostPortParsing);
   ShroomTeEngine_RegisterTest(engine, "screens", "server_browser_discovery_states_and_sorting",
                               Test_ServerBrowserDiscoveryStatesAndSorting);
+  ShroomTeEngine_RegisterTest(engine, "screens", "server_browser_directory_unavailable_and_empty",
+                              Test_ServerBrowserDirectoryUnavailableAndEmptyStates);
   ShroomTeEngine_RegisterTest(engine, "screens", "lobby_connection_modal_states",
                               Test_LobbyConnectionModalStates);
   ShroomTeEngine_RegisterTest(engine, "screens", "lobby_unreachable_server_friendly_error",

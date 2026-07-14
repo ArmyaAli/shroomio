@@ -77,6 +77,30 @@ void test_packet_type_values(void) {
   TEST_ASSERT_EQUAL(23, SHROOM_PACKET_LOBBY_ROSTER);
   TEST_ASSERT_EQUAL(24, SHROOM_PACKET_REMATCH_VOTE);
   TEST_ASSERT_EQUAL(25, SHROOM_PACKET_INTERMISSION_STATUS);
+  TEST_ASSERT_EQUAL(26, SHROOM_PACKET_DIRECTORY_HEARTBEAT);
+  TEST_ASSERT_EQUAL(27, SHROOM_PACKET_DIRECTORY_QUERY);
+  TEST_ASSERT_EQUAL(28, SHROOM_PACKET_DIRECTORY_LIST);
+}
+
+void test_directory_packets_are_versioned_bounded_control_messages(void) {
+  TEST_ASSERT_EQUAL_UINT32(1u, SHROOM_DIRECTORY_PROTOCOL_VERSION);
+  TEST_ASSERT_EQUAL_UINT32(32u, SHROOM_DIRECTORY_MAX_ENTRIES);
+  TEST_ASSERT_TRUE(sizeof(ShroomDirectoryListPacket) <= SHROOM_MAX_UNRELIABLE_PACKET_SIZE);
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CONTROL,
+                    ShroomPacketTypeToChannel(SHROOM_PACKET_DIRECTORY_HEARTBEAT));
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CONTROL,
+                    ShroomPacketTypeToChannel(SHROOM_PACKET_DIRECTORY_QUERY));
+  TEST_ASSERT_EQUAL(SHROOM_ENET_CHANNEL_CONTROL,
+                    ShroomPacketTypeToChannel(SHROOM_PACKET_DIRECTORY_LIST));
+  TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_DIRECTORY_HEARTBEAT));
+  TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_DIRECTORY_QUERY));
+  TEST_ASSERT_TRUE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_DIRECTORY_LIST));
+  TEST_ASSERT_EQUAL(sizeof(ShroomDirectoryHeartbeatPacket),
+                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_DIRECTORY_HEARTBEAT));
+  TEST_ASSERT_EQUAL(sizeof(ShroomDirectoryQueryPacket),
+                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_DIRECTORY_QUERY));
+  TEST_ASSERT_EQUAL(SHROOM_DIRECTORY_LIST_HEADER_SIZE,
+                    ShroomPacketTypeMinimumSize(SHROOM_PACKET_DIRECTORY_LIST));
 }
 
 void test_lobby_packet_channel_mapping(void) {
@@ -555,6 +579,7 @@ int main(void) {
   RUN_TEST(test_voice_packet_validation_requires_exact_framing);
   RUN_TEST(test_snapshot_player_state_initialization);
   RUN_TEST(test_intermission_packets_are_reliable_control_messages);
+  RUN_TEST(test_directory_packets_are_versioned_bounded_control_messages);
   RUN_TEST(test_snapshot_spore_state_size);
   RUN_TEST(test_spore_state_packet_initialization);
   RUN_TEST(test_spore_state_packet_chunk_size_is_bounded);
