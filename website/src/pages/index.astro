@@ -1,6 +1,6 @@
 ---
 import { Image } from "astro:assets";
-import heroArena from "../assets/hero-arena.png";
+import heroArena from "../../../assets/marketing/landing_hero_arena.png";
 import SiteLayout from "../layouts/SiteLayout.astro";
 
 const title = "Shroomio | Grow. Split. Dominate.";
@@ -550,7 +550,7 @@ const releaseUrl = "https://github.com/ArmyaAli/shroomio/releases";
 
     .hero {
       align-items: flex-end;
-      min-height: 92svh;
+      min-height: calc(100svh - 48px);
     }
 
     .hero-art {
@@ -655,6 +655,49 @@ const releaseUrl = "https://github.com/ArmyaAli/shroomio/releases";
     }
   }
 
+  @media (max-width: 360px) {
+    h1 {
+      font-size: 3.6rem;
+    }
+  }
+
+  @media (max-width: 780px) and (max-height: 680px) {
+    .site-header {
+      min-height: 58px;
+    }
+
+    .hero-content {
+      padding-top: 78px;
+      padding-bottom: 22px;
+    }
+
+    .eyebrow {
+      margin-bottom: 10px;
+    }
+
+    .tagline {
+      margin: 12px 0 9px;
+    }
+
+    .hero-copy {
+      font-size: 0.88rem;
+      line-height: 1.4;
+    }
+
+    .hero-actions {
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    .hero-actions .button {
+      min-height: 42px;
+    }
+
+    .platforms {
+      display: none;
+    }
+  }
+
   @media (min-width: 781px) and (max-width: 1050px) {
     h1 {
       font-size: 6rem;
@@ -671,7 +714,31 @@ const releaseUrl = "https://github.com/ArmyaAli/shroomio/releases";
 
   @media (min-width: 781px) and (max-height: 720px) {
     .hero {
-      min-height: 700px;
+      min-height: calc(100svh - 48px);
+    }
+
+    .hero-content {
+      margin-top: 70px;
+    }
+
+    .tagline {
+      margin: 14px 0 10px;
+    }
+
+    .hero-copy {
+      line-height: 1.45;
+    }
+
+    .hero-actions {
+      margin-top: 18px;
+    }
+
+    .hero-actions .button {
+      min-height: 46px;
+    }
+
+    .platforms {
+      margin-top: 12px;
     }
   }
 </style>
