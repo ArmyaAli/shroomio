@@ -1,5 +1,8 @@
 ---
 import { Image } from "astro:assets";
+import gameplayArena from "../../../assets/marketing/gameplay_arena.png";
+import gameplayLeaderboard from "../../../assets/marketing/gameplay_leaderboard.png";
+import gameplayResults from "../../../assets/marketing/gameplay_results.png";
 import heroArena from "../../../assets/marketing/landing_hero_arena.png";
 import SiteLayout from "../layouts/SiteLayout.astro";
 
@@ -75,6 +78,51 @@ const releaseUrl = "https://github.com/ArmyaAli/shroomio/releases";
           Start nimble, feed fast, and decide when to chase or escape. Every match rewards
           awareness, timing, and the nerve to split your colony at exactly the right moment.
         </p>
+      </div>
+
+      <div class="gameplay-gallery" role="region" aria-label="Gameplay screenshots">
+        <figure class="gallery-primary">
+          <div class="gallery-frame">
+            <Image
+              src={gameplayArena}
+              alt="Live Shroomio arena with the player collecting spores among rival colonies"
+              widths={[640, 960, 1280]}
+              sizes="(max-width: 780px) calc(100vw - 48px), 66vw"
+              format="webp"
+              quality={82}
+              loading="lazy"
+            />
+          </div>
+          <figcaption><strong>Read the arena</strong><span>Track threats, prey, and high-value spores in real time.</span></figcaption>
+        </figure>
+        <figure>
+          <div class="gallery-frame">
+            <Image
+              src={gameplayLeaderboard}
+              alt="In-game leaderboard ranking mushroom colonies by combined mass"
+              widths={[480, 720]}
+              sizes="(max-width: 780px) calc(100vw - 48px), 33vw"
+              format="webp"
+              quality={82}
+              loading="lazy"
+            />
+          </div>
+          <figcaption><strong>Climb together</strong><span>Every split piece contributes to your colony rank.</span></figcaption>
+        </figure>
+        <figure>
+          <div class="gallery-frame">
+            <Image
+              src={gameplayResults}
+              alt="Match results showing duration, mass, spores, consumptions, and final rank"
+              widths={[480, 720]}
+              sizes="(max-width: 780px) calc(100vw - 48px), 33vw"
+              format="webp"
+              quality={82}
+              loading="lazy"
+            />
+          </div>
+          <figcaption><strong>Run it back</strong><span>Review the round and return to the arena immediately.</span></figcaption>
+        </figure>
       </div>
 
       <div class="feature-grid" id="features">
@@ -405,6 +453,60 @@ const releaseUrl = "https://github.com/ArmyaAli/shroomio/releases";
     line-height: 1.7;
   }
 
+  .gameplay-gallery {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    margin-top: 64px;
+  }
+
+  .gameplay-gallery figure {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    border: 1px solid #2a322c;
+    border-radius: 6px;
+    background: #151d19;
+    color: #fffaf0;
+  }
+
+  .gameplay-gallery .gallery-primary {
+    grid-row: 1 / 3;
+  }
+
+  .gallery-frame {
+    min-height: 0;
+    overflow: hidden;
+    background: #101713;
+  }
+
+  .gallery-frame :global(img) {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .gameplay-gallery figcaption {
+    display: grid;
+    gap: 4px;
+    padding: 15px 17px 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .gameplay-gallery figcaption strong {
+    font-size: 0.92rem;
+  }
+
+  .gameplay-gallery figcaption span {
+    color: rgba(255, 250, 240, 0.68);
+    font-size: 0.78rem;
+    line-height: 1.45;
+  }
+
   .feature-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -616,6 +718,20 @@ const releaseUrl = "https://github.com/ArmyaAli/shroomio/releases";
     .feature-grid {
       grid-template-columns: 1fr;
       margin-top: 48px;
+    }
+
+    .gameplay-gallery {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto;
+      margin-top: 44px;
+    }
+
+    .gameplay-gallery .gallery-primary {
+      grid-row: auto;
+    }
+
+    .gallery-frame {
+      aspect-ratio: 16 / 9;
     }
 
     .feature-grid article,
