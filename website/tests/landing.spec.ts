@@ -1,13 +1,13 @@
 import { expect, test } from "@playwright/test";
 
 test("presents the game and keeps the page inside the viewport", async ({ page }, testInfo) => {
-  await page.goto("/");
+  await page.goto("./");
 
   await expect(page.getByRole("heading", { level: 1, name: "Shroomio" })).toBeVisible();
   await expect(page.getByText("Grow. Split. Dominate.")).toBeVisible();
   await expect(page.getByRole("link", { name: "Download for free" })).toHaveAttribute(
     "href",
-    "/download/",
+    "/shroomio/download/",
   );
   const gameplay = page.locator("#gameplay");
   await expect(gameplay).toBeVisible();
@@ -25,15 +25,15 @@ test("presents the game and keeps the page inside the viewport", async ({ page }
 });
 
 test("download navigation opens the platform page", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("./");
   await page.getByRole("link", { name: "Download for free" }).click();
 
-  await expect(page).toHaveURL(/\/download\/$/);
+  await expect(page).toHaveURL(/\/shroomio\/download\/$/);
   await expect(page.getByRole("heading", { level: 1, name: "Download Shroomio" })).toBeVisible();
 });
 
 test("navigation reaches the gameplay section", async ({ page, isMobile }) => {
-  await page.goto("/");
+  await page.goto("./");
 
   if (isMobile) {
     await page.getByLabel("Open navigation").click();
@@ -54,7 +54,7 @@ test("navigation reaches the gameplay section", async ({ page, isMobile }) => {
 });
 
 test("loads responsive gameplay screenshots without shifting the layout", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("./");
 
   const gallery = page.getByRole("region", { name: "Gameplay screenshots" });
   const screenshots = gallery.getByRole("img");

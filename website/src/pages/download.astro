@@ -6,7 +6,7 @@ import { FALLBACK_GITHUB_RELEASE, ResolveDownloadRelease } from "../lib/releases
 
 const title = "Download Shroomio | Windows, Linux, and macOS";
 const description = "Download the latest Shroomio client and dedicated server for your platform.";
-const homeUrl = import.meta.env.BASE_URL;
+const homeUrl = `${import.meta.env.BASE_URL.replace(/\/?$/, "/")}`;
 const release = ResolveDownloadRelease(FALLBACK_GITHUB_RELEASE);
 if (!release) {
   throw new Error("The checked-in fallback release is incomplete.");

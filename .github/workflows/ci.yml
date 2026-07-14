@@ -87,6 +87,9 @@ jobs:
       - name: Run website unit tests
         run: npm run test:unit
 
+      - name: Verify production output
+        run: npm run test:build
+
       - name: Run browser tests
         run: npm run test:e2e
 
