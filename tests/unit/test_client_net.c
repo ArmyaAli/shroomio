@@ -17,6 +17,12 @@ static ClientNetState MakePendingPing(uint32_t nonce, uint32_t sent_time_ms) {
   return net;
 }
 
+static void FinalizeSingleSnapshot(ShroomSnapshotPacket* snapshot, size_t packet_size) {
+  snapshot->total_player_count = snapshot->player_count;
+  snapshot->chunk_count = 1u;
+  ShroomPacketHeaderInit(&snapshot->header, SHROOM_PACKET_SNAPSHOT, (uint16_t)packet_size);
+}
+
 static void test_client_net_negotiates_welcome_cadence(void) {
   ClientNetState net = {0};
   ShroomWelcomePacket welcome = {
@@ -107,6 +113,7 @@ static void test_client_net_accepts_trimmed_snapshot_packet(void) {
   snapshot.players[0].radius = 4.0f;
   snapshot.players[0].alive = 1u;
   snapshot.players[0].objective_score = 12.5f;
+  FinalizeSingleSnapshot(&snapshot, packet_size);
 
   packet.data = (enet_uint8*)&snapshot;
   packet.dataLength = packet_size;
@@ -146,6 +153,7 @@ static void test_client_net_ignores_truncated_snapshot_players(void) {
   net.snapshot_player_count = 9u;
   snapshot.tick = 123u;
   snapshot.player_count = 1u;
+  FinalizeSingleSnapshot(&snapshot, packet_size + sizeof(ShroomSnapshotPlayerState));
   packet.data = (enet_uint8*)&snapshot;
   packet.dataLength = packet_size;
 
@@ -165,6 +173,7 @@ static void test_client_net_ignores_duplicate_and_out_of_order_snapshots(void) {
   snapshot.tick = 20u;
   snapshot.player_count = 1u;
   snapshot.players[0].position_x = 200.0f;
+  FinalizeSingleSnapshot(&snapshot, packet.dataLength);
   ClientNetTestHandleSnapshot(&net, &packet);
   TEST_ASSERT_TRUE(net.snapshot_received);
   TEST_ASSERT_EQUAL_FLOAT(200.0f, net.snapshot_players[0].position_x);

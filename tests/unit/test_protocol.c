@@ -49,9 +49,11 @@ void test_participant_and_entity_capacities_are_separate_and_bounded(void) {
   TEST_ASSERT_EQUAL_UINT32(SHROOM_MAX_PLAYER_ENTITIES, SHROOM_MAX_SNAPSHOT_PLAYERS);
   TEST_ASSERT_EQUAL_size_t(SHROOM_MAX_PARTICIPANTS, sizeof(((ShroomLobbyRosterPacket*)0)->players) /
                                                         sizeof(ShroomLobbyRosterEntry));
-  TEST_ASSERT_EQUAL_size_t(SHROOM_MAX_PLAYER_ENTITIES, sizeof(((ShroomSnapshotPacket*)0)->players) /
-                                                           sizeof(ShroomSnapshotPlayerState));
-  TEST_ASSERT_TRUE(SHROOM_MAX_SNAPSHOT_PACKET_SIZE <= UINT16_MAX);
+  TEST_ASSERT_EQUAL_size_t(SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK,
+                           sizeof(((ShroomSnapshotPacket*)0)->players) /
+                               sizeof(ShroomSnapshotPlayerState));
+  TEST_ASSERT_EQUAL_UINT32(18u, SHROOM_SNAPSHOT_MAX_CHUNKS);
+  TEST_ASSERT_TRUE(sizeof(ShroomSnapshotPacket) <= SHROOM_MAX_UNRELIABLE_PACKET_SIZE);
 }
 
 void test_packet_type_values(void) {
@@ -217,7 +219,7 @@ void test_lobby_config_constants(void) {
 
 void test_protocol_constants(void) {
   TEST_ASSERT_EQUAL(7777, SHROOM_SERVER_PORT);
-  TEST_ASSERT_EQUAL(12, SHROOM_PROTOCOL_VERSION);
+  TEST_ASSERT_EQUAL(13, SHROOM_PROTOCOL_VERSION);
   TEST_ASSERT_EQUAL(32, SHROOM_MAX_NAME_LENGTH);
   TEST_ASSERT_EQUAL(15, SHROOM_SNAPSHOT_RATE);
   TEST_ASSERT_EQUAL(256, SHROOM_MAX_SNAPSHOT_PLAYERS);
@@ -261,6 +263,13 @@ void test_packet_reliability_mapping(void) {
   TEST_ASSERT_FALSE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_POWERUP_STATE));
   TEST_ASSERT_FALSE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_WORLD_STATE));
   TEST_ASSERT_FALSE(ShroomPacketTypeUsesReliableDelivery(SHROOM_PACKET_VOICE_FRAME));
+}
+
+void test_snapshot_chunks_are_the_only_unsequenced_packets(void) {
+  TEST_ASSERT_TRUE(ShroomPacketTypeUsesUnsequencedDelivery(SHROOM_PACKET_SNAPSHOT));
+  TEST_ASSERT_FALSE(ShroomPacketTypeUsesUnsequencedDelivery(SHROOM_PACKET_INPUT));
+  TEST_ASSERT_FALSE(ShroomPacketTypeUsesUnsequencedDelivery(SHROOM_PACKET_WORLD_STATE));
+  TEST_ASSERT_FALSE(ShroomPacketTypeUsesUnsequencedDelivery(SHROOM_PACKET_CHAT));
 }
 
 void test_packet_minimum_size_mapping(void) {
@@ -575,6 +584,7 @@ int main(void) {
   RUN_TEST(test_protocol_constants);
   RUN_TEST(test_packet_channel_mapping);
   RUN_TEST(test_packet_reliability_mapping);
+  RUN_TEST(test_snapshot_chunks_are_the_only_unsequenced_packets);
   RUN_TEST(test_packet_minimum_size_mapping);
   RUN_TEST(test_match_entry_packets_are_reliable_control_messages);
   RUN_TEST(test_packet_header_initializes_channel_metadata);

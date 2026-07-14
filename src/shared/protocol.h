@@ -9,7 +9,7 @@
 #include "config.h"
 #include "intermission.h"
 
-#define SHROOM_PROTOCOL_VERSION 12u
+#define SHROOM_PROTOCOL_VERSION 13u
 #define SHROOM_SERVER_PORT 7777u
 #define SHROOM_DIRECTORY_PORT 7778u
 #define SHROOM_DIRECTORY_PROTOCOL_VERSION 1u
@@ -26,9 +26,10 @@
 #define SHROOM_SNAPSHOT_RATE_MIN 15u
 #define SHROOM_SNAPSHOT_RATE_MAX 20u
 #define SHROOM_MAX_SNAPSHOT_PLAYERS SHROOM_MAX_PLAYER_ENTITIES
-#define SHROOM_MAX_SNAPSHOT_PACKET_SIZE                                                            \
-  (offsetof(ShroomSnapshotPacket, players) +                                                       \
-   (SHROOM_MAX_SNAPSHOT_PLAYERS * sizeof(ShroomSnapshotPlayerState)))
+#define SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK 15u
+#define SHROOM_SNAPSHOT_MAX_CHUNKS                                                                 \
+  ((SHROOM_MAX_SNAPSHOT_PLAYERS + SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK - 1u) /                        \
+   SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK)
 #define SHROOM_SPORE_STATE_RATE 5u
 #define SHROOM_WORLD_REPLICATION_RATE SHROOM_SPORE_STATE_RATE
 #define SHROOM_WORLD_REPLICATION_KEYFRAME_TICKS 30u
@@ -168,6 +169,9 @@ typedef struct ShroomSnapshotPacket {
   uint32_t player_id;
   uint32_t entity_id;
   uint16_t player_count;
+  uint16_t total_player_count;
+  uint16_t chunk_index;
+  uint16_t chunk_count;
   uint8_t match_phase;
   uint8_t game_mode;
   float match_time_remaining;
@@ -177,15 +181,15 @@ typedef struct ShroomSnapshotPacket {
   uint8_t objective_reserved[3];
   uint32_t podium_player_ids[SHROOM_MATCH_PODIUM_COUNT];
   float podium_masses[SHROOM_MATCH_PODIUM_COUNT];
-  ShroomSnapshotPlayerState players[SHROOM_MAX_SNAPSHOT_PLAYERS];
+  ShroomSnapshotPlayerState players[SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK];
 } ShroomSnapshotPacket;
 
 #if defined(__cplusplus)
-static_assert(SHROOM_MAX_SNAPSHOT_PACKET_SIZE <= UINT16_MAX,
-              "maximum snapshot must fit ShroomPacketHeader.size");
+static_assert(sizeof(ShroomSnapshotPacket) <= SHROOM_MAX_UNRELIABLE_PACKET_SIZE,
+              "snapshot chunk must fit the unreliable MTU budget");
 #else
-_Static_assert(SHROOM_MAX_SNAPSHOT_PACKET_SIZE <= UINT16_MAX,
-               "maximum snapshot must fit ShroomPacketHeader.size");
+_Static_assert(sizeof(ShroomSnapshotPacket) <= SHROOM_MAX_UNRELIABLE_PACKET_SIZE,
+               "snapshot chunk must fit the unreliable MTU budget");
 #endif
 
 typedef struct ShroomPingPacket {
@@ -567,6 +571,10 @@ static inline bool ShroomPacketTypeUsesReliableDelivery(ShroomPacketType type) {
   default:
     return false;
   }
+}
+
+static inline bool ShroomPacketTypeUsesUnsequencedDelivery(ShroomPacketType type) {
+  return type == SHROOM_PACKET_SNAPSHOT;
 }
 
 static inline uint16_t ShroomPacketTypeMinimumSize(ShroomPacketType type) {

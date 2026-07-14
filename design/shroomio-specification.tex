@@ -446,7 +446,7 @@ All multiplayer communication uses ENet over UDP on port 7777. ENet provides mul
 \hline
 Control & 0 & Reliable, ordered & Hello, Welcome, Ping, Pong, Auth, lobby control \\
 \hline
-Snapshot & 1 & Unreliable, sequenced & Server-to-client player snapshots, spore state, powerup state \\
+Snapshot & 1 & Unreliable & Unsequenced player snapshot chunks; sequenced world-state updates \\
 \hline
 Input & 2 & Unreliable, sequenced & Player directional input \\
 \hline
@@ -475,7 +475,7 @@ ShroomPacketHeader {
 \begin{verbatim}
 ShroomHelloPacket {
     ShroomPacketHeader header;
-    uint32_t protocol_version;    // SHROOM_PROTOCOL_VERSION (3)
+    uint32_t protocol_version;    // SHROOM_PROTOCOL_VERSION (13)
     char     name[32];            // player-chosen display name
 }
 \end{verbatim}
@@ -491,7 +491,7 @@ ShroomWelcomePacket {
     uint32_t player_id;
     uint32_t entity_id;
     uint16_t server_tick_rate;    // 30
-    uint16_t snapshot_rate;       // 15
+    uint16_t snapshot_rate;       // negotiated 15--20 Hz
     float    world_width;         // 6000.0
     float    world_height;        // 6000.0
 }
@@ -527,8 +527,11 @@ ShroomSnapshotPacket {
     uint32_t                        player_id;        // this client's player
     uint32_t                        entity_id;
     uint16_t                        player_count;
-    uint16_t                        reserved;
-    ShroomSnapshotPlayerState       players[SHROOM_MAX_SNAPSHOT_PLAYERS];
+    uint16_t                        total_player_count;
+    uint16_t                        chunk_index;
+    uint16_t                        chunk_count;
+    // match, objective, and podium metadata
+    ShroomSnapshotPlayerState       players[SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK];
 }
 
 ShroomSnapshotPlayerState {
@@ -545,7 +548,9 @@ ShroomSnapshotPlayerState {
 }
 \end{verbatim}
 
-Broadcast at the snapshot rate (15~Hz). Contains player entries for visible players. Clients overwrite their local player array from this payload.
+Sent per peer at the negotiated 15--20~Hz snapshot rate. Interest selection always includes the peer's full colony, objective controllers, immediate threats, and nearby entities. Stable tie-breaking and a distance hysteresis band prevent boundary flicker. Spectators center interest on the watched player or a deterministic alive fallback.
+
+Each unreliable, unsequenced chunk is bounded by 	exttt{SHROOM\_MAX\_UNRELIABLE\_PACKET\_SIZE} (1,200 bytes). Chunks repeat their tick and frame metadata. The client accepts reordered and duplicate chunks but publishes a frame only after every chunk for that tick arrives; a newer tick supersedes an incomplete older frame.
 
 Spores and powerups are replicated through separate server-to-client world-state packets (\texttt{SHROOM\_PACKET\_SPORE\_STATE} and \texttt{SHROOM\_PACKET\_POWERUP\_STATE}). The server remains authoritative for collection and powerup effects; clients apply these packets to render the online world state between player snapshots.
 
@@ -605,7 +610,7 @@ Used for latency measurement. The server echoes Pong with the same nonce. Not ye
 
 \subsection{Snapshot Capacity Constraint}
 
-The simulation supports up to 256 players (\texttt{SHROOM\_MAX\_PLAYERS}), and the snapshot packet currently allows up to 256 player entries (\texttt{SHROOM\_MAX\_SNAPSHOT\_PLAYERS}). This removes the earlier hard 32-player visibility cap. Remaining protocol risks are bandwidth growth and lack of interest management when dense worlds include many players, spores, and powerups.
+The simulation and assembled snapshot frame support up to 256 player entities. A wire packet carries at most 15 entries, so a maximum frame uses 18 MTU-bounded chunks. Per-peer interest normally keeps the transmitted set below that maximum while preserving gameplay-critical entities.
 
 %---------------------------------------------------------------------
 \section{Simulation Rules}
@@ -694,7 +699,7 @@ Max players (sim) & 256 & \texttt{config.h:4} \\
 \hline
 Max spores & 4096 & \texttt{config.h:5} \\
 \hline
-Max snapshot players & 32 & \texttt{protocol.h:15} \\
+Max snapshot players & 256 (15 per chunk) & \texttt{protocol.h} \\
 \hline
 Center zone radius & 900 & \texttt{config.h:10} \\
 \hline
@@ -830,7 +835,7 @@ Primary movement: mouse-to-world vector (screen to world using \texttt{GetScreen
     \begin{enumerate}
       \item Service all ENet events (connect, receive, disconnect).
       \item Call \texttt{ShroomWorldStep(world, 1/30)}.
-      \item If tick is divisible by the snapshot interval (every 2nd tick), broadcast snapshots to all connected peers.
+      \item Advance the phase-accumulator snapshot scheduler and send per-peer interest chunks when due.
       \item Flush ENet.
       \item Sleep until next tick boundary.
     \end{enumerate}
@@ -850,7 +855,7 @@ Primary movement: mouse-to-world vector (screen to world using \texttt{GetScreen
 
 \subsection{Snapshot Broadcast}
 
-Snapshots are sent to every connected peer. The snapshot payload includes the first 32 alive players with positive mass. If more than 32 alive players exist, only the first 32 are included.
+Snapshots are selected independently for every connected peer. The deterministic priority order is the peer's colony or spectator focus, objective controllers, threats, and nearby or hysteresis-retained entities. The selected frame is divided into unreliable, unsequenced chunks of at most 15 players and 1,200 bytes each.
 
 \subsection{Deployment}
 
@@ -1327,8 +1332,6 @@ The implementation is compact (12 source files, approximately 1~400 lines of C),
 \textbf{ID} & \textbf{Gap} & \textbf{Severity} & \textbf{Mitigation} \\
 \hline
 G1 & Online spores and powerups are replicated through separate packets rather than the base snapshot payload; future work may still optimize interest management and bandwidth & Medium & Track performance and protocol evolution as online populations grow \\
-\hline
-G2 & Snapshot max 32 players vs simulation max 256; invisible players in full matches & High & Issue \#25: expand snapshot capacity or add interest management \\
 \hline
 G3 & No client-side prediction, interpolation, or reconciliation & Medium & Issue \#28: add basic client-side prediction \\
 \hline

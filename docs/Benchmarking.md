@@ -67,6 +67,9 @@ are regression gates, not internet latency or packet-loss claims; loopback canno
 - Every connected client receives snapshots. Snapshot payloads contain
   `participants * split_pieces` entities, bounded by 64 participants and four pieces each.
 - Inputs and snapshots use their production unreliable channels and production wire structs.
+  Player frames are divided into 15-entity, unreliable-unsequenced chunks.
+- `make network-benchmark-test` includes a 256-entity loopback case and fails if any generated or
+  received player snapshot exceeds the 1,200-byte application MTU budget.
 - Simulation, SQLite, rendering, authentication, and WAN behavior are intentionally excluded. Use
   `make benchmark` and production profiling separately for those costs.
 

@@ -158,7 +158,8 @@ static void RecordSend(ShroomNetTelemetry* telemetry, ENetPeer* peer, uint8_t ch
 }
 
 static void ServiceHost(ENetHost* host, ShroomNetTelemetry* telemetry, bool server_side,
-                        uint32_t* connected, uint64_t now_ms) {
+                        uint32_t* connected, uint32_t* invalid_snapshot_packets,
+                        uint64_t now_ms) {
   ENetEvent event;
 
   while (enet_host_service(host, &event, 0) > 0) {
@@ -176,13 +177,21 @@ static void ServiceHost(ENetHost* host, ShroomNetTelemetry* telemetry, bool serv
       const size_t minimum_size = event.packet->dataLength >= sizeof(*header)
                                       ? ShroomPacketTypeMinimumSize((ShroomPacketType)header->type)
                                       : 0u;
+      const bool snapshot_size_valid =
+          (event.packet->dataLength < sizeof(*header)) ||
+          (header->type != SHROOM_PACKET_SNAPSHOT) ||
+          (event.packet->dataLength <= SHROOM_MAX_UNRELIABLE_PACKET_SIZE);
       if ((event.packet->dataLength >= sizeof(*header)) && known_type &&
           ShroomPacketHeaderUsesExpectedChannel(header, event.channelID) &&
-          (minimum_size <= event.packet->dataLength)) {
+          (minimum_size <= event.packet->dataLength) &&
+          ((size_t)header->size == event.packet->dataLength) && snapshot_size_valid) {
         ShroomNetTelemetryRecordAccepted(telemetry, peer_index, event.channelID,
                                          (ShroomPacketType)header->type, event.packet->dataLength,
                                          now_ms);
       } else {
+        if (!snapshot_size_valid) {
+          ++*invalid_snapshot_packets;
+        }
         ShroomNetTelemetryRecordDrop(telemetry, peer_index, event.channelID,
                                      event.packet->dataLength >= sizeof(*header)
                                          ? (ShroomPacketType)header->type
@@ -228,29 +237,29 @@ static int RunBenchmark(const BenchmarkConfig* config) {
   uint32_t server_connected = 0u;
   uint32_t client_connected = 0u;
   uint32_t tick_deadline_failures = 0u;
+  uint32_t invalid_snapshot_packets = 0u;
   uint64_t started;
   uint64_t next_tick;
   uint64_t tick_index = 0u;
   const uint64_t tick_interval_nanos = (uint64_t)(1000000000.0 / (double)SHROOM_SERVER_TICK_RATE);
   const uint32_t snapshot_interval_ticks =
       (uint32_t)(SHROOM_SERVER_TICK_RATE / (float)SHROOM_SNAPSHOT_RATE);
-  uint8_t* snapshot_data = NULL;
-  size_t snapshot_size;
+  ShroomSnapshotPacket snapshot = {0};
+  const size_t snapshot_player_count = (size_t)config->participants * config->split_pieces;
+  const size_t snapshot_chunk_count =
+      snapshot_player_count == 0u
+          ? 1u
+          : (snapshot_player_count + SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK - 1u) /
+                SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK;
   int exit_code = 1;
 
   ShroomNetTelemetryReset(&telemetry);
-  snapshot_size =
-      offsetof(ShroomSnapshotPacket, players) +
-      ((size_t)config->participants * config->split_pieces * sizeof(ShroomSnapshotPlayerState));
-  if (snapshot_size > UINT16_MAX) {
+  if ((snapshot_player_count > SHROOM_MAX_SNAPSHOT_PLAYERS) ||
+      (snapshot_chunk_count > SHROOM_SNAPSHOT_MAX_CHUNKS)) {
     goto cleanup;
   }
-  snapshot_data = calloc(1u, snapshot_size);
-  if (snapshot_data == NULL) {
-    goto cleanup;
-  }
-  ShroomPacketHeaderInit((ShroomPacketHeader*)snapshot_data, SHROOM_PACKET_SNAPSHOT,
-                         (uint16_t)snapshot_size);
+  snapshot.total_player_count = (uint16_t)snapshot_player_count;
+  snapshot.chunk_count = (uint16_t)snapshot_chunk_count;
   server = enet_host_create(&address, config->clients, SHROOM_ENET_CHANNEL_COUNT, 0u, 0u);
   clients = enet_host_create(NULL, config->clients, SHROOM_ENET_CHANNEL_COUNT, 0u, 0u);
   if ((server == NULL) || (clients == NULL) ||
@@ -266,8 +275,8 @@ static int RunBenchmark(const BenchmarkConfig* config) {
   while (((server_connected < config->clients) || (client_connected < config->clients)) &&
          ((TimeNanos() - started) < 10000000000ull)) {
     const uint64_t now_ms = TimeNanos() / 1000000ull;
-    ServiceHost(server, &telemetry, true, &server_connected, now_ms);
-    ServiceHost(clients, &telemetry, false, &client_connected, now_ms);
+    ServiceHost(server, &telemetry, true, &server_connected, &invalid_snapshot_packets, now_ms);
+    ServiceHost(clients, &telemetry, false, &client_connected, &invalid_snapshot_packets, now_ms);
     enet_host_flush(server);
     enet_host_flush(clients);
   }
@@ -283,8 +292,8 @@ static int RunBenchmark(const BenchmarkConfig* config) {
     uint64_t now = TimeNanos();
     const uint64_t now_ms = now / 1000000ull;
 
-    ServiceHost(server, &telemetry, true, &server_connected, now_ms);
-    ServiceHost(clients, &telemetry, false, &client_connected, now_ms);
+    ServiceHost(server, &telemetry, true, &server_connected, &invalid_snapshot_packets, now_ms);
+    ServiceHost(clients, &telemetry, false, &client_connected, &invalid_snapshot_packets, now_ms);
     if (now >= next_tick) {
       ShroomInputPacket input = {0};
       const uint64_t deadline = next_tick + tick_interval_nanos;
@@ -298,11 +307,35 @@ static int RunBenchmark(const BenchmarkConfig* config) {
         }
       }
       if ((tick_index % snapshot_interval_ticks) == 0u) {
-        for (size_t index = 0u; index < server->peerCount; ++index) {
-          ENetPeer* peer = &server->peers[index];
-          if (peer->state == ENET_PEER_STATE_CONNECTED) {
-            RecordSend(&telemetry, peer, SHROOM_ENET_CHANNEL_SNAPSHOT, SHROOM_PACKET_SNAPSHOT,
-                       enet_packet_create(snapshot_data, snapshot_size, 0u), now_ms);
+        snapshot.tick = tick_index;
+        for (size_t chunk_index = 0u; chunk_index < snapshot_chunk_count; ++chunk_index) {
+          const size_t player_offset = chunk_index * SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK;
+          const size_t remaining = snapshot_player_count - player_offset;
+          const size_t snapshot_size =
+              offsetof(ShroomSnapshotPacket, players) +
+              (remaining < SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK
+                   ? remaining
+                   : SHROOM_SNAPSHOT_PLAYERS_PER_CHUNK) *
+                  sizeof(ShroomSnapshotPlayerState);
+          snapshot.chunk_index = (uint16_t)chunk_index;
+          snapshot.player_count = (uint16_t)((snapshot_size -
+                                              offsetof(ShroomSnapshotPacket, players)) /
+                                             sizeof(ShroomSnapshotPlayerState));
+          if (snapshot_size > SHROOM_MAX_UNRELIABLE_PACKET_SIZE) {
+            ++invalid_snapshot_packets;
+            continue;
+          }
+          ShroomPacketHeaderInit(&snapshot.header, SHROOM_PACKET_SNAPSHOT,
+                                 (uint16_t)snapshot_size);
+          for (size_t index = 0u; index < server->peerCount; ++index) {
+            ENetPeer* peer = &server->peers[index];
+            if (peer->state == ENET_PEER_STATE_CONNECTED) {
+              RecordSend(&telemetry, peer, SHROOM_ENET_CHANNEL_SNAPSHOT,
+                         SHROOM_PACKET_SNAPSHOT,
+                         enet_packet_create(&snapshot, snapshot_size,
+                                            ENET_PACKET_FLAG_UNSEQUENCED),
+                         now_ms);
+            }
           }
         }
       }
@@ -319,8 +352,8 @@ static int RunBenchmark(const BenchmarkConfig* config) {
   }
   for (uint32_t drain = 0u; drain < 100u; ++drain) {
     const uint64_t now_ms = TimeNanos() / 1000000ull;
-    ServiceHost(server, &telemetry, true, &server_connected, now_ms);
-    ServiceHost(clients, &telemetry, false, &client_connected, now_ms);
+    ServiceHost(server, &telemetry, true, &server_connected, &invalid_snapshot_packets, now_ms);
+    ServiceHost(clients, &telemetry, false, &client_connected, &invalid_snapshot_packets, now_ms);
     enet_host_flush(server);
     enet_host_flush(clients);
   }
@@ -349,7 +382,8 @@ static int RunBenchmark(const BenchmarkConfig* config) {
     exit_code = (input_per_client >= config->min_input_hz) &&
                         (snapshot_per_client >= config->min_snapshot_hz) &&
                         (drop_percent <= config->max_drop_percent) &&
-                        (tick_deadline_failures <= config->max_deadline_failures)
+                        (tick_deadline_failures <= config->max_deadline_failures) &&
+                        (invalid_snapshot_packets == 0u)
                     ? 0
                     : 2;
     printf("enet_loopback,%u,%u,%u,%u,%u,%llu,%llu,%.3f,%.3f,%llu,%llu,%.3f,%.3f,%llu,"
@@ -368,8 +402,10 @@ static int RunBenchmark(const BenchmarkConfig* config) {
     if (exit_code != 0) {
       fprintf(
           stderr,
-          "threshold failure: input/client=%.2f snapshot/client=%.2f drops=%.2f%% deadlines=%u\n",
-          input_per_client, snapshot_per_client, drop_percent, tick_deadline_failures);
+          "threshold failure: input/client=%.2f snapshot/client=%.2f drops=%.2f%% deadlines=%u "
+          "oversized_snapshots=%u\n",
+          input_per_client, snapshot_per_client, drop_percent, tick_deadline_failures,
+          invalid_snapshot_packets);
     }
   }
 
@@ -380,7 +416,6 @@ cleanup:
   if (server != NULL) {
     enet_host_destroy(server);
   }
-  free(snapshot_data);
   return exit_code;
 }
 
