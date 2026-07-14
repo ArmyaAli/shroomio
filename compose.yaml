@@ -4,6 +4,8 @@ services:
       context: .
       dockerfile: Dockerfile.server
     image: shroomio-server:dev
+    restart: unless-stopped
+    stop_grace_period: 15s
     environment:
       SHROOM_SERVER_BIND: 0.0.0.0
       SHROOM_SERVER_PORT: 7777

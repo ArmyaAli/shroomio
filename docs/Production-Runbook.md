@@ -1,378 +1,122 @@
 # Production Runbook
 
-This document covers deploying and operating the shroomio dedicated server in production or self-hosted community environments.
+This runbook covers one shroomio dedicated game-server process. Read
+[Server Capacity and Deployment Specification](Server-Capacity.md) before sizing a public host.
 
-## Quickstart
-
-The fastest way to expose a shroomio server on the internet:
-
-```bash
-# 1. Clone and build
-git clone git@github.com:ArmyaAli/shroomio.git
-cd shroomio
-make server-linux
-
-# 2. Run (UDP 7777)
-./dist/linux/server/shroomio-server
-
-# 3. Open UDP port 7777 in your firewall/router
-# 4. Players connect via: <your-public-ip>:7777
-```
-
-For Docker:
-```bash
-docker run -d --name shroomio-server -p 7777:7777/udp --restart unless-stopped shroomio-server:dev
-```
-
-See below for full configuration, systemd setup, and troubleshooting.
-
-## Overview
-
-The shroomio server is a headless C binary that runs the game simulation authoritatively and communicates with clients over UDP via ENet. A stock shroomio client can connect to any public server by domain name or IP address when the server's UDP port is reachable from the internet.
-
-### Server Characteristics
+## Runtime Characteristics
 
 | Property | Value |
-|----------|-------|
-| Protocol | UDP |
-| Default port | 7777 |
-| Tick rate | 30 Hz (simulation) |
-| Snapshot rate | 15 Hz (client updates, every 2nd tick) |
-| Max clients | 128 |
-| Max simulation players | 128 (18 bots + up to 110 humans) |
-| Memory usage | ~3 MB (fixed-size arrays, no dynamic allocation) |
-| CPU usage | Very low (simple simulation, no graphics) |
-
-## Deployment
-
-### Release Assets
-
-GitHub Releases include one downloadable bundle per platform with both client and server binaries. Operators who do not want to build from source should download the matching platform asset for their host:
-
-| Host | Release asset |
 |---|---|
-| Linux x64 | `shroomio-<version>-linux-x64.tar.gz` |
-| Windows x64 | `shroomio-<version>-windows-x64.zip` |
-| macOS x64 | `shroomio-<version>-macos-x64.tar.gz` |
+| Transport | ENet over UDP |
+| Game port | `7777/udp` by default |
+| Simulation | 30 Hz |
+| Snapshots | 15 Hz by default; configurable from 15-20 Hz |
+| Capacity | 256 connected clients across up to 8 lobbies |
+| Persistence | SQLite accounts, profiles, and completed-match records |
+| Shutdown | Graceful on `SIGINT` or `SIGTERM`; active matches reset |
 
-Each release also includes `SHA256SUMS-v<version>.txt` for verifying downloaded assets.
-Release archives preserve a platform-first layout, such as `linux/client/shroomio` and
-`linux/server/shroomio-server`.
-
-### Runtime Configuration
-
-The server is self-hostable without recompiling. CLI flags override environment variables; environment variables override defaults.
+CLI flags override environment variables, which override defaults:
 
 | Setting | CLI | Environment | Default |
 |---|---|---|---|
 | Bind address | `--bind ADDRESS` | `SHROOM_SERVER_BIND` | `0.0.0.0` |
-| UDP port | `--port PORT` | `SHROOM_SERVER_PORT` | `7777` |
-| SQLite database | `--database PATH` | `SHROOM_SERVER_DB_PATH` | `shroomio.db` |
-| Directory UDP port | `--directory-port PORT` | `SHROOM_DIRECTORY_PORT` | `7778` |
+| Game port | `--port PORT` | `SHROOM_SERVER_PORT` | `7777` |
+| Database | `--database PATH` | `SHROOM_SERVER_DB_PATH` | `shroomio.db` |
 | Snapshot rate | `--snapshot-rate HZ` | `SHROOM_SERVER_SNAPSHOT_RATE` | `15` |
+| Directory port | `--directory-port PORT` | `SHROOM_DIRECTORY_PORT` | `7778` |
 
-Snapshot rate accepts 15-20 Hz. The server advertises the effective value to clients and logs it
-at startup.
+## Docker Deployment
 
-Examples:
-
-```bash
-./dist/linux/server/shroomio-server --bind 0.0.0.0 --port 7777 --database ./shroomio.db
-SHROOM_SERVER_PORT=9000 ./dist/linux/server/shroomio-server
-```
-
-### Server Directory
-
-Run the bounded directory service on its own UDP port. It stores at most 32 live registrations in
-memory and expires a game server 15 seconds after its last heartbeat:
+Install the Linux vcpkg dependencies once, then build and start Compose:
 
 ```bash
-./dist/linux/server/shroomio-server --directory --bind 0.0.0.0 --directory-port 7778
+make vcpkg-install-linux
+docker compose up --build -d server
+docker compose ps
+docker compose logs -f server
 ```
 
-Configure each public game server to advertise every five seconds:
+Compose publishes `7777/udp`, persists `/data/shroomio.db`, restarts on failure, allows 15 seconds
+for graceful shutdown, and runs a protocol-level health probe every 30 seconds. Back up the named
+`shroomio-server-data` volume. Override settings under `services.server.environment`.
+
+## systemd Deployment
+
+Build the server and health-check binaries, create an unprivileged account, and install the supplied
+unit:
 
 ```bash
-SHROOM_DIRECTORY_HOST=directory.example.com \
-SHROOM_DIRECTORY_PORT=7778 \
-SHROOM_SERVER_NAME="East Arena" \
-./dist/linux/server/shroomio-server --port 7777 --database ./shroomio.db
-```
-
-The directory derives each advertised host and stable identity from the observed heartbeat source
-and game port, so a game server cannot claim another host's endpoint. Open the directory port to
-clients and game servers; the game port remains separate. If `SHROOM_DIRECTORY_HOST` is absent, the
-server runs normally without advertising and clients report that no directory is configured.
-
-Set `SHROOM_DIRECTORY_HOST` and optionally `SHROOM_DIRECTORY_PORT` for clients as well. A browser
-refresh assembles the current directory generation, probes up to 32 unique non-full endpoints in
-parallel, and publishes only responses received within the two-second peer and five-second overall
-deadlines. Probes do not send `HELLO` or activate player sessions. Verify this path with
-`make directory-integration-test`; it starts a directory and two servers, measures both candidates,
-and confirms their advertised player counts remain zero.
-
-### Docker (Recommended)
-
-**Build the image:**
-
-```bash
-make docker-server
-```
-
-This produces the image `shroomio-server:dev`.
-
-**Run the container:**
-
-```bash
-make docker-run-server
-```
-
-Or manually:
-
-```bash
-docker run --rm -p 7777:7777/udp shroomio-server:dev
-```
-
-Persist server data and configure it explicitly:
-
-```bash
-docker run -d --name shroomio-server \
-  -p 7777:7777/udp \
-  -e SHROOM_SERVER_BIND=0.0.0.0 \
-  -e SHROOM_SERVER_PORT=7777 \
-  -e SHROOM_SERVER_DB_PATH=/data/shroomio.db \
-  -v shroomio-server-data:/data \
-  --restart unless-stopped \
-  shroomio-server:dev
-```
-
-### Docker Compose
-
-```bash
-docker compose up --build server
-```
-
-The `compose.yaml` maps host UDP port 7777 to the container and stores server data in the `shroomio-server-data` volume.
-
-### Bare Metal / VM
-
-```bash
-# Install dependencies
-sudo apt install build-essential
-
-# Clone and build
-git clone git@github.com:ArmyaAli/shroomio.git
-cd shroomio
-make server-linux
-
-# Run
-./dist/linux/server/shroomio-server
-
-# Run on a custom UDP port
-./dist/linux/server/shroomio-server --port 9000 --database /var/lib/shroomio/shroomio.db
-```
-
-## Hosting Requirements
-
-### Network
-
-- **Port**: UDP 7777 must be open to the internet (or to your player network).
-- **Firewall**: allow inbound UDP on port 7777 from player IP ranges.
-- **NAT/port forwarding**: forward the public UDP port to the host running `shroomio-server`.
-- **DNS**: optional. Point an `A` or `AAAA` record such as `play.example.com` at the server's public address, then clients can connect to that hostname. The server's `--bind` value is still a local IP address such as `0.0.0.0` or `127.0.0.1`, not the public DNS name.
-- **Bandwidth**: approximately 5–10 KB/s per connected client at 15 Hz snapshot rate (depends on player count in snapshots).
-- **Latency**: players will experience jitter proportional to round-trip time. Target <50 ms RTT for LAN play, <100 ms for internet play.
-
-### Compute
-
-- **CPU**: any modern x86_64 CPU. The simulation is single-threaded and lightweight.
-- **RAM**: ~64 MB minimum (process uses ~3 MB, overhead for OS and ENet buffers).
-- **Disk**: ~5 MB for the binary; no persistent storage required.
-- **OS**: Linux (Debian/Ubuntu recommended). The binary links dynamically against glibc and libm only.
-
-### Availability
-
-- The server has no built-in persistence, graceful shutdown, or state recovery. A restart resets the world with fresh bots.
-- For minimal downtime, run behind a process supervisor (systemd, Docker restart policy, or a container orchestrator).
-
-## Operational Procedures
-
-### Starting the Server
-
-```bash
-# Docker
-docker run -d --name shroomio-server -p 7777:7777/udp --restart unless-stopped shroomio-server:dev
-
-# Bare metal (with systemd — see systemd unit section below)
-systemctl start shroomio-server
-```
-
-### Stopping the Server
-
-The server responds to `SIGINT` and `SIGTERM` and shuts down cleanly:
-
-```bash
-# Docker
-docker stop shroomio-server
-
-# Bare metal
-kill -SIGTERM $(pgrep shroomio-server)
-# or
-systemctl stop shroomio-server
-```
-
-### Health Check
-
-The server prints to stdout on startup:
-
-```
-shroomio server listening on 0.0.0.0:7777/udp
-```
-
-Verify the server is accepting connections:
-
-```bash
-# Check if UDP port is open (server-side)
-ss -uln | grep 7777
-
-# Send a test connection from a client:
-# use Server Browser -> direct connect -> <server-ip-or-domain>:7777
-./dist/linux/client/shroomio
-```
-
-No built-in HTTP health endpoint exists. For monitoring, use:
-- Docker: `docker ps` to confirm container is running.
-- Process: `pgrep shroomio-server` to confirm process exists.
-- Logs: check stdout for peer connect/disconnect events.
-
-### Logs
-
-```bash
-# Docker
-docker logs -f shroomio-server
-
-# systemd
-journalctl -u shroomio-server -f
-
-# Bare metal
-# Server outputs to stdout; redirect to file if needed:
-./dist/linux/server/shroomio-server >> /var/log/shroomio-server.log 2>&1
-```
-
-The server logs:
-- Peer connect: `peer connected: slot=<N>`
-- Peer disconnect: `peer disconnected: slot=<N>`
-- Shutdown: `shroomio server shutting down`
-
-### systemd Unit File
-
-Create `/etc/systemd/system/shroomio-server.service`:
-
-```ini
-[Unit]
-Description=shroomio Dedicated Server
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/opt/shroomio/dist/linux/server/shroomio-server --bind 0.0.0.0 --port 7777 --database /opt/shroomio/shroomio.db
-Restart=on-failure
-RestartSec=5
-StandardOutput=journal
-StandardError=journal
-User=shroomio
-Group=shroomio
-WorkingDirectory=/opt/shroomio
-
-# Security hardening
-NoNewPrivileges=yes
-ProtectSystem=strict
-ProtectHome=yes
-ReadWritePaths=/opt/shroomio
-PrivateTmp=yes
-RestrictAddressFamilies=AF_INET AF_INET6
-RestrictRealtime=yes
-MemoryDenyWriteExecute=yes
-SystemCallFilter=@system-service
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start:
-
-```bash
+make server-linux build/tools/shroomio-healthcheck
+sudo useradd --system --home /var/lib/shroomio --shell /usr/sbin/nologin shroomio
+sudo install -D -m 0755 dist/linux/server/shroomio-server /opt/shroomio/shroomio-server
+sudo install -D -m 0755 build/tools/shroomio-healthcheck /opt/shroomio/shroomio-healthcheck
+sudo install -D -m 0644 deploy/systemd/shroomio-server.service \
+  /etc/systemd/system/shroomio-server.service
+sudo install -D -m 0640 deploy/systemd/server.env.example /etc/shroomio/server.env
 sudo systemctl daemon-reload
 sudo systemctl enable --now shroomio-server
 ```
 
-## Monitoring and Alerting
+Edit `/etc/shroomio/server.env` before public launch. The unit creates `/var/lib/shroomio`, writes
+logs to journald, restarts failures after five seconds, and applies basic service hardening. Configure
+journald retention centrally, for example `SystemMaxUse=1G` and `MaxRetentionSec=14day`; do not add a
+second file logger unless the host's log collector requires one.
 
-### What to Monitor
+## Network and Directory
 
-| Signal | Healthy | Action if unhealthy |
-|--------|---------|---------------------|
-| Process running | Process exists | Restart via supervisor |
-| Port bound | UDP 7777 in LISTEN state | Check network, restart |
-| Memory usage | <10 MB RSS | Restart if leaking (unlikely) |
-| CPU usage | <5% of one core | Investigate if sustained >50% |
-| Client connections | Peer connect events in logs | If zero, check firewall/DNS |
+Allow inbound UDP on the configured game port and forward it through NAT. Point an optional DNS
+`A` record at the public host. The bind address remains a local IPv4 address such as `0.0.0.0`.
 
-### Simple Health Check Script
+To operate the bounded directory service separately:
 
 ```bash
-#!/bin/bash
-# /opt/shroomio/healthcheck.sh
-if ! pgrep -x shroomio-server > /dev/null; then
-    echo "CRITICAL: shroomio-server not running"
-    exit 2
-fi
-if ! ss -uln | grep -q 7777; then
-    echo "WARNING: UDP port 7777 not bound"
-    exit 1
-fi
-echo "OK: shroomio-server running and port 7777 bound"
-exit 0
+./shroomio-server --directory --bind 0.0.0.0 --directory-port 7778
 ```
+
+Game servers advertise when `SHROOM_DIRECTORY_HOST`, `SHROOM_DIRECTORY_PORT`, and optionally
+`SHROOM_SERVER_NAME` are set. Allow inbound `7778/udp` on the directory host. Registrations expire
+15 seconds after their last heartbeat.
+
+## Health and Monitoring
+
+The health binary establishes an ENet connection and validates a server-probe response, including
+protocol version, nonce, player count, and capacity:
+
+```bash
+./build/tools/shroomio-healthcheck --host 127.0.0.1 --port 7777 --timeout-ms 2000
+# healthy players=12 capacity=256
+```
+
+Run it from outside the host as well to verify firewall/NAT reachability. The server also emits
+60-second health logs containing accepted, stale, and rate-limited inputs, event-budget exhaustion,
+and per-lobby player/bot/spectator counts. Collect process CPU/RSS, disk, UDP throughput, packet loss,
+and queue depth according to [Server Capacity](Server-Capacity.md). There is no HTTP metrics endpoint.
+
+## Backup, Upgrade, and Restore
+
+Stop the server before copying its SQLite database, or use SQLite's online `.backup` command:
+
+```bash
+sqlite3 /var/lib/shroomio/shroomio.db ".backup '/var/backups/shroomio.db'"
+```
+
+For upgrades, back up the database, replace the binary or image, start the service, run the UDP
+health check, and inspect startup logs. Restore by stopping the service, replacing the database with
+a verified backup owned by `shroomio`, then starting and probing again. The schema is pre-production;
+review release notes before upgrading because incompatible releases may require a planned reset.
 
 ## Troubleshooting
 
-### Client cannot connect
+**Health probe fails:** Confirm the process and UDP bind with `systemctl status shroomio-server` and
+`ss -uln | grep 7777`, then check `journalctl -u shroomio-server`. Test the probe locally before
+testing the public address.
 
-1. **Check firewall**: ensure UDP 7777 is open.
-2. **Check binding**: `ss -uln | grep 7777` — should show `0.0.0.0:7777`.
-3. **Check Docker port mapping**: `docker port shroomio-server` should show `7777/udp`.
-4. **Check client address**: ensure the client is using the correct IP/hostname.
-5. **Check server logs**: look for peer connect events.
+**Clients cannot connect:** Verify UDP firewall and NAT rules, Docker's `7777:7777/udp` mapping, the
+advertised hostname, and protocol-version compatibility. TCP port checks do not validate ENet.
 
-### Server crashes on startup
+**High latency or loss:** Check host egress, ENet packet loss, outgoing queue depth, CPU saturation,
+and tick deadlines. Prefer the 15 Hz snapshot setting when bandwidth-constrained; reduce lobby
+capacity if voice fanout saturates the link.
 
-1. Check that `dist/linux/server/shroomio-server` exists: `ls -la dist/linux/server/`.
-2. Ensure port 7777 is not already in use: `ss -uln | grep 7777`.
-3. Check system library availability: `ldd dist/linux/server/shroomio-server`.
-
-### High latency or jitter
-
-- Players will experience rough movement without client-side interpolation (see roadmap milestone 3).
-- Use `--snapshot-rate 15` to select the lowest supported bandwidth cadence without rebuilding.
-- Verify server network throughput is adequate for player count.
-
-### Server not logging anything
-
-- The server uses unbuffered stdout/stderr (`setvbuf` with `_IONBF`). Output should appear immediately.
-- For Docker: `docker logs -f shroomio-server 2>&1`.
-- For systemd: `journalctl -u shroomio-server -f`.
-
-## Upgrading
-
-1. Pull latest code: `git pull origin main`
-2. Rebuild: `make server-linux` (or `make docker-server` for Docker)
-3. Stop old server
-4. Deploy new binary/image
-5. Start new server
-
-No migration or data preservation is needed — the server has no persistent state.
-
-## Backup and Restore
-
-Not applicable. The server is fully stateless. A restart creates a fresh world with 18 bots.
+**Server will not start:** Check database-directory ownership, SQLite errors, an occupied UDP port,
+and dynamic libraries with `ldd /opt/shroomio/shroomio-server`.

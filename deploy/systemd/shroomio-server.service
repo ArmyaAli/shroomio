@@ -1,0 +1,36 @@
+[Unit]
+Description=shroomio Dedicated Server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=shroomio
+Group=shroomio
+WorkingDirectory=/var/lib/shroomio
+Environment=SHROOM_SERVER_BIND=0.0.0.0
+Environment=SHROOM_SERVER_PORT=7777
+Environment=SHROOM_SERVER_DB_PATH=/var/lib/shroomio/shroomio.db
+EnvironmentFile=-/etc/shroomio/server.env
+ExecStart=/opt/shroomio/shroomio-server
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=15s
+KillSignal=SIGTERM
+StateDirectory=shroomio
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictRealtime=true
+MemoryDenyWriteExecute=true
+SystemCallFilter=@system-service
+
+[Install]
+WantedBy=multi-user.target

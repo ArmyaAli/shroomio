@@ -60,6 +60,7 @@ SERVER_LINUX_BIN := $(DIST_DIR)/linux/server/$(PROJECT)-server
 SERVER_WINDOWS_BIN := $(DIST_DIR)/windows/server/$(PROJECT)-server.exe
 SERVER_MACOS_BIN := $(DIST_DIR)/macos/server/$(PROJECT)-server
 NETWORK_BENCH_BIN := $(BUILD_DIR)/benchmarks/network-benchmark
+SERVER_HEALTHCHECK_BIN := $(BUILD_DIR)/tools/shroomio-healthcheck
 INPUT_FLOOD_CLIENT_BIN := $(BUILD_DIR)/tests/input-flood-client
 DIRECTORY_QUERY_CLIENT_BIN := $(BUILD_DIR)/tests/directory-query-client
 SERVER_DISCOVERY_CLIENT_BIN := $(BUILD_DIR)/tests/server-discovery-client
@@ -396,7 +397,7 @@ IMGUI_TEST_ENGINE_OBJECTS := $(addprefix $(TEST_BUILD_DIR)/imgui/engine/,$(addsu
 # =============================================================================
 .PHONY: all client-linux client-windows client-macos server-linux server-windows server-macos servers-all
 .PHONY: linux windows macos server run run-server run-windows help
-.PHONY: benchmark network-benchmark network-benchmark-test input-flood-test
+.PHONY: benchmark network-benchmark network-benchmark-test input-flood-test server-health-test
 
 all: client-linux
 
@@ -418,6 +419,7 @@ help:
 	@echo "  make run-server     Build and run the Linux server"
 	@echo "  make benchmark      Run repeatable local server benchmark scenarios"
 	@echo "  make network-benchmark Run real ENet loopback scenarios (1/64/256 clients)"
+	@echo "  make server-health-test Validate the production UDP health probe"
 	@echo "  make run-windows    Build and launch Windows client from WSL (bypasses WSLg audio/video)"
 	@echo ""
 	@echo "Quality targets:"
@@ -517,6 +519,30 @@ network-benchmark-test: network-benchmark
 		--duration-ms 500 --port 39890 --snapshot-rate 20 --min-total-message-hz 12800 \
 		--max-deadline-failures 5 >/dev/null
 	@echo "Canonical 256-participant 15/20 Hz throughput gates passed."
+
+server-health-test: $(SERVER_LINUX_BIN) $(SERVER_HEALTHCHECK_BIN)
+	@set -eu; \
+	port=$$((40000 + ($$$$ * 1103) % 20000)); tmp=/tmp/shroomio-health-$$$$; \
+	mkdir -p "$$tmp"; server_pid=""; \
+	cleanup() { \
+		if [ -n "$$server_pid" ]; then kill "$$server_pid" >/dev/null 2>&1 || true; wait "$$server_pid" >/dev/null 2>&1 || true; fi; \
+		rm -rf "$$tmp"; \
+	}; \
+	trap cleanup EXIT INT TERM; \
+	./$(SERVER_LINUX_BIN) --bind 127.0.0.1 --port "$$port" --database "$$tmp/server.db" >"$$tmp/server.log" 2>&1 & server_pid=$$!; \
+	ready=0; for attempt in $$(seq 1 200); do \
+		if grep -q "server listening on 127.0.0.1:$$port/udp" "$$tmp/server.log"; then ready=1; break; fi; \
+		if ! kill -0 "$$server_pid" >/dev/null 2>&1; then break; fi; sleep 0.01; \
+	done; \
+	if [ $$ready -ne 1 ]; then echo "Health-test server failed to start"; cat "$$tmp/server.log"; exit 1; fi; \
+	./$(SERVER_HEALTHCHECK_BIN) --host 127.0.0.1 --port "$$port" --timeout-ms 2000; \
+	if ./$(SERVER_HEALTHCHECK_BIN) --host 127.0.0.1 --port $$((port + 1)) --timeout-ms 100 >/dev/null 2>&1; then \
+		echo "Health check accepted an unavailable endpoint"; exit 1; \
+	fi; \
+	if ./$(SERVER_HEALTHCHECK_BIN) --port 0 >/dev/null 2>&1; then \
+		echo "Health check accepted invalid arguments"; exit 1; \
+	fi; \
+	echo "Server health integration passed."
 
 input-flood-test: $(SERVER_LINUX_BIN) $(INPUT_FLOOD_CLIENT_BIN)
 	@set -eu; \
@@ -667,6 +693,10 @@ $(NETWORK_BENCH_BIN): tools/network_benchmark.c $(SHARED_SRC_DIR)/net_telemetry.
 		$(SHARED_SRC_DIR)/net_telemetry.c $(SHARED_SRC_DIR)/snapshot_replication.c \
 		$(SHARED_SRC_DIR)/snapshot_scheduler.c \
 		-o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet -lm
+
+$(SERVER_HEALTHCHECK_BIN): tools/server_healthcheck.c tools/server_healthcheck.h $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) -Itools $< -o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet
 
 $(INPUT_FLOOD_CLIENT_BIN): tools/input_flood_client.c $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
@@ -846,7 +876,7 @@ $(UNITY_DIR):
 # =============================================================================
 .PHONY: test unit-test imgui-test directory-integration-test snapshot-rate-integration-test valgrind-test valgrind-unit-test valgrind-server-smoke valgrind-imgui-test test-coverage test-clean
 
-test: unit-test imgui-test input-flood-test directory-integration-test snapshot-rate-integration-test
+test: unit-test imgui-test input-flood-test directory-integration-test snapshot-rate-integration-test server-health-test
 
 unit-test: $(TEST_BINS)
 	@echo "Running unit tests..."
@@ -961,6 +991,9 @@ test-coverage: $(UNITY_DIR) $(VCPKG_LINUX_STAMP)
 			test_lifecycle) \
 				$(LINUX_CC) $(COVERAGE_CFLAGS) \
 					$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/lifecycle.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+			test_server_healthcheck) \
+				$(LINUX_CC) $(COVERAGE_CFLAGS) -Itools -DSHROOM_HEALTHCHECK_NO_MAIN \
+					$$src $(UNITY_SRC) tools/server_healthcheck.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 			test_screen) \
 				$(LINUX_CC) $(COVERAGE_CFLAGS) \
 					$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/screen.c -o $$test_bin $(COVERAGE_LIBS) ;; \
@@ -1101,6 +1134,11 @@ test-clean:
 $(TEST_BUILD_DIR)/test_lifecycle: $(UNIT_TESTS_DIR)/test_lifecycle.c $(UNITY_SRC) $(SHARED_SRC_DIR)/lifecycle.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_server_healthcheck: $(UNIT_TESTS_DIR)/test_server_healthcheck.c $(UNITY_SRC) tools/server_healthcheck.c tools/server_healthcheck.h | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) -Itools -DSHROOM_HEALTHCHECK_NO_MAIN \
+		$(filter %.c,$^) -o $@ $(TEST_LIBS)
 
 $(TEST_BUILD_DIR)/test_lobby_capacity: $(UNIT_TESTS_DIR)/test_lobby_capacity.c $(UNITY_SRC) $(SERVER_SRC_DIR)/lobby_capacity.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)

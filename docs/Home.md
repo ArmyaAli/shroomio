@@ -8,6 +8,7 @@ A real-time multiplayer fungal arena game written in C. Grow your fungal organis
 - [Environment Setup](Environment-Setup) — how to set up a development environment
 - [Development Guide](Development-Guide) — building, running, and contributing
 - [Production Runbook](Production-Runbook) — deploying and operating the server in Docker
+- [Server Capacity](Server-Capacity) — 256-player sizing, benchmark evidence, and launch gates
 - [Refactor And Design Pattern Review](Refactor-Design-Review) — maintainability risks and follow-up refactor backlog
 
 ## Quick Start
