@@ -55,6 +55,13 @@ bool ShroomLayoutButtonFullWidth(const char* label, float height) {
   return ShroomImGui_Button(label, -1.0f, ShroomLayoutMetric(height));
 }
 
+void ShroomLayoutSetNextLabeledItemWidth(const char* label) {
+  const float width = ShroomLayoutLabeledItemWidth(ShroomImGui_GetContentRegionAvailWidth(),
+                                                   ShroomImGui_CalcTextWidth(label),
+                                                   ShroomImGui_GetItemInnerSpacingX());
+  ShroomImGui_SetNextItemWidth(width);
+}
+
 void ShroomLayoutHeading(const char* text) {
   ShroomImGui_Text(text);
   ShroomImGui_Separator();

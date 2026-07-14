@@ -368,6 +368,54 @@ static void Test_PlayerIdentityOnboardingPersistsAndStartsSession(ImGuiTestConte
               SHROOM_SCREEN_LOBBY);
 }
 
+static void Test_PlayerNameInputsStayVisibleAtUiScaleEndpoints(ImGuiTestContext* ctx) {
+  const int scales[] = {80, 100, 160};
+  const char* short_name = "Moss";
+  const char* max_name = "ABCDEFGHIJKLMNOPQRSTUVWXYZ12345";
+
+  IM_CHECK_EQ(strlen(max_name), SHROOM_MAX_NAME_LENGTH - 1u);
+
+  for (size_t index = 0; index < sizeof(scales) / sizeof(scales[0]); ++index) {
+    ShroomImGuiTestAppReset(true);
+    g_imgui_test_app.game.settings.ui_scale_percent = scales[index];
+    g_imgui_test_app.game.settings.player_name[0] = '\0';
+    ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_HELP);
+    ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_MAIN_MENU);
+    ShroomTeCtx_SetRef(ctx, "Player Identity");
+    ShroomTeCtx_Yield(ctx, 2);
+
+    IM_CHECK(ShroomTeImGui_WindowFitsViewport("Player Identity"));
+    IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Player Name"));
+    IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Player Name"));
+    IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Continue"));
+    IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Continue"));
+
+    ShroomTeCtx_ItemInputValueStr(ctx, "Player Name", short_name);
+    ShroomTeCtx_Yield(ctx, 1);
+    IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Player Name"));
+    ShroomTeCtx_ItemInputValueStr(ctx, "Player Name", max_name);
+    ShroomTeCtx_Yield(ctx, 1);
+    IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Player Name"));
+    ShroomTeCtx_ItemClick(ctx, "Continue");
+    ShroomTeCtx_Yield(ctx, 2);
+    IM_CHECK_STR_EQ(g_imgui_test_app.game.settings.player_name, max_name);
+
+    ShroomTeCtx_SetRef(ctx, "Main Menu");
+    ShroomTeCtx_ItemClick(ctx, "Settings");
+    ShroomTeCtx_Yield(ctx, 2);
+    IM_CHECK(ShroomTeImGui_WindowFitsViewport("Settings"));
+    IM_CHECK(ShroomTeCtx_SetRefWindow(ctx, "//Settings/SettingsContent"));
+    IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Player Name"));
+    IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Player Name"));
+    ShroomTeCtx_ItemInputValueStr(ctx, "Player Name", short_name);
+    ShroomTeCtx_Yield(ctx, 1);
+    IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Player Name"));
+    ShroomTeCtx_ItemInputValueStr(ctx, "Player Name", max_name);
+    ShroomTeCtx_Yield(ctx, 1);
+    IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Player Name"));
+  }
+}
+
 static void Test_GameModeAvailabilityAndNavigation(ImGuiTestContext* ctx) {
   ShroomImGuiTestAppReset(true);
 
@@ -2237,6 +2285,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_MainMenuExposesPrimaryActions);
   ShroomTeEngine_RegisterTest(engine, "screens", "player_identity_onboarding_persists_session",
                               Test_PlayerIdentityOnboardingPersistsAndStartsSession);
+  ShroomTeEngine_RegisterTest(engine, "screens", "player_name_inputs_stay_visible_at_ui_scales",
+                              Test_PlayerNameInputsStayVisibleAtUiScaleEndpoints);
   ShroomTeEngine_RegisterTest(engine, "screens", "game_mode_availability_and_navigation",
                               Test_GameModeAvailabilityAndNavigation);
   ShroomTeEngine_RegisterTest(engine, "screens", "offline_practice_entry_initializes_game",

@@ -1,5 +1,6 @@
 #include "game.h"
 #include "audio.h"
+#include "layout.h"
 #include "screen.h"
 #include "screen_background.h"
 #include "settings_session.h"
@@ -211,6 +212,7 @@ static void SettingsDraw(ShroomScreenManager* manager) {
 
   ShroomImGui_BeginChild("SettingsContent", 0.0f, (float)screen_height * 0.8f - 150.0f, false);
   ShroomImGui_Text("Identity");
+  ShroomLayoutSetNextLabeledItemWidth("Player Name");
   changed |= ShroomImGui_InputText("Player Name", g_settings_screen.session.pending.player_name,
                                    sizeof(g_settings_screen.session.pending.player_name));
 
