@@ -11,6 +11,12 @@
 
 #define SHROOM_PROTOCOL_VERSION 10u
 #define SHROOM_SERVER_PORT 7777u
+#define SHROOM_DIRECTORY_PORT 7778u
+#define SHROOM_DIRECTORY_PROTOCOL_VERSION 1u
+#define SHROOM_DIRECTORY_MAX_ENTRIES 32u
+#define SHROOM_DIRECTORY_ENTRIES_PER_PACKET 7u
+#define SHROOM_DIRECTORY_SERVER_NAME_LENGTH 48u
+#define SHROOM_DIRECTORY_HOST_LENGTH 64u
 #define SHROOM_MAX_UNRELIABLE_PACKET_SIZE 1200u
 #define SHROOM_MAX_PASSWORD_LENGTH 64u
 #define SHROOM_AUTH_TOKEN_LENGTH 64u
@@ -74,6 +80,9 @@ typedef enum ShroomPacketType {
   SHROOM_PACKET_LOBBY_ROSTER = 23,
   SHROOM_PACKET_REMATCH_VOTE = 24,
   SHROOM_PACKET_INTERMISSION_STATUS = 25,
+  SHROOM_PACKET_DIRECTORY_HEARTBEAT = 26,
+  SHROOM_PACKET_DIRECTORY_QUERY = 27,
+  SHROOM_PACKET_DIRECTORY_LIST = 28,
 } ShroomPacketType;
 
 typedef enum ShroomAuthMethod {
@@ -183,6 +192,51 @@ typedef struct ShroomPongPacket {
   ShroomPacketHeader header;
   uint32_t nonce;
 } ShroomPongPacket;
+
+typedef struct ShroomDirectoryServerEntry {
+  uint64_t server_id;
+  char name[SHROOM_DIRECTORY_SERVER_NAME_LENGTH];
+  char host[SHROOM_DIRECTORY_HOST_LENGTH];
+  uint16_t port;
+  uint16_t player_count;
+  uint16_t capacity;
+  uint16_t reserved;
+} ShroomDirectoryServerEntry;
+
+typedef struct ShroomDirectoryHeartbeatPacket {
+  ShroomPacketHeader header;
+  uint32_t protocol_version;
+  ShroomDirectoryServerEntry server;
+} ShroomDirectoryHeartbeatPacket;
+
+typedef struct ShroomDirectoryQueryPacket {
+  ShroomPacketHeader header;
+  uint32_t protocol_version;
+  uint32_t generation;
+} ShroomDirectoryQueryPacket;
+
+typedef struct ShroomDirectoryListPacket {
+  ShroomPacketHeader header;
+  uint32_t protocol_version;
+  uint32_t generation;
+  uint8_t chunk_index;
+  uint8_t chunk_count;
+  uint8_t entry_count;
+  uint8_t reserved;
+  ShroomDirectoryServerEntry entries[SHROOM_DIRECTORY_ENTRIES_PER_PACKET];
+} ShroomDirectoryListPacket;
+
+#define SHROOM_DIRECTORY_LIST_HEADER_SIZE offsetof(ShroomDirectoryListPacket, entries)
+#define SHROOM_DIRECTORY_LIST_PACKET_SIZE(count)                                                   \
+  (SHROOM_DIRECTORY_LIST_HEADER_SIZE + ((size_t)(count) * sizeof(ShroomDirectoryServerEntry)))
+
+#if defined(__cplusplus)
+static_assert(sizeof(ShroomDirectoryListPacket) <= SHROOM_MAX_UNRELIABLE_PACKET_SIZE,
+              "directory list chunk must fit the unreliable MTU budget");
+#else
+_Static_assert(sizeof(ShroomDirectoryListPacket) <= SHROOM_MAX_UNRELIABLE_PACKET_SIZE,
+               "directory list chunk must fit the unreliable MTU budget");
+#endif
 
 typedef struct ShroomSnapshotSporeState {
   uint32_t entity_id;
@@ -441,7 +495,13 @@ typedef struct ShroomIntermissionStatusPacket {
   X(SHROOM_PACKET_REMATCH_VOTE, SHROOM_ENET_CHANNEL_CONTROL, true,                                 \
     sizeof(ShroomRematchVotePacket))                                                               \
   X(SHROOM_PACKET_INTERMISSION_STATUS, SHROOM_ENET_CHANNEL_CONTROL, true,                          \
-    sizeof(ShroomIntermissionStatusPacket))
+    sizeof(ShroomIntermissionStatusPacket))                                                        \
+  X(SHROOM_PACKET_DIRECTORY_HEARTBEAT, SHROOM_ENET_CHANNEL_CONTROL, true,                          \
+    sizeof(ShroomDirectoryHeartbeatPacket))                                                        \
+  X(SHROOM_PACKET_DIRECTORY_QUERY, SHROOM_ENET_CHANNEL_CONTROL, true,                              \
+    sizeof(ShroomDirectoryQueryPacket))                                                            \
+  X(SHROOM_PACKET_DIRECTORY_LIST, SHROOM_ENET_CHANNEL_CONTROL, true,                               \
+    SHROOM_DIRECTORY_LIST_HEADER_SIZE)
 
 static inline uint8_t ShroomPacketTypeToChannel(ShroomPacketType type) {
   switch (type) {

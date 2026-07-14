@@ -79,6 +79,7 @@ const char* ShroomTestGetServerBrowserSelectedHost(void);
 int ShroomTestGetServerBrowserRecentCount(void);
 int ShroomTestGetServerBrowserDiscoveryState(void);
 int ShroomTestGetServerBrowserServerCount(void);
+const char* ShroomTestGetServerBrowserStatusText(void);
 bool ShroomTestGetServerBrowserSortDescending(void);
 void ShroomTestMarkServerBrowserStale(void);
 void ShroomTestCompleteServerBrowserRefresh(bool demo_mode);
