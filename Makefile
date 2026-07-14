@@ -583,7 +583,7 @@ rest-integration-test: $(SERVER_LINUX_BIN)
 	grep -q 'rest_access method=GET path=/health status=200 .* body=redacted' "$$tmp/server.log"; \
 	if ./$(SERVER_LINUX_BIN) --smoke-test --rest-cert "$$tmp/missing.pem" \
 		>"$$tmp/missing-cert.log" 2>&1; then echo "Server accepted a missing REST certificate"; exit 1; fi; \
-	grep -q 'REST TLS certificate is not readable' "$$tmp/missing-cert.log"; \
+	grep -q 'failed to start REST HTTPS listener' "$$tmp/missing-cert.log"; \
 	echo "REST HTTPS integration passed."
 
 input-flood-test: $(SERVER_LINUX_BIN) $(INPUT_FLOOD_CLIENT_BIN)

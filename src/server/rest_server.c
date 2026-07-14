@@ -128,30 +128,17 @@ static int SuppressCivetWebAccessLog(const struct mg_connection* connection, con
   return 1;
 }
 
-static bool CertificateIsReadable(const char* path) {
-  FILE* certificate;
-
-  if ((path == NULL) || (path[0] == '\0')) {
-    LOG_ERROR("REST TLS certificate is required; set --rest-cert or SHROOM_SERVER_REST_CERT");
-    return false;
-  }
-  certificate = fopen(path, "rb");
-  if (certificate == NULL) {
-    LOG_ERROR("REST TLS certificate is not readable: path=%s", path);
-    return false;
-  }
-  fclose(certificate);
-  return true;
-}
-
 bool ShroomRestServerStart(ShroomRestServer* server, const ShroomRestConfig* config) {
   struct mg_callbacks callbacks = {0};
   char listening_port[SHROOM_REST_BIND_MAX_LENGTH + 16u];
   const char* options[17];
 
   if ((server == NULL) || (config == NULL) || (config->bind_host == NULL) ||
-      (config->bind_host[0] == '\0') || (config->port == 0u) ||
-      !CertificateIsReadable(config->certificate_path)) {
+      (config->bind_host[0] == '\0') || (config->port == 0u)) {
+    return false;
+  }
+  if ((config->certificate_path == NULL) || (config->certificate_path[0] == '\0')) {
+    LOG_ERROR("REST TLS certificate is required; set --rest-cert or SHROOM_SERVER_REST_CERT");
     return false;
   }
   if (server->context != NULL) {
