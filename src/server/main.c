@@ -28,6 +28,7 @@
 #include "logger.h"
 #include "lobby_capacity.h"
 #include "match_persistence.h"
+#include "rest_server.h"
 #include "session_cleanup.h"
 #include "snapshot_stats.h"
 #include "input_admission.h"
@@ -87,17 +88,21 @@ static ShroomLifecycle g_lifecycle;
 
 typedef struct ServerConfig {
   char bind_host[64];
+  char rest_bind_host[SHROOM_REST_BIND_MAX_LENGTH + 1u];
+  char rest_certificate_path[SHROOM_REST_CERT_PATH_MAX_LENGTH + 1u];
   char database_path[256];
   char directory_host[SHROOM_DIRECTORY_HOST_LENGTH];
   char server_name[SHROOM_DIRECTORY_SERVER_NAME_LENGTH];
   enet_uint32 bind_address;
   uint16_t port;
+  uint16_t rest_port;
   uint16_t directory_port;
   uint16_t snapshot_rate;
   float match_duration_seconds;
   bool directory_mode;
   bool smoke_test;
   bool benchmark;
+  bool rest_enabled;
   uint32_t benchmark_ticks;
   uint32_t benchmark_bots;
 } ServerConfig;
@@ -189,12 +194,16 @@ static void CopyConfigString(char* destination, size_t destination_size, const c
 }
 
 static void PrintUsage(const char* program_name) {
-  printf("Usage: %s [--bind ADDRESS] [--port PORT] [--database PATH]\n", program_name);
+  printf("Usage: %s [--bind ADDRESS] [--port PORT] [--database PATH] [REST OPTIONS]\n",
+         program_name);
   printf("\n");
   printf("Self-hosted server options:\n");
   printf("  --bind ADDRESS    Local bind IP address, default 0.0.0.0\n");
   printf("  --port PORT       UDP listen port, default %u\n", SHROOM_SERVER_PORT);
   printf("  --database PATH   SQLite database path, default shroomio.db\n");
+  printf("  --rest-bind ADDRESS  HTTPS bind IP address, default 0.0.0.0\n");
+  printf("  --rest-port PORT     HTTPS listen port, default %u\n", SHROOM_REST_DEFAULT_PORT);
+  printf("  --rest-cert PATH     Combined PEM certificate and private key; enables HTTPS\n");
   printf("  --directory       Run the bounded directory service instead of a game server\n");
   printf("  --directory-port PORT  Directory UDP port, default %u\n", SHROOM_DIRECTORY_PORT);
   printf("  --snapshot-rate HZ  Snapshot rate %u-%u Hz, default %u\n", SHROOM_SNAPSHOT_RATE_MIN,
@@ -209,6 +218,7 @@ static void PrintUsage(const char* program_name) {
   printf("\n");
   printf("Environment overrides:\n");
   printf("  SHROOM_SERVER_BIND, SHROOM_SERVER_PORT, SHROOM_SERVER_DB_PATH\n");
+  printf("  SHROOM_SERVER_REST_BIND, SHROOM_SERVER_REST_PORT, SHROOM_SERVER_REST_CERT\n");
   printf("  SHROOM_DIRECTORY_HOST, SHROOM_DIRECTORY_PORT, SHROOM_SERVER_NAME\n");
   printf("  SHROOM_SERVER_SNAPSHOT_RATE\n");
 }
@@ -263,18 +273,23 @@ static bool LoadServerConfig(ServerConfig* config, int argc, char** argv) {
   const char* env_bind = getenv("SHROOM_SERVER_BIND");
   const char* env_port = getenv("SHROOM_SERVER_PORT");
   const char* env_database = getenv("SHROOM_SERVER_DB_PATH");
+  const char* env_rest_bind = getenv("SHROOM_SERVER_REST_BIND");
+  const char* env_rest_port = getenv("SHROOM_SERVER_REST_PORT");
+  const char* env_rest_certificate = getenv("SHROOM_SERVER_REST_CERT");
   const char* env_directory_host = getenv("SHROOM_DIRECTORY_HOST");
   const char* env_directory_port = getenv("SHROOM_DIRECTORY_PORT");
   const char* env_server_name = getenv("SHROOM_SERVER_NAME");
   const char* env_snapshot_rate = getenv("SHROOM_SERVER_SNAPSHOT_RATE");
 
   *config = (ServerConfig){.port = (uint16_t)SHROOM_SERVER_PORT,
+                           .rest_port = (uint16_t)SHROOM_REST_DEFAULT_PORT,
                            .directory_port = (uint16_t)SHROOM_DIRECTORY_PORT,
                            .snapshot_rate = (uint16_t)SHROOM_SNAPSHOT_RATE,
                            .match_duration_seconds = SHROOM_MATCH_DURATION_SECONDS,
                            .benchmark_ticks = 600u,
                            .benchmark_bots = 8u};
   CopyConfigString(config->bind_host, sizeof(config->bind_host), "0.0.0.0");
+  CopyConfigString(config->rest_bind_host, sizeof(config->rest_bind_host), "0.0.0.0");
   CopyConfigString(config->database_path, sizeof(config->database_path), "shroomio.db");
   CopyConfigString(config->server_name, sizeof(config->server_name), "Shroomio Server");
 
@@ -283,6 +298,19 @@ static bool LoadServerConfig(ServerConfig* config, int argc, char** argv) {
   }
   if ((env_database != NULL) && (env_database[0] != '\0')) {
     CopyConfigString(config->database_path, sizeof(config->database_path), env_database);
+  }
+  if ((env_rest_bind != NULL) && (env_rest_bind[0] != '\0')) {
+    CopyConfigString(config->rest_bind_host, sizeof(config->rest_bind_host), env_rest_bind);
+  }
+  if ((env_rest_port != NULL) && (env_rest_port[0] != '\0') &&
+      !ParsePort(env_rest_port, &config->rest_port)) {
+    fprintf(stderr, "Invalid SHROOM_SERVER_REST_PORT: %s\n", env_rest_port);
+    return false;
+  }
+  if ((env_rest_certificate != NULL) && (env_rest_certificate[0] != '\0')) {
+    CopyConfigString(config->rest_certificate_path, sizeof(config->rest_certificate_path),
+                     env_rest_certificate);
+    config->rest_enabled = true;
   }
   if ((env_port != NULL) && (env_port[0] != '\0') && !ParsePort(env_port, &config->port)) {
     fprintf(stderr, "Invalid SHROOM_SERVER_PORT: %s\n", env_port);
@@ -335,6 +363,32 @@ static bool LoadServerConfig(ServerConfig* config, int argc, char** argv) {
       }
       ++i;
       CopyConfigString(config->database_path, sizeof(config->database_path), argv[i]);
+    } else if (strcmp(argv[i], "--rest-bind") == 0) {
+      if ((i + 1) >= argc) {
+        fprintf(stderr, "Missing value for --rest-bind\n");
+        return false;
+      }
+      ++i;
+      CopyConfigString(config->rest_bind_host, sizeof(config->rest_bind_host), argv[i]);
+    } else if (strcmp(argv[i], "--rest-port") == 0) {
+      if ((i + 1) >= argc) {
+        fprintf(stderr, "Missing value for --rest-port\n");
+        return false;
+      }
+      ++i;
+      if (!ParsePort(argv[i], &config->rest_port)) {
+        fprintf(stderr, "Invalid --rest-port: %s\n", argv[i]);
+        return false;
+      }
+    } else if (strcmp(argv[i], "--rest-cert") == 0) {
+      if ((i + 1) >= argc) {
+        fprintf(stderr, "Missing value for --rest-cert\n");
+        return false;
+      }
+      ++i;
+      CopyConfigString(config->rest_certificate_path, sizeof(config->rest_certificate_path),
+                       argv[i]);
+      config->rest_enabled = true;
     } else if (strcmp(argv[i], "--directory") == 0) {
       config->directory_mode = true;
     } else if (strcmp(argv[i], "--directory-port") == 0) {
@@ -2431,6 +2485,7 @@ int main(int argc, char** argv) {
   uint64_t last_health_log_ms = 0;
   sqlite3* db = NULL;
   ShroomAuthContext auth_ctx = {0};
+  ShroomRestServer rest_server = {0};
   ServerConfig config;
   DirectoryAdvertiser directory_advertiser = {0};
 
@@ -2506,6 +2561,19 @@ int main(int argc, char** argv) {
     ShroomAuthShutdown(&auth_ctx);
     sqlite3_close(db);
     ShroomLifecycleSetError(&g_lifecycle, 2, "ENet host creation failed");
+    return 1;
+  }
+
+  if (config.rest_enabled &&
+      !ShroomRestServerStart(
+          &rest_server, &(ShroomRestConfig){.bind_host = config.rest_bind_host,
+                                            .port = config.rest_port,
+                                            .certificate_path = config.rest_certificate_path})) {
+    enet_host_destroy(host);
+    enet_deinitialize();
+    ShroomAuthShutdown(&auth_ctx);
+    sqlite3_close(db);
+    ShroomLifecycleSetError(&g_lifecycle, 2, "REST HTTPS listener initialization failed");
     return 1;
   }
 
@@ -2755,6 +2823,7 @@ int main(int argc, char** argv) {
   }
 
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_STOP);
+  ShroomRestServerStop(&rest_server);
   DirectoryAdvertiserShutdown(&directory_advertiser);
   for (size_t peer_index = 0; peer_index < host->peerCount; ++peer_index) {
     DisconnectSession((ServerSession*)host->peers[peer_index].data, lobbies);

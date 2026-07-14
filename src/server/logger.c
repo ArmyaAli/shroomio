@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdatomic.h>
 #include <time.h>
 
 #ifdef _WIN32
@@ -11,6 +12,7 @@
 
 static LogLevel g_min_level = LOG_LEVEL_INFO;
 static int g_use_color = 0;
+static atomic_flag g_log_lock = ATOMIC_FLAG_INIT;
 
 #define COLOR_RESET "\033[0m"
 #define COLOR_DEBUG "\033[36m"
@@ -97,6 +99,9 @@ void LoggerLog(LogLevel level, const char* file, int line, const char* fmt, ...)
     return;
   }
 
+  while (atomic_flag_test_and_set(&g_log_lock)) {
+  }
+
   GetTimestamp(timestamp, sizeof(timestamp));
 
   if (g_use_color) {
@@ -112,6 +117,8 @@ void LoggerLog(LogLevel level, const char* file, int line, const char* fmt, ...)
   va_end(args);
 
   fprintf(stderr, "\n");
+
+  atomic_flag_clear(&g_log_lock);
 
   if (level == LOG_LEVEL_FATAL) {
     abort();

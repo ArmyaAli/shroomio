@@ -177,9 +177,12 @@ WINDOWS_SERVER_CFLAGS := -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) 
 WINDOWS_SERVER_CFLAGS += -DWIN32_LEAN_AND_MEAN -DNOGDI -DNOUSER
 MACOS_SERVER_CFLAGS := -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) \
 		  -I$(VCPKG_MACOS_INCLUDE_DIR) -D_DEFAULT_SOURCE
-LINUX_SERVER_LIBS := -L$(VCPKG_LINUX_LIB_DIR) -lenet -lm -lsqlite3
-WINDOWS_SERVER_LIBS := -L$(VCPKG_WINDOWS_LIB_DIR) -lenet -lsqlite3 -lws2_32 -lwinmm
-MACOS_SERVER_LIBS := -L$(VCPKG_MACOS_LIB_DIR) -lenet -lsqlite3 -lm
+LINUX_SERVER_LIBS := -L$(VCPKG_LINUX_LIB_DIR) -lenet -lcivetweb -lssl -lcrypto -lz -lm \
+	-lsqlite3 -ldl -lpthread
+WINDOWS_SERVER_LIBS := -L$(VCPKG_WINDOWS_LIB_DIR) -lenet -lcivetweb -lssl -lcrypto -lzs \
+	-lsqlite3 -lws2_32 -lwinmm -lcrypt32 -lgdi32 -lwinpthread
+MACOS_SERVER_LIBS := -L$(VCPKG_MACOS_LIB_DIR) -lenet -lcivetweb -lssl -lcrypto -lz \
+	-lsqlite3 -lm -lpthread
 
 #Test compiler flags(UNITY_INCLUDE defined in vendor section)
 TEST_LIBS := -lm
@@ -271,6 +274,8 @@ SERVER_SOURCES := \
 	$(SERVER_SRC_DIR)/lobby_capacity.c \
 	$(SERVER_SRC_DIR)/session_cleanup.c \
 	$(SERVER_SRC_DIR)/snapshot_stats.c \
+	$(SERVER_SRC_DIR)/rest_router.c \
+	$(SERVER_SRC_DIR)/rest_server.c \
 	$(SERVER_SRC_DIR)/voice_relay.c \
 	$(SHARED_SRC_DIR)/sim.c \
 	$(SHARED_SRC_DIR)/intermission.c \
@@ -316,6 +321,8 @@ SHARED_HEADERS := \
 	$(SERVER_SRC_DIR)/lobby_capacity.h \
 	$(SERVER_SRC_DIR)/session_cleanup.h \
 	$(SERVER_SRC_DIR)/snapshot_stats.h \
+	$(SERVER_SRC_DIR)/rest_router.h \
+	$(SERVER_SRC_DIR)/rest_server.h \
 	$(SERVER_SRC_DIR)/voice_relay.h
 
 #Object files
@@ -397,7 +404,7 @@ IMGUI_TEST_ENGINE_OBJECTS := $(addprefix $(TEST_BUILD_DIR)/imgui/engine/,$(addsu
 # =============================================================================
 .PHONY: all client-linux client-windows client-macos server-linux server-windows server-macos servers-all
 .PHONY: linux windows macos server run run-server run-windows help
-.PHONY: benchmark network-benchmark network-benchmark-test input-flood-test server-health-test
+.PHONY: benchmark network-benchmark network-benchmark-test input-flood-test server-health-test rest-integration-test
 
 all: client-linux
 
@@ -420,6 +427,7 @@ help:
 	@echo "  make benchmark      Run repeatable local server benchmark scenarios"
 	@echo "  make network-benchmark Run real ENet loopback scenarios (1/64/256 clients)"
 	@echo "  make server-health-test Validate the production UDP health probe"
+	@echo "  make rest-integration-test Validate the HTTPS health endpoint"
 	@echo "  make run-windows    Build and launch Windows client from WSL (bypasses WSLg audio/video)"
 	@echo ""
 	@echo "Quality targets:"
@@ -543,6 +551,40 @@ server-health-test: $(SERVER_LINUX_BIN) $(SERVER_HEALTHCHECK_BIN)
 		echo "Health check accepted invalid arguments"; exit 1; \
 	fi; \
 	echo "Server health integration passed."
+
+rest-integration-test: $(SERVER_LINUX_BIN)
+	@command -v openssl >/dev/null 2>&1 || { echo "openssl is required"; exit 1; }
+	@command -v curl >/dev/null 2>&1 || { echo "curl is required"; exit 1; }
+	@set -eu; \
+	port=$$((40000 + ($$$$ * 1103) % 20000)); udp_port=$$((port + 1)); \
+	tmp=/tmp/shroomio-rest-$$$$; mkdir -p "$$tmp"; server_pid=""; \
+	cleanup() { \
+		if [ -n "$$server_pid" ]; then kill "$$server_pid" >/dev/null 2>&1 || true; wait "$$server_pid" >/dev/null 2>&1 || true; fi; \
+		rm -rf "$$tmp"; \
+	}; \
+	trap cleanup EXIT INT TERM; \
+	openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 -subj "/CN=127.0.0.1" \
+		-keyout "$$tmp/key.pem" -out "$$tmp/cert.pem" >/dev/null 2>&1; \
+	cat "$$tmp/key.pem" "$$tmp/cert.pem" >"$$tmp/rest.pem"; \
+	./$(SERVER_LINUX_BIN) --bind 127.0.0.1 --port "$$udp_port" --database "$$tmp/server.db" \
+		--rest-bind 127.0.0.1 --rest-port "$$port" --rest-cert "$$tmp/rest.pem" \
+		>"$$tmp/server.log" 2>&1 & server_pid=$$!; \
+	ready=0; for attempt in $$(seq 1 200); do \
+		if grep -q "REST HTTPS listener started" "$$tmp/server.log"; then ready=1; break; fi; \
+		if ! kill -0 "$$server_pid" >/dev/null 2>&1; then break; fi; sleep 0.02; \
+	done; \
+	if [ $$ready -ne 1 ]; then echo "REST integration server failed to start"; cat "$$tmp/server.log"; exit 1; fi; \
+	response=$$(curl -ksS -D "$$tmp/headers" "https://127.0.0.1:$$port/health"); \
+	test "$$response" = '{"status":"ok","service":"shroomio-server"}'; \
+	grep -qi '^X-Request-ID: rest-' "$$tmp/headers"; \
+	status=$$(curl -ksS -o "$$tmp/missing.json" -w '%{http_code}' -X POST \
+		"https://127.0.0.1:$$port/health"); \
+	test "$$status" = 404; grep -q '"code":"not_found"' "$$tmp/missing.json"; \
+	grep -q 'rest_access method=GET path=/health status=200 .* body=redacted' "$$tmp/server.log"; \
+	if ./$(SERVER_LINUX_BIN) --smoke-test --rest-cert "$$tmp/missing.pem" \
+		>"$$tmp/missing-cert.log" 2>&1; then echo "Server accepted a missing REST certificate"; exit 1; fi; \
+	grep -q 'REST TLS certificate is not readable' "$$tmp/missing-cert.log"; \
+	echo "REST HTTPS integration passed."
 
 input-flood-test: $(SERVER_LINUX_BIN) $(INPUT_FLOOD_CLIENT_BIN)
 	@set -eu; \
@@ -876,7 +918,7 @@ $(UNITY_DIR):
 # =============================================================================
 .PHONY: test unit-test imgui-test directory-integration-test snapshot-rate-integration-test valgrind-test valgrind-unit-test valgrind-server-smoke valgrind-imgui-test test-coverage test-clean
 
-test: unit-test imgui-test input-flood-test directory-integration-test snapshot-rate-integration-test server-health-test
+test: unit-test imgui-test input-flood-test directory-integration-test snapshot-rate-integration-test server-health-test rest-integration-test
 
 unit-test: $(TEST_BINS)
 	@echo "Running unit tests..."
@@ -1063,6 +1105,9 @@ test_connection) \
 		test_directory_registry) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(SERVER_SRC_DIR)/directory_registry.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+		test_rest_router) \
+			$(LINUX_CC) $(COVERAGE_CFLAGS) \
+				$$src $(UNITY_SRC) $(SERVER_SRC_DIR)/rest_router.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_spectator_target) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/spectator_target.c -o $$test_bin $(COVERAGE_LIBS) ;; \
@@ -1245,6 +1290,10 @@ $(TEST_BUILD_DIR)/test_input_admission: $(UNIT_TESTS_DIR)/test_input_admission.c
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
 $(TEST_BUILD_DIR)/test_directory_registry: $(UNIT_TESTS_DIR)/test_directory_registry.c $(UNITY_SRC) $(SERVER_SRC_DIR)/directory_registry.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_rest_router: $(UNIT_TESTS_DIR)/test_rest_router.c $(UNITY_SRC) $(SERVER_SRC_DIR)/rest_router.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
