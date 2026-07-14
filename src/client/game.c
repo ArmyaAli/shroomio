@@ -82,8 +82,20 @@ static bool VoicePushToTalkHeld(const Game* game) {
 }
 
 static bool VoiceSessionIsActive(const Game* game) {
-  return IsOnlineMode(game->active_mode) && (game->net.status == CLIENT_NET_CONNECTED) &&
-         game->net.handshake_received && (game->net.lobby_id != 0u);
+  return game->settings.voice_enabled && IsOnlineMode(game->active_mode) &&
+         (game->net.status == CLIENT_NET_CONNECTED) && game->net.handshake_received &&
+         (game->net.lobby_id != 0u);
+}
+
+void GameUpdateVoice(Game* game) {
+  if (game == NULL) {
+    return;
+  }
+  ShroomVoiceSetSelfMuted(game->settings.voice_self_muted);
+  ShroomVoiceSetOutputVolume(game->settings.voice_output_volume_percent);
+  (void)ShroomVoiceSelectCaptureDevice(game->settings.voice_capture_device);
+  ShroomVoiceSetSessionActive(VoiceSessionIsActive(game));
+  ShroomVoiceUpdate(VoicePushToTalkHeld(game), VoiceSendFrame, &game->net);
 }
 
 static Rectangle GetCameraWorldBounds(Camera2D camera) {
@@ -2899,6 +2911,24 @@ static void DrawLeaderboardOverlay(Game* game, const LeaderboardEntry* leaderboa
             ? TextFormat("%d. %s   %.1f pts", (int)(index + 1), label,
                          leaderboard[index].objective_score)
             : TextFormat("%d. %s   %.0f mass", (int)(index + 1), label, player->mass));
+    if (player->player_id == game->net.player_id) {
+      if (ShroomVoiceIsTransmitting()) {
+        ShroomImGui_SameLine();
+        ShroomImGui_TextColored((ShroomImGuiColor){0.4f, 1.0f, 0.6f, 1.0f}, "Transmitting");
+      }
+    } else if (!player->is_bot && (player->player_id != 0u)) {
+      const bool muted = ShroomVoiceIsPlayerMuted(player->player_id);
+      ShroomImGui_SameLine();
+      if (ShroomVoiceIsPlayerTalking(player->player_id)) {
+        ShroomImGui_TextColored((ShroomImGuiColor){0.4f, 1.0f, 0.6f, 1.0f}, "Talking");
+        ShroomImGui_SameLine();
+      }
+      if (ShroomImGui_Button(
+              TextFormat("%s##leader-voice-%u", muted ? "Unmute" : "Mute", player->player_id),
+              ShroomLayoutMetric(70.0f), 0.0f)) {
+        (void)ShroomVoiceSetPlayerMuted(player->player_id, !muted);
+      }
+    }
   }
 
   if (ShroomImGui_Button("Close", ShroomLayoutMetric(120.0f), 0.0f)) {
@@ -4183,8 +4213,7 @@ void GameUpdate(Game* game, float delta_time) {
         !game->local_player->has_split) {
       QueueGameplaySfx(game, SHROOM_CLIENT_SFX_SPLIT, 0.64f);
     }
-    ShroomVoiceSetSessionActive(VoiceSessionIsActive(game));
-    ShroomVoiceUpdate(VoicePushToTalkHeld(game), VoiceSendFrame, &game->net);
+    GameUpdateVoice(game);
     const uint64_t network_start_nanos = profile_enabled ? ClientProfileNowNanos() : 0ull;
     ClientNetUpdate(&game->net, input_direction, !game->spectator_mode && game->split_requested,
                     !game->spectator_mode && game->eject_requested, split_aim_direction,

@@ -105,6 +105,8 @@ void ShroomTeCtx_ItemClick(ImGuiTestContext* ctx, const char* ref) { ctx->ItemCl
 
 void ShroomTeCtx_ItemCheckbox(ImGuiTestContext* ctx, const char* ref) { ctx->ItemCheck(ref); }
 
+void ShroomTeCtx_ItemUncheckbox(ImGuiTestContext* ctx, const char* ref) { ctx->ItemUncheck(ref); }
+
 void ShroomTeCtx_ItemInputValueStr(ImGuiTestContext* ctx, const char* ref, const char* value) {
   ctx->ItemInputValue(ref, value);
 }

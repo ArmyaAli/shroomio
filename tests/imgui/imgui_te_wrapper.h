@@ -67,6 +67,7 @@ void ShroomTeCtx_SetRef(ImGuiTestContext* ctx, const char* ref);
 bool ShroomTeCtx_SetRefWindow(ImGuiTestContext* ctx, const char* ref);
 void ShroomTeCtx_ItemClick(ImGuiTestContext* ctx, const char* ref);
 void ShroomTeCtx_ItemCheckbox(ImGuiTestContext* ctx, const char* ref);
+void ShroomTeCtx_ItemUncheckbox(ImGuiTestContext* ctx, const char* ref);
 void ShroomTeCtx_ItemInputValueStr(ImGuiTestContext* ctx, const char* ref, const char* value);
 void ShroomTeCtx_ItemInputValueInt(ImGuiTestContext* ctx, const char* ref, int value);
 void ShroomTeCtx_Yield(ImGuiTestContext* ctx, int count);

@@ -36,6 +36,9 @@ void ClientSettingsSetDefaults(ClientSettings* settings) {
       .master_volume_percent = 80,
       .music_volume_percent = 70,
       .effects_volume_percent = 85,
+      .voice_enabled = true,
+      .voice_self_muted = false,
+      .voice_output_volume_percent = 80,
       .invert_mouse = false,
       .diagnostics_enabled = false,
       .show_ping_ms = true,
@@ -75,6 +78,12 @@ void ClientSettingsValidate(ClientSettings* settings) {
   if ((settings->effects_volume_percent < 0) || (settings->effects_volume_percent > 100)) {
     settings->effects_volume_percent = 85;
   }
+  if ((settings->voice_output_volume_percent < 0) ||
+      (settings->voice_output_volume_percent > 100)) {
+    settings->voice_output_volume_percent = 80;
+  }
+  settings->voice_capture_device[sizeof(settings->voice_capture_device) - 1u] = '\0';
+  settings->voice_capture_device[strcspn(settings->voice_capture_device, "\r\n")] = '\0';
   if ((settings->preferred_region_index < 0) || (settings->preferred_region_index > 2)) {
     settings->preferred_region_index = 0;
   }
@@ -115,7 +124,11 @@ void ClientSettingsValidate(ClientSettings* settings) {
   }
 }
 
-enum { CLIENT_SETTINGS_FIELD_COUNT = 20 };
+enum {
+  CLIENT_SETTINGS_LEGACY_FIELD_COUNT = 20,
+  CLIENT_SETTINGS_FIELD_COUNT = 24,
+};
+#define CLIENT_SETTINGS_LEGACY_MASK ((1u << CLIENT_SETTINGS_LEGACY_FIELD_COUNT) - 1u)
 #define CLIENT_SETTINGS_REQUIRED_MASK ((1u << CLIENT_SETTINGS_FIELD_COUNT) - 1u)
 
 static bool BuildSettingsSidePath(char* destination, size_t size, const char* path,
@@ -195,6 +208,9 @@ static bool ParseSettingsFile(const char* path, ClientSettings* settings, bool* 
     if (strcmp(key, "player_name") == 0) {
       ClientSettingsSanitizePlayerName(settings->player_name, text);
       field = 1u;
+    } else if (strcmp(key, "voice_capture_device") == 0) {
+      snprintf(settings->voice_capture_device, sizeof(settings->voice_capture_device), "%s", text);
+      field = 23u;
     } else {
       if (!ParseInteger(text, &value)) {
         valid = false;
@@ -257,6 +273,15 @@ static bool ParseSettingsFile(const char* path, ClientSettings* settings, bool* 
       } else if (strcmp(key, "key_push_to_talk") == 0) {
         settings->key_push_to_talk = value;
         field = 19u;
+      } else if (strcmp(key, "voice_enabled") == 0) {
+        settings->voice_enabled = value != 0;
+        field = 20u;
+      } else if (strcmp(key, "voice_self_muted") == 0) {
+        settings->voice_self_muted = value != 0;
+        field = 21u;
+      } else if (strcmp(key, "voice_output_volume_percent") == 0) {
+        settings->voice_output_volume_percent = value;
+        field = 22u;
       }
     }
     if (field < CLIENT_SETTINGS_FIELD_COUNT) {
@@ -268,15 +293,19 @@ static bool ParseSettingsFile(const char* path, ClientSettings* settings, bool* 
   }
   fclose(file);
 
-  valid = valid && (fields == CLIENT_SETTINGS_REQUIRED_MASK) &&
-          (!schema_seen || (schema_version == CLIENT_SETTINGS_SCHEMA_VERSION));
+  valid =
+      valid && ((schema_seen && (schema_version == CLIENT_SETTINGS_SCHEMA_VERSION) &&
+                 (fields == CLIENT_SETTINGS_REQUIRED_MASK)) ||
+                (!schema_seen && ((fields == CLIENT_SETTINGS_LEGACY_MASK) ||
+                                  (fields == CLIENT_SETTINGS_REQUIRED_MASK))) ||
+                (schema_seen && (schema_version == 1) && (fields == CLIENT_SETTINGS_LEGACY_MASK)));
   if (!valid) {
     ClientSettingsSetDefaults(settings);
     return false;
   }
   ClientSettingsValidate(settings);
   if (unversioned != NULL) {
-    *unversioned = !schema_seen;
+    *unversioned = !schema_seen || (schema_version != CLIENT_SETTINGS_SCHEMA_VERSION);
   }
   return true;
 }
@@ -348,6 +377,11 @@ static bool WriteSettingsFile(const char* path, const ClientSettings* settings) 
       fprintf(file, "master_volume_percent=%d\n", settings->master_volume_percent) >= 0 &&
       fprintf(file, "music_volume_percent=%d\n", settings->music_volume_percent) >= 0 &&
       fprintf(file, "effects_volume_percent=%d\n", settings->effects_volume_percent) >= 0 &&
+      fprintf(file, "voice_enabled=%d\n", settings->voice_enabled ? 1 : 0) >= 0 &&
+      fprintf(file, "voice_self_muted=%d\n", settings->voice_self_muted ? 1 : 0) >= 0 &&
+      fprintf(file, "voice_output_volume_percent=%d\n", settings->voice_output_volume_percent) >=
+          0 &&
+      fprintf(file, "voice_capture_device=%s\n", settings->voice_capture_device) >= 0 &&
       fprintf(file, "invert_mouse=%d\n", settings->invert_mouse ? 1 : 0) >= 0 &&
       fprintf(file, "diagnostics_enabled=%d\n", settings->diagnostics_enabled ? 1 : 0) >= 0 &&
       fprintf(file, "show_ping_ms=%d\n", settings->show_ping_ms ? 1 : 0) >= 0 &&

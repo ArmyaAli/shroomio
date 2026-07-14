@@ -4,6 +4,7 @@
 #include "client/net.h"
 #include "client/screen.h"
 #include "client/screens/screen_background.h"
+#include "client/voice.h"
 
 #include <math.h>
 
@@ -74,6 +75,7 @@ static void LobbyRosterUpdate(ShroomScreenManager* manager, float delta_time) {
    * while the player reviews the roster. We do NOT auto-transition to
    * gameplay — entering the match is explicit via the Enter Match button. */
   ClientNetUpdate(&game->net, no_input, false, false, no_input, 0u, delta_time);
+  GameUpdateVoice(game);
 
   g_status_pulse_timer += delta_time;
 }
@@ -95,7 +97,7 @@ static void LobbyRosterDraw(ShroomScreenManager* manager) {
   ShroomScreenDrawFungalBackground(game->settings.menu_animations_enabled);
 
   if (!ShroomLayoutBeginCenteredPanel(
-          "Lobby Roster", 560.0f, 420.0f, 0.9f,
+          "Lobby Roster", 680.0f, 420.0f, 0.9f,
           SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
               SHROOM_IMGUI_WINDOW_NO_MOVE | SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
               SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
@@ -120,13 +122,14 @@ static void LobbyRosterDraw(ShroomScreenManager* manager) {
 
   ShroomImGui_Separator();
 
-  if (ShroomImGui_BeginTable("RosterTable", 3,
+  if (ShroomImGui_BeginTable("RosterTable", 4,
                              SHROOM_IMGUI_TABLE_BORDERS | SHROOM_IMGUI_TABLE_ROW_BG |
                                  SHROOM_IMGUI_TABLE_SCROLL_Y | SHROOM_IMGUI_TABLE_SIZING_FIXED,
                              0.0f, ShroomLayoutMetric(190.0f))) {
-    ShroomImGui_TableSetupColumn("Player", ShroomLayoutMetric(280.0f));
-    ShroomImGui_TableSetupColumn("Role", ShroomLayoutMetric(120.0f));
-    ShroomImGui_TableSetupColumn("Status", ShroomLayoutMetric(120.0f));
+    ShroomImGui_TableSetupColumn("Player", ShroomLayoutMetric(210.0f));
+    ShroomImGui_TableSetupColumn("Role", ShroomLayoutMetric(80.0f));
+    ShroomImGui_TableSetupColumn("Status", ShroomLayoutMetric(100.0f));
+    ShroomImGui_TableSetupColumn("Voice", ShroomLayoutMetric(110.0f));
     ShroomImGui_TableSetupScrollFreeze(0, 2);
     ShroomImGui_TableHeadersRow();
 
@@ -140,6 +143,16 @@ static void LobbyRosterDraw(ShroomScreenManager* manager) {
     ShroomImGui_TableSetColumnIndex(2);
     ShroomImGui_Text(local_entry == NULL ? "Waiting for status"
                                          : (local_entry->is_ready ? "Ready" : "Not Ready"));
+    ShroomImGui_TableSetColumnIndex(3);
+    if (!game->settings.voice_enabled) {
+      ShroomImGui_TextDisabled("Disabled");
+    } else if (game->settings.voice_self_muted) {
+      ShroomImGui_TextDisabled("Self muted");
+    } else if (ShroomVoiceIsTransmitting()) {
+      ShroomImGui_Text("Transmitting");
+    } else {
+      ShroomImGui_TextDisabled("PTT ready");
+    }
 
     /* Peers sourced from the latest snapshot; the list refreshes every
      * frame as players join and leave. Bots auto-ready so the lobby reads
@@ -169,6 +182,21 @@ static void LobbyRosterDraw(ShroomScreenManager* manager) {
           }
           ShroomImGui_Text(roster_entry == NULL ? "Waiting for status"
                                                 : (roster_entry->is_ready ? "Ready" : "Not Ready"));
+        }
+        ShroomImGui_TableSetColumnIndex(3);
+        if (!peer->is_bot) {
+          const bool muted = ShroomVoiceIsPlayerMuted(peer->player_id);
+          if (ShroomVoiceIsPlayerTalking(peer->player_id)) {
+            ShroomImGui_Text("Talking");
+            ShroomImGui_SameLine();
+          }
+          if (ShroomImGui_Button(
+                  TextFormat("%s##voice-%u", muted ? "Unmute" : "Mute", peer->player_id),
+                  ShroomLayoutMetric(74.0f), 0.0f)) {
+            (void)ShroomVoiceSetPlayerMuted(peer->player_id, !muted);
+          }
+        } else {
+          ShroomImGui_TextDisabled("-");
         }
       }
     } else {

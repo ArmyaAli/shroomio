@@ -5,7 +5,7 @@
 
 #include "shared/config.h"
 
-#define CLIENT_SETTINGS_SCHEMA_VERSION 1
+#define CLIENT_SETTINGS_SCHEMA_VERSION 2
 
 typedef enum ClientPalettePreset {
   CLIENT_PALETTE_CLASSIC = 0,
@@ -45,6 +45,10 @@ typedef struct ClientSettings {
   int master_volume_percent;
   int music_volume_percent;
   int effects_volume_percent;
+  bool voice_enabled;
+  bool voice_self_muted;
+  int voice_output_volume_percent;
+  char voice_capture_device[SHROOM_VOICE_DEVICE_NAME_LENGTH];
   bool invert_mouse;
   bool diagnostics_enabled;
   bool show_ping_ms;
@@ -56,9 +60,7 @@ typedef struct ClientSettings {
   ClientHudDensity hud_density;
   ClientParticleQuality particle_quality;
   ClientMushroomSpecies mushroom_species;
-  /* Rebindable hotkeys (raylib KeyboardKey ints). Push-to-talk is a
-   * reserved slot — no behavior yet, but the binding persists and shows
-   * in the keybinding UI so future voice work can read it directly. */
+  /* Rebindable hotkeys (raylib KeyboardKey ints). */
   int key_chat_open;
   int key_hud_toggle;
   int key_pause_menu;

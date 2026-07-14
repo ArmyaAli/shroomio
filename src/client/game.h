@@ -219,6 +219,7 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
 void GameHandleResize(Game* game, int screen_width, int screen_height);
 void GameUpdate(Game* game, float delta_time);
 void GameDraw(Game* game);
+void GameUpdateVoice(Game* game);
 void GameSuspendForResults(Game* game);
 void GameShutdown(Game* game);
 void GamePlayUiClickSound(const Game* game);
