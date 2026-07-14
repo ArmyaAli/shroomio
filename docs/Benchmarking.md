@@ -86,3 +86,8 @@ lscpu | sed -n '1,18p'
 
 The initial reference run used WSL2 Linux x86_64 on an AMD Ryzen 5 7600 (6 cores/12 threads). Compare
 branches on the same hardware, power profile, client counts, duration, and split-piece setting.
+
+The 2026-07-14 capacity run at 256 participants and 20 Hz accepted 7,680 inputs/s and 5,343,500
+snapshot payload bytes/s with no application drops or deadline failures. A separate 1,800-tick,
+256-bot simulation run measured 0.439 ms average, 1.088 ms worst, and 13,592 KB maximum RSS. See
+[Server Capacity](Server-Capacity.md) for the production interpretation and limitations.

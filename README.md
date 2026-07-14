@@ -127,7 +127,9 @@ make run-server
 
 The server is designed for self-hosting. By default it binds to `0.0.0.0:7777/udp`, and clients can connect by IP address or domain name when that UDP port is reachable from the internet.
 
-See [docs/Production-Runbook.md](docs/Production-Runbook.md) for full deployment instructions including Docker, bare-metal, systemd, firewall/NAT configuration, and troubleshooting.
+See [docs/Production-Runbook.md](docs/Production-Runbook.md) for deployment and operations, and
+[docs/Server-Capacity.md](docs/Server-Capacity.md) for the validated 256-player hardware and
+bandwidth envelope.
 
 Runtime configuration is available through CLI flags or environment variables:
 

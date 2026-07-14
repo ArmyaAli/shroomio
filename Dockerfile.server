@@ -7,6 +7,7 @@ WORKDIR /app
 
 COPY Makefile vcpkg.json ./
 COPY src ./src
+COPY tools/server_healthcheck.c tools/server_healthcheck.h ./tools/
 
 # Copy only the enet artifacts the server needs from the host's vcpkg_installed.
 # Run 'make vcpkg-install-linux' on the host before building this image.
@@ -19,7 +20,7 @@ COPY vcpkg_installed/linux/x64-linux/include/enet \
 RUN mkdir -p vcpkg_installed/linux/x64-linux && \
     touch vcpkg_installed/linux/x64-linux/.vcpkg-ready
 
-RUN make server
+RUN make server build/tools/shroomio-healthcheck
 
 FROM debian:bookworm-slim
 
@@ -29,6 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY --from=builder /app/dist/linux/server/shroomio-server /usr/local/bin/shroomio-server
+COPY --from=builder /app/build/tools/shroomio-healthcheck /usr/local/bin/shroomio-healthcheck
 COPY database ./database
 
 ENV SHROOM_SERVER_BIND=0.0.0.0 \
@@ -40,5 +42,8 @@ ENV SHROOM_SERVER_BIND=0.0.0.0 \
 VOLUME ["/data"]
 EXPOSE 7777/udp
 EXPOSE 7778/udp
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD shroomio-healthcheck --host 127.0.0.1 --port "$SHROOM_SERVER_PORT" --timeout-ms 2000 || exit 1
 
 CMD ["/usr/local/bin/shroomio-server"]
