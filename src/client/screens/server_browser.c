@@ -1,4 +1,5 @@
 #include "game.h"
+#include "layout.h"
 #include "matchmaking_selector.h"
 #include "screen.h"
 #include "screen_background.h"
@@ -492,7 +493,10 @@ static void JoinServer(ShroomScreenManager* manager, Game* game, const ServerBro
   ShroomScreenManagerTransition(manager, SHROOM_SCREEN_LOBBY);
 }
 
-static void BeginDiscoveryRefresh(void) {
+static void BeginDiscoveryRefresh(Game* game) {
+#ifdef TEST_MODE
+  (void)game;
+#endif
   ShroomServerBrowserBeginRefresh(&g_server_browser.model);
   g_server_browser.server_count = 0u;
   g_server_browser.selected_index = -1;
@@ -502,6 +506,9 @@ static void BeginDiscoveryRefresh(void) {
   if (!ShroomServerDiscoveryBegin(&g_server_browser.discovery, g_server_browser.directory_host,
                                   g_server_browser.directory_port, enet_time_get())) {
     ShroomServerBrowserFinishRefresh(&g_server_browser.model, false, 0u);
+    if (game != NULL) {
+      ShroomQuickMatchDirectoryFailed(&game->quick_match);
+    }
   }
 #endif
 }
@@ -559,8 +566,50 @@ static void CopyDiscoveryResults(void) {
   UpdateMatchmakingRecommendation();
 }
 
+static void PopulateQuickMatchCandidates(Game* game, uint64_t now_ms) {
+  ShroomQuickMatchCandidate candidates[SERVER_BROWSER_MAX_SERVERS];
+
+  if ((game == NULL) || (game->quick_match.phase != SHROOM_QUICK_MATCH_FINDING)) {
+    return;
+  }
+  for (size_t index = 0u; index < g_server_browser.server_count; ++index) {
+    const ServerBrowserEntry* entry = &g_server_browser.servers[index];
+    ShroomQuickMatchCandidate* candidate = &candidates[index];
+    *candidate = (ShroomQuickMatchCandidate){
+        .port = (uint16_t)entry->port,
+        .latency_ms = (uint16_t)entry->ping_ms,
+        .player_count = (uint16_t)entry->player_count,
+        .capacity = (uint16_t)entry->player_capacity,
+        .reachable = entry->reachable,
+    };
+    CopyText(candidate->name, sizeof(candidate->name), entry->name);
+    CopyText(candidate->host, sizeof(candidate->host), entry->host);
+  }
+  ShroomQuickMatchSetCandidates(&game->quick_match, candidates, g_server_browser.server_count,
+                                now_ms);
+}
+
+static void ConnectQuickMatch(ShroomScreenManager* manager, Game* game) {
+  const ShroomQuickMatchCandidate* selected;
+
+  if ((game == NULL) || (game->quick_match.phase != SHROOM_QUICK_MATCH_CONNECTING)) {
+    return;
+  }
+  selected = ShroomQuickMatchSelected(&game->quick_match);
+  if (selected == NULL) {
+    return;
+  }
+  ShroomServerDiscoveryShutdown(&g_server_browser.discovery);
+  CopyText(game->selected_server_host, sizeof(game->selected_server_host), selected->host);
+  game->selected_server_port = selected->port;
+  game->auto_join_lobby = true;
+  ClientNetShutdown(&game->net);
+  ClientNetInit(&game->net, selected->host, selected->port, game->settings.player_name);
+  ShroomScreenManagerTransition(manager, SHROOM_SCREEN_LOBBY);
+}
+
 static bool ServerBrowserInit(ShroomScreenManager* manager) {
-  const Game* game = manager != NULL ? (const Game*)manager->user_data : NULL;
+  Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
 #ifdef TEST_MODE
   const char* demo_mode = getenv("SHROOM_SERVER_BROWSER_DEMO");
 #endif
@@ -597,23 +646,42 @@ static bool ServerBrowserInit(ShroomScreenManager* manager) {
   }
 
   LoadRecentServers();
+  if ((game != NULL) && (game->quick_match.phase == SHROOM_QUICK_MATCH_FINDING)) {
+    BeginDiscoveryRefresh(game);
+  }
   return true;
 }
 
 static void ServerBrowserUpdate(ShroomScreenManager* manager, float delta_time) {
-  (void)manager;
+  Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
+  const uint64_t now_ms = enet_time_get();
 
   if (g_server_browser.model.discovery_state == SHROOM_SERVER_DISCOVERY_LOADING) {
     if (!g_server_browser.demo_mode) {
-      ShroomServerDiscoveryUpdate(&g_server_browser.discovery, enet_time_get());
+      ShroomServerDiscoveryUpdate(&g_server_browser.discovery, now_ms);
       if (g_server_browser.discovery.state.phase == SHROOM_DISCOVERY_COMPLETE) {
         CopyDiscoveryResults();
         ShroomServerBrowserFinishRefresh(&g_server_browser.model, true,
                                          g_server_browser.server_count);
+        if ((game != NULL) && (g_server_browser.server_count == 0u) &&
+            (g_server_browser.discovery.state.full_server_count > 0u)) {
+          ShroomQuickMatchServersFull(&game->quick_match);
+        } else {
+          PopulateQuickMatchCandidates(game, now_ms);
+        }
       } else if (g_server_browser.discovery.state.phase == SHROOM_DISCOVERY_FAILED) {
         ShroomServerBrowserFinishRefresh(&g_server_browser.model, false, 0u);
+        if (game != NULL) {
+          ShroomQuickMatchDirectoryFailed(&game->quick_match);
+        }
       }
     }
+    return;
+  }
+
+  if ((game != NULL) && (game->quick_match.phase == SHROOM_QUICK_MATCH_PREVIEW)) {
+    ShroomQuickMatchUpdate(&game->quick_match, now_ms);
+    ConnectQuickMatch(manager, game);
     return;
   }
 
@@ -626,6 +694,51 @@ static void ServerBrowserUpdate(ShroomScreenManager* manager, float delta_time) 
   }
 }
 
+static void DrawQuickMatch(ShroomScreenManager* manager, Game* game) {
+  const ShroomQuickMatchCandidate* selected = ShroomQuickMatchSelected(&game->quick_match);
+
+  if (!ShroomLayoutBeginCenteredPanel("Quick Match", 480.0f, 420.0f, 0.92f,
+                                      SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
+                                          SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
+                                          SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
+    ShroomImGui_End();
+    return;
+  }
+  ShroomLayoutHeading("Quick Match");
+  ShroomImGui_TextWrapped(ShroomQuickMatchStatusText(&game->quick_match));
+  if (selected != NULL) {
+    ShroomImGui_Separator();
+    ShroomImGui_Text(TextFormat("Selected: %s", selected->name));
+    ShroomImGui_Text(TextFormat("%s:%u | %u ms | %u/%u players", selected->host, selected->port,
+                                selected->latency_ms, selected->player_count, selected->capacity));
+    if (game->quick_match.high_latency_fallback) {
+      ShroomImGui_TextColored((ShroomImGuiColor){1.0f, 0.75f, 0.25f, 1.0f},
+                              "High latency: every live server exceeds 200 ms.");
+    }
+  }
+  ShroomImGui_Spacing();
+  if (ShroomQuickMatchIsActive(&game->quick_match)) {
+    if (ShroomLayoutButtonFullWidth("Cancel Quick Match", 38.0f)) {
+      ShroomServerDiscoveryCancel(&g_server_browser.discovery);
+      ShroomQuickMatchCancel(&game->quick_match);
+      ShroomScreenManagerTransition(manager, SHROOM_SCREEN_MAIN_MENU);
+    }
+  } else if (game->quick_match.phase == SHROOM_QUICK_MATCH_FAILED) {
+    if (ShroomLayoutButtonFullWidth("Retry Quick Match", 38.0f)) {
+      ShroomQuickMatchBegin(&game->quick_match);
+      BeginDiscoveryRefresh(game);
+    }
+    if (ShroomLayoutButtonFullWidth("Browse Servers", 38.0f)) {
+      ShroomQuickMatchInit(&game->quick_match);
+    }
+    if (ShroomLayoutButtonFullWidth("Back To Menu", 38.0f)) {
+      ShroomQuickMatchCancel(&game->quick_match);
+      ShroomScreenManagerTransition(manager, SHROOM_SCREEN_MAIN_MENU);
+    }
+  }
+  ShroomImGui_End();
+}
+
 static void ServerBrowserDraw(ShroomScreenManager* manager) {
   Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
   const int screen_width = GetScreenWidth();
@@ -633,6 +746,13 @@ static void ServerBrowserDraw(ShroomScreenManager* manager) {
   bool join_clicked = false;
 
   ShroomScreenDrawFungalBackground((game == NULL) || game->settings.menu_animations_enabled);
+
+  if ((game != NULL) && (game->quick_match.phase != SHROOM_QUICK_MATCH_IDLE) &&
+      (game->quick_match.phase != SHROOM_QUICK_MATCH_SUCCEEDED) &&
+      (game->quick_match.phase != SHROOM_QUICK_MATCH_CANCELLED)) {
+    DrawQuickMatch(manager, game);
+    return;
+  }
 
   ShroomImGui_SetNextWindowPos((float)screen_width * 0.06f, (float)screen_height * 0.08f,
                                SHROOM_IMGUI_COND_ALWAYS);
@@ -678,7 +798,7 @@ static void ServerBrowserDraw(ShroomScreenManager* manager) {
     }
   } else {
     if (ShroomImGui_Button("Refresh", 120.0f, 0.0f)) {
-      BeginDiscoveryRefresh();
+      BeginDiscoveryRefresh(game);
     }
   }
 

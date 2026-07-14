@@ -10,6 +10,7 @@
 #include "client_settings.h"
 #include "net.h"
 #include "prediction.h"
+#include "quick_match.h"
 #include "shared/world.h"
 
 #define SHROOM_CLIENT_PENDING_INPUT_CAPACITY 128u
@@ -168,6 +169,7 @@ typedef struct Game {
   uint32_t focused_piece_entity_id;      /* entity_id of the piece being controlled; 0 = primary */
   int local_piece_count;                 /* how many alive pieces the local player has */
   bool auto_join_lobby; /* set by Play Online — join best lobby on list receipt */
+  ShroomQuickMatchState quick_match;
   bool chat_open;
   bool chat_minimized;
   bool chat_focus_input;

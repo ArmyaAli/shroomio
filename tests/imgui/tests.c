@@ -510,9 +510,10 @@ static void Test_PlayerIdentityOnboardingPersistsAndStartsSession(ImGuiTestConte
   ShroomTeCtx_SetRef(ctx, "Main Menu");
   ShroomTeCtx_ItemClick(ctx, "Play Online");
   ShroomTeCtx_Yield(ctx, 2);
-  IM_CHECK_STR_EQ(g_imgui_test_app.game.net.player_name, "Moss Runner");
+  IM_CHECK_STR_EQ(g_imgui_test_app.game.settings.player_name, "Moss Runner");
+  IM_CHECK_EQ(g_imgui_test_app.game.quick_match.phase, SHROOM_QUICK_MATCH_FINDING);
   IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
-              SHROOM_SCREEN_LOBBY);
+              SHROOM_SCREEN_SERVER_BROWSER);
 }
 
 static void Test_PlayerNameInputsStayVisibleAtUiScaleEndpoints(ImGuiTestContext* ctx) {
@@ -3126,12 +3127,7 @@ static void Test_LateIntermissionJoinerWaitsForExplicitMatchEntry(ImGuiTestConte
   IM_CHECK(!ShroomTeImGui_WindowIsActive("Death Cutscene Actions"));
 }
 
-/* menu: Clicking Play Online calls ClientNetInit (real ENet host create +
- * connect) and transitions to the lobby browser. Regression for #334's
- * reported segfault — the click handler touches ENet + audio + screen
- * transition in sequence, and would crash if any of those dereferenced
- * uninitialized state. */
-static void Test_PlayOnlineClickTransitionsToLobby(ImGuiTestContext* ctx) {
+static void Test_PlayOnlineStartsCancellableQuickMatch(ImGuiTestContext* ctx) {
   ShroomImGuiTestAppReset(true);
   ShroomTeCtx_SetRef(ctx, "Main Menu");
   ShroomTeCtx_Yield(ctx, 2);
@@ -3140,37 +3136,110 @@ static void Test_PlayOnlineClickTransitionsToLobby(ImGuiTestContext* ctx) {
   ShroomTeCtx_ItemClick(ctx, "Play Online");
   ShroomTeCtx_Yield(ctx, 2);
 
-  /* The click must have flipped auto_join_lobby and entered the lobby screen. */
-  IM_CHECK_EQ(g_imgui_test_app.game.auto_join_lobby, true);
+  IM_CHECK_EQ(g_imgui_test_app.game.quick_match.phase, SHROOM_QUICK_MATCH_FINDING);
   IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
-              SHROOM_SCREEN_LOBBY);
-
-  /* ENet host must be allocated and the peer must be attempting to connect. */
-  IM_CHECK(g_imgui_test_app.game.net.host != NULL);
-  IM_CHECK(g_imgui_test_app.game.net.peer != NULL);
-  /* We bound to a real UDP port — 0 is the "not yet bound" sentinel. */
-  IM_CHECK_EQ(g_imgui_test_app.game.net.status, CLIENT_NET_CONNECTING);
+              SHROOM_SCREEN_SERVER_BROWSER);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Quick Match"));
+  ShroomTeCtx_SetRef(ctx, "Quick Match");
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Cancel Quick Match"));
+  ShroomTeCtx_ItemClick(ctx, "Cancel Quick Match");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_EQ(g_imgui_test_app.game.quick_match.phase, SHROOM_QUICK_MATCH_CANCELLED);
+  IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+              SHROOM_SCREEN_MAIN_MENU);
 }
 
-/* menu: Play Online must survive the real post-click lobby frames with the
- * same persisted settings shape that exposed the WSL crash. */
-static void Test_PlayOnlineWithPersistedSettingsSurvivesLobbyFrames(ImGuiTestContext* ctx) {
+static void Test_QuickMatchStatesRetryAndManualBrowser(ImGuiTestContext* ctx) {
+  ShroomQuickMatchCandidate candidates[2] = {0};
+  const ShroomQuickMatchCandidate* selected;
+  uint64_t now_ms;
+
   ShroomImGuiTestAppReset(true);
-  g_imgui_test_app.game.settings.ui_scale_percent = 119;
-  g_imgui_test_app.game.settings.menu_animations_enabled = false;
-  g_imgui_test_app.game.settings.camera_zoom = 0.44f;
-  ShroomTeCtx_SetRef(ctx, "Main Menu");
+  snprintf(candidates[0].name, sizeof(candidates[0].name), "First Choice");
+  snprintf(candidates[0].host, sizeof(candidates[0].host), "first.test");
+  candidates[0].port = 7777u;
+  candidates[0].latency_ms = 45u;
+  candidates[0].capacity = 32u;
+  candidates[0].player_count = 8u;
+  candidates[0].reachable = true;
+  snprintf(candidates[1].name, sizeof(candidates[1].name), "Fallback Choice");
+  snprintf(candidates[1].host, sizeof(candidates[1].host), "fallback.test");
+  candidates[1].port = 7778u;
+  candidates[1].latency_ms = 90u;
+  candidates[1].capacity = 32u;
+  candidates[1].player_count = 10u;
+  candidates[1].reachable = true;
+
+  now_ms = enet_time_get();
+  ShroomQuickMatchBegin(&g_imgui_test_app.game.quick_match);
+  IM_CHECK(ShroomQuickMatchSetCandidates(&g_imgui_test_app.game.quick_match, candidates, 2u,
+                                         now_ms));
+  ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager,
+                                SHROOM_SCREEN_SERVER_BROWSER);
   ShroomTeCtx_Yield(ctx, 2);
-  IM_CHECK(ShroomTeImGui_WindowIsActive("Main Menu"));
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Quick Match"));
+  selected = ShroomQuickMatchSelected(&g_imgui_test_app.game.quick_match);
+  IM_CHECK(selected != NULL);
+  IM_CHECK_STR_EQ(selected->host, "first.test");
 
-  ShroomTeCtx_ItemClick(ctx, "Play Online");
-  ShroomTeCtx_Yield(ctx, 90);
+  ShroomQuickMatchUpdate(&g_imgui_test_app.game.quick_match,
+                         now_ms + SHROOM_QUICK_MATCH_PREVIEW_MS);
+  ShroomQuickMatchConnectionFailed(&g_imgui_test_app.game.quick_match, enet_time_get());
+  ShroomTeCtx_Yield(ctx, 2);
+  selected = ShroomQuickMatchSelected(&g_imgui_test_app.game.quick_match);
+  IM_CHECK(selected != NULL);
+  IM_CHECK_STR_EQ(selected->host, "fallback.test");
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Quick Match"));
 
-  IM_CHECK(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager) ==
-               SHROOM_SCREEN_LOBBY ||
-           ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager) ==
-               SHROOM_SCREEN_LOBBY_ROSTER);
-  IM_CHECK(ShroomScreenManagerIsRunning(&g_imgui_test_app.screen_manager));
+  ShroomQuickMatchBegin(&g_imgui_test_app.game.quick_match);
+  IM_CHECK(!ShroomQuickMatchSetCandidates(&g_imgui_test_app.game.quick_match, NULL, 0u, 3000ull));
+  ShroomTeCtx_Yield(ctx, 2);
+  ShroomTeCtx_SetRef(ctx, "Quick Match");
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Retry Quick Match"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Browse Servers"));
+  ShroomTeCtx_ItemClick(ctx, "Browse Servers");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK_EQ(g_imgui_test_app.game.quick_match.phase, SHROOM_QUICK_MATCH_IDLE);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Server Browser"));
+  ShroomTeCtx_SetRef(ctx, "Server Browser");
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Join Host"));
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Refresh"));
+}
+
+static void Test_QuickMatchFullAndHighLatencyStates(ImGuiTestContext* ctx) {
+  ShroomQuickMatchCandidate candidate = {0};
+
+  ShroomImGuiTestAppReset(true);
+  snprintf(candidate.name, sizeof(candidate.name), "Full Server");
+  snprintf(candidate.host, sizeof(candidate.host), "full.test");
+  candidate.port = 7777u;
+  candidate.latency_ms = 50u;
+  candidate.player_count = 32u;
+  candidate.capacity = 32u;
+  candidate.reachable = true;
+  ShroomQuickMatchBegin(&g_imgui_test_app.game.quick_match);
+  IM_CHECK(!ShroomQuickMatchSetCandidates(&g_imgui_test_app.game.quick_match, &candidate, 1u,
+                                          1000ull));
+  IM_CHECK_EQ(g_imgui_test_app.game.quick_match.failure,
+              SHROOM_QUICK_MATCH_FAILURE_SERVERS_FULL);
+  IM_CHECK_STR_EQ(ShroomQuickMatchStatusText(&g_imgui_test_app.game.quick_match),
+                  "All live servers are full. Retry or browse manually.");
+  ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager,
+                                SHROOM_SCREEN_SERVER_BROWSER);
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Quick Match"));
+  ShroomTeCtx_SetRef(ctx, "Quick Match");
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Retry Quick Match"));
+
+  candidate.player_count = 2u;
+  candidate.latency_ms = 240u;
+  ShroomQuickMatchBegin(&g_imgui_test_app.game.quick_match);
+  IM_CHECK(ShroomQuickMatchSetCandidates(&g_imgui_test_app.game.quick_match, &candidate, 1u,
+                                         enet_time_get()));
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(g_imgui_test_app.game.quick_match.high_latency_fallback);
+  ShroomTeCtx_SetRef(ctx, "Quick Match");
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Cancel Quick Match"));
 }
 
 /* menu: MainMenuAnimationsEnabled must honor menu_animations_enabled.
@@ -3392,11 +3461,12 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_FirstLobbyEntryDoesNotOpenDeathCutscene);
   ShroomTeEngine_RegisterTest(engine, "lobby", "late_intermission_joiner_explicit_entry",
                               Test_LateIntermissionJoinerWaitsForExplicitMatchEntry);
-  ShroomTeEngine_RegisterTest(engine, "menu", "play_online_click_transitions_to_lobby",
-                              Test_PlayOnlineClickTransitionsToLobby);
-  ShroomTeEngine_RegisterTest(engine, "menu",
-                              "play_online_persisted_settings_survives_lobby_frames",
-                              Test_PlayOnlineWithPersistedSettingsSurvivesLobbyFrames);
+  ShroomTeEngine_RegisterTest(engine, "menu", "play_online_starts_cancellable_quick_match",
+                              Test_PlayOnlineStartsCancellableQuickMatch);
+  ShroomTeEngine_RegisterTest(engine, "menu", "quick_match_retry_and_manual_browser",
+                              Test_QuickMatchStatesRetryAndManualBrowser);
+  ShroomTeEngine_RegisterTest(engine, "menu", "quick_match_full_and_high_latency_states",
+                              Test_QuickMatchFullAndHighLatencyStates);
   ShroomTeEngine_RegisterTest(engine, "lobby", "back_returns_to_server_browser",
                               Test_LobbyBackReturnsToServerBrowser);
   ShroomTeEngine_RegisterTest(engine, "menu", "respects_animations_toggle",

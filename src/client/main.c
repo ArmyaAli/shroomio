@@ -58,6 +58,7 @@ int main(void) {
   snprintf(g_game.selected_server_host, sizeof(g_game.selected_server_host), "%s", "127.0.0.1");
   g_game.selected_server_port = 7777;
   g_game.selected_mode = SHROOM_SESSION_MODE_QUICK_PLAY;
+  ShroomQuickMatchInit(&g_game.quick_match);
 
   ShroomScreenManagerInit(&g_screen_manager);
   g_screen_manager.user_data = &g_game;

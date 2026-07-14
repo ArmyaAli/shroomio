@@ -45,6 +45,19 @@ static void LobbyBrowserUpdate(ShroomScreenManager* manager, float delta_time) {
   /* Pump ENet so WELCOME, LOBBY_LIST, and LOBBY_JOINED are received. */
   ClientNetUpdate(&game->net, no_input, false, false, no_input, 0u, delta_time);
 
+  if (game->quick_match.phase == SHROOM_QUICK_MATCH_CONNECTING) {
+    if (game->net.handshake_received) {
+      ShroomQuickMatchConnectionSucceeded(&game->quick_match);
+    } else if ((game->net.status == CLIENT_NET_ERROR) ||
+               (game->net.status == CLIENT_NET_DISCONNECTED)) {
+      ClientNetShutdown(&game->net);
+      game->auto_join_lobby = false;
+      ShroomQuickMatchConnectionFailed(&game->quick_match, enet_time_get());
+      ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
+      return;
+    }
+  }
+
   /* Don't transition away on error/disconnect - let the modal handle it. */
 
   /* Fire the initial lobby list query the first frame after the handshake. */
@@ -255,7 +268,12 @@ static void LobbyBrowserHandleInput(ShroomScreenManager* manager) {
   if (!ShroomImGui_WantCaptureKeyboard() && IsKeyPressed(KEY_ESCAPE)) {
     ClientNetShutdown(&game->net);
     game->auto_join_lobby = false;
-    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
+    if (game->quick_match.phase == SHROOM_QUICK_MATCH_CONNECTING) {
+      ShroomQuickMatchCancel(&game->quick_match);
+      ShroomScreenManagerTransition(manager, SHROOM_SCREEN_MAIN_MENU);
+    } else {
+      ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
+    }
   }
 }
 

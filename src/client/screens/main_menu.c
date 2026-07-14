@@ -131,20 +131,12 @@ static void MainMenuDraw(ShroomScreenManager* manager) {
   GamePlayUiClickSound(game);
   switch (action) {
   case MAIN_MENU_ACTION_PLAY_ONLINE:
-    TraceLog(LOG_INFO, "MENU: Play Online selected host=%s port=%u",
-             game != NULL ? game->selected_server_host : "<null>",
-             game != NULL ? (unsigned int)game->selected_server_port : 0u);
     if (game != NULL) {
-      TraceLog(LOG_INFO, "MENU: Play Online ClientNetInit begin");
-      ClientNetInit(&game->net, game->selected_server_host, game->selected_server_port,
-                    game->settings.player_name);
-      TraceLog(LOG_INFO, "MENU: Play Online ClientNetInit end status=%d host=%p peer=%p",
-               (int)game->net.status, (void*)game->net.host, (void*)game->net.peer);
-      game->auto_join_lobby = true;
+      ClientNetShutdown(&game->net);
+      game->auto_join_lobby = false;
+      ShroomQuickMatchBegin(&game->quick_match);
     }
-    TraceLog(LOG_INFO, "MENU: Play Online transition to lobby");
-    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_LOBBY);
-    TraceLog(LOG_INFO, "MENU: Play Online transition complete");
+    ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);
     break;
   case MAIN_MENU_ACTION_CUSTOM_SERVER:
     ShroomScreenManagerTransition(manager, SHROOM_SCREEN_SERVER_BROWSER);

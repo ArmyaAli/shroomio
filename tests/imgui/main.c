@@ -59,6 +59,7 @@ void ShroomImGuiTestAppReset(bool reset_files) {
            sizeof(g_imgui_test_app.game.selected_server_host), "%s", "127.0.0.1");
   g_imgui_test_app.game.selected_server_port = SHROOM_SERVER_PORT;
   g_imgui_test_app.game.selected_mode = SHROOM_SESSION_MODE_QUICK_PLAY;
+  ShroomQuickMatchInit(&g_imgui_test_app.game.quick_match);
 
   ShroomScreenManagerInit(&g_imgui_test_app.screen_manager);
   g_imgui_test_app.screen_manager.user_data = &g_imgui_test_app.game;

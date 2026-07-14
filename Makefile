@@ -63,6 +63,7 @@ NETWORK_BENCH_BIN := $(BUILD_DIR)/benchmarks/network-benchmark
 INPUT_FLOOD_CLIENT_BIN := $(BUILD_DIR)/tests/input-flood-client
 DIRECTORY_QUERY_CLIENT_BIN := $(BUILD_DIR)/tests/directory-query-client
 SERVER_DISCOVERY_CLIENT_BIN := $(BUILD_DIR)/tests/server-discovery-client
+QUICK_MATCH_CLIENT_BIN := $(BUILD_DIR)/tests/quick-match-client
 SNAPSHOT_RATE_PROBE_BIN := $(BUILD_DIR)/tests/snapshot-rate-probe
 INPUT_FLOOD_PORT ?=
 NETWORK_BENCH_CLIENTS ?= 1,64,256
@@ -222,6 +223,7 @@ CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/match_presentation.c \
 	$(CLIENT_SRC_DIR)/net.c \
 	$(CLIENT_SRC_DIR)/prediction.c \
+	$(CLIENT_SRC_DIR)/quick_match.c \
 	$(CLIENT_SRC_DIR)/render_lod.c \
 	$(CLIENT_SRC_DIR)/spectator_target.c \
 	$(CLIENT_SRC_DIR)/results_summary.c \
@@ -342,6 +344,7 @@ IMGUI_TEST_CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/match_presentation.c \
 	$(CLIENT_SRC_DIR)/net.c \
 	$(CLIENT_SRC_DIR)/prediction.c \
+	$(CLIENT_SRC_DIR)/quick_match.c \
 	$(CLIENT_SRC_DIR)/render_lod.c \
 	$(CLIENT_SRC_DIR)/spectator_target.c \
 	$(CLIENT_SRC_DIR)/results_summary.c \
@@ -552,7 +555,7 @@ input-flood-test: $(SERVER_LINUX_BIN) $(INPUT_FLOOD_CLIENT_BIN)
 	fi; \
 	./$(INPUT_FLOOD_CLIENT_BIN) --port $$port
 
-directory-integration-test: $(SERVER_LINUX_BIN) $(DIRECTORY_QUERY_CLIENT_BIN) $(SERVER_DISCOVERY_CLIENT_BIN)
+directory-integration-test: $(SERVER_LINUX_BIN) $(DIRECTORY_QUERY_CLIENT_BIN) $(SERVER_DISCOVERY_CLIENT_BIN) $(QUICK_MATCH_CLIENT_BIN)
 	@set -eu; \
 	base_port=$$((40000 + ($$$$ * 1103) % 20000)); directory_port=$$base_port; \
 	game_one_port=$$((base_port + 1)); game_two_port=$$((base_port + 2)); \
@@ -584,6 +587,7 @@ directory-integration-test: $(SERVER_LINUX_BIN) $(DIRECTORY_QUERY_CLIENT_BIN) $(
 	./$(SERVER_DISCOVERY_CLIENT_BIN) 127.0.0.1 $$directory_port 2; \
 	./$(DIRECTORY_QUERY_CLIENT_BIN) 127.0.0.1 $$directory_port 2; \
 	if grep -q "session activated:" "$$tmp/one.log" || grep -q "session activated:" "$$tmp/two.log"; then echo "Discovery traffic activated a player session"; exit 1; fi; \
+	./$(QUICK_MATCH_CLIENT_BIN) 127.0.0.1 $$directory_port $$game_one_port $$game_two_port; \
 	kill "$$game_one_pid"; wait "$$game_one_pid" >/dev/null 2>&1 || true; game_one_pid=""; \
 	sleep 16; \
 	./$(DIRECTORY_QUERY_CLIENT_BIN) 127.0.0.1 $$directory_port 1; \
@@ -672,6 +676,13 @@ $(SERVER_DISCOVERY_CLIENT_BIN): tools/server_discovery_client.c $(CLIENT_SRC_DIR
 	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) tools/server_discovery_client.c \
 		$(CLIENT_SRC_DIR)/server_discovery.c $(CLIENT_SRC_DIR)/server_discovery_state.c \
 		-o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet
+
+$(QUICK_MATCH_CLIENT_BIN): tools/quick_match_client.c $(CLIENT_SRC_DIR)/server_discovery.c $(CLIENT_SRC_DIR)/server_discovery_state.c $(CLIENT_SRC_DIR)/quick_match.c $(CLIENT_SRC_DIR)/matchmaking_selector.c $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) tools/quick_match_client.c \
+		$(CLIENT_SRC_DIR)/server_discovery.c $(CLIENT_SRC_DIR)/server_discovery_state.c \
+		$(CLIENT_SRC_DIR)/quick_match.c $(CLIENT_SRC_DIR)/matchmaking_selector.c \
+		-o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet -lm
 
 $(SNAPSHOT_RATE_PROBE_BIN): tools/snapshot_rate_probe.c $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
@@ -971,6 +982,9 @@ test_connection) \
 		test_matchmaking_selector) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/matchmaking_selector.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+		test_quick_match) \
+			$(LINUX_CC) $(COVERAGE_CFLAGS) \
+				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/quick_match.c $(CLIENT_SRC_DIR)/matchmaking_selector.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_results_summary) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/results_summary.c -o $$test_bin $(COVERAGE_LIBS) ;; \
@@ -1128,6 +1142,10 @@ $(TEST_BUILD_DIR)/test_server_discovery_state: $(UNIT_TESTS_DIR)/test_server_dis
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
 $(TEST_BUILD_DIR)/test_matchmaking_selector: $(UNIT_TESTS_DIR)/test_matchmaking_selector.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/matchmaking_selector.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_quick_match: $(UNIT_TESTS_DIR)/test_quick_match.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/quick_match.c $(CLIENT_SRC_DIR)/matchmaking_selector.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
