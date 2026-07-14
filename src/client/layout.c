@@ -14,17 +14,39 @@ float ShroomLayoutMetric(float base_value) {
   return ShroomLayoutScaleMetric(base_value, g_layout_scale);
 }
 
-bool ShroomLayoutBeginCenteredPanel(const char* title, float width, float height, float alpha,
-                                    int flags) {
+ShroomLayoutRect ShroomLayoutCenteredRect(float width, float height) {
   const float fitted_width =
       ShroomLayoutFitMetric(width, g_layout_scale, (float)GetScreenWidth(), 16.0f);
   const float fitted_height =
       ShroomLayoutFitMetric(height, g_layout_scale, (float)GetScreenHeight(), 16.0f);
 
-  ShroomImGui_SetNextWindowPos(((float)GetScreenWidth() - fitted_width) * 0.5f,
-                               ((float)GetScreenHeight() - fitted_height) * 0.5f,
+  return (ShroomLayoutRect){
+      .x = ((float)GetScreenWidth() - fitted_width) * 0.5f,
+      .y = ((float)GetScreenHeight() - fitted_height) * 0.5f,
+      .width = fitted_width,
+      .height = fitted_height,
+  };
+}
+
+void ShroomLayoutSetNextWindowBottomRight(float width, float height, float edge_margin) {
+  const float fitted_width =
+      ShroomLayoutFitMetric(width, g_layout_scale, (float)GetScreenWidth(), edge_margin);
+  const float fitted_height =
+      ShroomLayoutFitMetric(height, g_layout_scale, (float)GetScreenHeight(), edge_margin);
+  const float margin = ShroomLayoutMetric(edge_margin);
+
+  ShroomImGui_SetNextWindowPos((float)GetScreenWidth() - fitted_width - margin,
+                               (float)GetScreenHeight() - fitted_height - margin,
                                SHROOM_IMGUI_COND_ALWAYS);
   ShroomImGui_SetNextWindowSize(fitted_width, fitted_height, SHROOM_IMGUI_COND_ALWAYS);
+}
+
+bool ShroomLayoutBeginCenteredPanel(const char* title, float width, float height, float alpha,
+                                    int flags) {
+  const ShroomLayoutRect rect = ShroomLayoutCenteredRect(width, height);
+
+  ShroomImGui_SetNextWindowPos(rect.x, rect.y, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowSize(rect.width, rect.height, SHROOM_IMGUI_COND_ALWAYS);
   ShroomImGui_SetNextWindowBgAlpha(alpha);
   return ShroomImGui_Begin(title, NULL, flags);
 }

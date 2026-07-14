@@ -9,6 +9,7 @@
 #include "audio.h"
 #include "cursor.h"
 #include "imgui_wrapper.h"
+#include "layout.h"
 #include "match_feedback.h"
 #include "raymath.h"
 #include "render_lod.h"
@@ -2797,19 +2798,19 @@ static void UpdateCombatFeedback(Game* game) {
 
 static void DrawLeaderboardOverlay(Game* game, const LeaderboardEntry* leaderboard,
                                    size_t shown_count) {
+  ShroomLayoutRect panel;
+
   if (!game->leaderboard_overlay_open) {
     return;
   }
 
-  DrawFungalHudPanel((Rectangle){(game->screen_width - 440.0f) * 0.5f, 120.0f, 440.0f, 280.0f},
+  panel = ShroomLayoutCenteredRect(440.0f, 300.0f);
+  DrawFungalHudPanel((Rectangle){panel.x, panel.y, panel.width, panel.height},
                      (Color){170, 215, 118, 255});
-  ShroomImGui_SetNextWindowPos((game->screen_width - 440) * 0.5f, 120.0f, SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowSize(440.0f, 280.0f, SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowBgAlpha(0.34f);
-  if (!ShroomImGui_Begin("Leaderboard", NULL,
-                         SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
-                             SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
-                             SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
+  if (!ShroomLayoutBeginCenteredPanel("Leaderboard", 440.0f, 300.0f, 0.34f,
+                                      SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
+                                          SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
+                                          SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
     ShroomImGui_End();
     return;
   }
@@ -2833,7 +2834,7 @@ static void DrawLeaderboardOverlay(Game* game, const LeaderboardEntry* leaderboa
             : TextFormat("%d. %s   %.0f mass", (int)(index + 1), label, player->mass));
   }
 
-  if (ShroomImGui_Button("Close", 120.0f, 0.0f)) {
+  if (ShroomImGui_Button("Close", ShroomLayoutMetric(120.0f), 0.0f)) {
     game->leaderboard_overlay_open = false;
   }
 
@@ -2845,13 +2846,10 @@ static void DrawMenuOverlay(Game* game) {
     return;
   }
 
-  ShroomImGui_SetNextWindowPos((game->screen_width - 420) * 0.5f,
-                               (game->screen_height - 280) * 0.5f, SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowSize(420.0f, 280.0f, SHROOM_IMGUI_COND_ALWAYS);
-  if (!ShroomImGui_Begin("Match Menu", NULL,
-                         SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
-                             SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
-                             SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
+  if (!ShroomLayoutBeginCenteredPanel("Match Menu", 420.0f, 280.0f, 1.0f,
+                                      SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
+                                          SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
+                                          SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
     ShroomImGui_End();
     return;
   }
@@ -2890,13 +2888,10 @@ static void DrawLeaveConfirmationOverlay(Game* game) {
     return;
   }
 
-  ShroomImGui_SetNextWindowPos((game->screen_width - 340) * 0.5f,
-                               (game->screen_height - 170) * 0.5f, SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowSize(340.0f, 170.0f, SHROOM_IMGUI_COND_ALWAYS);
-  if (!ShroomImGui_Begin("Leave Match?", NULL,
-                         SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
-                             SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
-                             SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
+  if (!ShroomLayoutBeginCenteredPanel("Leave Match?", 340.0f, 170.0f, 1.0f,
+                                      SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
+                                          SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
+                                          SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
     ShroomImGui_End();
     return;
   }
@@ -2904,14 +2899,14 @@ static void DrawLeaveConfirmationOverlay(Game* game) {
   ShroomImGui_TextWrapped("Leave the current match and return to the main menu?");
   ShroomImGui_Spacing();
 
-  if (ShroomImGui_Button("Leave Match", 140.0f, 0.0f)) {
+  if (ShroomImGui_Button("Leave Match", ShroomLayoutMetric(140.0f), 0.0f)) {
     game->return_to_menu_requested = true;
     game->leave_confirmation_open = false;
     game->leaderboard_overlay_open = false;
     game->menu_overlay_open = false;
   }
   ShroomImGui_SameLine();
-  if (ShroomImGui_Button("Stay", 140.0f, 0.0f)) {
+  if (ShroomImGui_Button("Stay", ShroomLayoutMetric(140.0f), 0.0f)) {
     game->leave_confirmation_open = false;
     game->menu_overlay_open = true;
   }
@@ -2924,15 +2919,11 @@ static void DrawConnectionOverlay(Game* game) {
     return;
   }
 
-  ShroomImGui_SetNextWindowPos((game->screen_width - 400.0f) * 0.5f,
-                               (game->screen_height - 200.0f) * 0.5f, SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowSize(400.0f, 200.0f, SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowBgAlpha(0.92f);
-  if (!ShroomImGui_Begin("Connection Status", NULL,
-                         SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
-                             SHROOM_IMGUI_WINDOW_NO_MOVE | SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
-                             SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS |
-                             SHROOM_IMGUI_WINDOW_NO_SCROLLBAR)) {
+  if (!ShroomLayoutBeginCenteredPanel(
+          "Connection Status", 400.0f, 200.0f, 0.92f,
+          SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
+              SHROOM_IMGUI_WINDOW_NO_MOVE | SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
+              SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS | SHROOM_IMGUI_WINDOW_NO_SCROLLBAR)) {
     ShroomImGui_End();
     return;
   }
@@ -2965,11 +2956,11 @@ static void DrawConnectionOverlay(Game* game) {
 
   ShroomImGui_Spacing();
 
-  if (ShroomImGui_Button("Retry", 120.0f, 0.0f)) {
+  if (ShroomImGui_Button("Retry", ShroomLayoutMetric(120.0f), 0.0f)) {
     RetryConnection(game);
   }
   ShroomImGui_SameLine();
-  if (ShroomImGui_Button("Back To Menu", 140.0f, 0.0f)) {
+  if (ShroomImGui_Button("Back To Menu", ShroomLayoutMetric(140.0f), 0.0f)) {
     game->return_to_menu_requested = true;
   }
 
@@ -2995,9 +2986,7 @@ static void DrawDiagnosticsOverlay(const Game* game) {
   ShroomNetTelemetryReadWindow(&game->net.telemetry, enet_time_get(),
                                SHROOM_NET_TELEMETRY_WINDOW_MS, &telemetry);
 
-  ShroomImGui_SetNextWindowPos(game->screen_width - 350.0f, game->screen_height - 260.0f,
-                               SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowSize(328.0f, 238.0f, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomLayoutSetNextWindowBottomRight(328.0f, 238.0f, 16.0f);
   if (!ShroomImGui_Begin("Diagnostics", NULL,
                          SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
                              SHROOM_IMGUI_WINDOW_NO_COLLAPSE |

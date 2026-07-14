@@ -975,12 +975,59 @@ static void Test_UiScaleEndpointsKeepPrimaryWindowsUsable(ImGuiTestContext* ctx)
   IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Play Again"));
   IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Main Menu"));
 
-  SetupOnlineGame();
-  g_imgui_test_app.game.settings.ui_scale_percent = 160;
-  ShroomTeCtx_Yield(ctx, 3);
-  IM_CHECK(ShroomTeImGui_WindowFitsViewport("HUD Left"));
-  IM_CHECK(ShroomTeImGui_WindowFitsViewport("HUD Right"));
-  IM_CHECK(ShroomTeImGui_WindowFitsViewport("Chat"));
+  for (size_t index = 0; index < sizeof(scales) / sizeof(scales[0]); ++index) {
+    SetupOnlineGame();
+    g_imgui_test_app.game.settings.ui_scale_percent = scales[index];
+    g_imgui_test_app.game.leaderboard_overlay_open = true;
+    ShroomTeCtx_SetRef(ctx, "Leaderboard");
+    ShroomTeCtx_Yield(ctx, 3);
+
+    IM_CHECK(ShroomTeImGui_WindowFitsViewport("HUD Left"));
+    IM_CHECK(ShroomTeImGui_WindowFitsViewport("HUD Right"));
+    IM_CHECK(ShroomTeImGui_WindowFitsViewport("Chat"));
+    IM_CHECK(ShroomTeImGui_WindowFitsViewport("Leaderboard"));
+    IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Close"));
+    IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Close"));
+
+    g_imgui_test_app.game.leaderboard_overlay_open = false;
+    g_imgui_test_app.game.menu_overlay_open = true;
+    ShroomTeCtx_SetRef(ctx, "Match Menu");
+    ShroomTeCtx_Yield(ctx, 2);
+    IM_CHECK(ShroomTeImGui_WindowFitsViewport("Match Menu"));
+    IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Resume"));
+    IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Return To Main Menu"));
+    IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Resume"));
+    IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Return To Main Menu"));
+
+    g_imgui_test_app.game.menu_overlay_open = false;
+    g_imgui_test_app.game.leave_confirmation_open = true;
+    ShroomTeCtx_SetRef(ctx, "Leave Match?");
+    ShroomTeCtx_Yield(ctx, 2);
+    IM_CHECK(ShroomTeImGui_WindowFitsViewport("Leave Match?"));
+    IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Leave Match"));
+    IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Stay"));
+    IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Leave Match"));
+    IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Stay"));
+
+    g_imgui_test_app.game.leave_confirmation_open = false;
+    g_imgui_test_app.game.diagnostics_overlay_open = true;
+    ShroomTeCtx_SetRef(ctx, "Diagnostics");
+    ShroomTeCtx_Yield(ctx, 2);
+    IM_CHECK(ShroomTeImGui_WindowFitsViewport("Diagnostics"));
+
+    g_imgui_test_app.game.diagnostics_overlay_open = false;
+    g_imgui_test_app.game.net.welcome_received = false;
+    g_imgui_test_app.game.net.status = CLIENT_NET_ERROR;
+    snprintf(g_imgui_test_app.game.net.status_text, sizeof(g_imgui_test_app.game.net.status_text),
+             "timeout");
+    ShroomTeCtx_SetRef(ctx, "Connection Status");
+    ShroomTeCtx_Yield(ctx, 2);
+    IM_CHECK(ShroomTeImGui_WindowFitsViewport("Connection Status"));
+    IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Retry"));
+    IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Back To Menu"));
+    IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Retry"));
+    IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Back To Menu"));
+  }
 }
 
 static void Test_LobbyRosterScrollKeepsActionsUsable(ImGuiTestContext* ctx) {
