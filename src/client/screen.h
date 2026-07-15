@@ -92,6 +92,8 @@ const char* ShroomTestGetResultsDurationText(const struct Game* game);
 const char* ShroomTestGetResultsSporesText(const struct Game* game);
 const char* ShroomTestGetResultsKillsText(const struct Game* game);
 bool ShroomTestMainMenuAnimationsEnabled(const struct Game* game);
+const char* ShroomTestMainMenuPlayerNameInput(void);
+bool ShroomTestMainMenuSaveErrorVisible(void);
 bool ShroomTestHelpRenderedTextContains(const char* text);
 const char* ShroomTestHelpRenderedHeading(void);
 void ShroomTestSettingsEscape(ShroomScreenManager* manager);
