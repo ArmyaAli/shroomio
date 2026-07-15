@@ -67,6 +67,7 @@ SERVER_DISCOVERY_CLIENT_BIN := $(BUILD_DIR)/tests/server-discovery-client
 QUICK_MATCH_CLIENT_BIN := $(BUILD_DIR)/tests/quick-match-client
 SNAPSHOT_RATE_PROBE_BIN := $(BUILD_DIR)/tests/snapshot-rate-probe
 GRACEFUL_SHUTDOWN_CLIENT_BIN := $(BUILD_DIR)/tests/graceful-shutdown-client
+UDP_AUTH_COLLISION_CLIENT_BIN := $(BUILD_DIR)/tests/udp-auth-collision-client
 INPUT_FLOOD_PORT ?=
 NETWORK_BENCH_CLIENTS ?= 1,64,256
 NETWORK_BENCH_DURATION_MS ?= 1500
@@ -411,7 +412,7 @@ IMGUI_TEST_ENGINE_OBJECTS := $(addprefix $(TEST_BUILD_DIR)/imgui/engine/,$(addsu
 # =============================================================================
 .PHONY: all client-linux client-windows client-macos server-linux server-windows server-macos servers-all
 .PHONY: linux windows macos server run run-server run-windows help
-.PHONY: benchmark network-benchmark network-benchmark-test input-flood-test server-health-test rest-integration-test graceful-shutdown-integration-test
+.PHONY: benchmark network-benchmark network-benchmark-test input-flood-test server-health-test rest-integration-test graceful-shutdown-integration-test udp-auth-integration-test
 
 all: client-linux
 
@@ -435,6 +436,7 @@ help:
 	@echo "  make network-benchmark Run real ENet loopback scenarios (1/64/256 clients)"
 	@echo "  make server-health-test Validate the production UDP health probe"
 	@echo "  make rest-integration-test Validate the HTTPS health endpoint"
+	@echo "  make udp-auth-integration-test Validate registered identity collision handling"
 	@echo "  make run-windows    Build and launch Windows client from WSL (bypasses WSLg audio/video)"
 	@echo ""
 	@echo "Quality targets:"
@@ -780,6 +782,27 @@ graceful-shutdown-integration-test: $(SERVER_LINUX_BIN) $(GRACEFUL_SHUTDOWN_CLIE
 	python3 -c 'import sqlite3,sys; db=sqlite3.connect(sys.argv[1]); assert db.execute("SELECT count(*) FROM sessions WHERE status=\"aborted\"").fetchone()[0] == 1; assert db.execute("SELECT count(*) FROM session_participants").fetchone()[0] == 1; assert db.execute("SELECT count(*) FROM match_events WHERE event_type=\"match_interrupted\"").fetchone()[0] == 1; assert db.execute("SELECT count(*) FROM match_events WHERE event_type=\"participant_summary\"").fetchone()[0] == 1; assert db.execute("SELECT total_games_played FROM player_stats").fetchone()[0] == 1; assert db.execute("SELECT total_sessions FROM players").fetchone()[0] == 1' "$$tmp/server.db"; \
 	echo "Graceful shutdown persistence integration passed."
 
+udp-auth-integration-test: $(SERVER_LINUX_BIN) $(UDP_AUTH_COLLISION_CLIENT_BIN)
+	@command -v python3 >/dev/null 2>&1 || { echo "python3 is required"; exit 1; }
+	@set -eu; \
+	port=$$((40000 + ($$$$ * 1103) % 20000)); tmp=/tmp/shroomio-udp-auth-$$$$; \
+	mkdir -p "$$tmp"; server_pid=""; \
+	cleanup() { \
+		if [ -n "$$server_pid" ]; then kill "$$server_pid" >/dev/null 2>&1 || true; wait "$$server_pid" >/dev/null 2>&1 || true; fi; \
+		rm -rf "$$tmp"; \
+	}; \
+	trap cleanup EXIT INT TERM; \
+	./$(SERVER_LINUX_BIN) --bind 127.0.0.1 --port "$$port" --database "$$tmp/server.db" >"$$tmp/server.log" 2>&1 & server_pid=$$!; \
+	ready=0; for attempt in $$(seq 1 200); do \
+		if grep -q "server listening on 127.0.0.1:$$port/udp" "$$tmp/server.log"; then ready=1; break; fi; \
+		if ! kill -0 "$$server_pid" >/dev/null 2>&1; then break; fi; sleep 0.01; \
+	done; \
+	if [ $$ready -ne 1 ]; then echo "UDP auth integration server failed to start"; cat "$$tmp/server.log"; exit 1; fi; \
+	python3 -c 'import sqlite3,sys; db=sqlite3.connect(sys.argv[1]); cur=db.execute("INSERT INTO players (player_uuid, display_name) VALUES (?, ?)", ("registered-owner", "RegisteredOwner")); player_id=cur.lastrowid; db.execute("INSERT INTO player_stats (player_id) VALUES (?)", (player_id,)); db.execute("INSERT INTO users (player_id, username, password_hash, auth_method) VALUES (?, ?, ?, ?)", (player_id, "RegisteredOwner", "registered-only", "password")); db.commit(); db.close()' "$$tmp/server.db"; \
+	./$(UDP_AUTH_COLLISION_CLIENT_BIN) "$$port" RegisteredOwner; \
+	python3 -c 'import sqlite3,sys; db=sqlite3.connect(sys.argv[1]); rows=db.execute("SELECT auth_method FROM users WHERE username = ?", ("RegisteredOwner",)).fetchall(); assert rows == [("password",)], rows; assert db.execute("SELECT COUNT(*) FROM auth_tokens").fetchone()[0] == 0; db.close()' "$$tmp/server.db"; \
+	echo "UDP registered identity collision integration passed."
+
 run-windows:
 	@command -v $(WINDOWS_CXX) >/dev/null 2>&1 || (printf '%s\n' 'Error: $(WINDOWS_CXX) not found. Install mingw-w64:' '  Ubuntu/Debian: sudo apt install mingw-w64' '  Fedora:       sudo dnf install mingw64-gcc-c++' '  Arch:         sudo pacman -S mingw-w64-gcc' && exit 1)
 	@test -f $(VCPKG_WINDOWS_STAMP) || (printf '%s\n' 'Error: Windows vcpkg dependencies not installed.' 'Run: make vcpkg-install-windows' && exit 1)
@@ -854,6 +877,10 @@ $(SNAPSHOT_RATE_PROBE_BIN): tools/snapshot_rate_probe.c $(SHARED_HEADERS) | $(VC
 		-o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet -lm
 
 $(GRACEFUL_SHUTDOWN_CLIENT_BIN): tools/graceful_shutdown_client.c $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) $< -o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet
+
+$(UDP_AUTH_COLLISION_CLIENT_BIN): tools/udp_auth_collision_client.c $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) $< -o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet
 
@@ -1008,7 +1035,7 @@ $(UNITY_DIR):
 # =============================================================================
 .PHONY: test unit-test imgui-test directory-integration-test snapshot-rate-integration-test valgrind-test valgrind-unit-test valgrind-server-smoke valgrind-imgui-test test-coverage test-clean
 
-test: unit-test imgui-test input-flood-test directory-integration-test snapshot-rate-integration-test server-health-test rest-integration-test graceful-shutdown-integration-test
+test: unit-test imgui-test input-flood-test directory-integration-test snapshot-rate-integration-test server-health-test rest-integration-test graceful-shutdown-integration-test udp-auth-integration-test
 
 unit-test: $(TEST_BINS)
 	@echo "Running unit tests..."

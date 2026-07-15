@@ -142,6 +142,38 @@ void test_auth_anonymous_login_reuse_username(void) {
   TEST_ASSERT_EQUAL(token1.user_id, token2.user_id);
 }
 
+void test_auth_anonymous_login_rejects_registered_username(void) {
+  ShroomAuthUser registered_user;
+  ShroomAuthToken token = {.user_id = UINT32_MAX};
+  sqlite3_stmt* statement = NULL;
+
+  TEST_ASSERT_EQUAL(SHROOM_AUTH_SUCCESS,
+                    ShroomAuthRegister(&auth_ctx, "registered", "password123", &registered_user));
+
+  TEST_ASSERT_EQUAL(SHROOM_AUTH_USERNAME_TAKEN,
+                    ShroomAuthLoginAnonymous(&auth_ctx, "registered", &token));
+  TEST_ASSERT_EQUAL(UINT32_MAX, token.user_id);
+  TEST_ASSERT_EQUAL(SQLITE_OK,
+                    sqlite3_prepare_v2(test_db,
+                                       "SELECT auth_method, COUNT(*) FROM users WHERE username = ?",
+                                       -1, &statement, NULL));
+  sqlite3_bind_text(statement, 1, "registered", -1, SQLITE_STATIC);
+  TEST_ASSERT_EQUAL(SQLITE_ROW, sqlite3_step(statement));
+  TEST_ASSERT_EQUAL_STRING("password", sqlite3_column_text(statement, 0));
+  TEST_ASSERT_EQUAL_INT(1, sqlite3_column_int(statement, 1));
+  sqlite3_finalize(statement);
+  statement = NULL;
+
+  TEST_ASSERT_EQUAL(SQLITE_OK,
+                    sqlite3_prepare_v2(test_db,
+                                       "SELECT COUNT(*) FROM auth_tokens WHERE user_id = ?", -1,
+                                       &statement, NULL));
+  sqlite3_bind_int64(statement, 1, registered_user.user_id);
+  TEST_ASSERT_EQUAL(SQLITE_ROW, sqlite3_step(statement));
+  TEST_ASSERT_EQUAL_INT(0, sqlite3_column_int(statement, 0));
+  sqlite3_finalize(statement);
+}
+
 void test_auth_validate_token_success(void) {
   ShroomAuthToken token;
   ShroomAuthUser user;
@@ -221,6 +253,7 @@ int main(void) {
   RUN_TEST(test_auth_login_nonexistent_user);
   RUN_TEST(test_auth_anonymous_login_success);
   RUN_TEST(test_auth_anonymous_login_reuse_username);
+  RUN_TEST(test_auth_anonymous_login_rejects_registered_username);
   RUN_TEST(test_auth_validate_token_success);
   RUN_TEST(test_auth_validate_token_invalid);
   RUN_TEST(test_auth_revoke_token_success);
