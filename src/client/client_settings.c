@@ -299,14 +299,16 @@ static bool ParseSettingsFile(const char* path, ClientSettings* settings, bool* 
   }
   fclose(file);
 
-  valid = valid &&
-          ((schema_seen && (schema_version == CLIENT_SETTINGS_SCHEMA_VERSION) &&
-            (fields == CLIENT_SETTINGS_REQUIRED_MASK)) ||
-           (!schema_seen &&
-            ((fields == CLIENT_SETTINGS_LEGACY_MASK) || (fields == CLIENT_SETTINGS_PREVIOUS_MASK) ||
-             (fields == CLIENT_SETTINGS_REQUIRED_MASK))) ||
-           (schema_seen && (schema_version == 1) && (fields == CLIENT_SETTINGS_LEGACY_MASK)) ||
-           (schema_seen && (schema_version == 2) && (fields == CLIENT_SETTINGS_PREVIOUS_MASK)));
+  const bool current_schema = schema_seen && (schema_version == CLIENT_SETTINGS_SCHEMA_VERSION) &&
+                              (fields == CLIENT_SETTINGS_REQUIRED_MASK);
+  const bool unversioned_schema = !schema_seen && ((fields == CLIENT_SETTINGS_LEGACY_MASK) ||
+                                                   (fields == CLIENT_SETTINGS_PREVIOUS_MASK) ||
+                                                   (fields == CLIENT_SETTINGS_REQUIRED_MASK));
+  const bool schema_one =
+      schema_seen && (schema_version == 1) && (fields == CLIENT_SETTINGS_LEGACY_MASK);
+  const bool schema_two =
+      schema_seen && (schema_version == 2) && (fields == CLIENT_SETTINGS_PREVIOUS_MASK);
+  valid = valid && (current_schema || unversioned_schema || schema_one || schema_two);
   if (!valid) {
     ClientSettingsSetDefaults(settings);
     return false;

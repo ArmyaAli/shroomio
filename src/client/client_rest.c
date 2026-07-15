@@ -215,10 +215,10 @@ static bool ParseTokenPair(const cJSON* json, char* access_token, size_t access_
          RequiredJsonString(json, "refresh_token", refresh_token, refresh_size) &&
          cJSON_IsNumber(access_expiry) && (access_expiry->valuedouble > 0.0) &&
          (access_expiry->valuedouble <= max_lifetime) &&
-         (floor(access_expiry->valuedouble) == access_expiry->valuedouble) &&
+         (trunc(access_expiry->valuedouble) >= access_expiry->valuedouble) &&
          cJSON_IsNumber(refresh_expiry) && (refresh_expiry->valuedouble > 0.0) &&
          (refresh_expiry->valuedouble <= max_lifetime) &&
-         (floor(refresh_expiry->valuedouble) == refresh_expiry->valuedouble) &&
+         (trunc(refresh_expiry->valuedouble) >= refresh_expiry->valuedouble) &&
          ((*access_lifetime = (uint64_t)access_expiry->valuedouble) > 0u) &&
          ((*refresh_lifetime = (uint64_t)refresh_expiry->valuedouble) > 0u);
 }

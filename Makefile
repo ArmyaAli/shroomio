@@ -191,7 +191,8 @@ TEST_LIBS := -lm
 
 #Platform link libraries
 LINUX_LIBS   := -lGL -lm -ldl -lpthread -lrt -lX11 -lXrandr -lXi -lXcursor -lXinerama -lasound
-WINDOWS_LIBS := -lopengl32 -lgdi32 -lwinmm -lbcrypt -ladvapi32 -lcrypt32 -lws2_32 -liphlpapi
+WINDOWS_LIBS := -lopengl32 -lgdi32 -lwinmm -lbcrypt -ladvapi32 -lcrypt32 -lws2_32 -liphlpapi \
+	-lshell32
 MACOS_LIBS   := -lm -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo
 LINUX_THIRD_PARTY_LIBS := -L$(VCPKG_LINUX_LIB_DIR) -limgui -lenet -lopus -lraylib -lglfw3 \
 	-lcurl -lcjson -lssl -lcrypto -lz

@@ -83,6 +83,7 @@ bool ShroomClientRestCurlPerform(void* user_context, const ShroomClientHttpReque
       (response->body_capacity == 0u)) {
     return false;
   }
+  /* Reset the caller-owned response before libcurl can invoke the write callback. */
   response->status = 0;
   response->body_length = 0u;
   response->body[0] = '\0';
@@ -94,6 +95,7 @@ bool ShroomClientRestCurlPerform(void* user_context, const ShroomClientHttpReque
     return false;
   }
 
+  /* Build bounded headers separately so token buffers can be cleansed on every exit. */
   if (!AppendHeader(&headers, "Accept: application/json") ||
       ((request->json_body != NULL) && !AppendHeader(&headers, "Content-Type: application/json"))) {
     snprintf(response->transport_error, sizeof(response->transport_error),
@@ -126,6 +128,7 @@ bool ShroomClientRestCurlPerform(void* user_context, const ShroomClientHttpReque
     }
   }
 
+  /* Keep account requests bounded, non-redirecting, and strictly certificate verified. */
   curl_easy_setopt(curl, CURLOPT_URL, request->url);
   curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteResponse);

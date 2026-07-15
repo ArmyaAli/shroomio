@@ -11,6 +11,9 @@
 #include <direct.h>
 #include <io.h>
 #include <windows.h>
+#define SHROOM_CSIDL_APPDATA 0x001a
+#define SHROOM_SHGFP_TYPE_CURRENT 0
+HRESULT WINAPI SHGetFolderPathA(void* owner, int folder, HANDLE token, DWORD flags, char* path);
 #define SHROOM_CLOSE _close
 #define SHROOM_COMMIT _commit
 #define SHROOM_MKDIR(path) _mkdir(path)
@@ -18,6 +21,7 @@
 #define SHROOM_UNLINK _unlink
 #define SHROOM_WRITE _write
 #else
+#include <pwd.h>
 #include <unistd.h>
 #define SHROOM_CLOSE close
 #define SHROOM_COMMIT fsync
@@ -84,35 +88,34 @@ static bool MakeParentDirectories(const char* file_path) {
 }
 
 bool ShroomClientSessionDefaultPath(char* path, size_t path_size) {
-  const char* root;
   int count;
 
   if ((path == NULL) || (path_size == 0u)) {
     return false;
   }
 #if defined(_WIN32)
-  root = getenv("APPDATA");
-  if ((root == NULL) || (root[0] == '\0')) {
+  char app_data[MAX_PATH];
+  if (SHGetFolderPathA(NULL, SHROOM_CSIDL_APPDATA, NULL, SHROOM_SHGFP_TYPE_CURRENT, app_data) !=
+      S_OK) {
     return false;
   }
-  count = snprintf(path, path_size, "%s\\shroomio\\session.cfg", root);
+  count = snprintf(path, path_size, "%s\\shroomio\\session.cfg", app_data);
 #elif defined(__APPLE__)
-  root = getenv("HOME");
-  if ((root == NULL) || (root[0] == '\0')) {
+  const struct passwd* account = getpwuid(getuid());
+  const char* root;
+  if ((account == NULL) || (account->pw_dir == NULL) || (account->pw_dir[0] == '\0')) {
     return false;
   }
+  root = account->pw_dir;
   count = snprintf(path, path_size, "%s/Library/Application Support/shroomio/session.cfg", root);
 #else
-  root = getenv("XDG_CONFIG_HOME");
-  if ((root != NULL) && (root[0] != '\0')) {
-    count = snprintf(path, path_size, "%s/shroomio/session.cfg", root);
-  } else {
-    root = getenv("HOME");
-    if ((root == NULL) || (root[0] == '\0')) {
-      return false;
-    }
-    count = snprintf(path, path_size, "%s/.config/shroomio/session.cfg", root);
+  const struct passwd* account = getpwuid(getuid());
+  const char* root;
+  if ((account == NULL) || (account->pw_dir == NULL) || (account->pw_dir[0] == '\0')) {
+    return false;
   }
+  root = account->pw_dir;
+  count = snprintf(path, path_size, "%s/.config/shroomio/session.cfg", root);
 #endif
   return (count > 0) && ((size_t)count < path_size);
 }
@@ -175,17 +178,9 @@ bool ShroomClientSessionSave(const char* path, const ShroomClientStoredSession* 
     SHROOM_UNLINK(temporary_path);
     return false;
   }
-  if (_chmod(path, _S_IREAD | _S_IWRITE) != 0) {
-    SHROOM_UNLINK(path);
-    return false;
-  }
 #else
-  if ((chmod(temporary_path, 0600) != 0) || (rename(temporary_path, path) != 0)) {
+  if (rename(temporary_path, path) != 0) {
     SHROOM_UNLINK(temporary_path);
-    return false;
-  }
-  if (chmod(path, 0600) != 0) {
-    SHROOM_UNLINK(path);
     return false;
   }
 #endif

@@ -57,12 +57,14 @@ static void DrawAccountPanel(Game* game) {
     return;
   }
   state = flow != NULL ? ShroomAccountFlowPoll(flow) : SHROOM_ACCOUNT_FLOW_FAILED;
+  /* Completed workers publish REST state before this acquire-and-acknowledge boundary. */
   if ((flow != NULL) && (state == SHROOM_ACCOUNT_FLOW_SUCCEEDED)) {
     ShroomAccountFlowAcknowledge(flow);
     state = SHROOM_ACCOUNT_FLOW_IDLE;
   }
 
   if (state == SHROOM_ACCOUNT_FLOW_WORKING) {
+    /* Do not read REST fields while the worker may be mutating them. */
     ShroomLayoutHeading("Account");
     ShroomImGui_Text("Contacting account service...");
   } else if ((flow != NULL) && flow->rest->authenticated) {
@@ -92,6 +94,7 @@ static void DrawAccountPanel(Game* game) {
     ShroomImGui_TextColored((ShroomImGuiColor){1.0f, 0.45f, 0.4f, 1.0f},
                             "Account service is unavailable.");
   } else {
+    /* Authentication is opt-in, so keep the credential form contained in this modal. */
     ShroomLayoutHeading(g_account_register_mode ? "Create Account" : "Sign In");
     if (ShroomImGui_Button("Existing Account", 150.0f, 32.0f)) {
       g_account_register_mode = false;

@@ -19,6 +19,10 @@
 #include <unistd.h>
 #endif
 
+#ifndef SHROOM_ACCOUNT_BASE_URL
+#define SHROOM_ACCOUNT_BASE_URL "https://127.0.0.1:7443"
+#endif
+
 #include "raylib.h"
 
 static ShroomLifecycle g_lifecycle;
@@ -62,21 +66,20 @@ int main(void) {
   ShroomImGui_Init();
   ClientSettingsLoad(&g_game.settings);
   {
-    const char* base_url = getenv("SHROOM_REST_BASE_URL");
     const char* ca_certificate = getenv("SHROOM_REST_CA_CERT");
     const char* pinned_public_key = getenv("SHROOM_REST_PINNED_PUBLIC_KEY");
     const char* development_mode = getenv("SHROOM_REST_DEV_MODE");
+    const bool use_development_mode =
+        (development_mode != NULL) && (strcmp(development_mode, "1") == 0);
+    const char* base_url = use_development_mode ? "http://127.0.0.1:7443" : SHROOM_ACCOUNT_BASE_URL;
     ShroomClientRestConfig rest_config;
 
-    if ((base_url == NULL) || (base_url[0] == '\0')) {
-      base_url = "https://127.0.0.1:7443";
-    }
     g_client_rest_curl_ready = ShroomClientRestCurlGlobalInit();
     if (g_client_rest_curl_ready &&
         ShroomClientRestCurlInit(&g_client_rest_curl, ca_certificate, pinned_public_key)) {
       rest_config = (ShroomClientRestConfig){
           .base_url = base_url,
-          .development_mode = (development_mode != NULL) && (strcmp(development_mode, "1") == 0),
+          .development_mode = use_development_mode,
           .transport = ShroomClientRestCurlPerform,
           .transport_context = &g_client_rest_curl,
       };
