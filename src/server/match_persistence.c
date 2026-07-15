@@ -114,10 +114,10 @@ ShroomMatchPersistenceResult ShroomMatchPersistenceSave(sqlite3* db,
   static const char* const session_sql =
       "INSERT OR IGNORE INTO sessions (session_uuid,ended_at,duration_seconds,player_count,"
       "bot_count,status,lobby_id,round_id,game_mode,winner_runtime_player_id) VALUES "
-      "(?1,strftime('%Y-%m-%dT%H:%M:%SZ','now'),?2,?3,?4,'completed',?5,?6,?7,?8)";
+      "(?1,strftime('%Y-%m-%dT%H:%M:%SZ','now'),?2,?3,?4,?9,?5,?6,?7,?8)";
   static const char* const completed_event_sql =
       "INSERT INTO match_events (session_id,event_type,tick_number,metadata) VALUES "
-      "(?1,'match_completed',?2,?3)";
+      "(?1,?2,?3,?4)";
   sqlite3_stmt* statement = NULL;
   int64_t session_id;
   char metadata[128];
@@ -137,6 +137,8 @@ ShroomMatchPersistenceResult ShroomMatchPersistenceSave(sqlite3* db,
       sqlite3_bind_int64(statement, 6, match->round_id) != SQLITE_OK ||
       sqlite3_bind_int(statement, 7, match->game_mode) != SQLITE_OK ||
       sqlite3_bind_int64(statement, 8, match->winner_runtime_player_id) != SQLITE_OK ||
+      sqlite3_bind_text(statement, 9, match->interrupted ? "aborted" : "completed", -1,
+                        SQLITE_STATIC) != SQLITE_OK ||
       sqlite3_step(statement) != SQLITE_DONE) {
     goto rollback;
   }
@@ -154,12 +156,18 @@ ShroomMatchPersistenceResult ShroomMatchPersistenceSave(sqlite3* db,
       goto rollback;
     }
   }
-  snprintf(metadata, sizeof(metadata), "{\"winner_runtime_player_id\":%u}",
-           match->winner_runtime_player_id);
+  if (match->interrupted) {
+    snprintf(metadata, sizeof(metadata), "{\"reason\":\"graceful_shutdown\"}");
+  } else {
+    snprintf(metadata, sizeof(metadata), "{\"winner_runtime_player_id\":%u}",
+             match->winner_runtime_player_id);
+  }
   if (sqlite3_prepare_v2(db, completed_event_sql, -1, &statement, NULL) != SQLITE_OK ||
       sqlite3_bind_int64(statement, 1, session_id) != SQLITE_OK ||
-      sqlite3_bind_int64(statement, 2, (sqlite3_int64)match->final_tick) != SQLITE_OK ||
-      sqlite3_bind_text(statement, 3, metadata, -1, SQLITE_TRANSIENT) != SQLITE_OK ||
+      sqlite3_bind_text(statement, 2, match->interrupted ? "match_interrupted" : "match_completed",
+                        -1, SQLITE_STATIC) != SQLITE_OK ||
+      sqlite3_bind_int64(statement, 3, (sqlite3_int64)match->final_tick) != SQLITE_OK ||
+      sqlite3_bind_text(statement, 4, metadata, -1, SQLITE_TRANSIENT) != SQLITE_OK ||
       sqlite3_step(statement) != SQLITE_DONE) {
     goto rollback;
   }

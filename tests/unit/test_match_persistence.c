@@ -133,11 +133,53 @@ static void test_disconnect_and_split_colony_summary_are_preserved(void) {
   TEST_ASSERT_EQUAL_INT64(725, ScalarInt64("SELECT CAST(final_mass AS INTEGER) FROM session_participants"));
 }
 
+static void test_interrupted_match_persists_summary_and_lifetime_stats_once(void) {
+  const ShroomPersistedParticipant participant = {
+      .database_player_id = 1,
+      .runtime_player_id = 101u,
+      .final_rank = 2,
+      .final_mass = 275.0f,
+      .round_stats = {.peak_mass = 410.0f, .kills = 2u, .spores_collected = 11u},
+  };
+  ShroomCompletedMatch match = MakeMatch("round-interrupted", &participant, 1u);
+
+  match.interrupted = true;
+  TEST_ASSERT_EQUAL(SHROOM_MATCH_PERSISTENCE_SAVED, ShroomMatchPersistenceSave(db, &match));
+  TEST_ASSERT_EQUAL(SHROOM_MATCH_PERSISTENCE_ALREADY_SAVED,
+                    ShroomMatchPersistenceSave(db, &match));
+  TEST_ASSERT_EQUAL_INT64(1, ScalarInt64("SELECT count(*) FROM sessions WHERE status='aborted'"));
+  TEST_ASSERT_EQUAL_INT64(
+      1, ScalarInt64("SELECT count(*) FROM match_events WHERE event_type='match_interrupted'"));
+  TEST_ASSERT_EQUAL_INT64(
+      1, ScalarInt64("SELECT count(*) FROM match_events WHERE event_type='participant_summary'"));
+  TEST_ASSERT_EQUAL_INT64(1, ScalarInt64("SELECT total_games_played FROM player_stats WHERE player_id=1"));
+  TEST_ASSERT_EQUAL_INT64(2, ScalarInt64("SELECT total_kills FROM player_stats WHERE player_id=1"));
+  TEST_ASSERT_EQUAL_INT64(1, ScalarInt64("SELECT total_sessions FROM players WHERE id=1"));
+}
+
+static void test_interrupted_match_failure_rolls_back_every_row(void) {
+  const ShroomPersistedParticipant participants[] = {
+      {.database_player_id = 1, .runtime_player_id = 101u, .final_rank = 1},
+      {.database_player_id = 999, .runtime_player_id = 999u, .final_rank = 2},
+  };
+  ShroomCompletedMatch match = MakeMatch("round-interrupted-rollback", participants, 2u);
+
+  match.interrupted = true;
+  TEST_ASSERT_EQUAL(SHROOM_MATCH_PERSISTENCE_ERROR, ShroomMatchPersistenceSave(db, &match));
+  TEST_ASSERT_EQUAL_INT64(0, ScalarInt64("SELECT count(*) FROM sessions"));
+  TEST_ASSERT_EQUAL_INT64(0, ScalarInt64("SELECT count(*) FROM session_participants"));
+  TEST_ASSERT_EQUAL_INT64(0, ScalarInt64("SELECT count(*) FROM match_events"));
+  TEST_ASSERT_EQUAL_INT64(0, ScalarInt64("SELECT count(*) FROM player_stats"));
+  TEST_ASSERT_EQUAL_INT64(0, ScalarInt64("SELECT total_sessions FROM players WHERE id=1"));
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_completed_match_persists_session_participants_events_and_lifetime_stats);
   RUN_TEST(test_duplicate_completion_is_idempotent);
   RUN_TEST(test_failure_rolls_back_session_and_prior_participant_updates);
   RUN_TEST(test_disconnect_and_split_colony_summary_are_preserved);
+  RUN_TEST(test_interrupted_match_persists_summary_and_lifetime_stats_once);
+  RUN_TEST(test_interrupted_match_failure_rolls_back_every_row);
   return UNITY_END();
 }

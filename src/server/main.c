@@ -968,7 +968,7 @@ static int PersistenceParticipantRank(const ShroomLobby* lobby, uint32_t runtime
   return rank;
 }
 
-static void PersistCompletedLobbyRound(sqlite3* db, ShroomLobby* lobby) {
+static void PersistLobbyRound(sqlite3* db, ShroomLobby* lobby, bool interrupted) {
   ShroomCompletedMatch match;
   ShroomMatchPersistenceResult result;
   const uint64_t elapsed_ms = GetTimeMillis() >= lobby->persistence_round_started_ms
@@ -993,11 +993,16 @@ static void PersistCompletedLobbyRound(sqlite3* db, ShroomLobby* lobby) {
       .winner_runtime_player_id = lobby->world.podium_player_ids[0],
       .participants = lobby->persistence_participants,
       .participant_count = lobby->persistence_participant_count,
+      .interrupted = interrupted,
   };
   result = ShroomMatchPersistenceSave(db, &match);
   if (result == SHROOM_MATCH_PERSISTENCE_ERROR) {
-    LOG_ERROR("failed to persist completed round lobby_id=%u round=%u", lobby->lobby_id,
-              match.round_id);
+    LOG_ERROR("failed to persist %s round lobby_id=%u round=%u",
+              interrupted ? "interrupted" : "completed", lobby->lobby_id, match.round_id);
+  } else if (result == SHROOM_MATCH_PERSISTENCE_SAVED) {
+    LOG_INFO("persisted %s round lobby_id=%u round=%u participants=%zu",
+             interrupted ? "interrupted" : "completed", lobby->lobby_id, match.round_id,
+             match.participant_count);
   }
 }
 
@@ -2741,7 +2746,7 @@ int main(int argc, char** argv) {
         ShroomWorldStep(&lobby->world, 1.0f / SHROOM_SERVER_TICK_RATE);
         if ((previous_phase == SHROOM_MATCH_PHASE_RUNNING) &&
             (lobby->world.match_phase == SHROOM_MATCH_PHASE_RESULTS)) {
-          PersistCompletedLobbyRound(db, lobby);
+          PersistLobbyRound(db, lobby, false);
           BeginIntermission(host, lobby);
         }
         if (lobby->world.match_phase == SHROOM_MATCH_PHASE_RESULTS) {
@@ -2846,6 +2851,14 @@ int main(int argc, char** argv) {
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_STOP);
   ShroomRestServerStop(&rest_server);
   DirectoryAdvertiserShutdown(&directory_advertiser);
+  for (size_t lobby_index = 0; lobby_index < SHROOM_MAX_LOBBIES; ++lobby_index) {
+    ShroomLobby* lobby = &lobbies[lobby_index];
+
+    if (lobby->active && (lobby->world.match_phase == SHROOM_MATCH_PHASE_RUNNING) &&
+        (lobby->persistence_participant_count > 0u)) {
+      PersistLobbyRound(db, lobby, true);
+    }
+  }
   for (size_t peer_index = 0; peer_index < host->peerCount; ++peer_index) {
     DisconnectSession((ServerSession*)host->peers[peer_index].data, lobbies);
     ShroomVoiceRelaySetPeer(&voice_relay, peer_index, false, 0u, 0u);
