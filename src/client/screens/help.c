@@ -1,5 +1,7 @@
 #include "game.h"
 #include "game_mode_availability.h"
+#include "layout.h"
+#include "layout_metrics.h"
 #include "screen.h"
 #include "screen_background.h"
 
@@ -16,6 +18,8 @@ static int g_help_active_tab;
 static char g_help_rendered_items[SHROOM_HELP_MAX_RENDERED_ITEMS][160];
 static int g_help_rendered_item_count;
 static char g_help_rendered_heading[32];
+static bool g_help_final_row_visible;
+static bool g_help_demo_controls_visible;
 #endif
 
 static bool HelpInit(ShroomScreenManager* manager) {
@@ -24,7 +28,7 @@ static bool HelpInit(ShroomScreenManager* manager) {
   return true;
 }
 
-static void DrawTabButton(const char* label, int index) {
+static void DrawTabButton(const char* label, int index, float width, bool same_line) {
   ShroomImGuiColor tab_color;
   const bool is_active = (g_help_active_tab == index);
 
@@ -33,13 +37,15 @@ static void DrawTabButton(const char* label, int index) {
     ShroomImGui_PushStyleColor(SHROOM_IMGUI_COL_BUTTON, tab_color.r, tab_color.g, tab_color.b,
                                tab_color.a);
   }
-  if (ShroomImGui_Button(label, 120.0f, 32.0f)) {
+  if (ShroomImGui_Button(label, width, ShroomLayoutMetric(32.0f))) {
     g_help_active_tab = index;
   }
   if (is_active) {
     ShroomImGui_PopStyleColor();
   }
-  ShroomImGui_SameLine();
+  if (same_line) {
+    ShroomImGui_SameLine();
+  }
 }
 
 static bool CanDemoColonyConsume(float attacker_mass, float target_mass) {
@@ -48,13 +54,18 @@ static bool CanDemoColonyConsume(float attacker_mass, float target_mass) {
 
 static void DrawSectionCard(const char* title, ShroomImGuiColor header_color, const char** items,
                             int item_count) {
-  const float card_width = 520.0f;
-  const float header_height = 30.0f;
-  const float item_height = 22.0f;
-  const float card_height = header_height + (float)item_count * item_height + 20.0f;
+  const float card_width = ShroomImGui_GetContentRegionAvailWidth();
+  const float wrap_width = card_width - ShroomLayoutMetric(40.0f);
+  float text_height = 0.0f;
+
+  for (int index = 0; index < item_count; ++index) {
+    text_height += ShroomImGui_CalcWrappedTextHeight(items[index], wrap_width);
+  }
+  const float card_height =
+      ShroomLayoutWrappedCardHeight(text_height, item_count, ShroomLayoutGetScale());
 
   ShroomImGui_PushStyleColor(SHROOM_IMGUI_COL_CHILD_BG, 0.14f, 0.12f, 0.10f, 0.85f);
-  ShroomImGui_BeginChild(title, card_width, card_height, true);
+  ShroomImGui_BeginChild(title, 0.0f, card_height, true);
 
   ShroomImGui_TextColored(header_color, title);
   ShroomImGui_Separator();
@@ -66,10 +77,13 @@ static void DrawSectionCard(const char* title, ShroomImGuiColor header_color, co
       item_count < SHROOM_HELP_MAX_RENDERED_ITEMS ? item_count : SHROOM_HELP_MAX_RENDERED_ITEMS;
 #endif
   for (int i = 0; i < item_count; ++i) {
-    ShroomImGui_Text(items[i]);
+    ShroomImGui_TextWrapped(items[i]);
 #ifdef TEST_MODE
     if (i < SHROOM_HELP_MAX_RENDERED_ITEMS) {
       snprintf(g_help_rendered_items[i], sizeof(g_help_rendered_items[i]), "%s", items[i]);
+    }
+    if (i == item_count - 1) {
+      g_help_final_row_visible = ShroomImGui_IsLastItemVisible();
     }
 #endif
   }
@@ -88,6 +102,10 @@ static void DrawGrowthRulesDemo(void) {
   int danger_index = -1;
   char detail_buf[192];
   char rule_buf[192];
+  ShroomLayoutResponsiveRow button_row;
+#ifdef TEST_MODE
+  bool demo_buttons_visible = true;
+#endif
 
   ShroomImGui_Text("Growth Rules Demo");
   snprintf(rule_buf, sizeof(rule_buf),
@@ -95,17 +113,34 @@ static void DrawGrowthRulesDemo(void) {
            "heavier to consume another.",
            (SHROOM_CONSUME_MASS_ADVANTAGE - 1.0f) * 100.0f);
   ShroomImGui_TextWrapped(rule_buf);
-  if (ShroomImGui_Button("Sprout 86", 112.0f, 32.0f)) {
+  button_row =
+      ShroomLayoutResponsiveRowMetrics(ShroomImGui_GetContentRegionAvailWidth(),
+                                       ShroomLayoutMetric(112.0f), 3, ShroomLayoutMetric(10.0f));
+  if (ShroomImGui_Button("Sprout 86", button_row.item_width, ShroomLayoutMetric(32.0f))) {
     selected_colony = 0;
   }
-  ShroomImGui_SameLine();
-  if (ShroomImGui_Button("Cluster 112", 120.0f, 32.0f)) {
+#ifdef TEST_MODE
+  demo_buttons_visible = demo_buttons_visible && ShroomImGui_IsLastItemVisible();
+#endif
+  if (button_row.columns > 1) {
+    ShroomImGui_SameLine();
+  }
+  if (ShroomImGui_Button("Cluster 112", button_row.item_width, ShroomLayoutMetric(32.0f))) {
     selected_colony = 1;
   }
-  ShroomImGui_SameLine();
-  if (ShroomImGui_Button("Bloom 148", 112.0f, 32.0f)) {
+#ifdef TEST_MODE
+  demo_buttons_visible = demo_buttons_visible && ShroomImGui_IsLastItemVisible();
+#endif
+  if (button_row.columns == 3) {
+    ShroomImGui_SameLine();
+  }
+  if (ShroomImGui_Button("Bloom 148", button_row.item_width, ShroomLayoutMetric(32.0f))) {
     selected_colony = 2;
   }
+#ifdef TEST_MODE
+  demo_buttons_visible = demo_buttons_visible && ShroomImGui_IsLastItemVisible();
+  g_help_demo_controls_visible = demo_buttons_visible;
+#endif
 
   snprintf(detail_buf, sizeof(detail_buf), "Selected: %s mass %.0f", colony_names[selected],
            colony_masses[selected]);
@@ -119,10 +154,10 @@ static void DrawGrowthRulesDemo(void) {
         detail_buf, sizeof(detail_buf), "%s vs %s: %s", colony_names[selected], colony_names[index],
         CanDemoColonyConsume(colony_masses[selected], colony_masses[index]) ? "can consume"
                                                                             : "cannot consume yet");
-    ShroomImGui_TextColored(CanDemoColonyConsume(colony_masses[selected], colony_masses[index])
-                                ? success_color
-                                : muted_color,
-                            detail_buf);
+    ShroomImGui_TextColoredWrapped(
+        CanDemoColonyConsume(colony_masses[selected], colony_masses[index]) ? success_color
+                                                                            : muted_color,
+        detail_buf);
     if ((danger_index < 0) && CanDemoColonyConsume(colony_masses[index], colony_masses[selected])) {
       danger_index = index;
     }
@@ -136,28 +171,28 @@ static void DrawGrowthRulesDemo(void) {
              "Safe for now: no demo colony is %.0f%% heavier than %s.",
              (SHROOM_CONSUME_MASS_ADVANTAGE - 1.0f) * 100.0f, colony_names[selected]);
   }
-  ShroomImGui_TextDisabled(detail_buf);
+  ShroomImGui_TextDisabledWrapped(detail_buf);
 }
 
 static void HelpDraw(ShroomScreenManager* manager) {
   Game* game = manager != NULL ? (Game*)manager->user_data : NULL;
-  const int screen_width = GetScreenWidth();
-  const int screen_height = GetScreenHeight();
+  const char* tab_labels[] = {"Controls", "Gameplay", "Zones", "Modes"};
+  ShroomLayoutResponsiveRow tab_row;
+  float content_height;
 
   if (game == NULL) {
     return;
   }
+#ifdef TEST_MODE
+  g_help_final_row_visible = false;
+  g_help_demo_controls_visible = false;
+#endif
   ShroomScreenDrawFungalBackground(game->settings.menu_animations_enabled);
 
-  ShroomImGui_SetNextWindowPos((float)screen_width * 0.08f, (float)screen_height * 0.08f,
-                               SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowSize((float)screen_width * 0.84f, (float)screen_height * 0.84f,
-                                SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowBgAlpha(0.90f);
-  if (!ShroomImGui_Begin("How To Play", NULL,
-                         SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
-                             SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
-                             SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
+  if (!ShroomLayoutBeginCenteredPanel("How To Play", 900.0f, 650.0f, 0.90f,
+                                      SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
+                                          SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
+                                          SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
     ShroomImGui_End();
     return;
   }
@@ -166,11 +201,19 @@ static void HelpDraw(ShroomScreenManager* manager) {
                           "mouse, with keyboard nudging available for sharper cuts and escapes.");
 
   ShroomImGui_Separator();
-  DrawTabButton("Controls", 0);
-  DrawTabButton("Gameplay", 1);
-  DrawTabButton("Zones", 2);
-  DrawTabButton("Modes", 3);
+  tab_row =
+      ShroomLayoutResponsiveRowMetrics(ShroomImGui_GetContentRegionAvailWidth(),
+                                       ShroomLayoutMetric(104.0f), 4, ShroomLayoutMetric(10.0f));
+  for (int index = 0; index < 4; ++index) {
+    DrawTabButton(tab_labels[index], index, tab_row.item_width,
+                  ((index + 1) % tab_row.columns) != 0 && index < 3);
+  }
   ShroomImGui_Spacing();
+
+  content_height =
+      ShroomLayoutReservedContentHeight(ShroomImGui_GetContentRegionAvailHeight(),
+                                        ShroomLayoutMetric(36.0f), ShroomLayoutMetric(8.0f));
+  ShroomImGui_BeginChild("HelpContent", 0.0f, content_height, false);
 
   if (g_help_active_tab == 0) {
     char split_line[96];
@@ -276,8 +319,10 @@ static void HelpDraw(ShroomScreenManager* manager) {
                     (int)mode_count);
   }
 
+  ShroomImGui_EndChild();
+
   ShroomImGui_Spacing();
-  if (ShroomImGui_Button("Back", 140.0f, 36.0f)) {
+  if (ShroomImGui_Button("Back", ShroomLayoutMetric(140.0f), ShroomLayoutMetric(36.0f))) {
     GamePlayUiClickSound(game);
     ShroomScreenManagerGoBack(manager);
   }
@@ -299,6 +344,10 @@ bool ShroomTestHelpRenderedTextContains(const char* text) {
 }
 
 const char* ShroomTestHelpRenderedHeading(void) { return g_help_rendered_heading; }
+
+bool ShroomTestHelpFinalRowVisible(void) { return g_help_final_row_visible; }
+
+bool ShroomTestHelpDemoControlsVisible(void) { return g_help_demo_controls_visible; }
 #endif
 
 static void HelpHandleInput(ShroomScreenManager* manager) {

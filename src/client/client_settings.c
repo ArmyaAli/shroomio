@@ -530,6 +530,26 @@ bool ClientSettingsSave(const ClientSettings* settings) {
   return ClientSettingsSaveToPath(settings, kClientSettingsPath);
 }
 
+bool ClientSettingsCommitPlayerNameToPath(ClientSettings* settings, const char* player_name,
+                                          const char* path) {
+  ClientSettings pending;
+
+  if ((settings == NULL) || (player_name == NULL)) {
+    return false;
+  }
+  pending = *settings;
+  ClientSettingsSanitizePlayerName(pending.player_name, player_name);
+  if ((pending.player_name[0] == '\0') || !ClientSettingsSaveToPath(&pending, path)) {
+    return false;
+  }
+  *settings = pending;
+  return true;
+}
+
+bool ClientSettingsCommitPlayerName(ClientSettings* settings, const char* player_name) {
+  return ClientSettingsCommitPlayerNameToPath(settings, player_name, kClientSettingsPath);
+}
+
 const char* ClientSettingsPreferredRegionLabel(int region_index) {
   switch (region_index) {
   case 1:

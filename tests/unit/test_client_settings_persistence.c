@@ -16,11 +16,15 @@ static void SidePath(char* destination, size_t size, const char* suffix) {
 
 static void CleanupFiles(void) {
   char path[300];
+  char blocker[320];
   const char* suffixes[] = {"", ".tmp", ".bak", ".bak.tmp"};
 
   for (size_t index = 0u; index < sizeof(suffixes) / sizeof(suffixes[0]); ++index) {
     SidePath(path, sizeof(path), suffixes[index]);
+    snprintf(blocker, sizeof(blocker), "%s/blocker", path);
+    unlink(blocker);
     unlink(path);
+    rmdir(path);
   }
 }
 
@@ -267,6 +271,35 @@ void test_account_feature_opt_in_round_trips(void) {
   TEST_ASSERT_TRUE(loaded.account_features_enabled);
 }
 
+void test_player_name_commit_is_transactional_and_retryable_after_save_failure(void) {
+  ClientSettings current = ExampleSettings(125, 72, "");
+  ClientSettings loaded;
+  char temporary[300];
+  char blocker[320];
+  FILE* file;
+
+  SidePath(temporary, sizeof(temporary), ".tmp");
+  snprintf(blocker, sizeof(blocker), "%s/blocker", temporary);
+  TEST_ASSERT_EQUAL_INT(0, mkdir(temporary, 0700));
+  file = fopen(blocker, "wb");
+  TEST_ASSERT_NOT_NULL(file);
+  fputs("block", file);
+  TEST_ASSERT_EQUAL_INT(0, fclose(file));
+
+  TEST_ASSERT_FALSE(ClientSettingsCommitPlayerNameToPath(&current, "  Moss@@ Runner!!  ",
+                                                         settings_path));
+  TEST_ASSERT_EQUAL_STRING("", current.player_name);
+  TEST_ASSERT_EQUAL_INT(-1, access(settings_path, F_OK));
+
+  TEST_ASSERT_EQUAL_INT(0, unlink(blocker));
+  TEST_ASSERT_EQUAL_INT(0, rmdir(temporary));
+  TEST_ASSERT_TRUE(ClientSettingsCommitPlayerNameToPath(&current, "  Moss@@ Runner!!  ",
+                                                        settings_path));
+  TEST_ASSERT_EQUAL_STRING("Moss Runner", current.player_name);
+  TEST_ASSERT_TRUE(ClientSettingsLoadFromPath(&loaded, settings_path));
+  TEST_ASSERT_EQUAL_STRING("Moss Runner", loaded.player_name);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_versioned_round_trip_leaves_no_temporary_file);
@@ -278,5 +311,6 @@ int main(void) {
   RUN_TEST(test_save_validates_out_of_range_values_before_replacement);
   RUN_TEST(test_schema_two_migrates_with_account_features_disabled);
   RUN_TEST(test_account_feature_opt_in_round_trips);
+  RUN_TEST(test_player_name_commit_is_transactional_and_retryable_after_save_failure);
   return UNITY_END();
 }

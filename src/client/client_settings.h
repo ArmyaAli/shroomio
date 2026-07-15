@@ -74,6 +74,9 @@ bool ClientSettingsLoad(ClientSettings* settings);
 bool ClientSettingsSave(const ClientSettings* settings);
 bool ClientSettingsLoadFromPath(ClientSettings* settings, const char* path);
 bool ClientSettingsSaveToPath(const ClientSettings* settings, const char* path);
+bool ClientSettingsCommitPlayerName(ClientSettings* settings, const char* player_name);
+bool ClientSettingsCommitPlayerNameToPath(ClientSettings* settings, const char* player_name,
+                                          const char* path);
 const char* ClientSettingsPreferredRegionLabel(int region_index);
 const char* ClientSettingsPaletteLabel(ClientPalettePreset preset);
 const char* ClientSettingsHudDensityLabel(ClientHudDensity density);

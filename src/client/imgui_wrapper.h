@@ -59,17 +59,22 @@ void ShroomImGui_End(void);
 
 void ShroomImGui_SetNextItemWidth(float width);
 float ShroomImGui_GetContentRegionAvailWidth(void);
+float ShroomImGui_GetContentRegionAvailHeight(void);
 float ShroomImGui_CalcTextWidth(const char* text);
+float ShroomImGui_CalcWrappedTextHeight(const char* text, float wrap_width);
 float ShroomImGui_GetItemInnerSpacingX(void);
 void ShroomImGui_Text(const char* text);
 void ShroomImGui_TextWrapped(const char* text);
 void ShroomImGui_TextColored(ShroomImGuiColor color, const char* text);
+void ShroomImGui_TextColoredWrapped(ShroomImGuiColor color, const char* text);
 void ShroomImGui_TextDisabled(const char* text);
+void ShroomImGui_TextDisabledWrapped(const char* text);
 void ShroomImGui_Separator(void);
 void ShroomImGui_Spacing(void);
 void ShroomImGui_SameLine(void);
 
 bool ShroomImGui_Button(const char* label, float width, float height);
+bool ShroomImGui_IsLastItemVisible(void);
 void ShroomImGui_BeginDisabled(bool disabled);
 void ShroomImGui_EndDisabled(void);
 bool ShroomImGui_Checkbox(const char* label, bool* value);
