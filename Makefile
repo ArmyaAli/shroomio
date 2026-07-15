@@ -61,6 +61,7 @@ SERVER_WINDOWS_BIN := $(DIST_DIR)/windows/server/$(PROJECT)-server.exe
 SERVER_MACOS_BIN := $(DIST_DIR)/macos/server/$(PROJECT)-server
 NETWORK_BENCH_BIN := $(BUILD_DIR)/benchmarks/network-benchmark
 SERVER_HEALTHCHECK_BIN := $(BUILD_DIR)/tools/shroomio-healthcheck
+CLIENT_REST_SMOKE_BIN := $(BUILD_DIR)/tools/shroomio-client-rest-smoke
 INPUT_FLOOD_CLIENT_BIN := $(BUILD_DIR)/tests/input-flood-client
 DIRECTORY_QUERY_CLIENT_BIN := $(BUILD_DIR)/tests/directory-query-client
 SERVER_DISCOVERY_CLIENT_BIN := $(BUILD_DIR)/tests/server-discovery-client
@@ -163,11 +164,11 @@ COMMON_CFLAGS := -std=c11 -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS)
 COMMON_CXXFLAGS := -O2 $(COMMON_WARNINGS) $(COMMON_INCLUDE_DIRS) -I.
 LINUX_CFLAGS   := $(COMMON_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) -DPLATFORM_DESKTOP -D_DEFAULT_SOURCE
 WINDOWS_CFLAGS := $(COMMON_CFLAGS) -I$(VCPKG_WINDOWS_INCLUDE_DIR) -DPLATFORM_DESKTOP
-WINDOWS_CFLAGS += -DWIN32_LEAN_AND_MEAN -DNOGDI -DNOUSER
+WINDOWS_CFLAGS += -DWIN32_LEAN_AND_MEAN -DNOGDI -DNOUSER -DCURL_STATICLIB
 MACOS_CFLAGS   := $(COMMON_CFLAGS) -I$(VCPKG_MACOS_INCLUDE_DIR) -DPLATFORM_DESKTOP -D_DEFAULT_SOURCE
 LINUX_CXXFLAGS := $(COMMON_CXXFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) -DPLATFORM_DESKTOP -D_DEFAULT_SOURCE
 WINDOWS_CXXFLAGS := $(COMMON_CXXFLAGS) -I$(VCPKG_WINDOWS_INCLUDE_DIR) -DPLATFORM_DESKTOP
-WINDOWS_CXXFLAGS += -DWIN32_LEAN_AND_MEAN -DNOGDI -DNOUSER
+WINDOWS_CXXFLAGS += -DWIN32_LEAN_AND_MEAN -DNOGDI -DNOUSER -DCURL_STATICLIB
 MACOS_CXXFLAGS := $(COMMON_CXXFLAGS) -I$(VCPKG_MACOS_INCLUDE_DIR) -DPLATFORM_DESKTOP -D_DEFAULT_SOURCE
 
 #Server compiler flags(headless, ENet - based)
@@ -190,12 +191,16 @@ TEST_LIBS := -lm
 
 #Platform link libraries
 LINUX_LIBS   := -lGL -lm -ldl -lpthread -lrt -lX11 -lXrandr -lXi -lXcursor -lXinerama -lasound
-WINDOWS_LIBS := -lopengl32 -lgdi32 -lwinmm -lws2_32
+WINDOWS_LIBS := -lopengl32 -lgdi32 -lwinmm -lbcrypt -ladvapi32 -lcrypt32 -lws2_32 -liphlpapi
 MACOS_LIBS   := -lm -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo
-LINUX_THIRD_PARTY_LIBS := -L$(VCPKG_LINUX_LIB_DIR) -limgui -lenet -lopus -lraylib -lglfw3
-WINDOWS_THIRD_PARTY_LIBS := -L$(VCPKG_WINDOWS_LIB_DIR) -limgui -lenet -lopus -lraylib -lglfw3
-MACOS_THIRD_PARTY_LIBS := -L$(VCPKG_MACOS_LIB_DIR) -limgui -lenet -lopus -lraylib -lglfw3
-IMGUI_TEST_THIRD_PARTY_LIBS := -L$(VCPKG_LINUX_LIB_DIR) -lenet -lopus -lraylib -lglfw3
+LINUX_THIRD_PARTY_LIBS := -L$(VCPKG_LINUX_LIB_DIR) -limgui -lenet -lopus -lraylib -lglfw3 \
+	-lcurl -lcjson -lssl -lcrypto -lz
+WINDOWS_THIRD_PARTY_LIBS := -L$(VCPKG_WINDOWS_LIB_DIR) -limgui -lenet -lopus -lraylib -lglfw3 \
+	-lcurl -lcjson -lssl -lcrypto -lzs
+MACOS_THIRD_PARTY_LIBS := -L$(VCPKG_MACOS_LIB_DIR) -limgui -lenet -lopus -lraylib -lglfw3 \
+	-lcurl -lcjson -lssl -lcrypto -lz
+IMGUI_TEST_THIRD_PARTY_LIBS := -L$(VCPKG_LINUX_LIB_DIR) -lenet -lopus -lraylib -lglfw3 \
+	-lcjson -lcrypto
 
 #== == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==   \
     == == == == == == =
@@ -214,9 +219,13 @@ MACOS_IMGUI_OBJECTS := $(MACOS_BUILD_DIR)/client/imgui_impl_raylib.o \
 #Client source files
 CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/main.c \
+	$(CLIENT_SRC_DIR)/account_flow.c \
 	$(CLIENT_SRC_DIR)/chat_cache.c \
 	$(CLIENT_SRC_DIR)/audio.c \
 	$(CLIENT_SRC_DIR)/client_settings.c \
+	$(CLIENT_SRC_DIR)/client_rest.c \
+	$(CLIENT_SRC_DIR)/client_rest_curl.c \
+	$(CLIENT_SRC_DIR)/client_session_store.c \
 	$(CLIENT_SRC_DIR)/cursor.c \
 	$(CLIENT_SRC_DIR)/game.c \
 	$(CLIENT_SRC_DIR)/game_mode_availability.c \
@@ -347,9 +356,12 @@ IMGUI_CORE_SOURCES := imgui imgui_draw imgui_tables imgui_widgets
 IMGUI_TEST_ENGINE_SOURCE_NAMES := imgui_capture_tool imgui_te_context imgui_te_coroutine \
 	imgui_te_engine imgui_te_exporters imgui_te_perftool imgui_te_ui imgui_te_utils
 IMGUI_TEST_CLIENT_SOURCES := \
+	$(CLIENT_SRC_DIR)/account_flow.c \
 	$(CLIENT_SRC_DIR)/audio.c \
 	$(CLIENT_SRC_DIR)/chat_cache.c \
 	$(CLIENT_SRC_DIR)/client_settings.c \
+	$(CLIENT_SRC_DIR)/client_rest.c \
+	$(CLIENT_SRC_DIR)/client_session_store.c \
 	$(CLIENT_SRC_DIR)/cursor.c \
 	$(CLIENT_SRC_DIR)/game.c \
 	$(CLIENT_SRC_DIR)/game_mode_availability.c \
@@ -559,7 +571,7 @@ server-health-test: $(SERVER_LINUX_BIN) $(SERVER_HEALTHCHECK_BIN)
 	fi; \
 	echo "Server health integration passed."
 
-rest-integration-test: $(SERVER_LINUX_BIN)
+rest-integration-test: $(SERVER_LINUX_BIN) $(CLIENT_REST_SMOKE_BIN)
 	@command -v openssl >/dev/null 2>&1 || { echo "openssl is required"; exit 1; }
 	@command -v curl >/dev/null 2>&1 || { echo "curl is required"; exit 1; }
 	@command -v python3 >/dev/null 2>&1 || { echo "python3 is required"; exit 1; }
@@ -572,6 +584,7 @@ rest-integration-test: $(SERVER_LINUX_BIN)
 	}; \
 	trap cleanup EXIT INT TERM; \
 	openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 -subj "/CN=127.0.0.1" \
+		-addext "subjectAltName=IP:127.0.0.1" \
 		-keyout "$$tmp/key.pem" -out "$$tmp/cert.pem" >/dev/null 2>&1; \
 	cat "$$tmp/key.pem" "$$tmp/cert.pem" >"$$tmp/rest.pem"; \
 	./$(SERVER_LINUX_BIN) --bind 127.0.0.1 --port "$$udp_port" --database "$$tmp/server.db" \
@@ -582,6 +595,8 @@ rest-integration-test: $(SERVER_LINUX_BIN)
 		if ! kill -0 "$$server_pid" >/dev/null 2>&1; then break; fi; sleep 0.02; \
 	done; \
 	if [ $$ready -ne 1 ]; then echo "REST integration server failed to start"; cat "$$tmp/server.log"; exit 1; fi; \
+	./$(CLIENT_REST_SMOKE_BIN) "https://127.0.0.1:$$port" "$$tmp/cert.pem" \
+		"$$tmp/client-session.cfg"; \
 	response=$$(curl -ksS -D "$$tmp/headers" "https://127.0.0.1:$$port/health"); \
 	test "$$response" = '{"status":"ok","service":"shroomio-server"}'; \
 	grep -qi '^X-Request-ID: rest-' "$$tmp/headers"; \
@@ -825,6 +840,12 @@ $(NETWORK_BENCH_BIN): tools/network_benchmark.c $(SHARED_SRC_DIR)/net_telemetry.
 $(SERVER_HEALTHCHECK_BIN): tools/server_healthcheck.c tools/server_healthcheck.h $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) -Itools $< -o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet
+
+$(CLIENT_REST_SMOKE_BIN): tools/client_rest_smoke.c $(CLIENT_SRC_DIR)/client_rest.c \
+		$(CLIENT_SRC_DIR)/client_rest_curl.c $(CLIENT_SRC_DIR)/client_session_store.c | $(VCPKG_LINUX_STAMP)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) $^ -o $@ -L$(VCPKG_LINUX_LIB_DIR) \
+		-lcurl -lcjson -lssl -lcrypto -lz -ldl -lpthread -lm
 
 $(INPUT_FLOOD_CLIENT_BIN): tools/input_flood_client.c $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
@@ -1150,6 +1171,15 @@ test_connection) \
 		test_client_settings_persistence) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/client_settings.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+		test_client_rest) \
+			$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) \
+				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/client_rest.c $(CLIENT_SRC_DIR)/client_session_store.c \
+				-o $$test_bin $(COVERAGE_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lcjson -lcrypto ;; \
+		test_account_flow) \
+			$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) \
+				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/account_flow.c $(CLIENT_SRC_DIR)/client_rest.c \
+				$(CLIENT_SRC_DIR)/client_session_store.c -o $$test_bin $(COVERAGE_LIBS) \
+				-L$(VCPKG_LINUX_LIB_DIR) -lcjson -lcrypto -lpthread ;; \
 		test_server_browser_model) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/server_browser_model.c -o $$test_bin $(COVERAGE_LIBS) ;; \
@@ -1324,6 +1354,19 @@ $(TEST_BUILD_DIR)/test_settings_session: $(UNIT_TESTS_DIR)/test_settings_session
 $(TEST_BUILD_DIR)/test_client_settings_persistence: $(UNIT_TESTS_DIR)/test_client_settings_persistence.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/client_settings.c | $(UNITY_DIR) $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_client_rest: $(UNIT_TESTS_DIR)/test_client_rest.c $(UNITY_SRC) \
+		$(CLIENT_SRC_DIR)/client_rest.c $(CLIENT_SRC_DIR)/client_session_store.c | $(UNITY_DIR) $(VCPKG_LINUX_STAMP)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) $^ -o $@ \
+		$(TEST_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lcjson -lcrypto
+
+$(TEST_BUILD_DIR)/test_account_flow: $(UNIT_TESTS_DIR)/test_account_flow.c $(UNITY_SRC) \
+		$(CLIENT_SRC_DIR)/account_flow.c $(CLIENT_SRC_DIR)/client_rest.c \
+		$(CLIENT_SRC_DIR)/client_session_store.c | $(UNITY_DIR) $(VCPKG_LINUX_STAMP)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) $^ -o $@ \
+		$(TEST_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lcjson -lcrypto -lpthread
 
 $(TEST_BUILD_DIR)/test_server_browser_model: $(UNIT_TESTS_DIR)/test_server_browser_model.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/server_browser_model.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
@@ -1601,7 +1644,7 @@ format:
 # Run cppcheck static analysis
 cppcheck:
 	@echo "Running cppcheck..."
-	cppcheck --enable=warning,style,performance,portability \
+	cppcheck --enable=warning,style,performance,portability --inline-suppr \
 		--error-exitcode=1 \
 		--include=src/shared/config.h \
 		src/

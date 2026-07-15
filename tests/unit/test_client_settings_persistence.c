@@ -82,6 +82,40 @@ static bool FileContains(const char* path, const char* needle) {
   return strstr(contents, needle) != NULL;
 }
 
+static bool RewriteAsSchemaTwo(const char* path) {
+  char temporary[300];
+  FILE* input = fopen(path, "rb");
+  FILE* output;
+  char line[256];
+  bool success = true;
+
+  if (input == NULL) {
+    return false;
+  }
+  snprintf(temporary, sizeof(temporary), "%s.v2", path);
+  output = fopen(temporary, "wb");
+  if (output == NULL) {
+    fclose(input);
+    return false;
+  }
+  while (fgets(line, sizeof(line), input) != NULL) {
+    if (strncmp(line, "account_features_enabled=", 25u) == 0) {
+      continue;
+    }
+    if (strncmp(line, "schema_version=", 15u) == 0) {
+      success = success && (fputs("schema_version=2\n", output) >= 0);
+    } else {
+      success = success && (fputs(line, output) >= 0);
+    }
+  }
+  success = success && !ferror(input) && (fclose(input) == 0) && (fclose(output) == 0) &&
+            (rename(temporary, path) == 0);
+  if (!success) {
+    remove(temporary);
+  }
+  return success;
+}
+
 void setUp(void) {
   snprintf(settings_path, sizeof(settings_path), "/tmp/shroomio-settings-%ld.cfg", (long)getpid());
   CleanupFiles();
@@ -104,7 +138,8 @@ void test_versioned_round_trip_leaves_no_temporary_file(void) {
   TEST_ASSERT_TRUE(loaded.voice_self_muted);
   TEST_ASSERT_EQUAL_INT(37, loaded.voice_output_volume_percent);
   TEST_ASSERT_EQUAL_STRING("Studio Mic", loaded.voice_capture_device);
-  TEST_ASSERT_TRUE(FileContains(settings_path, "schema_version=2\n"));
+  TEST_ASSERT_TRUE(FileContains(settings_path, "schema_version=3\n"));
+  TEST_ASSERT_FALSE(loaded.account_features_enabled);
   TEST_ASSERT_EQUAL_INT(0, stat(settings_path, &status));
   TEST_ASSERT_EQUAL_INT(0, status.st_mode & (S_IRWXG | S_IRWXO));
   SidePath(temporary, sizeof(temporary), ".tmp");
@@ -137,7 +172,7 @@ void test_complete_unversioned_file_migrates_to_current_schema(void) {
   TEST_ASSERT_FALSE(loaded.voice_self_muted);
   TEST_ASSERT_EQUAL_INT(80, loaded.voice_output_volume_percent);
   TEST_ASSERT_EQUAL_STRING("", loaded.voice_capture_device);
-  TEST_ASSERT_TRUE(FileContains(settings_path, "schema_version=2\n"));
+  TEST_ASSERT_TRUE(FileContains(settings_path, "schema_version=3\n"));
 }
 
 void test_corrupt_primary_recovers_prior_valid_backup(void) {
@@ -156,7 +191,7 @@ void test_corrupt_primary_recovers_prior_valid_backup(void) {
   TEST_ASSERT_TRUE(ClientSettingsLoadFromPath(&loaded, settings_path));
   TEST_ASSERT_EQUAL_INT(125, loaded.ui_scale_percent);
   TEST_ASSERT_EQUAL_STRING("Backup Player", loaded.player_name);
-  TEST_ASSERT_TRUE(FileContains(settings_path, "schema_version=2\n"));
+  TEST_ASSERT_TRUE(FileContains(settings_path, "schema_version=3\n"));
 }
 
 void test_truncated_files_fall_back_to_validated_defaults(void) {
@@ -209,6 +244,29 @@ void test_save_validates_out_of_range_values_before_replacement(void) {
   TEST_ASSERT_EQUAL_STRING("Safe Name", loaded.player_name);
 }
 
+void test_schema_two_migrates_with_account_features_disabled(void) {
+  ClientSettings saved = ExampleSettings(120, 60, "Schema Two");
+  ClientSettings loaded;
+
+  saved.account_features_enabled = true;
+  TEST_ASSERT_TRUE(ClientSettingsSaveToPath(&saved, settings_path));
+  TEST_ASSERT_TRUE(RewriteAsSchemaTwo(settings_path));
+  TEST_ASSERT_TRUE(ClientSettingsLoadFromPath(&loaded, settings_path));
+  TEST_ASSERT_FALSE(loaded.account_features_enabled);
+  TEST_ASSERT_TRUE(FileContains(settings_path, "schema_version=3\n"));
+  TEST_ASSERT_TRUE(FileContains(settings_path, "account_features_enabled=0\n"));
+}
+
+void test_account_feature_opt_in_round_trips(void) {
+  ClientSettings saved = ExampleSettings(100, 80, "Account Opt In");
+  ClientSettings loaded;
+
+  saved.account_features_enabled = true;
+  TEST_ASSERT_TRUE(ClientSettingsSaveToPath(&saved, settings_path));
+  TEST_ASSERT_TRUE(ClientSettingsLoadFromPath(&loaded, settings_path));
+  TEST_ASSERT_TRUE(loaded.account_features_enabled);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_versioned_round_trip_leaves_no_temporary_file);
@@ -218,5 +276,7 @@ int main(void) {
   RUN_TEST(test_truncated_files_fall_back_to_validated_defaults);
   RUN_TEST(test_missing_final_record_terminator_is_treated_as_truncation);
   RUN_TEST(test_save_validates_out_of_range_values_before_replacement);
+  RUN_TEST(test_schema_two_migrates_with_account_features_disabled);
+  RUN_TEST(test_account_feature_opt_in_round_trips);
   return UNITY_END();
 }

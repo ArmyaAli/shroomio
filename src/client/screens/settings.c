@@ -334,6 +334,8 @@ static void SettingsDraw(ShroomScreenManager* manager) {
                                   &g_settings_screen.session.pending.menu_animations_enabled);
   changed |= ShroomImGui_Checkbox("Death Cutscene",
                                   &g_settings_screen.session.pending.death_cutscene_enabled);
+  changed |= ShroomImGui_Checkbox("Enable Account Features",
+                                  &g_settings_screen.session.pending.account_features_enabled);
   changed |= ShroomImGui_Combo("Mushroom Species",
                                (int*)&g_settings_screen.session.pending.mushroom_species,
                                species_items, CLIENT_MUSHROOM_COUNT);

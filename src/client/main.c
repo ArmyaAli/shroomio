@@ -1,4 +1,6 @@
 #include "audio.h"
+#include "account_flow.h"
+#include "client_rest_curl.h"
 #include "game.h"
 #include "imgui_wrapper.h"
 #include "layout.h"
@@ -8,11 +10,12 @@
 #include "voice_backend.h"
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #ifndef _WIN32
 #include <execinfo.h>
 #include <signal.h>
-#include <stdlib.h>
 #include <unistd.h>
 #endif
 
@@ -21,6 +24,11 @@
 static ShroomLifecycle g_lifecycle;
 static ShroomScreenManager g_screen_manager;
 static Game g_game;
+static ShroomClientRest g_client_rest;
+static ShroomClientRestCurl g_client_rest_curl;
+static ShroomAccountFlow g_account_flow;
+static bool g_client_rest_ready;
+static bool g_client_rest_curl_ready;
 
 #ifndef _WIN32
 static void HandleCrashSignal(int signal_number) {
@@ -53,6 +61,35 @@ int main(void) {
 
   ShroomImGui_Init();
   ClientSettingsLoad(&g_game.settings);
+  {
+    const char* base_url = getenv("SHROOM_REST_BASE_URL");
+    const char* ca_certificate = getenv("SHROOM_REST_CA_CERT");
+    const char* pinned_public_key = getenv("SHROOM_REST_PINNED_PUBLIC_KEY");
+    const char* development_mode = getenv("SHROOM_REST_DEV_MODE");
+    ShroomClientRestConfig rest_config;
+
+    if ((base_url == NULL) || (base_url[0] == '\0')) {
+      base_url = "https://127.0.0.1:7443";
+    }
+    g_client_rest_curl_ready = ShroomClientRestCurlGlobalInit();
+    if (g_client_rest_curl_ready &&
+        ShroomClientRestCurlInit(&g_client_rest_curl, ca_certificate, pinned_public_key)) {
+      rest_config = (ShroomClientRestConfig){
+          .base_url = base_url,
+          .development_mode = (development_mode != NULL) && (strcmp(development_mode, "1") == 0),
+          .transport = ShroomClientRestCurlPerform,
+          .transport_context = &g_client_rest_curl,
+      };
+      g_client_rest_ready = ShroomClientRestInit(&g_client_rest, &rest_config);
+    }
+    if (g_client_rest_ready) {
+      ShroomAccountFlowInit(&g_account_flow, &g_client_rest);
+      g_game.account_flow = &g_account_flow;
+      if (ShroomClientRestHasStoredSession(&g_client_rest)) {
+        (void)ShroomAccountFlowStartRestore(&g_account_flow);
+      }
+    }
+  }
   ShroomClientAudioInit(&g_game.settings);
   (void)ShroomVoiceConfigure(ShroomVoiceProductionBackend());
   snprintf(g_game.selected_server_host, sizeof(g_game.selected_server_host), "%s", "127.0.0.1");
@@ -99,6 +136,13 @@ int main(void) {
 
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_STOP);
   ShroomScreenManagerShutdown(&g_screen_manager);
+  if (g_client_rest_ready) {
+    ShroomAccountFlowShutdown(&g_account_flow);
+    ShroomClientRestClear(&g_client_rest);
+  }
+  if (g_client_rest_curl_ready) {
+    ShroomClientRestCurlGlobalCleanup();
+  }
   ShroomVoiceShutdown();
   ShroomClientAudioShutdown();
   ShroomImGui_Shutdown();

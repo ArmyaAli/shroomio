@@ -4001,6 +4001,7 @@ static void UpdateSpectatorCamera(Game* game, float delta_time) {
 void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode mode) {
   size_t bot_index;
   ClientSettings settings = game->settings;
+  ShroomAccountFlow* account_flow = game->account_flow;
   GameSessionMode selected_mode = game->selected_mode;
   bool start_in_spectator_mode = game->start_in_spectator_mode;
   char selected_server_host[sizeof(game->selected_server_host)] = {0};
@@ -4019,6 +4020,7 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
     *game = (Game){0};
     game->net = saved_net;
     game->settings = settings;
+    game->account_flow = account_flow;
     game->selected_mode = selected_mode;
     game->start_in_spectator_mode = start_in_spectator_mode;
     game->active_mode = mode;
@@ -4045,6 +4047,7 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
 
   *game = (Game){0};
   game->settings = settings;
+  game->account_flow = account_flow;
   game->selected_mode = selected_mode;
   game->start_in_spectator_mode = start_in_spectator_mode;
   game->active_mode = mode;

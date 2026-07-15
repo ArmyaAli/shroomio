@@ -373,6 +373,10 @@ bool ShroomImGui_InputText(const char* label, char* buffer, size_t buffer_size) 
   return ImGui::InputText(label, buffer, buffer_size);
 }
 
+bool ShroomImGui_InputTextPassword(const char* label, char* buffer, size_t buffer_size) {
+  return ImGui::InputText(label, buffer, buffer_size, ImGuiInputTextFlags_Password);
+}
+
 bool ShroomImGui_BeginChild(const char* id, float width, float height, bool border) {
   return ImGui::BeginChild(id, ImVec2(width, height), border);
 }
