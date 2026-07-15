@@ -68,6 +68,7 @@ QUICK_MATCH_CLIENT_BIN := $(BUILD_DIR)/tests/quick-match-client
 SNAPSHOT_RATE_PROBE_BIN := $(BUILD_DIR)/tests/snapshot-rate-probe
 GRACEFUL_SHUTDOWN_CLIENT_BIN := $(BUILD_DIR)/tests/graceful-shutdown-client
 UDP_AUTH_COLLISION_CLIENT_BIN := $(BUILD_DIR)/tests/udp-auth-collision-client
+CHAT_LOG_PROBE_BIN := $(BUILD_DIR)/tests/chat-log-probe
 INPUT_FLOOD_PORT ?=
 NETWORK_BENCH_CLIENTS ?= 1,64,256
 NETWORK_BENCH_DURATION_MS ?= 1500
@@ -268,6 +269,7 @@ CLIENT_SOURCES := \
 SERVER_SOURCES := \
 	$(SERVER_SRC_DIR)/main.c \
 	$(SERVER_SRC_DIR)/logger.c \
+	$(SERVER_SRC_DIR)/chat_log.c \
 	$(SERVER_SRC_DIR)/account_auth.c \
 	$(SERVER_SRC_DIR)/database.c \
 	$(SERVER_SRC_DIR)/directory_registry.c \
@@ -323,6 +325,7 @@ SHARED_HEADERS := \
 	$(SERVER_SRC_DIR)/directory_registry.h \
 	$(SERVER_SRC_DIR)/match_persistence.h \
 	$(SERVER_SRC_DIR)/auth.h \
+	$(SERVER_SRC_DIR)/chat_log.h \
 	$(SERVER_SRC_DIR)/input_admission.h \
 	$(SERVER_SRC_DIR)/lobby_capacity.h \
 	$(SERVER_SRC_DIR)/session_cleanup.h \
@@ -412,7 +415,7 @@ IMGUI_TEST_ENGINE_OBJECTS := $(addprefix $(TEST_BUILD_DIR)/imgui/engine/,$(addsu
 # =============================================================================
 .PHONY: all client-linux client-windows client-macos server-linux server-windows server-macos servers-all
 .PHONY: linux windows macos server run run-server run-windows help
-.PHONY: benchmark network-benchmark network-benchmark-test input-flood-test server-health-test rest-integration-test graceful-shutdown-integration-test udp-auth-integration-test
+.PHONY: benchmark network-benchmark network-benchmark-test input-flood-test server-health-test rest-integration-test graceful-shutdown-integration-test udp-auth-integration-test chat-log-integration-test
 
 all: client-linux
 
@@ -803,6 +806,40 @@ udp-auth-integration-test: $(SERVER_LINUX_BIN) $(UDP_AUTH_COLLISION_CLIENT_BIN)
 	python3 -c 'import sqlite3,sys; db=sqlite3.connect(sys.argv[1]); rows=db.execute("SELECT auth_method FROM users WHERE username = ?", ("RegisteredOwner",)).fetchall(); assert rows == [("password",)], rows; assert db.execute("SELECT COUNT(*) FROM auth_tokens").fetchone()[0] == 0; db.close()' "$$tmp/server.db"; \
 	echo "UDP registered identity collision integration passed."
 
+chat-log-integration-test: $(SERVER_LINUX_BIN) $(CHAT_LOG_PROBE_BIN)
+	@set -eu; \
+	tmp=/tmp/shroomio-chat-log-$$$$; mkdir -p "$$tmp"; \
+	server_pid=""; ready=0; attempt=0; seed=$$$$; port=""; \
+	cleanup() { \
+		if [ -n "$$server_pid" ]; then kill "$$server_pid" >/dev/null 2>&1 || true; wait "$$server_pid" >/dev/null 2>&1 || true; fi; \
+		rm -rf "$$tmp"; \
+	}; \
+	trap cleanup EXIT INT TERM; \
+	while [ $$attempt -lt 20 ]; do \
+		port=$$((40000 + (seed * 1103 + attempt * 7919) % 20000)); \
+		rm -f "$$tmp/server.db" "$$tmp/server.db-shm" "$$tmp/server.db-wal"; : >"$$tmp/server.log"; \
+		./$(SERVER_LINUX_BIN) --bind 127.0.0.1 --port "$$port" --database "$$tmp/server.db" >"$$tmp/server.log" 2>&1 & server_pid=$$!; \
+		for probe in $$(seq 1 200); do \
+			if grep -q "server listening on 127.0.0.1:$$port/udp" "$$tmp/server.log"; then ready=1; break; fi; \
+			if ! kill -0 "$$server_pid" >/dev/null 2>&1; then break; fi; sleep 0.01; \
+		done; \
+		if [ $$ready -eq 1 ]; then break; fi; \
+		kill "$$server_pid" >/dev/null 2>&1 || true; wait "$$server_pid" >/dev/null 2>&1 || true; server_pid=""; \
+		attempt=$$((attempt + 1)); \
+	done; \
+	if [ $$ready -ne 1 ]; then echo "Chat-log server failed to start"; cat "$$tmp/server.log"; exit 1; fi; \
+	./$(CHAT_LOG_PROBE_BIN) "$$port"; \
+	test "$$(grep -c 'chat .* outcome=accepted' "$$tmp/server.log")" -eq 5; \
+	test "$$(grep -c 'chat .* outcome=rejected_rate_limited' "$$tmp/server.log")" -eq 1; \
+	grep -Eq 'chat lobby_id=1 message_id=[0-9]+ bytes=21 outcome=accepted' "$$tmp/server.log"; \
+	if grep -q 'PRIVATE_SENDER_560\|PRIVATE_MESSAGE_560' "$$tmp/server.log"; then \
+		echo "Server chat log exposed sender or message content"; cat "$$tmp/server.log"; exit 1; \
+	fi; \
+	if grep 'chat ' "$$tmp/server.log" | grep -q ' name=\| msg='; then \
+		echo "Server chat log retained a private field"; cat "$$tmp/server.log"; exit 1; \
+	fi; \
+	echo "Chat log privacy integration passed."
+
 run-windows:
 	@command -v $(WINDOWS_CXX) >/dev/null 2>&1 || (printf '%s\n' 'Error: $(WINDOWS_CXX) not found. Install mingw-w64:' '  Ubuntu/Debian: sudo apt install mingw-w64' '  Fedora:       sudo dnf install mingw64-gcc-c++' '  Arch:         sudo pacman -S mingw-w64-gcc' && exit 1)
 	@test -f $(VCPKG_WINDOWS_STAMP) || (printf '%s\n' 'Error: Windows vcpkg dependencies not installed.' 'Run: make vcpkg-install-windows' && exit 1)
@@ -881,6 +918,10 @@ $(GRACEFUL_SHUTDOWN_CLIENT_BIN): tools/graceful_shutdown_client.c $(SHARED_HEADE
 	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) $< -o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet
 
 $(UDP_AUTH_COLLISION_CLIENT_BIN): tools/udp_auth_collision_client.c $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) $< -o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet
+
+$(CHAT_LOG_PROBE_BIN): tools/chat_log_probe.c $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) $< -o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet
 
@@ -1033,9 +1074,9 @@ $(UNITY_DIR):
 # =============================================================================
 # 8. Test Targets
 # =============================================================================
-.PHONY: test unit-test imgui-test directory-integration-test snapshot-rate-integration-test valgrind-test valgrind-unit-test valgrind-server-smoke valgrind-imgui-test test-coverage test-clean
+.PHONY: test unit-test imgui-test directory-integration-test snapshot-rate-integration-test valgrind-test valgrind-unit-test valgrind-server-smoke valgrind-imgui-test test-coverage test-clean chat-log-integration-test
 
-test: unit-test imgui-test input-flood-test directory-integration-test snapshot-rate-integration-test server-health-test rest-integration-test graceful-shutdown-integration-test udp-auth-integration-test
+test: unit-test imgui-test input-flood-test directory-integration-test snapshot-rate-integration-test server-health-test rest-integration-test graceful-shutdown-integration-test udp-auth-integration-test chat-log-integration-test
 
 unit-test: $(TEST_BINS)
 	@echo "Running unit tests..."
@@ -1237,6 +1278,9 @@ test_connection) \
 		test_chat_cache) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/chat_cache.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+		test_chat_log) \
+			$(LINUX_CC) $(COVERAGE_CFLAGS) \
+				$$src $(UNITY_SRC) $(SERVER_SRC_DIR)/chat_log.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_net_telemetry) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/net_telemetry.c -o $$test_bin $(COVERAGE_LIBS) ;; \
@@ -1425,6 +1469,10 @@ $(TEST_BUILD_DIR)/test_rest_rate_limit: $(UNIT_TESTS_DIR)/test_rest_rate_limit.c
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
 $(TEST_BUILD_DIR)/test_chat_cache: $(UNIT_TESTS_DIR)/test_chat_cache.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/chat_cache.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_chat_log: $(UNIT_TESTS_DIR)/test_chat_log.c $(UNITY_SRC) $(SERVER_SRC_DIR)/chat_log.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
