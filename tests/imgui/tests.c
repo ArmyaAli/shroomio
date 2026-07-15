@@ -14,7 +14,9 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
+#include <unistd.h>
 
 typedef struct ImGuiAudioBackend {
   bool ready;
@@ -586,6 +588,41 @@ static void Test_PlayerIdentityOnboardingPersistsAndStartsSession(ImGuiTestConte
   IM_CHECK_EQ(g_imgui_test_app.game.quick_match.phase, SHROOM_QUICK_MATCH_FINDING);
   IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
               SHROOM_SCREEN_SERVER_BROWSER);
+}
+
+static void Test_PlayerIdentitySaveFailureRetainsInputAndRetries(ImGuiTestContext* ctx) {
+  ClientSettings loaded;
+  FILE* blocker;
+
+  ShroomImGuiTestAppReset(true);
+  IM_CHECK_EQ(mkdir("client_settings.cfg.tmp", 0700), 0);
+  blocker = fopen("client_settings.cfg.tmp/blocker", "wb");
+  IM_CHECK(blocker != NULL);
+  IM_CHECK_EQ(fclose(blocker), 0);
+  g_imgui_test_app.game.settings.player_name[0] = '\0';
+  ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_HELP);
+  ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_MAIN_MENU);
+  ShroomTeCtx_SetRef(ctx, "Player Identity");
+  ShroomTeCtx_Yield(ctx, 2);
+
+  ShroomTeCtx_ItemInputValueStr(ctx, "Player Name", "  Retry@@ Player!!  ");
+  ShroomTeCtx_ItemClick(ctx, "Continue");
+  ShroomTeCtx_Yield(ctx, 2);
+
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Player Identity"));
+  IM_CHECK(ShroomTestMainMenuSaveErrorVisible());
+  IM_CHECK_STR_EQ(g_imgui_test_app.game.settings.player_name, "");
+  IM_CHECK_STR_EQ(ShroomTestMainMenuPlayerNameInput(), "  Retry@@ Player!!  ");
+
+  IM_CHECK_EQ(unlink("client_settings.cfg.tmp/blocker"), 0);
+  IM_CHECK_EQ(rmdir("client_settings.cfg.tmp"), 0);
+  ShroomTeCtx_ItemClick(ctx, "Continue");
+  ShroomTeCtx_Yield(ctx, 2);
+
+  IM_CHECK(ShroomTeImGui_WindowIsActive("Main Menu"));
+  IM_CHECK_STR_EQ(g_imgui_test_app.game.settings.player_name, "Retry Player");
+  IM_CHECK(ClientSettingsLoad(&loaded));
+  IM_CHECK_STR_EQ(loaded.player_name, "Retry Player");
 }
 
 static void Test_PlayerNameInputsStayVisibleAtUiScaleEndpoints(ImGuiTestContext* ctx) {
@@ -3552,6 +3589,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_MainMenuExposesPrimaryActions);
   ShroomTeEngine_RegisterTest(engine, "screens", "player_identity_onboarding_persists_session",
                               Test_PlayerIdentityOnboardingPersistsAndStartsSession);
+  ShroomTeEngine_RegisterTest(engine, "screens", "player_identity_save_failure_retries",
+                              Test_PlayerIdentitySaveFailureRetainsInputAndRetries);
   ShroomTeEngine_RegisterTest(engine, "screens", "player_name_inputs_stay_visible_at_ui_scales",
                               Test_PlayerNameInputsStayVisibleAtUiScaleEndpoints);
   ShroomTeEngine_RegisterTest(engine, "screens", "game_mode_availability_and_navigation",

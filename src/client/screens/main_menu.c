@@ -10,6 +10,7 @@
 #include <string.h>
 
 static char g_player_name_input[SHROOM_MAX_NAME_LENGTH];
+static bool g_player_name_save_failed;
 
 typedef enum MainMenuAction {
   MAIN_MENU_ACTION_NONE = 0,
@@ -34,6 +35,10 @@ static bool MainMenuAnimationsEnabled(const Game* game) {
 bool ShroomTestMainMenuAnimationsEnabled(const Game* game) {
   return MainMenuAnimationsEnabled(game);
 }
+
+const char* ShroomTestMainMenuPlayerNameInput(void) { return g_player_name_input; }
+
+bool ShroomTestMainMenuSaveErrorVisible(void) { return g_player_name_save_failed; }
 #endif
 
 static bool MainMenuInit(ShroomScreenManager* manager) {
@@ -41,6 +46,7 @@ static bool MainMenuInit(ShroomScreenManager* manager) {
   ShroomScreenResetFungalBackground();
   snprintf(g_player_name_input, sizeof(g_player_name_input), "%s",
            game != NULL ? game->settings.player_name : "");
+  g_player_name_save_failed = false;
   return true;
 }
 
@@ -62,7 +68,7 @@ static void MainMenuDraw(ShroomScreenManager* manager) {
     char sanitized[SHROOM_MAX_NAME_LENGTH];
     ClientSettingsSanitizePlayerName(sanitized, g_player_name_input);
     if (!ShroomLayoutBeginCenteredPanel(
-            "Player Identity", 360.0f, 180.0f, 0.9f,
+            "Player Identity", 360.0f, 220.0f, 0.9f,
             SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
                 SHROOM_IMGUI_WINDOW_NO_COLLAPSE | SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
       ShroomImGui_End();
@@ -71,10 +77,14 @@ static void MainMenuDraw(ShroomScreenManager* manager) {
     ShroomLayoutHeading("Choose Player Name");
     ShroomLayoutSetNextLabeledItemWidth("Player Name");
     ShroomImGui_InputText("Player Name", g_player_name_input, sizeof(g_player_name_input));
+    if (g_player_name_save_failed) {
+      const ShroomImGuiColor error_color = {1.0f, 0.45f, 0.4f, 1.0f};
+      ShroomImGui_TextColored(error_color, "Settings could not be saved.");
+      ShroomImGui_TextColored(error_color, "Check file permissions, then retry.");
+    }
     ShroomImGui_BeginDisabled(sanitized[0] == '\0');
     if (ShroomLayoutButtonFullWidth("Continue", 38.0f)) {
-      snprintf(game->settings.player_name, sizeof(game->settings.player_name), "%s", sanitized);
-      ClientSettingsSave(&game->settings);
+      g_player_name_save_failed = !ClientSettingsCommitPlayerName(&game->settings, sanitized);
     }
     ShroomImGui_EndDisabled();
     ShroomImGui_End();
