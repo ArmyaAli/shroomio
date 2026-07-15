@@ -24,6 +24,7 @@
 #include "shared/world_replication.h"
 #include "auth.h"
 #include "account_auth.h"
+#include "chat_log.h"
 #include "database.h"
 #include "directory_registry.h"
 #include "logger.h"
@@ -73,6 +74,7 @@ typedef struct ServerSession {
   ShroomInputAdmission input_admission;
   uint32_t last_logged_rtt_ms;
   uint32_t chat_message_count;
+  bool chat_rate_limit_logged;
   uint32_t focused_entity_id; /* entity_id of piece being controlled; 0 = primary */
   uint64_t last_latency_log_time_ms;
   uint64_t chat_window_start_ms;
@@ -133,6 +135,7 @@ static ShroomNetTelemetry g_server_net_telemetry;
 static uint64_t g_server_event_budget_exhaustions;
 static uint64_t g_server_input_stale_rejections;
 static uint64_t g_server_input_rate_rejections;
+static uint64_t g_server_chat_message_id;
 static uint32_t g_lobby_roster_generation;
 
 static float g_match_duration_seconds = SHROOM_MATCH_DURATION_SECONDS;
@@ -1673,14 +1676,65 @@ static void HandleAuthRequestPacket(ENetPeer* peer, ServerSession* session,
   }
 }
 
+static size_t ChatMessageByteLength(const ENetPacket* enet_packet) {
+  const size_t message_offset = offsetof(ShroomChatPacket, message);
+  const char* message;
+  size_t available;
+  size_t length = 0u;
+
+  if ((enet_packet == NULL) || (enet_packet->data == NULL) ||
+      (enet_packet->dataLength <= message_offset)) {
+    return 0u;
+  }
+  available = enet_packet->dataLength - message_offset;
+  if (available > SHROOM_CHAT_MAX_MESSAGE_LENGTH) {
+    available = SHROOM_CHAT_MAX_MESSAGE_LENGTH;
+  }
+  message = (const char*)enet_packet->data + message_offset;
+  while ((length < available) && (message[length] != '\0')) {
+    length += 1u;
+  }
+  return length;
+}
+
+static void ServerChatLogSink(void* context, ShroomChatLogOutcome outcome, const char* line) {
+  (void)context;
+  if (outcome == SHROOM_CHAT_LOG_ACCEPTED) {
+    LOG_INFO("%s", line);
+  } else {
+    LOG_WARN("%s", line);
+  }
+}
+
+static void LogChatEvent(const ServerSession* session, size_t byte_length,
+                         ShroomChatLogOutcome outcome) {
+  ShroomChatLogEvent event = {
+      .lobby_id = session != NULL ? session->lobby_id : 0u,
+      .byte_length = byte_length,
+      .outcome = outcome,
+  };
+
+  g_server_chat_message_id += 1u;
+  if (g_server_chat_message_id == 0u) {
+    g_server_chat_message_id = 1u;
+  }
+  event.message_id = g_server_chat_message_id;
+  (void)ShroomChatLogEmit(&event, ServerChatLogSink, NULL);
+}
+
 static void HandleChatPacket(ENetHost* host, ServerSession* session, const ENetPacket* enet_packet,
                              uint64_t now_ms) {
   ShroomChatPacket broadcast = {0};
+  const size_t content_length = ChatMessageByteLength(enet_packet);
   size_t index;
   size_t msg_len;
 
   if ((host == NULL) || (session == NULL) || !session->active || (session->player == NULL) ||
-      (enet_packet == NULL) || (enet_packet->dataLength < sizeof(ShroomChatPacket))) {
+      (enet_packet == NULL) || (enet_packet->data == NULL) ||
+      (enet_packet->dataLength < sizeof(ShroomChatPacket))) {
+    if ((session != NULL) && session->active) {
+      LogChatEvent(session, content_length, SHROOM_CHAT_LOG_REJECTED_INVALID);
+    }
     return;
   }
 
@@ -1688,8 +1742,13 @@ static void HandleChatPacket(ENetHost* host, ServerSession* session, const ENetP
   if (now_ms - session->chat_window_start_ms >= SHROOM_CHAT_RATE_LIMIT_WINDOW_MS) {
     session->chat_window_start_ms = now_ms;
     session->chat_message_count = 0;
+    session->chat_rate_limit_logged = false;
   }
   if (session->chat_message_count >= SHROOM_CHAT_RATE_LIMIT_COUNT) {
+    if (!session->chat_rate_limit_logged) {
+      LogChatEvent(session, content_length, SHROOM_CHAT_LOG_REJECTED_RATE_LIMITED);
+      session->chat_rate_limit_logged = true;
+    }
     return;
   }
   session->chat_message_count += 1;
@@ -1716,8 +1775,7 @@ static void HandleChatPacket(ENetHost* host, ServerSession* session, const ENetP
     }
   }
 
-  LOG_INFO("chat player_id=%u name=%.31s msg=%s", session->player_id, broadcast.sender_name,
-           broadcast.message);
+  LogChatEvent(session, content_length, SHROOM_CHAT_LOG_ACCEPTED);
 
   /* Broadcast only to peers in the same lobby. */
   for (index = 0; index < host->peerCount; ++index) {
