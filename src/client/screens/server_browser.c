@@ -1,4 +1,6 @@
 #include "game.h"
+#include "client_paths.h"
+#include "client_storage.h"
 #include "layout.h"
 #include "matchmaking_selector.h"
 #include "screen.h"
@@ -10,15 +12,23 @@
 #include "imgui_wrapper.h"
 #include "raylib.h"
 
+#include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
+#ifdef _WIN32
+#include <io.h>
+#endif
+
 #define SERVER_BROWSER_MAX_SERVERS SHROOM_DIRECTORY_MAX_ENTRIES
 #define SERVER_BROWSER_MAX_RECENTS 5u
 #define SERVER_BROWSER_STALE_SECONDS 30.0f
+#define SERVER_BROWSER_RECENTS_FILENAME "server_browser_recent.txt"
+#define SERVER_BROWSER_RECENTS_LEGACY_PATH "server_browser_recent.txt"
+#define SERVER_BROWSER_RECENTS_MAX_FILE_BYTES (64u * 1024u)
 
 typedef enum ServerBrowserType {
   SERVER_BROWSER_TYPE_OFFICIAL = 0,
@@ -58,12 +68,12 @@ typedef struct ServerBrowserState {
   char recommended_host[64];
   uint16_t recommended_port;
   char directory_host[SHROOM_DIRECTORY_HOST_LENGTH];
+  char recent_path[SHROOM_CLIENT_PATH_MAX];
   uint16_t directory_port;
   ServerBrowserEntry servers[SERVER_BROWSER_MAX_SERVERS];
   ServerBrowserEntry recent_servers[SERVER_BROWSER_MAX_RECENTS];
 } ServerBrowserState;
 
-static const char* kRecentServersPath = "server_browser_recent.txt";
 static const char* const kSortItems[] = {"Name", "Players", "Ping"};
 static ServerBrowserState g_server_browser;
 
@@ -274,97 +284,164 @@ static void LoadDemoServers(void) {
 #endif
 
 static void SaveRecentServers(void) {
+  char temporary_path[SHROOM_CLIENT_PATH_MAX + 64u];
   int file_descriptor;
   FILE* file;
+  bool write_failed = false;
 
-  file_descriptor = open(kRecentServersPath, O_WRONLY | O_CREAT | O_TRUNC, 0600);
-  if (file_descriptor < 0) {
+  if (g_server_browser.recent_path[0] == '\0') {
     return;
   }
-
-  file = fdopen(file_descriptor, "w");
+  if (!ShroomClientStorageCreatePrivateTemporaryFile(g_server_browser.recent_path, temporary_path,
+                                                     sizeof(temporary_path), &file_descriptor)) {
+    return;
+  }
+  file =
+#ifdef _WIN32
+      _fdopen(file_descriptor, "w");
+#else
+      fdopen(file_descriptor, "w");
+#endif
   if (file == NULL) {
+#ifdef _WIN32
+    _close(file_descriptor);
+#else
     close(file_descriptor);
+#endif
+    remove(temporary_path);
     return;
   }
 
   for (size_t index = 0; index < g_server_browser.recent_count; ++index) {
     const ServerBrowserEntry* entry = &g_server_browser.recent_servers[index];
-    fprintf(file, "%s|%s|%d|%s|%d\n", entry->name, entry->host, entry->port, entry->map_label,
-            (int)entry->type);
+    if (fprintf(file, "%s|%s|%d|%s|%d\n", entry->name, entry->host, entry->port, entry->map_label,
+                (int)entry->type) < 0) {
+      write_failed = true;
+      break;
+    }
   }
+  if (!write_failed && (fflush(file) != 0)) {
+    write_failed = true;
+  }
+  if (!write_failed) {
+#ifdef _WIN32
+    write_failed = _commit(file_descriptor) != 0;
+#else
+    write_failed = fsync(file_descriptor) != 0;
+#endif
+  }
+  if (fclose(file) != 0) {
+    write_failed = true;
+  }
+  if (write_failed ||
+      !ShroomClientStorageReplaceFile(temporary_path, g_server_browser.recent_path)) {
+    remove(temporary_path);
+  }
+}
 
+static bool ParseRecentServersFile(const char* path, ServerBrowserEntry* entries, size_t capacity,
+                                   size_t* entry_count) {
+  FILE* file;
+  char line[256];
+  size_t count = 0u;
+
+  if ((path == NULL) || (entry_count == NULL)) {
+    return false;
+  }
+  *entry_count = 0u;
+  file = fopen(path, "r");
+  if (file == NULL) {
+    return false;
+  }
+  while (fgets(line, sizeof(line), file) != NULL) {
+    ServerBrowserEntry entry = {0};
+    char* fields[5];
+    char* cursor = line;
+    char* end = NULL;
+    long port;
+    long type = SERVER_BROWSER_TYPE_SELF_HOSTED;
+
+    if ((strchr(line, '\n') == NULL) || (count >= capacity)) {
+      fclose(file);
+      return false;
+    }
+    line[strcspn(line, "\r\n")] = '\0';
+    for (size_t field = 0u; field < 5u; ++field) {
+      fields[field] = cursor;
+      if (field < 4u) {
+        cursor = strchr(cursor, '|');
+        if (cursor == NULL) {
+          if (field == 3u) {
+            fields[4] = NULL;
+            break;
+          }
+          fclose(file);
+          return false;
+        }
+        *cursor++ = '\0';
+      }
+    }
+    if ((fields[0][0] == '\0') || (fields[1][0] == '\0') || (fields[2][0] == '\0') ||
+        (fields[3][0] == '\0') || (strlen(fields[0]) >= sizeof(entry.name)) ||
+        (strlen(fields[1]) >= sizeof(entry.host)) ||
+        (strlen(fields[3]) >= sizeof(entry.map_label)) ||
+        ((fields[4] != NULL) && (strchr(fields[4], '|') != NULL))) {
+      fclose(file);
+      return false;
+    }
+    errno = 0;
+    port = strtol(fields[2], &end, 10);
+    if ((errno == ERANGE) || (end == fields[2]) || (*end != '\0') || (port < 1) ||
+        (port > UINT16_MAX)) {
+      fclose(file);
+      return false;
+    }
+    if (fields[4] != NULL) {
+      errno = 0;
+      type = strtol(fields[4], &end, 10);
+      if ((errno == ERANGE) || (end == fields[4]) || (*end != '\0') ||
+          (type < SERVER_BROWSER_TYPE_OFFICIAL) || (type > SERVER_BROWSER_TYPE_DEMO)) {
+        fclose(file);
+        return false;
+      }
+    }
+    CopyText(entry.name, sizeof(entry.name), fields[0]);
+    CopyText(entry.host, sizeof(entry.host), fields[1]);
+    CopyText(entry.map_label, sizeof(entry.map_label), fields[3]);
+    entry.port = (int)port;
+    entry.type = (ServerBrowserType)type;
+    if (entries != NULL) {
+      entries[count] = entry;
+    }
+    ++count;
+  }
+  if (ferror(file)) {
+    fclose(file);
+    return false;
+  }
   fclose(file);
+  *entry_count = count;
+  return true;
+}
+
+static bool ValidateRecentServersFile(const char* path, const void* context) {
+  size_t count;
+
+  (void)context;
+  return ParseRecentServersFile(path, NULL, SERVER_BROWSER_MAX_RECENTS, &count);
 }
 
 static void LoadRecentServers(void) {
-  FILE* file;
-  char line[256];
+  size_t count = 0u;
 
   g_server_browser.recent_count = 0;
   g_server_browser.selected_recent_index = -1;
-
-  file = fopen(kRecentServersPath, "r");
-  if (file == NULL) {
-    return;
+  if ((g_server_browser.recent_path[0] != '\0') &&
+      ParseRecentServersFile(g_server_browser.recent_path, g_server_browser.recent_servers,
+                             SERVER_BROWSER_MAX_RECENTS, &count)) {
+    g_server_browser.recent_count = count;
   }
-
-  while ((g_server_browser.recent_count < SERVER_BROWSER_MAX_RECENTS) &&
-         (fgets(line, sizeof(line), file) != NULL)) {
-    ServerBrowserEntry* entry = &g_server_browser.recent_servers[g_server_browser.recent_count];
-    char* separator;
-    char* next_separator;
-
-    line[strcspn(line, "\r\n")] = '\0';
-    separator = strchr(line, '|');
-    if (separator == NULL) {
-      continue;
-    }
-    *separator = '\0';
-    CopyText(entry->name, sizeof(entry->name), line);
-
-    {
-      const char* port_text = separator + 1;
-
-      next_separator = strchr(port_text, '|');
-      if (next_separator == NULL) {
-        continue;
-      }
-      *next_separator = '\0';
-      CopyText(entry->host, sizeof(entry->host), port_text);
-    }
-
-    {
-      const char* port_value = next_separator + 1;
-      char* const map_text = strchr(port_value, '|');
-      char* type_text;
-
-      if (map_text == NULL) {
-        continue;
-      }
-      *map_text = '\0';
-      entry->port = atoi(port_value);
-
-      type_text = strchr(map_text + 1, '|');
-      if (type_text != NULL) {
-        *type_text = '\0';
-        CopyText(entry->map_label, sizeof(entry->map_label), map_text + 1);
-        entry->type = (ServerBrowserType)atoi(type_text + 1);
-      } else {
-        CopyText(entry->map_label, sizeof(entry->map_label), map_text + 1);
-        entry->type = SERVER_BROWSER_TYPE_SELF_HOSTED;
-      }
-    }
-
-    entry->player_count = 0;
-    entry->player_capacity = 0;
-    entry->ping_ms = 0;
-    g_server_browser.recent_count += 1;
-  }
-
-  fclose(file);
-
-  if (g_server_browser.recent_count > 0) {
+  if (count > 0u) {
     g_server_browser.selected_recent_index = 0;
   }
 }
@@ -619,6 +696,10 @@ static bool ServerBrowserInit(ShroomScreenManager* manager) {
   unsigned long parsed_port = SHROOM_DIRECTORY_PORT;
 
   g_server_browser = (ServerBrowserState){0};
+  ShroomClientPathsPrepareCacheFile(
+      g_server_browser.recent_path, sizeof(g_server_browser.recent_path),
+      SERVER_BROWSER_RECENTS_FILENAME, SERVER_BROWSER_RECENTS_LEGACY_PATH,
+      SERVER_BROWSER_RECENTS_MAX_FILE_BYTES, ValidateRecentServersFile, NULL);
   ShroomServerBrowserModelInit(&g_server_browser.model);
   g_server_browser.selected_index = -1;
 #ifdef TEST_MODE

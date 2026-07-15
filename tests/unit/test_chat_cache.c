@@ -1,9 +1,11 @@
 #include "unity.h"
 
 #include "client/chat_cache.h"
+#include "client/client_paths.h"
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -32,6 +34,7 @@ void setUp(void) {
 void tearDown(void) {
   unlink(kPath);
   unlink("/tmp/shroomio-chat-cache-test.txt.tmp");
+  ShroomClientPathsSetTestCacheRoot(NULL);
 }
 
 void test_cache_bounds_history_to_newest_messages(void) {
@@ -124,6 +127,41 @@ void test_future_timestamp_validation_does_not_wrap(void) {
   TEST_ASSERT_FALSE(ShroomChatCacheStoreMessage(kPath, &key, &boundary, UINT32_MAX - 301u));
 }
 
+void test_default_path_migrates_valid_legacy_cache_out_of_working_directory(void) {
+  char original_directory[SHROOM_CLIENT_PATH_MAX];
+  char test_directory[] = "/tmp/shroomio-chat-migration-XXXXXX";
+  char cache_root[SHROOM_CLIENT_PATH_MAX];
+  char destination[SHROOM_CLIENT_PATH_MAX];
+  const ShroomChatCacheKey key = Key("migration.example", 7777u, 8u);
+  const ChatMessage message = Message(4u, kNow, "Player", "migrated message");
+  ChatMessage loaded[1];
+
+  TEST_ASSERT_NOT_NULL(getcwd(original_directory, sizeof(original_directory)));
+  TEST_ASSERT_NOT_NULL(mkdtemp(test_directory));
+  TEST_ASSERT_GREATER_THAN_INT(
+      0, snprintf(cache_root, sizeof(cache_root), "%s/platform-cache", test_directory));
+  TEST_ASSERT_EQUAL_INT(0, chdir(test_directory));
+  ShroomClientPathsSetTestCacheRoot(cache_root);
+
+  TEST_ASSERT_TRUE(
+      ShroomChatCacheStoreMessage(SHROOM_CHAT_CACHE_LEGACY_PATH, &key, &message, kNow));
+  TEST_ASSERT_TRUE(ShroomChatCachePrepareDefaultPath(destination, sizeof(destination), kNow));
+  TEST_ASSERT_EQUAL_INT(-1, access(SHROOM_CHAT_CACHE_LEGACY_PATH, F_OK));
+  TEST_ASSERT_EQUAL_size_t(1u, ShroomChatCacheLoadContext(destination, &key, kNow, loaded, 1u));
+  TEST_ASSERT_EQUAL_STRING("migrated message", loaded[0].message);
+
+  TEST_ASSERT_EQUAL_INT(0, chdir(original_directory));
+  unlink(destination);
+  {
+    char* separator = strrchr(destination, '/');
+    TEST_ASSERT_NOT_NULL(separator);
+    *separator = '\0';
+    rmdir(destination);
+  }
+  rmdir(cache_root);
+  rmdir(test_directory);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_cache_bounds_history_to_newest_messages);
@@ -132,5 +170,6 @@ int main(void) {
   RUN_TEST(test_corrupt_and_oversized_cache_fail_closed);
   RUN_TEST(test_retention_discards_expired_messages_and_rejects_future_data);
   RUN_TEST(test_future_timestamp_validation_does_not_wrap);
+  RUN_TEST(test_default_path_migrates_valid_legacy_cache_out_of_working_directory);
   return UNITY_END();
 }
