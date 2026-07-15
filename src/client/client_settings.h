@@ -5,7 +5,7 @@
 
 #include "shared/config.h"
 
-#define CLIENT_SETTINGS_SCHEMA_VERSION 2
+#define CLIENT_SETTINGS_SCHEMA_VERSION 3
 
 typedef enum ClientPalettePreset {
   CLIENT_PALETTE_CLASSIC = 0,
@@ -54,6 +54,7 @@ typedef struct ClientSettings {
   bool show_ping_ms;
   bool menu_animations_enabled;
   bool death_cutscene_enabled;
+  bool account_features_enabled;
   float camera_zoom;
   int preferred_region_index;
   ClientPalettePreset palette_preset;

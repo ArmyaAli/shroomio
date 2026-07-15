@@ -15,6 +15,59 @@
 
 ShroomImGuiTestApp g_imgui_test_app;
 
+typedef struct ShroomImGuiAccountBackend {
+  int login_calls;
+  int register_calls;
+  int logout_calls;
+} ShroomImGuiAccountBackend;
+
+static ShroomImGuiAccountBackend g_account_backend;
+
+static void AccountRespond(ShroomClientHttpResponse* response, long status, const char* body) {
+  const size_t length = strlen(body);
+  response->status = status;
+  if (length >= response->body_capacity) {
+    snprintf(response->transport_error, sizeof(response->transport_error), "%s",
+             "Stub response overflow");
+    return;
+  }
+  memcpy(response->body, body, length + 1u);
+  response->body_length = length;
+}
+
+static bool AccountPerform(void* context, const ShroomClientHttpRequest* request,
+                           ShroomClientHttpResponse* response) {
+  ShroomImGuiAccountBackend* backend = context;
+
+  if (strstr(request->url, "/register") != NULL) {
+    ++backend->register_calls;
+    AccountRespond(response, 201,
+                   "{\"account\":{},\"session\":{\"access_token\":\"access\","
+                   "\"expires_in\":900,\"refresh_token\":\"refresh\","
+                   "\"refresh_expires_in\":3600}}");
+  } else if (strstr(request->url, "/login") != NULL) {
+    ++backend->login_calls;
+    AccountRespond(response, 200,
+                   "{\"access_token\":\"access\",\"expires_in\":900,"
+                   "\"refresh_token\":\"refresh\",\"refresh_expires_in\":3600}");
+  } else if (strstr(request->url, "/me") != NULL) {
+    AccountRespond(response, 200,
+                   "{\"player_id\":\"player-test\",\"username\":\"Account Player\","
+                   "\"email\":\"account@example.test\","
+                   "\"created_at\":\"2026-07-14T00:00:00Z\"}");
+  } else if (strstr(request->url, "/logout") != NULL) {
+    ++backend->logout_calls;
+    AccountRespond(response, 204, "");
+  } else {
+    AccountRespond(response, 404, "{\"error\":{\"code\":\"not_found\",\"message\":\"Missing\"}}");
+  }
+  return true;
+}
+
+int ShroomImGuiTestAccountLoginCalls(void) { return g_account_backend.login_calls; }
+int ShroomImGuiTestAccountRegisterCalls(void) { return g_account_backend.register_calls; }
+int ShroomImGuiTestAccountLogoutCalls(void) { return g_account_backend.logout_calls; }
+
 extern void ShroomRegisterImGuiTests(ImGuiTestEngine* engine);
 
 static void RegisterScreens(ShroomScreenManager* manager) {
@@ -39,6 +92,8 @@ static void ResetPersistentFiles(void) {
   unlink(SHROOM_CHAT_CACHE_DEFAULT_PATH);
   unlink(SHROOM_CHAT_CACHE_DEFAULT_PATH ".tmp");
   unlink("imgui.ini");
+  unlink("account_session.cfg");
+  unlink("account_session.cfg.tmp");
 }
 
 void ShroomImGuiTestAppReset(bool reset_files) {
@@ -46,12 +101,17 @@ void ShroomImGuiTestAppReset(bool reset_files) {
     ShroomScreenManagerShutdown(&g_imgui_test_app.screen_manager);
     g_imgui_test_app.screen_manager_initialized = false;
   }
+  if (g_imgui_test_app.account_flow_initialized) {
+    ShroomAccountFlowShutdown(&g_imgui_test_app.account_flow);
+    g_imgui_test_app.account_flow_initialized = false;
+  }
 
   if (reset_files) {
     ResetPersistentFiles();
   }
 
   memset(&g_imgui_test_app.game, 0, sizeof(g_imgui_test_app.game));
+  memset(&g_account_backend, 0, sizeof(g_account_backend));
   ClientSettingsSetDefaults(&g_imgui_test_app.game.settings);
   snprintf(g_imgui_test_app.game.settings.player_name,
            sizeof(g_imgui_test_app.game.settings.player_name), "%s", "Test Player");
@@ -60,6 +120,19 @@ void ShroomImGuiTestAppReset(bool reset_files) {
   g_imgui_test_app.game.selected_server_port = SHROOM_SERVER_PORT;
   g_imgui_test_app.game.selected_mode = SHROOM_SESSION_MODE_QUICK_PLAY;
   ShroomQuickMatchInit(&g_imgui_test_app.game.quick_match);
+  {
+    const ShroomClientRestConfig config = {.base_url = "https://account.example.test",
+                                           .session_path = "account_session.cfg",
+                                           .transport = AccountPerform,
+                                           .transport_context = &g_account_backend};
+    if (!ShroomClientRestInit(&g_imgui_test_app.account_rest, &config)) {
+      fprintf(stderr, "failed to initialize account REST test backend\n");
+      abort();
+    }
+  }
+  ShroomAccountFlowInit(&g_imgui_test_app.account_flow, &g_imgui_test_app.account_rest);
+  g_imgui_test_app.account_flow_initialized = true;
+  g_imgui_test_app.game.account_flow = &g_imgui_test_app.account_flow;
 
   ShroomScreenManagerInit(&g_imgui_test_app.screen_manager);
   g_imgui_test_app.screen_manager.user_data = &g_imgui_test_app.game;
@@ -143,6 +216,7 @@ int main(void) {
   }
 
   ShroomScreenManagerShutdown(&g_imgui_test_app.screen_manager);
+  ShroomAccountFlowShutdown(&g_imgui_test_app.account_flow);
   ShroomVoiceShutdown();
   ShroomClientAudioShutdown();
   ShroomImGui_Shutdown();

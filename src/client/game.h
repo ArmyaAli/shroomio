@@ -19,6 +19,8 @@
 #define SHROOM_CLIENT_GAMEPLAY_EVENT_CAPACITY 64u
 #define SHROOM_CLIENT_PROXIMITY_SPORE_DOT_BUDGET 96u
 
+typedef struct ShroomAccountFlow ShroomAccountFlow;
+
 static inline bool ShroomClientShouldSampleIndexedItem(size_t index, size_t total_count,
                                                        size_t budget) {
   size_t stride;
@@ -107,6 +109,7 @@ typedef struct GameplayEvent {
 typedef struct Game {
   Camera2D camera;
   ClientSettings settings;
+  ShroomAccountFlow* account_flow;
   ClientNetState net;
   ShroomWorldState world;
   ShroomPlayerState* local_player;
