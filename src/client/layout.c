@@ -28,17 +28,27 @@ ShroomLayoutRect ShroomLayoutCenteredRect(float width, float height) {
   };
 }
 
-void ShroomLayoutSetNextWindowBottomRight(float width, float height, float edge_margin) {
-  const float fitted_width =
-      ShroomLayoutFitMetric(width, g_layout_scale, (float)GetScreenWidth(), edge_margin);
-  const float fitted_height =
-      ShroomLayoutFitMetric(height, g_layout_scale, (float)GetScreenHeight(), edge_margin);
-  const float margin = ShroomLayoutMetric(edge_margin);
+ShroomLayoutRect ShroomLayoutBottomOverlayRect(float width, float height, float edge_margin,
+                                               float minimum_top,
+                                               ShroomLayoutHorizontalAnchor horizontal_anchor) {
+  const ShroomLayoutOverlayRect rect = ShroomLayoutBottomOverlayMetrics(
+      (float)GetScreenWidth(), (float)GetScreenHeight(), width, height, g_layout_scale, edge_margin,
+      minimum_top, horizontal_anchor);
 
-  ShroomImGui_SetNextWindowPos((float)GetScreenWidth() - fitted_width - margin,
-                               (float)GetScreenHeight() - fitted_height - margin,
-                               SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowSize(fitted_width, fitted_height, SHROOM_IMGUI_COND_ALWAYS);
+  return (ShroomLayoutRect){
+      .x = rect.x,
+      .y = rect.y,
+      .width = rect.width,
+      .height = rect.height,
+  };
+}
+
+void ShroomLayoutSetNextWindowBottomRight(float width, float height, float edge_margin) {
+  const ShroomLayoutRect rect =
+      ShroomLayoutBottomOverlayRect(width, height, edge_margin, 0.0f, SHROOM_LAYOUT_ANCHOR_RIGHT);
+
+  ShroomImGui_SetNextWindowPos(rect.x, rect.y, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowSize(rect.width, rect.height, SHROOM_IMGUI_COND_ALWAYS);
 }
 
 bool ShroomLayoutBeginCenteredPanel(const char* title, float width, float height, float alpha,

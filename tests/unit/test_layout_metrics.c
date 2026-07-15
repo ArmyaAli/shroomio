@@ -88,6 +88,52 @@ void test_help_card_height_accounts_for_wrapped_rows_and_scale(void) {
                            ShroomLayoutWrappedCardHeight(200.0f, 7, 1.6f));
 }
 
+void test_bottom_center_overlay_geometry_scales_at_supported_endpoints(void) {
+  const float scales[] = {0.8f, 1.0f, 1.6f};
+  const float expected_widths[] = {312.0f, 390.0f, 624.0f};
+  const float expected_heights[] = {123.2f, 154.0f, 246.4f};
+
+  for (size_t index = 0; index < sizeof(scales) / sizeof(scales[0]); ++index) {
+    const ShroomLayoutOverlayRect rect = ShroomLayoutBottomOverlayMetrics(
+        1280.0f, 720.0f, 390.0f, 154.0f, scales[index], 16.0f, 0.0f, SHROOM_LAYOUT_ANCHOR_CENTER);
+
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, expected_widths[index], rect.width);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, expected_heights[index], rect.height);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, (1280.0f - rect.width) * 0.5f, rect.x);
+    TEST_ASSERT_TRUE(rect.y >= 0.0f);
+    TEST_ASSERT_TRUE(rect.y + rect.height <= 720.0f);
+  }
+}
+
+void test_bottom_right_overlay_reserves_top_and_clamps_to_viewport(void) {
+  ShroomLayoutOverlayRect rect = ShroomLayoutBottomOverlayMetrics(
+      1280.0f, 720.0f, 390.0f, 330.0f, 1.6f, 16.0f, 76.0f, SHROOM_LAYOUT_ANCHOR_RIGHT);
+
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 630.4f, rect.x);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 166.4f, rect.y);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 624.0f, rect.width);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 528.0f, rect.height);
+
+  rect = ShroomLayoutBottomOverlayMetrics(640.0f, 360.0f, 390.0f, 330.0f, 1.6f, 16.0f, 76.0f,
+                                          SHROOM_LAYOUT_ANCHOR_RIGHT);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 25.6f, rect.x);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 121.6f, rect.y);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 588.8f, rect.width);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 212.8f, rect.height);
+}
+
+void test_overlay_geometry_sanitizes_invalid_and_tiny_viewports(void) {
+  const ShroomLayoutOverlayRect rect = ShroomLayoutBottomOverlayMetrics(
+      NAN, 20.0f, NAN, 100.0f, NAN, 16.0f, 76.0f, SHROOM_LAYOUT_ANCHOR_LEFT);
+
+  TEST_ASSERT_TRUE(isfinite(rect.x));
+  TEST_ASSERT_TRUE(isfinite(rect.y));
+  TEST_ASSERT_TRUE(isfinite(rect.width));
+  TEST_ASSERT_TRUE(isfinite(rect.height));
+  TEST_ASSERT_TRUE(rect.width >= 0.0f);
+  TEST_ASSERT_TRUE(rect.height >= 0.0f);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_scale_clamps_to_documented_endpoints);
@@ -98,5 +144,8 @@ int main(void) {
   RUN_TEST(test_help_rows_scale_and_collapse_at_supported_endpoints);
   RUN_TEST(test_help_content_reserves_scaled_back_action);
   RUN_TEST(test_help_card_height_accounts_for_wrapped_rows_and_scale);
+  RUN_TEST(test_bottom_center_overlay_geometry_scales_at_supported_endpoints);
+  RUN_TEST(test_bottom_right_overlay_reserves_top_and_clamps_to_viewport);
+  RUN_TEST(test_overlay_geometry_sanitizes_invalid_and_tiny_viewports);
   return UNITY_END();
 }

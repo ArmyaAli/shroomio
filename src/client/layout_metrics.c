@@ -67,3 +67,32 @@ float ShroomLayoutWrappedCardHeight(float text_height, int item_count, float sca
 
   return content + ShroomLayoutScaleMetric(60.0f + ((float)gaps * 8.0f), scale);
 }
+
+ShroomLayoutOverlayRect ShroomLayoutBottomOverlayMetrics(
+    float viewport_width, float viewport_height, float base_width, float base_height, float scale,
+    float edge_margin, float minimum_top, ShroomLayoutHorizontalAnchor horizontal_anchor) {
+  const float width = isfinite(viewport_width) ? fmaxf(1.0f, viewport_width) : 1.0f;
+  const float height = isfinite(viewport_height) ? fmaxf(1.0f, viewport_height) : 1.0f;
+  const float margin = fminf(ShroomLayoutScaleMetric(edge_margin, scale),
+                             fmaxf(0.0f, fminf(width, height) * 0.5f - 0.5f));
+  const float top = fminf(fmaxf(margin, ShroomLayoutScaleMetric(minimum_top, scale)),
+                          fmaxf(margin, height - margin - 1.0f));
+  const float available_width = fmaxf(1.0f, width - (2.0f * margin));
+  const float available_height = fmaxf(1.0f, height - top - margin);
+  const float fitted_width = fminf(ShroomLayoutScaleMetric(base_width, scale), available_width);
+  const float fitted_height = fminf(ShroomLayoutScaleMetric(base_height, scale), available_height);
+  float x = margin;
+
+  if (horizontal_anchor == SHROOM_LAYOUT_ANCHOR_CENTER) {
+    x = (width - fitted_width) * 0.5f;
+  } else if (horizontal_anchor == SHROOM_LAYOUT_ANCHOR_RIGHT) {
+    x = width - margin - fitted_width;
+  }
+
+  return (ShroomLayoutOverlayRect){
+      .x = fmaxf(margin, x),
+      .y = fmaxf(top, height - margin - fitted_height),
+      .width = fitted_width,
+      .height = fitted_height,
+  };
+}
