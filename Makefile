@@ -66,6 +66,7 @@ DIRECTORY_QUERY_CLIENT_BIN := $(BUILD_DIR)/tests/directory-query-client
 SERVER_DISCOVERY_CLIENT_BIN := $(BUILD_DIR)/tests/server-discovery-client
 QUICK_MATCH_CLIENT_BIN := $(BUILD_DIR)/tests/quick-match-client
 SNAPSHOT_RATE_PROBE_BIN := $(BUILD_DIR)/tests/snapshot-rate-probe
+GRACEFUL_SHUTDOWN_CLIENT_BIN := $(BUILD_DIR)/tests/graceful-shutdown-client
 INPUT_FLOOD_PORT ?=
 NETWORK_BENCH_CLIENTS ?= 1,64,256
 NETWORK_BENCH_DURATION_MS ?= 1500
@@ -410,7 +411,7 @@ IMGUI_TEST_ENGINE_OBJECTS := $(addprefix $(TEST_BUILD_DIR)/imgui/engine/,$(addsu
 # =============================================================================
 .PHONY: all client-linux client-windows client-macos server-linux server-windows server-macos servers-all
 .PHONY: linux windows macos server run run-server run-windows help
-.PHONY: benchmark network-benchmark network-benchmark-test input-flood-test server-health-test rest-integration-test
+.PHONY: benchmark network-benchmark network-benchmark-test input-flood-test server-health-test rest-integration-test graceful-shutdown-integration-test
 
 all: client-linux
 
@@ -754,6 +755,31 @@ snapshot-rate-integration-test: $(SERVER_LINUX_BIN) $(SNAPSHOT_RATE_PROBE_BIN)
 		kill "$$server_pid"; wait "$$server_pid" >/dev/null 2>&1 || true; server_pid=""; \
 	done
 
+graceful-shutdown-integration-test: $(SERVER_LINUX_BIN) $(GRACEFUL_SHUTDOWN_CLIENT_BIN)
+	@command -v python3 >/dev/null 2>&1 || { echo "python3 is required"; exit 1; }
+	@set -eu; \
+	port=$$((40000 + ($$$$ * 1103) % 20000)); tmp=/tmp/shroomio-shutdown-$$$$; \
+	mkdir -p "$$tmp"; server_pid=""; \
+	cleanup() { \
+		if [ -n "$$server_pid" ]; then kill "$$server_pid" >/dev/null 2>&1 || true; wait "$$server_pid" >/dev/null 2>&1 || true; fi; \
+		rm -rf "$$tmp"; \
+	}; \
+	trap cleanup EXIT INT TERM; \
+	./$(SERVER_LINUX_BIN) --bind 127.0.0.1 --port "$$port" --database "$$tmp/server.db" \
+		>"$$tmp/server.log" 2>&1 & server_pid=$$!; \
+	ready=0; for attempt in $$(seq 1 200); do \
+		if grep -q "server listening on 127.0.0.1:$$port/udp" "$$tmp/server.log"; then ready=1; break; fi; \
+		if ! kill -0 "$$server_pid" >/dev/null 2>&1; then break; fi; sleep 0.01; \
+	done; \
+	if [ $$ready -ne 1 ]; then echo "Graceful-shutdown server failed to start"; cat "$$tmp/server.log"; exit 1; fi; \
+	./$(GRACEFUL_SHUTDOWN_CLIENT_BIN) "$$port"; \
+	kill -TERM "$$server_pid"; wait "$$server_pid"; server_pid=""; \
+	grep -q "persisted interrupted round .* participants=1" "$$tmp/server.log"; \
+	./$(SERVER_LINUX_BIN) --smoke-test --bind 127.0.0.1 --port "$$port" \
+		--database "$$tmp/server.db" >>"$$tmp/server.log" 2>&1; \
+	python3 -c 'import sqlite3,sys; db=sqlite3.connect(sys.argv[1]); assert db.execute("SELECT count(*) FROM sessions WHERE status=\"aborted\"").fetchone()[0] == 1; assert db.execute("SELECT count(*) FROM session_participants").fetchone()[0] == 1; assert db.execute("SELECT count(*) FROM match_events WHERE event_type=\"match_interrupted\"").fetchone()[0] == 1; assert db.execute("SELECT count(*) FROM match_events WHERE event_type=\"participant_summary\"").fetchone()[0] == 1; assert db.execute("SELECT total_games_played FROM player_stats").fetchone()[0] == 1; assert db.execute("SELECT total_sessions FROM players").fetchone()[0] == 1' "$$tmp/server.db"; \
+	echo "Graceful shutdown persistence integration passed."
+
 run-windows:
 	@command -v $(WINDOWS_CXX) >/dev/null 2>&1 || (printf '%s\n' 'Error: $(WINDOWS_CXX) not found. Install mingw-w64:' '  Ubuntu/Debian: sudo apt install mingw-w64' '  Fedora:       sudo dnf install mingw64-gcc-c++' '  Arch:         sudo pacman -S mingw-w64-gcc' && exit 1)
 	@test -f $(VCPKG_WINDOWS_STAMP) || (printf '%s\n' 'Error: Windows vcpkg dependencies not installed.' 'Run: make vcpkg-install-windows' && exit 1)
@@ -826,6 +852,10 @@ $(SNAPSHOT_RATE_PROBE_BIN): tools/snapshot_rate_probe.c $(SHARED_HEADERS) | $(VC
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) $< $(SHARED_SRC_DIR)/snapshot_replication.c \
 		-o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet -lm
+
+$(GRACEFUL_SHUTDOWN_CLIENT_BIN): tools/graceful_shutdown_client.c $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) $< -o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet
 
 # Client object compilation
 $(LINUX_BUILD_DIR)/client/%.o: $(CLIENT_SRC_DIR)/%.c $(CLIENT_SRC_DIR)/game.h $(CLIENT_SRC_DIR)/net.h $(SHARED_HEADERS) | $(VCPKG_LINUX_STAMP)
@@ -978,7 +1008,7 @@ $(UNITY_DIR):
 # =============================================================================
 .PHONY: test unit-test imgui-test directory-integration-test snapshot-rate-integration-test valgrind-test valgrind-unit-test valgrind-server-smoke valgrind-imgui-test test-coverage test-clean
 
-test: unit-test imgui-test input-flood-test directory-integration-test snapshot-rate-integration-test server-health-test rest-integration-test
+test: unit-test imgui-test input-flood-test directory-integration-test snapshot-rate-integration-test server-health-test rest-integration-test graceful-shutdown-integration-test
 
 unit-test: $(TEST_BINS)
 	@echo "Running unit tests..."

@@ -29,6 +29,7 @@ typedef struct ShroomCompletedMatch {
   uint32_t winner_runtime_player_id;
   const ShroomPersistedParticipant* participants;
   size_t participant_count;
+  bool interrupted;
 } ShroomCompletedMatch;
 
 typedef enum ShroomMatchPersistenceResult {

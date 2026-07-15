@@ -91,7 +91,8 @@ CREATE TABLE IF NOT EXISTS match_events (
         'player_reach_mass',
         'game_tick',
         'participant_summary',
-        'match_completed'
+        'match_completed',
+        'match_interrupted'
     )),
     event_timestamp TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     tick_number INTEGER,

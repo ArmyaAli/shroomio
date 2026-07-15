@@ -70,7 +70,7 @@ static const char* const DATABASE_SCHEMA[] = {
     "session_id INTEGER NOT NULL,"
     "event_type TEXT NOT NULL CHECK (event_type IN ('player_spawn', 'player_death', "
     "'player_consume_player', 'player_consume_spore', 'player_reach_mass', 'game_tick', "
-    "'participant_summary', 'match_completed')),"
+    "'participant_summary', 'match_completed', 'match_interrupted')),"
     "event_timestamp TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),"
     "tick_number INTEGER,"
     "actor_player_id INTEGER,"
