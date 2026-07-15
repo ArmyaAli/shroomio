@@ -236,6 +236,11 @@ const char* ShroomTestGetDiagnosticsBandwidthText(void);
 const char* ShroomTestGetDiagnosticsTransportText(void);
 const char* ShroomTestGetDiagnosticsCadenceText(void);
 const char* ShroomTestGetDiagnosticsActionsText(void);
+bool ShroomTestDeathInstructionVisible(void);
+bool ShroomTestSpectatorTargetVisible(void);
+bool ShroomTestSpectatorLobbyControlsVisible(void);
+bool ShroomTestInspectPromptTextVisible(void);
+const char* ShroomTestInspectPromptText(void);
 #endif
 
 /* Leaderboard and ranking functions */

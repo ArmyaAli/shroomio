@@ -2401,6 +2401,91 @@ static void Test_DeathCutscenePlayAgainResumesOnlineMatch(ImGuiTestContext* ctx)
   IM_CHECK_EQ(g_imgui_test_app.game.local_player, original_player);
 }
 
+static void Test_DeathActionsFitAtUiScaleEndpoints(ImGuiTestContext* ctx) {
+  const int scales[] = {80, 100, 160};
+
+  for (size_t index = 0; index < sizeof(scales) / sizeof(scales[0]); ++index) {
+    SetupOfflineGame();
+    g_imgui_test_app.game.settings.ui_scale_percent = scales[index];
+    g_imgui_test_app.game.death_cutscene_duration = 1.0f;
+    g_imgui_test_app.game.death_cutscene_timer = 1.0f;
+    snprintf(g_imgui_test_app.game.death_cutscene_killer_name,
+             sizeof(g_imgui_test_app.game.death_cutscene_killer_name),
+             "ABCDEFGHIJKLMNOPQRSTUVWXYZ12345");
+    ShroomTeCtx_Yield(ctx, 3);
+    ShroomTeCtx_SetRef(ctx, "Death Cutscene Actions");
+
+    IM_CHECK(ShroomTeImGui_WindowFitsViewport("Death Cutscene Actions"));
+    IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Play Again"));
+    IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Spectate"));
+    IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Return To Menu"));
+    IM_CHECK(ShroomTestDeathInstructionVisible());
+  }
+}
+
+static void Test_SpectatorControlsFitAtUiScaleEndpoints(ImGuiTestContext* ctx) {
+  const int scales[] = {80, 100, 160};
+  const char* maximum_name = "ABCDEFGHIJKLMNOPQRSTUVWXYZ12345";
+
+  for (size_t scale_index = 0; scale_index < sizeof(scales) / sizeof(scales[0]); ++scale_index) {
+    ShroomPlayerState* target;
+
+    SetupOfflineGame();
+    g_imgui_test_app.game.settings.ui_scale_percent = scales[scale_index];
+    g_imgui_test_app.game.active_mode = SHROOM_SESSION_MODE_LOBBY_PLAY;
+    g_imgui_test_app.game.net.lobby_id = 1u;
+    g_imgui_test_app.game.net.lobby_count = 2u;
+    g_imgui_test_app.game.net.lobby_list[0].lobby_id = 1u;
+    g_imgui_test_app.game.net.lobby_list[1].lobby_id = 2u;
+    snprintf(g_imgui_test_app.game.net.lobby_list[0].name,
+             sizeof(g_imgui_test_app.game.net.lobby_list[0].name),
+             "ABCDEFGHIJKLMNOPQRSTUVWX1234567");
+    snprintf(g_imgui_test_app.game.net.lobby_list[1].name,
+             sizeof(g_imgui_test_app.game.net.lobby_list[1].name), "Next Lobby");
+
+    target = &g_imgui_test_app.game.world.players[1];
+    snprintf(target->name, sizeof(target->name), "%s", maximum_name);
+    target->mass = 9999.0f;
+    target->alive = true;
+    GameEnterSpectatorMode(&g_imgui_test_app.game);
+    g_imgui_test_app.game.spectated_entity_id = target->entity_id;
+    ShroomTeCtx_Yield(ctx, 3);
+    ShroomTeCtx_SetRef(ctx, "Spectator");
+
+    IM_CHECK(ShroomTeImGui_WindowFitsViewport("Spectator"));
+    IM_CHECK(ShroomTestSpectatorLobbyControlsVisible());
+    IM_CHECK(ShroomTestSpectatorTargetVisible());
+  }
+}
+
+static void Test_MaximumLengthInspectPromptFitsAtUiScaleEndpoints(ImGuiTestContext* ctx) {
+  const int scales[] = {80, 100, 160};
+  const char* maximum_name = "ABCDEFGHIJKLMNOPQRSTUVWXYZ12345";
+  char prompt[96];
+
+  snprintf(prompt, sizeof(prompt), "Hold I to inspect %s", maximum_name);
+  for (size_t scale_index = 0; scale_index < sizeof(scales) / sizeof(scales[0]); ++scale_index) {
+    ShroomPlayerState* target;
+
+    SetupOfflineGame();
+    g_imgui_test_app.game.settings.ui_scale_percent = scales[scale_index];
+    for (size_t player_index = 1u; player_index < g_imgui_test_app.game.world.player_count;
+         ++player_index) {
+      g_imgui_test_app.game.world.players[player_index].position = (ShroomVec2){4000.0f, 4000.0f};
+    }
+    target = &g_imgui_test_app.game.world.players[1];
+    target->position = g_imgui_test_app.game.local_player->position;
+    target->position.x += 80.0f;
+    snprintf(target->name, sizeof(target->name), "%s", maximum_name);
+    ShroomTeCtx_Yield(ctx, 3);
+    ShroomTeCtx_SetRef(ctx, "Inspect Prompt");
+
+    IM_CHECK(ShroomTeImGui_WindowFitsViewport("Inspect Prompt"));
+    IM_CHECK_STR_EQ(ShroomTestInspectPromptText(), prompt);
+    IM_CHECK(ShroomTestInspectPromptTextVisible());
+  }
+}
+
 static void Test_PlayAgainResetsTransientMatchPresentation(ImGuiTestContext* ctx) {
   const ShroomVec2 opening_local_position = {120.0f, 140.0f};
   const ShroomVec2 opening_opponent_position = {1800.0f, 1800.0f};
@@ -3680,6 +3765,12 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_OnlineResultsWithoutSessionRejoinsLobby);
   ShroomTeEngine_RegisterTest(engine, "screens", "death_cutscene_play_again_resumes_online_match",
                               Test_DeathCutscenePlayAgainResumesOnlineMatch);
+  ShroomTeEngine_RegisterTest(engine, "screens", "death_actions_fit_ui_scale_endpoints",
+                              Test_DeathActionsFitAtUiScaleEndpoints);
+  ShroomTeEngine_RegisterTest(engine, "screens", "spectator_controls_fit_ui_scale_endpoints",
+                              Test_SpectatorControlsFitAtUiScaleEndpoints);
+  ShroomTeEngine_RegisterTest(engine, "screens", "inspect_prompt_fits_ui_scale_endpoints",
+                              Test_MaximumLengthInspectPromptFitsAtUiScaleEndpoints);
   ShroomTeEngine_RegisterTest(engine, "screens", "play_again_resets_transient_presentation",
                               Test_PlayAgainResetsTransientMatchPresentation);
   ShroomTeEngine_RegisterTest(engine, "screens", "online_prediction_moves_and_reconciles",

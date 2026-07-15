@@ -3,6 +3,8 @@
 
 #include <stdbool.h>
 
+#include "layout_metrics.h"
+
 typedef struct ShroomLayoutRect {
   float x;
   float y;
@@ -14,6 +16,9 @@ void ShroomLayoutSetScale(float scale);
 float ShroomLayoutGetScale(void);
 float ShroomLayoutMetric(float base_value);
 ShroomLayoutRect ShroomLayoutCenteredRect(float width, float height);
+ShroomLayoutRect ShroomLayoutBottomOverlayRect(float width, float height, float edge_margin,
+                                               float minimum_top,
+                                               ShroomLayoutHorizontalAnchor horizontal_anchor);
 void ShroomLayoutSetNextWindowBottomRight(float width, float height, float edge_margin);
 bool ShroomLayoutBeginCenteredPanel(const char* title, float width, float height, float alpha,
                                     int flags);

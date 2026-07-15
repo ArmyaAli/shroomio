@@ -37,6 +37,11 @@ static bool g_test_movement_input_enabled;
 static ShroomVec2 g_test_movement_input;
 static bool g_test_push_to_talk_enabled;
 static bool g_test_push_to_talk;
+static bool g_test_death_instruction_visible;
+static bool g_test_spectator_target_visible;
+static bool g_test_spectator_lobby_controls_visible;
+static bool g_test_inspect_prompt_text_visible;
+static char g_test_inspect_prompt_text[96];
 
 void GameTestSetMovementInput(ShroomVec2 direction) {
   g_test_movement_input = direction;
@@ -47,6 +52,18 @@ void GameTestSetPushToTalk(bool enabled, bool held) {
   g_test_push_to_talk_enabled = enabled;
   g_test_push_to_talk = held;
 }
+
+bool ShroomTestDeathInstructionVisible(void) { return g_test_death_instruction_visible; }
+
+bool ShroomTestSpectatorTargetVisible(void) { return g_test_spectator_target_visible; }
+
+bool ShroomTestSpectatorLobbyControlsVisible(void) {
+  return g_test_spectator_lobby_controls_visible;
+}
+
+bool ShroomTestInspectPromptTextVisible(void) { return g_test_inspect_prompt_text_visible; }
+
+const char* ShroomTestInspectPromptText(void) { return g_test_inspect_prompt_text; }
 #endif
 
 static const char* GetPlayerDisplayName(const Game* game, const ShroomPlayerState* player);
@@ -872,12 +889,17 @@ static void UpdateDeathCutscene(Game* game, float delta_time) {
 
 static void DrawDeathCutscene(Game* game) {
   const float duration = game->death_cutscene_duration;
+  ShroomLayoutRect action_panel;
   float progress;
   float squash;
   Vector2 center;
   Color vignette = (Color){42, 10, 24, 255};
   char killer_text[96];
   char stats_text[128];
+
+#ifdef TEST_MODE
+  g_test_death_instruction_visible = false;
+#endif
 
   if (!IsDeathCutsceneOpen(game) || (duration <= 0.0f)) {
     return;
@@ -921,25 +943,35 @@ static void DrawDeathCutscene(Game* game) {
            (int)(center.y + 188.0f), 18, Fade(RAYWHITE, 0.86f));
 
   if (progress >= 1.0f) {
-    ShroomImGui_SetNextWindowPos((game->screen_width - 360.0f) * 0.5f, center.y + 226.0f,
-                                 SHROOM_IMGUI_COND_ALWAYS);
-    ShroomImGui_SetNextWindowSize(360.0f, 126.0f, SHROOM_IMGUI_COND_ALWAYS);
+    action_panel =
+        ShroomLayoutBottomOverlayRect(390.0f, 154.0f, 16.0f, 0.0f, SHROOM_LAYOUT_ANCHOR_CENTER);
+    ShroomImGui_SetNextWindowPos(action_panel.x, action_panel.y, SHROOM_IMGUI_COND_ALWAYS);
+    ShroomImGui_SetNextWindowSize(action_panel.width, action_panel.height,
+                                  SHROOM_IMGUI_COND_ALWAYS);
     ShroomImGui_SetNextWindowBgAlpha(0.0f);
     if (ShroomImGui_Begin("Death Cutscene Actions", NULL,
                           SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
                               SHROOM_IMGUI_WINDOW_NO_MOVE | SHROOM_IMGUI_WINDOW_NO_COLLAPSE |
                               SHROOM_IMGUI_WINDOW_NO_SAVED_SETTINGS)) {
-      if (ShroomImGui_Button("Play Again", 160.0f, 36.0f)) {
+      const ShroomLayoutResponsiveRow action_row = ShroomLayoutResponsiveRowMetrics(
+          ShroomImGui_GetContentRegionAvailWidth(), ShroomLayoutMetric(140.0f), 2,
+          ShroomImGui_GetItemInnerSpacingX());
+      if (ShroomImGui_Button("Play Again", action_row.item_width, ShroomLayoutMetric(36.0f))) {
         game->play_again_requested = true;
       }
-      ShroomImGui_SameLine();
-      if (ShroomImGui_Button("Spectate", 170.0f, 36.0f)) {
+      if (action_row.columns > 1) {
+        ShroomImGui_SameLine();
+      }
+      if (ShroomImGui_Button("Spectate", action_row.item_width, ShroomLayoutMetric(36.0f))) {
         GameEnterSpectatorMode(game);
       }
-      if (ShroomImGui_Button("Return To Menu", 170.0f, 32.0f)) {
+      if (ShroomLayoutButtonFullWidth("Return To Menu", 32.0f)) {
         game->return_to_menu_requested = true;
       }
-      ShroomImGui_Text("Esc skips the animation. Spectate follows another colony.");
+      ShroomImGui_TextWrapped("Esc skips the animation. Spectate follows another colony.");
+#ifdef TEST_MODE
+      g_test_death_instruction_visible = ShroomImGui_IsLastItemVisible();
+#endif
     }
     ShroomImGui_End();
   }
@@ -1631,7 +1663,14 @@ static void UpdateInspectOverlay(Game* game, float delta_time) {
 
 static void DrawInspectPrompt(const Game* game) {
   const ShroomPlayerState* target_player;
+  ShroomLayoutRect prompt;
+  char prompt_text[96];
   float pulse;
+
+#ifdef TEST_MODE
+  g_test_inspect_prompt_text_visible = false;
+  g_test_inspect_prompt_text[0] = '\0';
+#endif
 
   if ((game == NULL) || game->leaderboard_overlay_open || game->menu_overlay_open ||
       game->leave_confirmation_open || IsConnectionOverlayOpen(game)) {
@@ -1645,9 +1684,12 @@ static void DrawInspectPrompt(const Game* game) {
     return;
   }
 
-  ShroomImGui_SetNextWindowPos((game->screen_width - 360.0f) * 0.5f, game->screen_height - 92.0f,
-                               SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowSize(360.0f, 44.0f, SHROOM_IMGUI_COND_ALWAYS);
+  snprintf(prompt_text, sizeof(prompt_text), "Hold I to inspect %s",
+           GetPlayerDisplayName(game, target_player));
+
+  prompt = ShroomLayoutBottomOverlayRect(520.0f, 72.0f, 16.0f, 0.0f, SHROOM_LAYOUT_ANCHOR_CENTER);
+  ShroomImGui_SetNextWindowPos(prompt.x, prompt.y, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowSize(prompt.width, prompt.height, SHROOM_IMGUI_COND_ALWAYS);
   ShroomImGui_SetNextWindowBgAlpha(0.46f + pulse * 0.12f);
   if (!ShroomImGui_Begin("Inspect Prompt", NULL,
                          SHROOM_IMGUI_WINDOW_NO_TITLE_BAR | SHROOM_IMGUI_WINDOW_NO_RESIZE |
@@ -1658,11 +1700,12 @@ static void DrawInspectPrompt(const Game* game) {
     return;
   }
 
-  ShroomImGui_TextColored(
-      ToImGuiColor(Fade(SKYBLUE, pulse + 0.2f)),
-      TextFormat("Hold I to inspect %s", GetPlayerDisplayName(game, target_player)));
+  ShroomImGui_TextColoredWrapped(ToImGuiColor(Fade(SKYBLUE, pulse + 0.2f)), prompt_text);
+#ifdef TEST_MODE
+  g_test_inspect_prompt_text_visible = ShroomImGui_IsLastItemVisible();
+  snprintf(g_test_inspect_prompt_text, sizeof(g_test_inspect_prompt_text), "%s", prompt_text);
+#endif
   if (game->inspect_target_count > 1) {
-    ShroomImGui_SameLine();
     ShroomImGui_Text(TextFormat("%d/%d  Scroll Wheel", game->selected_inspect_index + 1,
                                 game->inspect_target_count));
   }
@@ -2557,8 +2600,7 @@ static void DrawInspectOverlay(Game* game) {
   const float progress = game != NULL ? game->inspect_overlay_progress : 0.0f;
   const float eased_progress = progress * progress * (3.0f - (2.0f * progress));
   const float scale = 0.96f + (0.04f * eased_progress);
-  const float width = 328.0f * scale;
-  const float height = 272.0f * scale;
+  ShroomLayoutRect panel;
   float pulse;
 
   if ((game == NULL) || (progress <= 0.01f)) {
@@ -2577,9 +2619,9 @@ static void DrawInspectOverlay(Game* game) {
   zone = ShroomGetZoneAtPosition(&game->world, selected_player->position);
   rank = GetPlayerRank(game, selected_player);
 
-  ShroomImGui_SetNextWindowPos((game->screen_width - width) * 0.5f,
-                               (game->screen_height - height) * 0.5f, SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowSize(width, height, SHROOM_IMGUI_COND_ALWAYS);
+  panel = ShroomLayoutCenteredRect(360.0f * scale, 300.0f * scale);
+  ShroomImGui_SetNextWindowPos(panel.x, panel.y, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowSize(panel.width, panel.height, SHROOM_IMGUI_COND_ALWAYS);
   ShroomImGui_SetNextWindowBgAlpha(0.24f + (0.46f * eased_progress));
   if (!ShroomImGui_Begin(
           "Player Intel", NULL,
@@ -2590,7 +2632,7 @@ static void DrawInspectOverlay(Game* game) {
     return;
   }
 
-  ShroomImGui_Text(GetPlayerDisplayName(game, selected_player));
+  ShroomImGui_TextWrapped(GetPlayerDisplayName(game, selected_player));
   ShroomImGui_TextColored(ToImGuiColor(Fade(GetThreatOutlineColor(threat_state), pulse)),
                           GetThreatLabel(threat_state));
   if (game->inspect_target_count > 1) {
@@ -3690,30 +3732,20 @@ static void DrawSpectatorOverlay(Game* game, const LeaderboardEntry* leaderboard
                                  size_t leaderboard_count) {
   const ShroomPlayerState* target;
   const ShroomLobbyEntry* current_lobby;
+  ShroomLayoutRect panel;
   int target_rank = 0;
   int current_lobby_index = -1;
-  float panel_width;
-  float panel_height;
-  float panel_x;
-  float panel_y;
+
+#ifdef TEST_MODE
+  g_test_spectator_target_visible = false;
+  g_test_spectator_lobby_controls_visible = false;
+#endif
 
   if ((game == NULL) || !game->spectator_mode) {
     return;
   }
 
-  panel_width = game->screen_width < 760 ? (float)game->screen_width - 32.0f : 330.0f;
-  if (panel_width < 260.0f) {
-    panel_width = 260.0f;
-  }
-  panel_height = game->screen_height < 560 ? 206.0f : 238.0f;
-  panel_x = (float)game->screen_width - panel_width - 18.0f;
-  if (panel_x < 16.0f) {
-    panel_x = 16.0f;
-  }
-  panel_y = (float)game->screen_height - panel_height - 18.0f;
-  if (panel_y < 96.0f) {
-    panel_y = 96.0f;
-  }
+  panel = ShroomLayoutBottomOverlayRect(390.0f, 330.0f, 16.0f, 76.0f, SHROOM_LAYOUT_ANCHOR_RIGHT);
 
   target = FindSpectatorTarget(game);
   if (target != NULL) {
@@ -3721,8 +3753,8 @@ static void DrawSpectatorOverlay(Game* game, const LeaderboardEntry* leaderboard
   }
   current_lobby = FindCurrentLobbyEntry(game, &current_lobby_index);
 
-  ShroomImGui_SetNextWindowPos(panel_x, panel_y, SHROOM_IMGUI_COND_ALWAYS);
-  ShroomImGui_SetNextWindowSize(panel_width, panel_height, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowPos(panel.x, panel.y, SHROOM_IMGUI_COND_ALWAYS);
+  ShroomImGui_SetNextWindowSize(panel.width, panel.height, SHROOM_IMGUI_COND_ALWAYS);
   ShroomImGui_SetNextWindowBgAlpha(0.64f);
   if (!ShroomImGui_Begin("Spectator", NULL,
                          SHROOM_IMGUI_WINDOW_NO_RESIZE | SHROOM_IMGUI_WINDOW_NO_MOVE |
@@ -3733,7 +3765,7 @@ static void DrawSpectatorOverlay(Game* game, const LeaderboardEntry* leaderboard
   }
 
   if ((current_lobby != NULL) || (game->net.lobby_name[0] != '\0')) {
-    ShroomImGui_Text(
+    ShroomImGui_TextWrapped(
         TextFormat("Lobby %s", current_lobby != NULL ? current_lobby->name : game->net.lobby_name));
   } else {
     ShroomImGui_Text("Local Spectator");
@@ -3742,22 +3774,40 @@ static void DrawSpectatorOverlay(Game* game, const LeaderboardEntry* leaderboard
   ShroomImGui_TextWrapped(
       "Tab cycles players. F toggles follow/free. WASD/arrows pan free camera.");
   if (IsOnlineMode(game->active_mode) && (game->net.lobby_count > 1u)) {
-    if (ShroomImGui_Button("Prev Lobby", 96.0f, 24.0f)) {
+    const ShroomLayoutResponsiveRow lobby_row = ShroomLayoutResponsiveRowMetrics(
+        ShroomImGui_GetContentRegionAvailWidth(), ShroomLayoutMetric(96.0f), 2,
+        ShroomImGui_GetItemInnerSpacingX());
+#ifdef TEST_MODE
+    bool previous_visible;
+    bool next_visible;
+#endif
+    if (ShroomImGui_Button("Prev Lobby", lobby_row.item_width, ShroomLayoutMetric(24.0f))) {
       GameSwitchSpectatorLobby(game, -1);
     }
-    ShroomImGui_SameLine();
-    if (ShroomImGui_Button("Next Lobby", 96.0f, 24.0f)) {
+#ifdef TEST_MODE
+    previous_visible = ShroomImGui_IsLastItemVisible();
+#endif
+    if (lobby_row.columns > 1) {
+      ShroomImGui_SameLine();
+    }
+    if (ShroomImGui_Button("Next Lobby", lobby_row.item_width, ShroomLayoutMetric(24.0f))) {
       GameSwitchSpectatorLobby(game, 1);
     }
-    ShroomImGui_SameLine();
+#ifdef TEST_MODE
+    next_visible = ShroomImGui_IsLastItemVisible();
+#endif
     ShroomImGui_Text(TextFormat("%d/%u", current_lobby_index >= 0 ? current_lobby_index + 1 : 0,
                                 game->net.lobby_count));
+#ifdef TEST_MODE
+    g_test_spectator_lobby_controls_visible =
+        previous_visible && next_visible && ShroomImGui_IsLastItemVisible();
+#endif
   }
   ShroomImGui_Separator();
   if (target != NULL) {
-    ShroomImGui_TextColored(ToImGuiColor((Color){190, 235, 150, 255}),
-                            TextFormat("Watching > %s", GetPlayerDisplayName(game, target)));
-    ShroomImGui_Text(
+    ShroomImGui_TextColoredWrapped(ToImGuiColor((Color){190, 235, 150, 255}),
+                                   TextFormat("Watching > %s", GetPlayerDisplayName(game, target)));
+    ShroomImGui_TextWrapped(
         TextFormat("Mass %.0f  Rank %d  Zone %s", target->mass,
                    target_rank > 0 ? target_rank : (int)leaderboard_count,
                    GetZoneLabel(ShroomGetZoneAtPosition(&game->world, target->position))));
@@ -3766,23 +3816,27 @@ static void DrawSpectatorOverlay(Game* game, const LeaderboardEntry* leaderboard
   }
   ShroomImGui_Separator();
 
-  ShroomImGui_BeginChild("SpectatorTargets", 0.0f, 82.0f, false);
+  ShroomImGui_BeginChild("SpectatorTargets", 0.0f, ShroomImGui_GetContentRegionAvailHeight(),
+                         false);
   for (size_t row = 0; row < leaderboard_count && row < 6u; ++row) {
     const ShroomPlayerState* player = &game->world.players[leaderboard[row].index];
     char label[96];
     const bool selected = player->entity_id == game->spectated_entity_id;
-    snprintf(label, sizeof(label), "%s%zu. %s  %.0f##spectate%u", selected ? "> " : "  ", row + 1,
-             GetPlayerDisplayName(game, player), player->mass, player->entity_id);
+    snprintf(label, sizeof(label), "%s%zu. %.28s  %.0f##spectate%u", selected ? "> " : "  ",
+             row + 1, GetPlayerDisplayName(game, player), player->mass, player->entity_id);
     if (selected) {
       ShroomImGui_PushStyleColor(SHROOM_IMGUI_COL_BUTTON, 0.24f, 0.36f, 0.16f, 0.86f);
       ShroomImGui_PushStyleColor(SHROOM_IMGUI_COL_BUTTON_HOVERED, 0.34f, 0.50f, 0.23f, 0.94f);
       ShroomImGui_PushStyleColor(SHROOM_IMGUI_COL_BUTTON_ACTIVE, 0.42f, 0.62f, 0.28f, 1.0f);
     }
-    if (ShroomImGui_Button(label, panel_width - 34.0f, 22.0f)) {
+    if (ShroomImGui_Button(label, -1.0f, ShroomLayoutMetric(22.0f))) {
       game->spectated_entity_id = player->entity_id;
       game->spectator_follow_mode = true;
     }
     if (selected) {
+#ifdef TEST_MODE
+      g_test_spectator_target_visible = ShroomImGui_IsLastItemVisible();
+#endif
       ShroomImGui_PopStyleColor();
       ShroomImGui_PopStyleColor();
       ShroomImGui_PopStyleColor();
