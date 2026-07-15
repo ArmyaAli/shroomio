@@ -32,3 +32,38 @@ float ShroomLayoutLabeledItemWidth(float available_width, float label_width, flo
 
   return fmaxf(1.0f, available - label - spacing);
 }
+
+ShroomLayoutResponsiveRow ShroomLayoutResponsiveRowMetrics(float available_width,
+                                                           float minimum_item_width,
+                                                           int maximum_columns, float spacing) {
+  const float available = isfinite(available_width) ? fmaxf(1.0f, available_width) : 1.0f;
+  const float minimum = isfinite(minimum_item_width) ? fmaxf(1.0f, minimum_item_width) : 1.0f;
+  const float gap = isfinite(spacing) ? fmaxf(0.0f, spacing) : 0.0f;
+  int columns = maximum_columns > 0 ? maximum_columns : 1;
+
+  while ((columns > 1) &&
+         (((available - ((float)(columns - 1) * gap)) / (float)columns) < minimum)) {
+    --columns;
+  }
+
+  return (ShroomLayoutResponsiveRow){
+      .columns = columns,
+      .item_width = fmaxf(1.0f, (available - ((float)(columns - 1) * gap)) / (float)columns),
+  };
+}
+
+float ShroomLayoutReservedContentHeight(float available_height, float footer_height,
+                                        float spacing) {
+  const float available = isfinite(available_height) ? fmaxf(1.0f, available_height) : 1.0f;
+  const float footer = isfinite(footer_height) ? fmaxf(0.0f, footer_height) : 0.0f;
+  const float gap = isfinite(spacing) ? fmaxf(0.0f, spacing) : 0.0f;
+
+  return fmaxf(1.0f, available - footer - gap);
+}
+
+float ShroomLayoutWrappedCardHeight(float text_height, int item_count, float scale) {
+  const float content = isfinite(text_height) ? fmaxf(0.0f, text_height) : 0.0f;
+  const int gaps = item_count > 1 ? item_count - 1 : 0;
+
+  return content + ShroomLayoutScaleMetric(60.0f + ((float)gaps * 8.0f), scale);
+}
