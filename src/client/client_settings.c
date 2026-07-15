@@ -44,6 +44,7 @@ void ClientSettingsSetDefaults(ClientSettings* settings) {
       .show_ping_ms = true,
       .menu_animations_enabled = true,
       .death_cutscene_enabled = true,
+      .account_features_enabled = false,
       .camera_zoom = 1.0f,
       .preferred_region_index = 0,
       .palette_preset = CLIENT_PALETTE_CLASSIC,
@@ -126,9 +127,11 @@ void ClientSettingsValidate(ClientSettings* settings) {
 
 enum {
   CLIENT_SETTINGS_LEGACY_FIELD_COUNT = 20,
-  CLIENT_SETTINGS_FIELD_COUNT = 24,
+  CLIENT_SETTINGS_PREVIOUS_FIELD_COUNT = 24,
+  CLIENT_SETTINGS_FIELD_COUNT = 25,
 };
 #define CLIENT_SETTINGS_LEGACY_MASK ((1u << CLIENT_SETTINGS_LEGACY_FIELD_COUNT) - 1u)
+#define CLIENT_SETTINGS_PREVIOUS_MASK ((1u << CLIENT_SETTINGS_PREVIOUS_FIELD_COUNT) - 1u)
 #define CLIENT_SETTINGS_REQUIRED_MASK ((1u << CLIENT_SETTINGS_FIELD_COUNT) - 1u)
 
 static bool BuildSettingsSidePath(char* destination, size_t size, const char* path,
@@ -282,6 +285,9 @@ static bool ParseSettingsFile(const char* path, ClientSettings* settings, bool* 
       } else if (strcmp(key, "voice_output_volume_percent") == 0) {
         settings->voice_output_volume_percent = value;
         field = 22u;
+      } else if (strcmp(key, "account_features_enabled") == 0) {
+        settings->account_features_enabled = value != 0;
+        field = 24u;
       }
     }
     if (field < CLIENT_SETTINGS_FIELD_COUNT) {
@@ -293,12 +299,16 @@ static bool ParseSettingsFile(const char* path, ClientSettings* settings, bool* 
   }
   fclose(file);
 
-  valid =
-      valid && ((schema_seen && (schema_version == CLIENT_SETTINGS_SCHEMA_VERSION) &&
-                 (fields == CLIENT_SETTINGS_REQUIRED_MASK)) ||
-                (!schema_seen && ((fields == CLIENT_SETTINGS_LEGACY_MASK) ||
-                                  (fields == CLIENT_SETTINGS_REQUIRED_MASK))) ||
-                (schema_seen && (schema_version == 1) && (fields == CLIENT_SETTINGS_LEGACY_MASK)));
+  const bool current_schema = schema_seen && (schema_version == CLIENT_SETTINGS_SCHEMA_VERSION) &&
+                              (fields == CLIENT_SETTINGS_REQUIRED_MASK);
+  const bool unversioned_schema = !schema_seen && ((fields == CLIENT_SETTINGS_LEGACY_MASK) ||
+                                                   (fields == CLIENT_SETTINGS_PREVIOUS_MASK) ||
+                                                   (fields == CLIENT_SETTINGS_REQUIRED_MASK));
+  const bool schema_one =
+      schema_seen && (schema_version == 1) && (fields == CLIENT_SETTINGS_LEGACY_MASK);
+  const bool schema_two =
+      schema_seen && (schema_version == 2) && (fields == CLIENT_SETTINGS_PREVIOUS_MASK);
+  valid = valid && (current_schema || unversioned_schema || schema_one || schema_two);
   if (!valid) {
     ClientSettingsSetDefaults(settings);
     return false;
@@ -388,6 +398,8 @@ static bool WriteSettingsFile(const char* path, const ClientSettings* settings) 
       fprintf(file, "menu_animations_enabled=%d\n", settings->menu_animations_enabled ? 1 : 0) >=
           0 &&
       fprintf(file, "death_cutscene_enabled=%d\n", settings->death_cutscene_enabled ? 1 : 0) >= 0 &&
+      fprintf(file, "account_features_enabled=%d\n", settings->account_features_enabled ? 1 : 0) >=
+          0 &&
       fprintf(file, "preferred_region_index=%d\n", settings->preferred_region_index) >= 0 &&
       fprintf(file, "palette_preset=%d\n", (int)settings->palette_preset) >= 0 &&
       fprintf(file, "hud_density=%d\n", (int)settings->hud_density) >= 0 &&

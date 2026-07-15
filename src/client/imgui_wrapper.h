@@ -83,6 +83,7 @@ bool ShroomImGui_SliderInt(const char* label, int* value, int minimum, int maxim
 bool ShroomImGui_Combo(const char* label, int* current_item, const char* const items[],
                        int items_count);
 bool ShroomImGui_InputText(const char* label, char* buffer, size_t buffer_size);
+bool ShroomImGui_InputTextPassword(const char* label, char* buffer, size_t buffer_size);
 
 bool ShroomImGui_BeginChild(const char* id, float width, float height, bool border);
 void ShroomImGui_EndChild(void);

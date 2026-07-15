@@ -1394,6 +1394,63 @@ static void Test_SettingsPersistence(ImGuiTestContext* ctx) {
   IM_CHECK_EQ(loaded.voice_output_volume_percent, 33);
 }
 
+static void Test_AccountOptInLoginAndLogout(ImGuiTestContext* ctx) {
+  ClientSettings loaded;
+
+  ShroomImGuiTestAppReset(true);
+  ShroomTeCtx_SetRef(ctx, "Main Menu");
+  IM_CHECK(!ShroomTeCtx_ItemExists(ctx, "Account"));
+  ShroomTeCtx_ItemClick(ctx, "Settings");
+  IM_CHECK(ShroomTeCtx_SetRefWindow(ctx, "//Settings/SettingsContent"));
+  ShroomTeCtx_ItemCheckbox(ctx, "Enable Account Features");
+  ShroomTeCtx_SetRef(ctx, "Settings");
+  ShroomTeCtx_ItemClick(ctx, "Save");
+  ShroomTeCtx_ItemClick(ctx, "Back");
+  ShroomTeCtx_Yield(ctx, 2);
+
+  ShroomTeCtx_SetRef(ctx, "Main Menu");
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Account"));
+  ShroomTeCtx_ItemClick(ctx, "Account");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(ShroomTeCtx_SetRefWindow(ctx, "//Account"));
+  ShroomTeCtx_ItemInputValueStr(ctx, "Username or Email", "account@example.test");
+  ShroomTeCtx_ItemInputValueStr(ctx, "Password", "correct horse battery");
+  ShroomTeCtx_ItemClick(ctx, "Sign In");
+  ShroomTeCtx_Yield(ctx, 10);
+  IM_CHECK_EQ(ShroomImGuiTestAccountLoginCalls(), 1);
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Log Out"));
+  ShroomTeCtx_ItemClick(ctx, "Log Out");
+  ShroomTeCtx_Yield(ctx, 10);
+  IM_CHECK_EQ(ShroomImGuiTestAccountLogoutCalls(), 1);
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Username or Email"));
+  IM_CHECK(ClientSettingsLoad(&loaded));
+  IM_CHECK(loaded.account_features_enabled);
+}
+
+static void Test_AccountRegistrationFlow(ImGuiTestContext* ctx) {
+  ShroomImGuiTestAppReset(true);
+  g_imgui_test_app.game.settings.account_features_enabled = true;
+  g_imgui_test_app.game.settings.ui_scale_percent = 160;
+  ShroomTeCtx_Yield(ctx, 2);
+  ShroomTeCtx_SetRef(ctx, "Main Menu");
+  ShroomTeCtx_ItemClick(ctx, "Account");
+  ShroomTeCtx_Yield(ctx, 2);
+  IM_CHECK(ShroomTeCtx_SetRefWindow(ctx, "//Account"));
+  IM_CHECK(ShroomTeImGui_WindowFitsViewport("Account"));
+  ShroomTeCtx_ItemClick(ctx, "New Account");
+  ShroomTeCtx_ItemInputValueStr(ctx, "Username", "account_player");
+  ShroomTeCtx_ItemInputValueStr(ctx, "Email", "account@example.test");
+  ShroomTeCtx_ItemInputValueStr(ctx, "Password", "correct horse battery");
+  IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Username"));
+  IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Email"));
+  IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Password"));
+  IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Create Account"));
+  ShroomTeCtx_ItemClick(ctx, "Create Account");
+  ShroomTeCtx_Yield(ctx, 10);
+  IM_CHECK_EQ(ShroomImGuiTestAccountRegisterCalls(), 1);
+  IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Log Out"));
+}
+
 static bool RewriteSettingsAsUnversioned(void) {
   FILE* file = fopen("client_settings.cfg", "rb");
   char contents[2048];
@@ -1440,7 +1497,7 @@ static void Test_MigratedSettingsSurviveCrossScreenWorkflow(ImGuiTestContext* ct
     IM_CHECK(fgets(schema_line, sizeof(schema_line), file) != NULL);
     fclose(file);
   }
-  IM_CHECK_STR_EQ(schema_line, "schema_version=2\n");
+  IM_CHECK_STR_EQ(schema_line, "schema_version=3\n");
   IM_CHECK_EQ(g_imgui_test_app.game.settings.ui_scale_percent, 110);
   IM_CHECK_EQ(g_imgui_test_app.game.settings.master_volume_percent, 63);
   IM_CHECK_EQ(g_imgui_test_app.game.settings.key_chat_open, KEY_Y);
@@ -3619,6 +3676,10 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
   ShroomTeEngine_RegisterTest(engine, "lobby", "voice_mute_activity_disconnect_cleanup",
                               Test_VoiceRosterMuteActivityAndDisconnectCleanup);
   ShroomTeEngine_RegisterTest(engine, "screens", "settings_persistence", Test_SettingsPersistence);
+  ShroomTeEngine_RegisterTest(engine, "screens", "account_opt_in_login_and_logout",
+                              Test_AccountOptInLoginAndLogout);
+  ShroomTeEngine_RegisterTest(engine, "screens", "account_registration_flow",
+                              Test_AccountRegistrationFlow);
   ShroomTeEngine_RegisterTest(engine, "screens", "migrated_settings_cross_screen_workflow",
                               Test_MigratedSettingsSurviveCrossScreenWorkflow);
   ShroomTeEngine_RegisterTest(engine, "screens", "settings_reserved_key_rejection_and_recovery",
