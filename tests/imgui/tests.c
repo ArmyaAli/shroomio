@@ -416,11 +416,13 @@ static void Test_HelpAndCreditsBackNavigation(ImGuiTestContext* ctx) {
   ShroomTeCtx_SetRef(ctx, "How To Play");
   ShroomTeCtx_ItemClick(ctx, "Gameplay");
   ShroomTeCtx_Yield(ctx, 1);
+  IM_CHECK(ShroomTeCtx_SetRefWindow(ctx, "//How To Play/HelpContent"));
   IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Sprout 86"));
   IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Cluster 112"));
   IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Bloom 148"));
 
   ShroomTeCtx_ItemClick(ctx, "Bloom 148");
+  ShroomTeCtx_SetRef(ctx, "How To Play");
   ShroomTeCtx_ItemClick(ctx, "Back");
   IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
               SHROOM_SCREEN_MAIN_MENU);
@@ -490,9 +492,53 @@ static void Test_HelpCardHeadingsAreNotInteractive(ImGuiTestContext* ctx) {
     ShroomTeCtx_Yield(ctx, 1);
     IM_CHECK_STR_EQ(ShroomTestHelpRenderedHeading(), heading_labels[index]);
 
-    snprintf(child_path, sizeof(child_path), "//How To Play/%s", heading_labels[index]);
+    snprintf(child_path, sizeof(child_path), "//How To Play/HelpContent/%s",
+             heading_labels[index]);
     IM_CHECK(ShroomTeCtx_SetRefWindow(ctx, child_path));
     IM_CHECK(!ShroomTeCtx_ItemExists(ctx, heading_labels[index]));
+  }
+}
+
+static void Test_HelpTabsStayUsableAtUiScaleEndpoints(ImGuiTestContext* ctx) {
+  const int scales[] = {80, 100, 160};
+  const char* tab_labels[] = {"Controls", "Gameplay", "Zones", "Modes"};
+
+  for (size_t scale_index = 0; scale_index < sizeof(scales) / sizeof(scales[0]); ++scale_index) {
+    ShroomImGuiTestAppReset(true);
+    g_imgui_test_app.game.settings.ui_scale_percent = scales[scale_index];
+    ShroomScreenManagerTransition(&g_imgui_test_app.screen_manager, SHROOM_SCREEN_HELP);
+    ShroomTeCtx_SetRef(ctx, "How To Play");
+    ShroomTeCtx_Yield(ctx, 3);
+
+    IM_CHECK(ShroomTeImGui_WindowFitsViewport("How To Play"));
+    IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Back"));
+    IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Back"));
+
+    for (size_t tab_index = 0; tab_index < sizeof(tab_labels) / sizeof(tab_labels[0]);
+         ++tab_index) {
+      ShroomTeCtx_SetRef(ctx, "How To Play");
+      IM_CHECK(ShroomTeCtx_ItemExists(ctx, tab_labels[tab_index]));
+      IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, tab_labels[tab_index]));
+      ShroomTeCtx_ItemClick(ctx, tab_labels[tab_index]);
+      ShroomTeCtx_Yield(ctx, 2);
+
+      IM_CHECK(ShroomTestHelpFinalRowVisible());
+      IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Back"));
+
+      if (tab_index == 1u) {
+        IM_CHECK(ShroomTeCtx_SetRefWindow(ctx, "//How To Play/HelpContent"));
+        IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Sprout 86"));
+        IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Cluster 112"));
+        IM_CHECK(ShroomTeCtx_ItemExists(ctx, "Bloom 148"));
+        ShroomTeCtx_ItemClick(ctx, "Cluster 112");
+        ShroomTeCtx_ItemClick(ctx, "Bloom 148");
+        ShroomTeCtx_Yield(ctx, 2);
+        IM_CHECK(ShroomTestHelpDemoControlsVisible());
+        IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Sprout 86"));
+        IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Cluster 112"));
+        IM_CHECK(ShroomTeCtx_ItemIsFullyVisible(ctx, "Bloom 148"));
+      }
+    }
   }
 }
 
@@ -3500,6 +3546,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_HelpContentMatchesCurrentGameplay);
   ShroomTeEngine_RegisterTest(engine, "screens", "help_card_headings_are_not_interactive",
                               Test_HelpCardHeadingsAreNotInteractive);
+  ShroomTeEngine_RegisterTest(engine, "screens", "help_tabs_stay_usable_at_ui_scales",
+                              Test_HelpTabsStayUsableAtUiScaleEndpoints);
   ShroomTeEngine_RegisterTest(engine, "screens", "main_menu_exposes_primary_actions",
                               Test_MainMenuExposesPrimaryActions);
   ShroomTeEngine_RegisterTest(engine, "screens", "player_identity_onboarding_persists_session",

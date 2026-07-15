@@ -302,8 +302,14 @@ void ShroomImGui_SetNextItemWidth(float width) { ImGui::SetNextItemWidth(width);
 
 float ShroomImGui_GetContentRegionAvailWidth(void) { return ImGui::GetContentRegionAvail().x; }
 
+float ShroomImGui_GetContentRegionAvailHeight(void) { return ImGui::GetContentRegionAvail().y; }
+
 float ShroomImGui_CalcTextWidth(const char* text) {
   return text != nullptr ? ImGui::CalcTextSize(text).x : 0.0f;
+}
+
+float ShroomImGui_CalcWrappedTextHeight(const char* text, float wrap_width) {
+  return text != nullptr ? ImGui::CalcTextSize(text, nullptr, false, wrap_width).y : 0.0f;
 }
 
 float ShroomImGui_GetItemInnerSpacingX(void) { return ImGui::GetStyle().ItemInnerSpacing.x; }
@@ -316,7 +322,19 @@ void ShroomImGui_TextColored(ShroomImGuiColor color, const char* text) {
   ImGui::TextColored(ImVec4(color.r, color.g, color.b, color.a), "%s", text);
 }
 
+void ShroomImGui_TextColoredWrapped(ShroomImGuiColor color, const char* text) {
+  ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(color.r, color.g, color.b, color.a));
+  ImGui::TextWrapped("%s", text);
+  ImGui::PopStyleColor();
+}
+
 void ShroomImGui_TextDisabled(const char* text) { ImGui::TextDisabled("%s", text); }
+
+void ShroomImGui_TextDisabledWrapped(const char* text) {
+  ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+  ImGui::TextWrapped("%s", text);
+  ImGui::PopStyleColor();
+}
 
 void ShroomImGui_Separator(void) { ImGui::Separator(); }
 
@@ -327,6 +345,8 @@ void ShroomImGui_SameLine(void) { ImGui::SameLine(); }
 bool ShroomImGui_Button(const char* label, float width, float height) {
   return ImGui::Button(label, ImVec2(width, height));
 }
+
+bool ShroomImGui_IsLastItemVisible(void) { return ImGui::IsItemVisible(); }
 
 void ShroomImGui_BeginDisabled(bool disabled) { ImGui::BeginDisabled(disabled); }
 
