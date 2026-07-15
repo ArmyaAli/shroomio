@@ -356,7 +356,7 @@ ShroomAuthResult ShroomAuthLoginAnonymous(ShroomAuthContext* ctx, const char* us
   }
 
   sqlite3_stmt* stmt = NULL;
-  const char* check_sql = "SELECT id FROM users WHERE username = ?";
+  const char* check_sql = "SELECT id, auth_method FROM users WHERE username = ?";
   if (sqlite3_prepare_v2(ctx->db, check_sql, -1, &stmt, NULL) != SQLITE_OK) {
     LOG_ERROR("auth: failed to prepare check query: %s", sqlite3_errmsg(ctx->db));
     return SHROOM_AUTH_DATABASE_ERROR;
@@ -366,6 +366,12 @@ ShroomAuthResult ShroomAuthLoginAnonymous(ShroomAuthContext* ctx, const char* us
   uint32_t user_id = 0;
 
   if (sqlite3_step(stmt) == SQLITE_ROW) {
+    const char* auth_method = (const char*)sqlite3_column_text(stmt, 1);
+
+    if ((auth_method == NULL) || (strcmp(auth_method, "anonymous") != 0)) {
+      sqlite3_finalize(stmt);
+      return SHROOM_AUTH_USERNAME_TAKEN;
+    }
     user_id = (uint32_t)sqlite3_column_int64(stmt, 0);
     sqlite3_finalize(stmt);
   } else {
