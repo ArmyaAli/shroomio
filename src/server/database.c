@@ -30,6 +30,14 @@ static const char* const DATABASE_SCHEMA[] = {
     "CREATE TABLE IF NOT EXISTS lobby_history_identities ("
     "lobby_id INTEGER PRIMARY KEY,"
     "history_identity INTEGER NOT NULL UNIQUE CHECK (history_identity > 0))",
+    "CREATE TABLE IF NOT EXISTS chat_history ("
+    "history_identity INTEGER NOT NULL,"
+    "message_id INTEGER NOT NULL,"
+    "sender_id INTEGER NOT NULL,"
+    "timestamp_sec INTEGER NOT NULL,"
+    "sender_name TEXT NOT NULL,"
+    "message TEXT NOT NULL,"
+    "PRIMARY KEY(history_identity, message_id))",
     "CREATE TABLE IF NOT EXISTS session_participants ("
     "id INTEGER PRIMARY KEY AUTOINCREMENT,"
     "session_id INTEGER NOT NULL,"

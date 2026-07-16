@@ -26,6 +26,7 @@
 #include "shared/chat_admission.h"
 #include "account_auth.h"
 #include "chat_log.h"
+#include "chat_history.h"
 #include "database.h"
 #include "directory_registry.h"
 #include "logger.h"
@@ -50,6 +51,7 @@ typedef struct ShroomLobby {
   ShroomWorldState world;
   bool active;
   bool is_dynamic;
+  ShroomServerChatHistory chat_history;
   uint64_t empty_since_ms;
   uint64_t last_bot_adjust_ms;
   ShroomIntermissionState intermission;
@@ -1070,6 +1072,24 @@ static void SendLobbyJoined(ENetPeer* peer, const ServerSession* session,
              CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_LOBBY_JOINED));
 }
 
+static void SendLobbyChatHistory(ENetPeer* peer, const ShroomLobby* lobby) {
+  if ((peer == NULL) || (lobby == NULL)) {
+    return;
+  }
+  for (size_t index = 0u; index < lobby->chat_history.message_count; ++index) {
+    ShroomChatPacket packet = {0};
+    const ShroomServerChatHistoryMessage* message = &lobby->chat_history.messages[index];
+    ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_CHAT, sizeof(packet));
+    packet.sender_id = message->sender_id;
+    packet.message_id = message->message_id;
+    packet.timestamp_sec = message->timestamp_sec;
+    snprintf(packet.sender_name, sizeof(packet.sender_name), "%s", message->sender_name);
+    snprintf(packet.message, sizeof(packet.message), "%s", message->message);
+    SendPacket(peer, SHROOM_ENET_CHANNEL_CHAT, SHROOM_PACKET_CHAT,
+               CreateProtocolPacket(&packet, sizeof(packet), SHROOM_PACKET_CHAT));
+  }
+}
+
 static void BroadcastLobbyRoster(ENetHost* host, uint32_t lobby_id) {
   ShroomLobbyRosterEntry entries[SHROOM_MAX_PARTICIPANTS] = {0};
   uint16_t roster_count = 0u;
@@ -1736,8 +1756,8 @@ static uint64_t LogChatEvent(const ServerSession* session, size_t byte_length,
   return event.message_id;
 }
 
-static void HandleChatPacket(ENetHost* host, ServerSession* session, const ENetPacket* enet_packet,
-                             uint64_t now_ms) {
+static void HandleChatPacket(ENetHost* host, ServerSession* session, ShroomLobby* lobby,
+                             sqlite3* db, const ENetPacket* enet_packet, uint64_t now_ms) {
   ShroomChatPacket broadcast = {0};
   const size_t content_length = ChatMessageByteLength(enet_packet);
   const bool structurally_valid =
@@ -1745,7 +1765,8 @@ static void HandleChatPacket(ENetHost* host, ServerSession* session, const ENetP
       (enet_packet->dataLength >= sizeof(ShroomChatPacket));
   size_t index;
 
-  if ((host == NULL) || (session == NULL) || !session->active || (session->player == NULL) ||
+  if ((host == NULL) || (session == NULL) || (lobby == NULL) || (db == NULL) ||
+      !session->active || (session->player == NULL) ||
       (enet_packet == NULL) || (enet_packet->data == NULL)) {
     if ((session != NULL) && session->active) {
       LogChatEvent(session, content_length, SHROOM_CHAT_LOG_REJECTED_INVALID);
@@ -1784,6 +1805,18 @@ static void HandleChatPacket(ENetHost* host, ServerSession* session, const ENetP
 
   broadcast.timestamp_sec = (uint32_t)time(NULL);
   broadcast.message_id = LogChatEvent(session, content_length, SHROOM_CHAT_LOG_ACCEPTED);
+  {
+    ShroomServerChatHistoryMessage history_message = {
+        .sender_id = broadcast.sender_id,
+        .message_id = broadcast.message_id,
+        .timestamp_sec = broadcast.timestamp_sec,
+    };
+    snprintf(history_message.sender_name, sizeof(history_message.sender_name), "%s",
+             broadcast.sender_name);
+    snprintf(history_message.message, sizeof(history_message.message), "%s", broadcast.message);
+    (void)ShroomServerChatHistoryAppend(&lobby->chat_history, &history_message,
+                                        broadcast.timestamp_sec);
+  }
 
   /* Broadcast only to peers in the same lobby. */
   for (index = 0; index < host->peerCount; ++index) {
@@ -1991,6 +2024,8 @@ static ShroomLobby* CreateLobby(ShroomLobby* lobbies, sqlite3* db, uint32_t lobb
       lobby->active = true;
       lobby->lobby_id = lobby_id;
       lobby->chat_history_identity = GenerateLobbyHistoryIdentity(db, lobby_id, is_dynamic);
+      ShroomServerChatHistoryInit(&lobby->chat_history, lobby->chat_history_identity);
+      (void)ShroomServerChatHistoryLoad(db, &lobby->chat_history, (uint32_t)time(NULL));
       lobby->is_dynamic = is_dynamic;
       if (name != NULL && name[0] != '\0') {
         snprintf(lobby->name, sizeof(lobby->name), "%s", name);
@@ -2076,6 +2111,7 @@ static void HandleLobbyJoin(ENetHost* host, ENetPeer* peer, ServerSession* sessi
                           session->player_id);
 
   SendLobbyJoined(peer, session, lobby);
+  SendLobbyChatHistory(peer, lobby);
   LOG_INFO("lobby join: player_id=%u lobby_id=%u spectating=%d", session->player_id,
            lobby->lobby_id, (int)session->spectating);
   BroadcastLobbyRoster(host, lobby->lobby_id);
@@ -2216,7 +2252,10 @@ static void DispatchServerProbePacket(ServerPacketContext* context) {
 }
 
 static void DispatchChatPacket(ServerPacketContext* context) {
-  HandleChatPacket(context->host, context->session, context->enet_packet, context->now_ms);
+  ShroomLobby* lobby = FindLobbyById(context->lobbies, context->session->lobby_id);
+  HandleChatPacket(context->host, context->session, lobby,
+                   context->auth_ctx != NULL ? context->auth_ctx->db : NULL,
+                   context->enet_packet, context->now_ms);
 }
 
 static void DispatchVoiceFramePacket(ServerPacketContext* context) {
@@ -2775,6 +2814,12 @@ int main(int argc, char** argv) {
       g_server_event_budget_exhaustions += 1u;
     }
     DirectoryAdvertiserUpdate(&directory_advertiser, &config, host, now_ms);
+    for (size_t lobby_index = 0u; lobby_index < SHROOM_MAX_LOBBIES; ++lobby_index) {
+      if (lobbies[lobby_index].active &&
+          !ShroomServerChatHistoryFlushIfDue(db, &lobbies[lobby_index].chat_history, now_ms)) {
+        LOG_WARN("chat history flush deferred: lobby_id=%u", lobbies[lobby_index].lobby_id);
+      }
+    }
     for (size_t peer_index = 0u; peer_index < host->peerCount; ++peer_index) {
       ENetPeer* peer = &host->peers[peer_index];
       const bool active = peer->state == ENET_PEER_STATE_CONNECTED;
@@ -2959,6 +3004,9 @@ int main(int argc, char** argv) {
     if (lobby->active && (lobby->world.match_phase == SHROOM_MATCH_PHASE_RUNNING) &&
         (lobby->persistence_participant_count > 0u)) {
       PersistLobbyRound(db, lobby, true);
+    }
+    if (lobby->active && !ShroomServerChatHistoryFlush(db, &lobby->chat_history, GetTimeMillis())) {
+      LOG_WARN("chat history shutdown flush failed: lobby_id=%u", lobby->lobby_id);
     }
   }
   for (size_t peer_index = 0; peer_index < host->peerCount; ++peer_index) {
