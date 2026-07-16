@@ -75,6 +75,28 @@ static const char* GetZoneLabel(ShroomZone zone);
 static const ShroomPlayerState* GetInputReferencePlayer(const Game* game);
 static bool IsOverlayBlockingGameplay(const Game* game);
 
+static bool WriteDeferredGameSettings(const ClientSettings* settings, void* context) {
+  (void)context;
+  return ClientSettingsSave(settings);
+}
+
+bool GameFlushPendingSettings(Game* game) {
+  if (game == NULL) {
+    return false;
+  }
+  return ShroomSettingsDeferredFlush(&game->deferred_settings, GetTime());
+}
+
+static void UpdateDeferredGameSettings(Game* game) {
+  if (game == NULL) {
+    return;
+  }
+  ShroomSettingsDeferredUpdate(&game->deferred_settings, GetTime());
+  if (ShroomSettingsDeferredConsumeWarning(&game->deferred_settings)) {
+    TraceLog(LOG_WARNING, "Deferred client settings save failed; retrying");
+  }
+}
+
 static bool IsOnlineMode(GameSessionMode mode) {
   return mode == SHROOM_SESSION_MODE_QUICK_PLAY || mode == SHROOM_SESSION_MODE_LOBBY_PLAY;
 }
@@ -4074,6 +4096,7 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
     *game = (Game){0};
     game->net = saved_net;
     game->settings = settings;
+    ShroomSettingsDeferredInit(&game->deferred_settings, WriteDeferredGameSettings, NULL);
     game->account_flow = account_flow;
     game->selected_mode = selected_mode;
     game->start_in_spectator_mode = start_in_spectator_mode;
@@ -4101,6 +4124,7 @@ void GameInit(Game* game, int screen_width, int screen_height, GameSessionMode m
 
   *game = (Game){0};
   game->settings = settings;
+  ShroomSettingsDeferredInit(&game->deferred_settings, WriteDeferredGameSettings, NULL);
   game->account_flow = account_flow;
   game->selected_mode = selected_mode;
   game->start_in_spectator_mode = start_in_spectator_mode;
@@ -4223,9 +4247,10 @@ void GameUpdate(Game* game, float delta_time) {
     if (wheel != 0.0f) {
       game->camera_zoom_target = Clamp(game->camera_zoom_target + wheel * 0.1f, 0.35f, 2.0f);
       game->settings.camera_zoom = game->camera_zoom_target;
-      ClientSettingsSave(&game->settings);
+      ShroomSettingsDeferredMarkDirty(&game->deferred_settings, &game->settings, GetTime());
     }
   }
+  UpdateDeferredGameSettings(game);
   game->camera.zoom += (game->camera_zoom_target - game->camera.zoom) * delta_time * 9.0f;
 
   /* Update local piece count and validate focused piece. */
@@ -4489,6 +4514,7 @@ void GameSuspendForResults(Game* game) {
 }
 
 void GameShutdown(Game* game) {
+  (void)GameFlushPendingSettings(game);
   if (IsOnlineMode(game->active_mode)) {
     ShroomVoiceSetSessionActive(false);
     ClientNetShutdown(&game->net);

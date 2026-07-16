@@ -229,6 +229,7 @@ CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/client_storage.c \
 	$(CLIENT_SRC_DIR)/audio.c \
 	$(CLIENT_SRC_DIR)/client_settings.c \
+	$(CLIENT_SRC_DIR)/settings_deferred.c \
 	$(CLIENT_SRC_DIR)/client_rest.c \
 	$(CLIENT_SRC_DIR)/client_rest_curl.c \
 	$(CLIENT_SRC_DIR)/client_session_store.c \
@@ -372,6 +373,7 @@ IMGUI_TEST_CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/client_paths.c \
 	$(CLIENT_SRC_DIR)/client_storage.c \
 	$(CLIENT_SRC_DIR)/client_settings.c \
+	$(CLIENT_SRC_DIR)/settings_deferred.c \
 	$(CLIENT_SRC_DIR)/client_rest.c \
 	$(CLIENT_SRC_DIR)/client_session_store.c \
 	$(CLIENT_SRC_DIR)/cursor.c \
@@ -1253,6 +1255,9 @@ test_connection) \
 		test_client_settings_persistence) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/client_settings.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+		test_settings_deferred) \
+			$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) \
+				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/settings_deferred.c $(CLIENT_SRC_DIR)/client_settings.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_client_rest) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/client_rest.c $(CLIENT_SRC_DIR)/client_session_store.c $(CLIENT_SRC_DIR)/client_storage.c \
@@ -1619,6 +1624,10 @@ $(TEST_BUILD_DIR)/test_powerups: $(UNIT_TESTS_DIR)/test_powerups.c $(UNITY_SRC) 
 $(TEST_BUILD_DIR)/test_split_steering: $(UNIT_TESTS_DIR)/test_split_steering.c $(UNITY_SRC) $(SHARED_SRC_DIR)/sim.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_settings_deferred: $(UNIT_TESTS_DIR)/test_settings_deferred.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/settings_deferred.c $(CLIENT_SRC_DIR)/client_settings.c | $(UNITY_DIR) $(VCPKG_LINUX_STAMP)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) $^ -o $@ $(TEST_LIBS)
 
 $(TEST_BUILD_DIR)/test_chat_admission: $(UNIT_TESTS_DIR)/test_chat_admission.c $(UNITY_SRC) $(SHARED_SRC_DIR)/chat_admission.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)

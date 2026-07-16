@@ -426,6 +426,7 @@ static void SettingsDraw(ShroomScreenManager* manager) {
 
   if (ShroomImGui_Button("Save", 140.0f, 36.0f)) {
     ClientSettingsValidate(&g_settings_screen.session.pending);
+    (void)GameFlushPendingSettings(game);
     g_settings_screen.save_succeeded = ClientSettingsSave(&g_settings_screen.session.pending);
     g_settings_screen.save_failed = !g_settings_screen.save_succeeded;
     if (g_settings_screen.save_succeeded) {
