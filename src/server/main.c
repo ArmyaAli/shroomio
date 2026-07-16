@@ -8,6 +8,7 @@
 #include <time.h>
 
 #include <enet/enet.h>
+#include <math.h>
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -76,6 +77,7 @@ typedef struct ServerSession {
   uint32_t user_id;
   uint32_t last_processed_input_sequence;
   ShroomInputAdmission input_admission;
+  uint32_t invalid_input_count;
   uint32_t last_logged_rtt_ms;
   uint32_t chat_message_count;
   bool chat_rate_limit_logged;
@@ -494,6 +496,21 @@ static ShroomVec2 NormalizeInput(ShroomVec2 input) {
 
   scale = 1.0f / __builtin_sqrtf(length_sqr);
   return ShroomVec2Scale(input, scale);
+}
+
+static bool IsInputVectorValid(float x, float y) {
+  const float length_sqr = (x * x) + (y * y);
+  return isfinite(x) && isfinite(y) && isfinite(length_sqr) && (length_sqr <= 4.0f);
+}
+
+static bool IsInputPacketValid(const ShroomInputPacket* packet) {
+  if (packet == NULL) {
+    return false;
+  }
+  return IsInputVectorValid(packet->direction_x, packet->direction_y) &&
+         IsInputVectorValid(packet->split_direction_x, packet->split_direction_y) &&
+         (packet->reserved[0] == 0u) && (packet->reserved[1] == 0u) &&
+         (packet->split_requested <= 1u) && (packet->eject_requested <= 1u);
 }
 
 static uint64_t GetTimeNanos(void) {
@@ -2406,6 +2423,20 @@ static void HandlePacket(ENetHost* host, ENetPeer* peer, ServerSession* session,
         (session->player == NULL)) {
       ShroomNetTelemetryRecordDrop(&g_server_net_telemetry, peer_index, channel_id, packet_type,
                                    enet_packet->dataLength, now_ms);
+      return;
+    }
+    if (!IsInputPacketValid(input)) {
+      session->invalid_input_count += 1u;
+      LOG_WARN("invalid input peer=%u player_id=%u count=%u",
+               peer != NULL ? (unsigned)peer->incomingPeerID : 0u, session->player_id,
+               session->invalid_input_count);
+      ShroomNetTelemetryRecordDrop(&g_server_net_telemetry, peer_index, channel_id, packet_type,
+                                   enet_packet->dataLength, now_ms);
+      if (session->invalid_input_count >= 3u) {
+        LOG_WARN("disconnecting peer for repeated invalid input peer=%u player_id=%u",
+                 peer != NULL ? (unsigned)peer->incomingPeerID : 0u, session->player_id);
+        enet_peer_disconnect(peer, 0);
+      }
       return;
     }
     admission_result =
