@@ -430,6 +430,38 @@ void ShroomImGui_DrawZonePreview(float width, float height, float animation_time
   ImGui::Dummy(ImVec2(width, height));
 }
 
+void ShroomImGui_DrawControlPreview(float width, float height, float animation_time) {
+  const ImVec2 origin = ImGui::GetCursorScreenPos();
+  const ImVec2 center(origin.x + width * 0.5f, origin.y + height * 0.54f);
+  const float radius = (height < width ? height : width) * 0.12f;
+  const float mouse_angle = animation_time * 1.4f;
+  const ImVec2 mouse_vector(std::cos(mouse_angle) * width * 0.28f,
+                            std::sin(mouse_angle) * height * 0.30f);
+  const ImVec2 keyboard_vector(std::sin(animation_time * 2.1f) * width * 0.12f,
+                               std::cos(animation_time * 1.7f) * height * 0.10f);
+  const ImVec2 result(center.x + mouse_vector.x + keyboard_vector.x,
+                      center.y + mouse_vector.y + keyboard_vector.y);
+  ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+  draw_list->AddRectFilled(origin, ImVec2(origin.x + width, origin.y + height),
+                           IM_COL32(20, 30, 36, 220), 8.0f);
+  draw_list->AddCircleFilled(center, radius, IM_COL32(143, 211, 112, 255), 32);
+  draw_list->AddCircle(center, radius + 4.0f, IM_COL32(220, 245, 180, 190), 32, 2.0f);
+  draw_list->AddLine(center, ImVec2(center.x + mouse_vector.x, center.y + mouse_vector.y),
+                     IM_COL32(109, 193, 255, 255), 3.0f);
+  draw_list->AddLine(center, ImVec2(center.x + keyboard_vector.x, center.y + keyboard_vector.y),
+                     IM_COL32(255, 194, 93, 255), 3.0f);
+  draw_list->AddLine(center, result, IM_COL32(218, 141, 255, 255), 4.0f);
+  draw_list->AddCircleFilled(result, 5.0f, IM_COL32(218, 141, 255, 255), 20);
+  draw_list->AddText(ImVec2(origin.x + 12.0f, origin.y + 10.0f), IM_COL32(109, 193, 255, 255),
+                     "MOUSE AIM");
+  draw_list->AddText(ImVec2(origin.x + 12.0f, origin.y + height - 24.0f),
+                     IM_COL32(255, 194, 93, 255), "KEYBOARD NUDGE");
+  draw_list->AddText(ImVec2(origin.x + width - 108.0f, origin.y + height - 24.0f),
+                     IM_COL32(218, 141, 255, 255), "RESULTING MOVE");
+  ImGui::Dummy(ImVec2(width, height));
+}
+
 void ShroomImGui_SetScrollHereY(float center_y_ratio) { ImGui::SetScrollHereY(center_y_ratio); }
 
 bool ShroomImGui_WantCaptureKeyboard(void) { return ImGui::GetIO().WantCaptureKeyboard; }

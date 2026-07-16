@@ -243,6 +243,10 @@ static void HelpDraw(ShroomScreenManager* manager) {
     items[7] = pause_line;
     items[8] = "[F3] Toggle diagnostics";
     DrawSectionCard("Controls", (ShroomImGuiColor){0.28f, 0.56f, 0.88f, 1.0f}, items, 9);
+    ShroomImGui_Spacing();
+    ShroomImGui_Text("Aim and movement preview");
+    ShroomImGui_DrawControlPreview(ShroomImGui_GetContentRegionAvailWidth(),
+                                   ShroomLayoutMetric(170.0f), (float)GetTime());
   }
 
   if (g_help_active_tab == 1) {
