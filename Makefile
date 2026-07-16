@@ -1113,9 +1113,13 @@ $(UNITY_DIR):
 # =============================================================================
 # 8. Test Targets
 # =============================================================================
-.PHONY: test unit-test imgui-test directory-integration-test snapshot-rate-integration-test valgrind-test valgrind-unit-test valgrind-server-smoke valgrind-imgui-test test-coverage test-clean chat-log-integration-test
+.PHONY: test e2e unit-test imgui-test directory-integration-test snapshot-rate-integration-test valgrind-test valgrind-unit-test valgrind-server-smoke valgrind-imgui-test test-coverage test-clean chat-log-integration-test
 
 test: unit-test imgui-test input-flood-test directory-integration-test snapshot-rate-integration-test server-health-test rest-integration-test graceful-shutdown-integration-test udp-auth-integration-test chat-log-integration-test
+
+# Exercise the complete UI and live client/server integration harnesses without
+# requiring the unit-test loop to run first.
+e2e: imgui-test input-flood-test directory-integration-test snapshot-rate-integration-test server-health-test rest-integration-test graceful-shutdown-integration-test udp-auth-integration-test chat-log-integration-test
 
 unit-test: $(TEST_BINS)
 	@echo "Running unit tests..."

@@ -235,8 +235,9 @@ Automated testing workflow:
 
 1. `make test` runs the C unit suite plus the ImGui screen tests.
 2. `make imgui-test` runs only the ImGui screen harness.
-3. `make valgrind-test` runs unit tests plus a server startup/shutdown smoke test under Valgrind and fails on memory errors or definite leaks.
-4. `make valgrind-imgui-test` runs a focused ImGui harness under Valgrind for UI investigations; third-party library leaks are reported but do not fail this target.
+3. `make e2e` runs the UI harness plus live client/server integration probes for discovery, health, REST, authentication, shutdown persistence, chat logging, snapshot cadence, and input admission. The probes isolate databases and UDP ports under `/tmp`.
+4. `make valgrind-test` runs unit tests plus a server startup/shutdown smoke test under Valgrind and fails on memory errors or definite leaks.
+5. `make valgrind-imgui-test` runs a focused ImGui harness under Valgrind for UI investigations; third-party library leaks are reported but do not fail this target.
 
 From the host, use the devcontainer wrapper when Valgrind is not installed locally:
 
