@@ -664,7 +664,11 @@ rest-integration-test: $(SERVER_LINUX_BIN) $(CLIENT_REST_SMOKE_BIN)
 	if grep -q 'correct horse battery\|Player@Example.COM\|player@example.com' "$$tmp/server.log"; then \
 		echo "REST server log exposed account credentials"; exit 1; \
 	fi; \
-	if ./$(SERVER_LINUX_BIN) --smoke-test --rest-cert "$$tmp/missing.pem" \
+	regression_dir="$$tmp/working-directory"; mkdir -p "$$regression_dir"; \
+	printf '%s\n' 'not a sqlite database' >"$$regression_dir/shroomio.db"; \
+	server_bin="$$(pwd)/$(SERVER_LINUX_BIN)"; \
+	if (cd "$$regression_dir" && "$$server_bin" --smoke-test \
+		--database "$$tmp/missing-cert.db" --rest-cert "$$tmp/missing.pem") \
 		>"$$tmp/missing-cert.log" 2>&1; then echo "Server accepted a missing REST certificate"; exit 1; fi; \
 	grep -q 'failed to start REST HTTPS listener' "$$tmp/missing-cert.log"; \
 	echo "REST HTTPS integration passed."
