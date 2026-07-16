@@ -23,6 +23,7 @@
 #include "shared/snapshot_scheduler.h"
 #include "shared/world_replication.h"
 #include "auth.h"
+#include "shared/chat_admission.h"
 #include "account_auth.h"
 #include "chat_log.h"
 #include "database.h"
@@ -1726,12 +1727,13 @@ static void HandleChatPacket(ENetHost* host, ServerSession* session, const ENetP
                              uint64_t now_ms) {
   ShroomChatPacket broadcast = {0};
   const size_t content_length = ChatMessageByteLength(enet_packet);
+  const bool structurally_valid =
+      (enet_packet != NULL) && (enet_packet->data != NULL) &&
+      (enet_packet->dataLength >= sizeof(ShroomChatPacket));
   size_t index;
-  size_t msg_len;
 
   if ((host == NULL) || (session == NULL) || !session->active || (session->player == NULL) ||
-      (enet_packet == NULL) || (enet_packet->data == NULL) ||
-      (enet_packet->dataLength < sizeof(ShroomChatPacket))) {
+      (enet_packet == NULL) || (enet_packet->data == NULL)) {
     if ((session != NULL) && session->active) {
       LogChatEvent(session, content_length, SHROOM_CHAT_LOG_REJECTED_INVALID);
     }
@@ -1753,27 +1755,19 @@ static void HandleChatPacket(ENetHost* host, ServerSession* session, const ENetP
   }
   session->chat_message_count += 1;
 
+  if (!structurally_valid ||
+      !ShroomChatCanonicalizeMessage(((const ShroomChatPacket*)enet_packet->data)->message,
+                                      sizeof(((const ShroomChatPacket*)enet_packet->data)->message),
+                                      broadcast.message, sizeof(broadcast.message))) {
+    LogChatEvent(session, content_length, SHROOM_CHAT_LOG_REJECTED_INVALID);
+    return;
+  }
+
   /* Build broadcast packet from validated fields. */
   ShroomPacketHeaderInit(&broadcast.header, SHROOM_PACKET_CHAT, sizeof(broadcast));
   broadcast.sender_id = session->player_id;
   snprintf(broadcast.sender_name, sizeof(broadcast.sender_name), "%s",
            session->player->name[0] != '\0' ? session->player->name : "Unknown");
-
-  /* Copy and null-terminate message from the incoming packet. */
-  msg_len = enet_packet->dataLength - offsetof(ShroomChatPacket, message);
-  if (msg_len >= sizeof(broadcast.message)) {
-    msg_len = sizeof(broadcast.message) - 1u;
-  }
-  memcpy(broadcast.message, ((const ShroomChatPacket*)enet_packet->data)->message, msg_len);
-  broadcast.message[msg_len] = '\0';
-  /* Sanitize: replace control characters up to the null terminator only.
-   * Iterating to msg_len would turn trailing null bytes into spaces and
-   * cause wrapped blank lines in the log output. */
-  for (size_t i = 0; broadcast.message[i] != '\0'; ++i) {
-    if ((unsigned char)broadcast.message[i] < 0x20u) {
-      broadcast.message[i] = ' ';
-    }
-  }
 
   LogChatEvent(session, content_length, SHROOM_CHAT_LOG_ACCEPTED);
 
