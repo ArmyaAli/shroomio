@@ -9,7 +9,7 @@
 #include "config.h"
 #include "intermission.h"
 
-#define SHROOM_PROTOCOL_VERSION 17u
+#define SHROOM_PROTOCOL_VERSION 18u
 #define SHROOM_SERVER_PORT 7777u
 #define SHROOM_DIRECTORY_PORT 7778u
 #define SHROOM_DIRECTORY_PROTOCOL_VERSION 1u
@@ -429,6 +429,7 @@ typedef struct ShroomLobbyJoinPacket {
 typedef struct ShroomLobbyJoinedPacket {
   ShroomPacketHeader header;
   uint32_t lobby_id;
+  uint64_t chat_history_identity;
   uint32_t player_id;
   uint32_t entity_id;
   uint8_t spectating;

@@ -13,7 +13,7 @@ static const char* kPath = "/tmp/shroomio-chat-cache-test.txt";
 static const uint32_t kNow = 2000000u;
 
 static ShroomChatCacheKey Key(const char* host, uint16_t port, uint32_t lobby_id) {
-  ShroomChatCacheKey key = {.port = port, .lobby_id = lobby_id};
+  ShroomChatCacheKey key = {.port = port, .lobby_id = lobby_id, .history_identity = lobby_id + 100u};
   snprintf(key.host, sizeof(key.host), "%s", host);
   return key;
 }
@@ -68,6 +68,18 @@ void test_cache_separates_servers_ports_and_lobbies(void) {
   TEST_ASSERT_EQUAL_size_t(0u, ShroomChatCacheLoadContext(kPath, &other_server, kNow, loaded, 2u));
   TEST_ASSERT_EQUAL_size_t(0u, ShroomChatCacheLoadContext(kPath, &other_port, kNow, loaded, 2u));
   TEST_ASSERT_EQUAL_size_t(0u, ShroomChatCacheLoadContext(kPath, &other_lobby, kNow, loaded, 2u));
+}
+
+void test_cache_separates_reused_lobby_ids_by_history_identity(void) {
+  const ShroomChatCacheKey first = Key("one.example", 7777u, 5u);
+  const ShroomChatCacheKey replacement =
+      {.port = 7777u, .lobby_id = 5u, .history_identity = first.history_identity + 1u};
+  const ChatMessage message = Message(1u, kNow, "One", "private context");
+  ChatMessage loaded[2];
+
+  TEST_ASSERT_TRUE(ShroomChatCacheStoreMessage(kPath, &first, &message, kNow));
+  TEST_ASSERT_EQUAL_size_t(0u,
+                           ShroomChatCacheLoadContext(kPath, &replacement, kNow, loaded, 2u));
 }
 
 void test_cache_sanitizes_in_place_and_deduplicates_reconnect_overlap(void) {
@@ -178,6 +190,7 @@ int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_cache_bounds_history_to_newest_messages);
   RUN_TEST(test_cache_separates_servers_ports_and_lobbies);
+  RUN_TEST(test_cache_separates_reused_lobby_ids_by_history_identity);
   RUN_TEST(test_cache_sanitizes_in_place_and_deduplicates_reconnect_overlap);
   RUN_TEST(test_identical_text_with_distinct_ids_is_retained);
   RUN_TEST(test_corrupt_and_oversized_cache_fail_closed);

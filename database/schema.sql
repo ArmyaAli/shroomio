@@ -35,6 +35,12 @@ CREATE TABLE IF NOT EXISTS sessions (
     status TEXT NOT NULL CHECK (status IN ('active', 'completed', 'aborted')) DEFAULT 'active'
 );
 
+-- Stable identities prevent cached chat from crossing lobby/database lifetimes.
+CREATE TABLE IF NOT EXISTS lobby_history_identities (
+    lobby_id INTEGER PRIMARY KEY,
+    history_identity INTEGER NOT NULL UNIQUE CHECK (history_identity > 0)
+);
+
 -- Session participants: tracks which players participated in each session
 CREATE TABLE IF NOT EXISTS session_participants (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

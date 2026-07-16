@@ -27,6 +27,9 @@ static const char* const DATABASE_SCHEMA[] = {
     "game_mode INTEGER NOT NULL DEFAULT 0,"
     "winner_runtime_player_id INTEGER NOT NULL DEFAULT 0,"
     "status TEXT NOT NULL CHECK (status IN ('active', 'completed', 'aborted')) DEFAULT 'active')",
+    "CREATE TABLE IF NOT EXISTS lobby_history_identities ("
+    "lobby_id INTEGER PRIMARY KEY,"
+    "history_identity INTEGER NOT NULL UNIQUE CHECK (history_identity > 0))",
     "CREATE TABLE IF NOT EXISTS session_participants ("
     "id INTEGER PRIMARY KEY AUTOINCREMENT,"
     "session_id INTEGER NOT NULL,"

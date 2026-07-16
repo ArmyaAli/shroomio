@@ -242,7 +242,8 @@ static void HandleLobbyJoined(ClientNetState* net, const ENetPacket* enet_packet
   }
   if ((packet->server_tick_rate == 0u) || (packet->snapshot_rate < SHROOM_SNAPSHOT_RATE_MIN) ||
       (packet->snapshot_rate > SHROOM_SNAPSHOT_RATE_MAX) ||
-      (packet->snapshot_rate > packet->server_tick_rate)) {
+      (packet->snapshot_rate > packet->server_tick_rate) ||
+      (packet->chat_history_identity == 0u)) {
     SetStatus(net, CLIENT_NET_ERROR, "Invalid server cadence");
     return;
   }
@@ -250,6 +251,7 @@ static void HandleLobbyJoined(ClientNetState* net, const ENetPacket* enet_packet
   ResetIntermissionLifecycle(net);
   ResetWorldReplication(net);
   net->lobby_id = packet->lobby_id;
+  net->chat_history_identity = packet->chat_history_identity;
   net->spectating = (packet->spectating != 0);
   net->game_mode = packet->game_mode;
   net->world_width = packet->world_width;
@@ -269,6 +271,7 @@ static void HandleLobbyJoined(ClientNetState* net, const ENetPacket* enet_packet
     const ShroomChatCacheKey key = {
         .port = net->server_port,
         .lobby_id = net->lobby_id,
+        .history_identity = packet->chat_history_identity,
     };
     ShroomChatCacheKey context = key;
     snprintf(context.host, sizeof(context.host), "%s", net->server_host);
@@ -461,7 +464,9 @@ static void HandleChat(ClientNetState* net, const ENetPacket* enet_packet) {
   }
   net->chat_unread_count += 1u;
   if ((net->lobby_id != 0u) && (net->server_host[0] != '\0')) {
-    ShroomChatCacheKey key = {.port = net->server_port, .lobby_id = net->lobby_id};
+    ShroomChatCacheKey key = {.port = net->server_port,
+                              .lobby_id = net->lobby_id,
+                              .history_identity = net->chat_history_identity};
     snprintf(key.host, sizeof(key.host), "%s", net->server_host);
     ShroomChatCacheStoreMessage(net->chat_cache_path, &key, &incoming, incoming.timestamp_sec);
   }
