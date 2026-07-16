@@ -1634,7 +1634,7 @@ $(TEST_BUILD_DIR)/test_split_steering: $(UNIT_TESTS_DIR)/test_split_steering.c $
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
-$(TEST_BUILD_DIR)/test_settings_deferred: $(UNIT_TESTS_DIR)/test_settings_deferred.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/settings_deferred.c $(CLIENT_SRC_DIR)/client_settings.c | $(UNITY_DIR) $(VCPKG_LINUX_STAMP)
+$(TEST_BUILD_DIR)/test_settings_deferred: $(UNIT_TESTS_DIR)/test_settings_deferred.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/settings_deferred.c $(CLIENT_SRC_DIR)/client_settings.c $(CLIENT_SRC_DIR)/client_storage.c | $(UNITY_DIR) $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) $^ -o $@ $(TEST_LIBS)
 

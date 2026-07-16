@@ -42,6 +42,10 @@ typedef struct ShroomRoundStats {
   float peak_mass;
   float survival_seconds;
   uint32_t kills;
+  uint32_t deaths;
+  float mass_consumed;
+  float mass_lost;
+  float distance_traveled;
   uint32_t spores_collected;
   uint32_t powerups_collected;
   float center_zone_seconds;

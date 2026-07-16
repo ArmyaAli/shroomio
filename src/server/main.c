@@ -855,16 +855,32 @@ static int64_t ResolveSessionDatabasePlayerId(sqlite3* db, const ServerSession* 
   return player_id;
 }
 
-static void BeginLobbyPersistenceRound(ShroomLobby* lobby) {
+static void BeginLobbyPersistenceRound(ShroomLobby* lobby, sqlite3* db) {
+  unsigned char random_bytes[16];
   if (lobby == NULL) {
     return;
   }
   lobby->persistence_round_started_ms = GetTimeMillis();
   lobby->persistence_participant_count = 0u;
   memset(lobby->persistence_participants, 0, sizeof(lobby->persistence_participants));
-  snprintf(lobby->persistence_round_uuid, sizeof(lobby->persistence_round_uuid), "%u-%u-%llu",
-           lobby->lobby_id, lobby->next_round_id + 1u,
-           (unsigned long long)lobby->persistence_round_started_ms);
+  sqlite3_randomness((int)sizeof(random_bytes), random_bytes);
+  snprintf(lobby->persistence_round_uuid, sizeof(lobby->persistence_round_uuid),
+           "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+           random_bytes[0], random_bytes[1], random_bytes[2], random_bytes[3], random_bytes[4],
+           random_bytes[5], random_bytes[6], random_bytes[7], random_bytes[8], random_bytes[9],
+           random_bytes[10], random_bytes[11], random_bytes[12], random_bytes[13], random_bytes[14],
+           random_bytes[15]);
+  if (db != NULL) {
+    const ShroomCompletedMatch match = {
+        .session_uuid = lobby->persistence_round_uuid,
+        .lobby_id = lobby->lobby_id,
+        .round_id = lobby->next_round_id + 1u,
+        .game_mode = lobby->world.game_mode,
+    };
+    if (!ShroomMatchPersistenceBegin(db, &match)) {
+      LOG_WARN("failed to begin persisted session lobby_id=%u", lobby->lobby_id);
+    }
+  }
 }
 
 static void RegisterPersistenceParticipant(ShroomLobby* lobby, sqlite3* db,
@@ -925,6 +941,10 @@ static void CapturePersistenceParticipant(ShroomLobby* lobby, uint32_t runtime_p
       }
       participant->round_stats.survival_seconds += stats->survival_seconds;
       participant->round_stats.kills += stats->kills;
+      participant->round_stats.deaths += stats->deaths;
+      participant->round_stats.mass_consumed += stats->mass_consumed;
+      participant->round_stats.mass_lost += stats->mass_lost;
+      participant->round_stats.distance_traveled += stats->distance_traveled;
       participant->round_stats.spores_collected += stats->spores_collected;
       participant->round_stats.powerups_collected += stats->powerups_collected;
       participant->round_stats.center_zone_seconds += stats->center_zone_seconds;
@@ -1246,7 +1266,7 @@ static void ResolveIntermission(ENetHost* host, ShroomLobby* lobby, sqlite3* db)
     }
   }
   ShroomWorldResetMatch(&lobby->world);
-  BeginLobbyPersistenceRound(lobby);
+  BeginLobbyPersistenceRound(lobby, db);
   for (size_t index = 0; index < host->peerCount; ++index) {
     const ServerSession* session = (const ServerSession*)host->peers[index].data;
     if ((host->peers[index].state == ENET_PEER_STATE_CONNECTED) && (session != NULL) &&
@@ -2037,7 +2057,7 @@ static ShroomLobby* CreateLobby(ShroomLobby* lobbies, sqlite3* db, uint32_t lobb
       ShroomWorldSetMatchDuration(&lobby->world, g_match_duration_seconds);
       ShroomSnapshotSchedulerInit(&lobby->snapshot_scheduler, (uint32_t)SHROOM_SERVER_TICK_RATE,
                                   g_snapshot_rate);
-      BeginLobbyPersistenceRound(lobby);
+      BeginLobbyPersistenceRound(lobby, db);
       InitializeLobbyBots(lobby, next_player_id);
       LOG_INFO("lobby created: id=%u name=%.31s dynamic=%d", lobby_id, lobby->name,
                (int)is_dynamic);

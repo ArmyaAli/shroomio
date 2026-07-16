@@ -1,6 +1,7 @@
 #include "unity.h"
 
 #include "client/settings_session.h"
+#include "client/client_storage.h"
 #include "raylib.h"
 
 #include <stdio.h>
@@ -12,11 +13,16 @@ static ShroomSettingsSession session;
 
 void setUp(void) {
   ClientSettingsSetDefaults(&current);
+  ShroomClientStorageSetTestConfigRoot("/tmp/shroomio-settings-session");
   current.ui_scale_percent = 125;
   ShroomSettingsSessionInit(&session, &current);
 }
 
-void tearDown(void) { unlink("client_settings.cfg"); }
+void tearDown(void) {
+  unlink("client_settings.cfg");
+  unlink("/tmp/shroomio-settings-session/client_settings.cfg");
+  ShroomClientStorageSetTestConfigRoot("");
+}
 
 void test_player_name_sanitization_trims_collapses_and_filters(void) {
   char sanitized[SHROOM_MAX_NAME_LENGTH];
