@@ -4193,11 +4193,11 @@ void GameHandleResize(Game* game, int screen_width, int screen_height) {
     return;
   }
 
-  if (screen_width < 640) {
-    screen_width = 640;
+  if (screen_width < 800) {
+    screen_width = 800;
   }
-  if (screen_height < 360) {
-    screen_height = 360;
+  if (screen_height < 600) {
+    screen_height = 600;
   }
 
   if ((game->screen_width == screen_width) && (game->screen_height == screen_height)) {

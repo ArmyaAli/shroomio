@@ -54,6 +54,21 @@ static void ToggleFullscreenQuick(void) {
   }
 }
 
+static void PersistWindowedResize(void) {
+  const int width = GetScreenWidth();
+  const int height = GetScreenHeight();
+
+  if (IsWindowFullscreen() ||
+      ((g_game.settings.window_width == width) && (g_game.settings.window_height == height))) {
+    return;
+  }
+  g_game.settings.window_width = width;
+  g_game.settings.window_height = height;
+  if (!ClientSettingsSave(&g_game.settings)) {
+    fprintf(stderr, "warning: could not persist window resize\n");
+  }
+}
+
 #ifndef _WIN32
 static void HandleCrashSignal(int signal_number) {
   void* frames[64];
@@ -84,6 +99,7 @@ int main(void) {
   InitWindow(g_game.settings.window_width > 0 ? g_game.settings.window_width : screen_width,
              g_game.settings.window_height > 0 ? g_game.settings.window_height : screen_height,
              "shroomio");
+  SetWindowMinSize(800, 600);
   g_windowed_width = GetScreenWidth();
   g_windowed_height = GetScreenHeight();
   if (g_game.settings.fullscreen) {
@@ -148,6 +164,7 @@ int main(void) {
          ShroomScreenManagerIsRunning(&g_screen_manager)) {
     if (IsWindowResized()) {
       GameHandleResize(&g_game, GetScreenWidth(), GetScreenHeight());
+      PersistWindowedResize();
     }
 
     if (IsKeyPressed(KEY_F11)) {
