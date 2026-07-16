@@ -132,6 +132,12 @@ typedef struct Game {
   uint32_t gameplay_event_head;
   uint32_t gameplay_event_count;
   ShroomVec2 render_positions[SHROOM_MAX_PLAYER_ENTITIES];
+  ShroomVec2 render_spore_positions[SHROOM_MAX_SPORES];
+  ShroomEntityId render_spore_entity_ids[SHROOM_MAX_SPORES];
+  bool render_spore_initialized[SHROOM_MAX_SPORES];
+  ShroomVec2 render_powerup_positions[SHROOM_MAX_POWERUPS];
+  ShroomEntityId render_powerup_entity_ids[SHROOM_MAX_POWERUPS];
+  bool render_powerup_initialized[SHROOM_MAX_POWERUPS];
   ShroomVec2 previous_local_position;
   GameplayParticle particles[SHROOM_CLIENT_PARTICLE_CAPACITY];
   CombatNotification notifications[SHROOM_CLIENT_NOTIFICATION_CAPACITY];
