@@ -1,5 +1,7 @@
 #include "client_session_store.h"
 
+#include "client_storage.h"
+
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -8,25 +10,15 @@
 #include <sys/stat.h>
 
 #if defined(_WIN32)
-#include <direct.h>
 #include <io.h>
-#include <windows.h>
-#define SHROOM_CSIDL_APPDATA 0x001a
-#define SHROOM_SHGFP_TYPE_CURRENT 0
-HRESULT WINAPI SHGetFolderPathA(void* owner, int folder, HANDLE token, DWORD flags, char* path);
 #define SHROOM_CLOSE _close
 #define SHROOM_COMMIT _commit
-#define SHROOM_MKDIR(path) _mkdir(path)
-#define SHROOM_OPEN _open
 #define SHROOM_UNLINK _unlink
 #define SHROOM_WRITE _write
 #else
-#include <pwd.h>
 #include <unistd.h>
 #define SHROOM_CLOSE close
 #define SHROOM_COMMIT fsync
-#define SHROOM_MKDIR(path) mkdir(path, 0700)
-#define SHROOM_OPEN open
 #define SHROOM_UNLINK unlink
 #define SHROOM_WRITE write
 #endif
@@ -60,64 +52,9 @@ static bool IsSafeField(const char* value, size_t capacity) {
   return true;
 }
 
-static bool MakeParentDirectories(const char* file_path) {
-  char path[SHROOM_CLIENT_SESSION_PATH_MAX];
-  size_t length;
-
-  if ((file_path == NULL) || (strlen(file_path) >= sizeof(path))) {
-    return false;
-  }
-  snprintf(path, sizeof(path), "%s", file_path);
-  length = strlen(path);
-  for (size_t index = 1u; index < length; ++index) {
-    if ((path[index] != '/') && (path[index] != '\\')) {
-      continue;
-    }
-#if defined(_WIN32)
-    if ((index == 2u) && (path[1] == ':')) {
-      continue;
-    }
-#endif
-    path[index] = '\0';
-    if ((SHROOM_MKDIR(path) != 0) && (errno != EEXIST)) {
-      return false;
-    }
-    path[index] = file_path[index];
-  }
-  return true;
-}
-
 bool ShroomClientSessionDefaultPath(char* path, size_t path_size) {
-  int count;
-
-  if ((path == NULL) || (path_size == 0u)) {
-    return false;
-  }
-#if defined(_WIN32)
-  char app_data[MAX_PATH];
-  if (SHGetFolderPathA(NULL, SHROOM_CSIDL_APPDATA, NULL, SHROOM_SHGFP_TYPE_CURRENT, app_data) !=
-      S_OK) {
-    return false;
-  }
-  count = snprintf(path, path_size, "%s\\shroomio\\session.cfg", app_data);
-#elif defined(__APPLE__)
-  const struct passwd* account = getpwuid(getuid());
-  const char* root;
-  if ((account == NULL) || (account->pw_dir == NULL) || (account->pw_dir[0] == '\0')) {
-    return false;
-  }
-  root = account->pw_dir;
-  count = snprintf(path, path_size, "%s/Library/Application Support/shroomio/session.cfg", root);
-#else
-  const struct passwd* account = getpwuid(getuid());
-  const char* root;
-  if ((account == NULL) || (account->pw_dir == NULL) || (account->pw_dir[0] == '\0')) {
-    return false;
-  }
-  root = account->pw_dir;
-  count = snprintf(path, path_size, "%s/.config/shroomio/session.cfg", root);
-#endif
-  return (count > 0) && ((size_t)count < path_size);
+  return ShroomClientStorageDefaultFile(path, path_size, SHROOM_CLIENT_STORAGE_CONFIG,
+                                        "session.cfg");
 }
 
 static bool WriteAll(int descriptor, const char* data, size_t length) {
@@ -134,7 +71,7 @@ static bool WriteAll(int descriptor, const char* data, size_t length) {
 }
 
 bool ShroomClientSessionSave(const char* path, const ShroomClientStoredSession* session) {
-  char temporary_path[SHROOM_CLIENT_SESSION_PATH_MAX + 8u];
+  char temporary_path[SHROOM_CLIENT_SESSION_PATH_MAX + 64u];
   char contents[768] = {0};
   int descriptor;
   int length;
@@ -143,7 +80,7 @@ bool ShroomClientSessionSave(const char* path, const ShroomClientStoredSession* 
   if ((path == NULL) || (session == NULL) || (strlen(path) >= SHROOM_CLIENT_SESSION_PATH_MAX) ||
       !IsSafeField(session->base_url, sizeof(session->base_url)) ||
       !IsSafeField(session->refresh_token, sizeof(session->refresh_token)) ||
-      (session->refresh_expires_at == 0u) || !MakeParentDirectories(path)) {
+      (session->refresh_expires_at == 0u) || !ShroomClientStorageEnsurePrivateParent(path)) {
     return false;
   }
   length = snprintf(contents, sizeof(contents),
@@ -154,15 +91,8 @@ bool ShroomClientSessionSave(const char* path, const ShroomClientStoredSession* 
     SecureZero(contents, sizeof(contents));
     return false;
   }
-  snprintf(temporary_path, sizeof(temporary_path), "%s.tmp", path);
-  (void)SHROOM_UNLINK(temporary_path);
-#if defined(_WIN32)
-  descriptor =
-      SHROOM_OPEN(temporary_path, _O_WRONLY | _O_CREAT | _O_EXCL | _O_BINARY, _S_IREAD | _S_IWRITE);
-#else
-  descriptor = SHROOM_OPEN(temporary_path, O_WRONLY | O_CREAT | O_EXCL, 0600);
-#endif
-  if (descriptor < 0) {
+  if (!ShroomClientStorageCreatePrivateTemporaryFile(path, temporary_path, sizeof(temporary_path),
+                                                     &descriptor)) {
     SecureZero(contents, sizeof(contents));
     return false;
   }
@@ -173,17 +103,10 @@ bool ShroomClientSessionSave(const char* path, const ShroomClientStoredSession* 
     SHROOM_UNLINK(temporary_path);
     return false;
   }
-#if defined(_WIN32)
-  if (!MoveFileExA(temporary_path, path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+  if (!ShroomClientStorageReplaceFile(temporary_path, path)) {
     SHROOM_UNLINK(temporary_path);
     return false;
   }
-#else
-  if (rename(temporary_path, path) != 0) {
-    SHROOM_UNLINK(temporary_path);
-    return false;
-  }
-#endif
   return true;
 }
 

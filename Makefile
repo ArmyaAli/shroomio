@@ -225,6 +225,8 @@ CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/main.c \
 	$(CLIENT_SRC_DIR)/account_flow.c \
 	$(CLIENT_SRC_DIR)/chat_cache.c \
+	$(CLIENT_SRC_DIR)/client_paths.c \
+	$(CLIENT_SRC_DIR)/client_storage.c \
 	$(CLIENT_SRC_DIR)/audio.c \
 	$(CLIENT_SRC_DIR)/client_settings.c \
 	$(CLIENT_SRC_DIR)/client_rest.c \
@@ -365,6 +367,8 @@ IMGUI_TEST_CLIENT_SOURCES := \
 	$(CLIENT_SRC_DIR)/account_flow.c \
 	$(CLIENT_SRC_DIR)/audio.c \
 	$(CLIENT_SRC_DIR)/chat_cache.c \
+	$(CLIENT_SRC_DIR)/client_paths.c \
+	$(CLIENT_SRC_DIR)/client_storage.c \
 	$(CLIENT_SRC_DIR)/client_settings.c \
 	$(CLIENT_SRC_DIR)/client_rest.c \
 	$(CLIENT_SRC_DIR)/client_session_store.c \
@@ -908,7 +912,8 @@ $(SERVER_HEALTHCHECK_BIN): tools/server_healthcheck.c tools/server_healthcheck.h
 	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) -Itools $< -o $@ -L$(VCPKG_LINUX_LIB_DIR) -lenet
 
 $(CLIENT_REST_SMOKE_BIN): tools/client_rest_smoke.c $(CLIENT_SRC_DIR)/client_rest.c \
-		$(CLIENT_SRC_DIR)/client_rest_curl.c $(CLIENT_SRC_DIR)/client_session_store.c | $(VCPKG_LINUX_STAMP)
+		$(CLIENT_SRC_DIR)/client_rest_curl.c $(CLIENT_SRC_DIR)/client_session_store.c \
+		$(CLIENT_SRC_DIR)/client_storage.c | $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(LINUX_SERVER_CFLAGS) $^ -o $@ -L$(VCPKG_LINUX_LIB_DIR) \
 		-lcurl -lcjson -lssl -lcrypto -lz -ldl -lpthread -lm
@@ -1247,12 +1252,12 @@ test_connection) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/client_settings.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_client_rest) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) \
-				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/client_rest.c $(CLIENT_SRC_DIR)/client_session_store.c \
+				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/client_rest.c $(CLIENT_SRC_DIR)/client_session_store.c $(CLIENT_SRC_DIR)/client_storage.c \
 				-o $$test_bin $(COVERAGE_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lcjson -lcrypto ;; \
 		test_account_flow) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/account_flow.c $(CLIENT_SRC_DIR)/client_rest.c \
-				$(CLIENT_SRC_DIR)/client_session_store.c -o $$test_bin $(COVERAGE_LIBS) \
+				$(CLIENT_SRC_DIR)/client_session_store.c $(CLIENT_SRC_DIR)/client_storage.c -o $$test_bin $(COVERAGE_LIBS) \
 				-L$(VCPKG_LINUX_LIB_DIR) -lcjson -lcrypto -lpthread ;; \
 		test_server_browser_model) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
@@ -1289,7 +1294,7 @@ test_connection) \
 				$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/intermission.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_client_net) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) \
-				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/input_scheduler.c $(CLIENT_SRC_DIR)/chat_cache.c $(CLIENT_SRC_DIR)/results_transition.c $(SHARED_SRC_DIR)/net_telemetry.c $(SHARED_SRC_DIR)/snapshot_replication.c $(SHARED_SRC_DIR)/world_replication.c -o $$test_bin $(COVERAGE_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lenet ;; \
+				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/input_scheduler.c $(CLIENT_SRC_DIR)/chat_cache.c $(CLIENT_SRC_DIR)/client_paths.c $(CLIENT_SRC_DIR)/client_storage.c $(CLIENT_SRC_DIR)/results_transition.c $(SHARED_SRC_DIR)/net_telemetry.c $(SHARED_SRC_DIR)/snapshot_replication.c $(SHARED_SRC_DIR)/world_replication.c -o $$test_bin $(COVERAGE_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lenet ;; \
 		test_snapshot_replication) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/snapshot_replication.c -o $$test_bin $(COVERAGE_LIBS) ;; \
@@ -1313,10 +1318,13 @@ test_connection) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/spectator_target.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_chat_cache) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
-				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/chat_cache.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/chat_cache.c $(CLIENT_SRC_DIR)/client_paths.c $(CLIENT_SRC_DIR)/client_storage.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_chat_log) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(SERVER_SRC_DIR)/chat_log.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+		test_client_paths) \
+			$(LINUX_CC) $(COVERAGE_CFLAGS) \
+				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/client_paths.c $(CLIENT_SRC_DIR)/client_storage.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_net_telemetry) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/net_telemetry.c -o $$test_bin $(COVERAGE_LIBS) ;; \
@@ -1433,14 +1441,15 @@ $(TEST_BUILD_DIR)/test_client_settings_persistence: $(UNIT_TESTS_DIR)/test_clien
 	$(LINUX_CC) $(TEST_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) $^ -o $@ $(TEST_LIBS)
 
 $(TEST_BUILD_DIR)/test_client_rest: $(UNIT_TESTS_DIR)/test_client_rest.c $(UNITY_SRC) \
-		$(CLIENT_SRC_DIR)/client_rest.c $(CLIENT_SRC_DIR)/client_session_store.c | $(UNITY_DIR) $(VCPKG_LINUX_STAMP)
+		$(CLIENT_SRC_DIR)/client_rest.c $(CLIENT_SRC_DIR)/client_session_store.c \
+		$(CLIENT_SRC_DIR)/client_storage.c | $(UNITY_DIR) $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) $^ -o $@ \
 		$(TEST_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lcjson -lcrypto
 
 $(TEST_BUILD_DIR)/test_account_flow: $(UNIT_TESTS_DIR)/test_account_flow.c $(UNITY_SRC) \
 		$(CLIENT_SRC_DIR)/account_flow.c $(CLIENT_SRC_DIR)/client_rest.c \
-		$(CLIENT_SRC_DIR)/client_session_store.c | $(UNITY_DIR) $(VCPKG_LINUX_STAMP)
+		$(CLIENT_SRC_DIR)/client_session_store.c $(CLIENT_SRC_DIR)/client_storage.c | $(UNITY_DIR) $(VCPKG_LINUX_STAMP)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) $^ -o $@ \
 		$(TEST_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lcjson -lcrypto -lpthread
@@ -1489,7 +1498,7 @@ $(TEST_BUILD_DIR)/test_prediction: $(UNIT_TESTS_DIR)/test_prediction.c $(UNITY_S
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
-$(TEST_BUILD_DIR)/test_client_net: $(UNIT_TESTS_DIR)/test_client_net.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/input_scheduler.c $(CLIENT_SRC_DIR)/chat_cache.c $(CLIENT_SRC_DIR)/results_transition.c $(SHARED_SRC_DIR)/net_telemetry.c $(SHARED_SRC_DIR)/snapshot_replication.c $(SHARED_SRC_DIR)/world_replication.c | $(UNITY_DIR)
+$(TEST_BUILD_DIR)/test_client_net: $(UNIT_TESTS_DIR)/test_client_net.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/input_scheduler.c $(CLIENT_SRC_DIR)/chat_cache.c $(CLIENT_SRC_DIR)/client_paths.c $(CLIENT_SRC_DIR)/client_storage.c $(CLIENT_SRC_DIR)/results_transition.c $(SHARED_SRC_DIR)/net_telemetry.c $(SHARED_SRC_DIR)/snapshot_replication.c $(SHARED_SRC_DIR)/world_replication.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) $^ -o $@ $(TEST_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lenet
 
@@ -1517,7 +1526,11 @@ $(TEST_BUILD_DIR)/test_rest_rate_limit: $(UNIT_TESTS_DIR)/test_rest_rate_limit.c
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
-$(TEST_BUILD_DIR)/test_chat_cache: $(UNIT_TESTS_DIR)/test_chat_cache.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/chat_cache.c | $(UNITY_DIR)
+$(TEST_BUILD_DIR)/test_chat_cache: $(UNIT_TESTS_DIR)/test_chat_cache.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/chat_cache.c $(CLIENT_SRC_DIR)/client_paths.c $(CLIENT_SRC_DIR)/client_storage.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_client_paths: $(UNIT_TESTS_DIR)/test_client_paths.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/client_paths.c $(CLIENT_SRC_DIR)/client_storage.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 

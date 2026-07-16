@@ -12,7 +12,8 @@
 #define SHROOM_CHAT_CACHE_MAX_FILE_BYTES (256u * 1024u)
 #define SHROOM_CHAT_CACHE_RETENTION_SECONDS (7u * 24u * 60u * 60u)
 #define SHROOM_CHAT_CACHE_DUPLICATE_WINDOW_SECONDS 5u
-#define SHROOM_CHAT_CACHE_DEFAULT_PATH "chat_history_cache.txt"
+#define SHROOM_CHAT_CACHE_FILENAME "chat_history_cache.txt"
+#define SHROOM_CHAT_CACHE_LEGACY_PATH "chat_history_cache.txt"
 
 typedef struct ChatMessage {
   uint32_t sender_id;
@@ -29,6 +30,8 @@ typedef struct ShroomChatCacheKey {
 
 void ShroomChatCacheSanitizeText(char* destination, size_t destination_size, const char* source);
 bool ShroomChatCacheMessagesDuplicate(const ChatMessage* left, const ChatMessage* right);
+bool ShroomChatCachePrepareDefaultPath(char* destination, size_t destination_size,
+                                       uint32_t now_sec);
 size_t ShroomChatCacheLoadContext(const char* path, const ShroomChatCacheKey* key, uint32_t now_sec,
                                   ChatMessage* messages, size_t capacity);
 bool ShroomChatCacheStoreMessage(const char* path, const ShroomChatCacheKey* key,

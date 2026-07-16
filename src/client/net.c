@@ -592,8 +592,8 @@ bool ClientNetInit(ClientNetState* net, const char* host_name, uint16_t port,
   }
   snprintf(net->server_host, sizeof(net->server_host), "%s", host_name != NULL ? host_name : "");
   net->server_port = port;
-  snprintf(net->chat_cache_path, sizeof(net->chat_cache_path), "%s",
-           SHROOM_CHAT_CACHE_DEFAULT_PATH);
+  ShroomChatCachePrepareDefaultPath(net->chat_cache_path, sizeof(net->chat_cache_path),
+                                    (uint32_t)time(NULL));
 
   if (enet_initialize() != 0) {
     SetStatus(net, CLIENT_NET_ERROR, "ENet init failed");

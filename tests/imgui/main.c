@@ -3,6 +3,8 @@
 
 #include "client/client_settings.h"
 #include "client/audio.h"
+#include "client/chat_cache.h"
+#include "client/client_paths.h"
 #include "client/imgui_wrapper.h"
 #include "client/layout.h"
 #include "client/voice.h"
@@ -84,13 +86,24 @@ static void RegisterScreens(ShroomScreenManager* manager) {
 }
 
 static void ResetPersistentFiles(void) {
+  char path[SHROOM_CLIENT_PATH_MAX];
+  char temporary_path[SHROOM_CLIENT_PATH_MAX + sizeof(".tmp")];
+
   unlink("client_settings.cfg");
   unlink("client_settings.cfg.tmp");
   unlink("client_settings.cfg.bak");
   unlink("client_settings.cfg.bak.tmp");
   unlink("server_browser_recent.txt");
-  unlink(SHROOM_CHAT_CACHE_DEFAULT_PATH);
-  unlink(SHROOM_CHAT_CACHE_DEFAULT_PATH ".tmp");
+  unlink(SHROOM_CHAT_CACHE_LEGACY_PATH);
+  if (ShroomClientPathsGetCacheFile(path, sizeof(path), "server_browser_recent.txt")) {
+    unlink(path);
+  }
+  if (ShroomClientPathsGetCacheFile(path, sizeof(path), SHROOM_CHAT_CACHE_FILENAME)) {
+    unlink(path);
+    if (snprintf(temporary_path, sizeof(temporary_path), "%s.tmp", path) > 0) {
+      unlink(temporary_path);
+    }
+  }
   unlink("imgui.ini");
   unlink("account_session.cfg");
   unlink("account_session.cfg.tmp");
@@ -168,6 +181,15 @@ int main(void) {
 
   if (!SetupWorkingDirectory()) {
     return 1;
+  }
+  {
+    char cache_root[SHROOM_CLIENT_PATH_MAX];
+    const int length =
+        snprintf(cache_root, sizeof(cache_root), "%s/platform-cache", g_imgui_test_app.temp_dir);
+    if ((length < 0) || ((size_t)length >= sizeof(cache_root))) {
+      return 1;
+    }
+    ShroomClientPathsSetTestCacheRoot(cache_root);
   }
 
   InitWindow(1280, 720, "shroomio imgui tests");

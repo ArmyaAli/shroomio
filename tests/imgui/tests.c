@@ -2,6 +2,7 @@
 #include "imgui_te_wrapper.h"
 
 #include "client/audio.h"
+#include "client/client_paths.h"
 #include "client/prediction.h"
 #include "client/results_summary.h"
 #include "client/screens/screen_background.h"
@@ -1781,6 +1782,8 @@ static void Test_ServerBrowserJoinAndValidation(ImGuiTestContext* ctx) {
 }
 
 static void Test_ServerBrowserRecentJoinPersists(ImGuiTestContext* ctx) {
+  char recent_path[SHROOM_CLIENT_PATH_MAX];
+
   ShroomImGuiTestAppReset(true);
 
   ShroomTeCtx_SetRef(ctx, "Main Menu");
@@ -1793,6 +1796,10 @@ static void Test_ServerBrowserRecentJoinPersists(ImGuiTestContext* ctx) {
 
   IM_CHECK_STR_EQ(g_imgui_test_app.game.selected_server_host, "recent.shroomio.test");
   IM_CHECK_EQ(g_imgui_test_app.game.selected_server_port, 7788);
+  IM_CHECK(access("server_browser_recent.txt", F_OK) != 0);
+  IM_CHECK(ShroomClientPathsGetCacheFile(recent_path, sizeof(recent_path),
+                                         "server_browser_recent.txt"));
+  IM_CHECK(access(recent_path, F_OK) == 0);
 
   ShroomImGuiTestAppReset(false);
   ShroomTeCtx_SetRef(ctx, "Main Menu");
@@ -3291,12 +3298,21 @@ static void Test_ChatHistoryRestoresOnReconnect(ImGuiTestContext* ctx) {
   net = &g_imgui_test_app.game.net;
   snprintf(net->server_host, sizeof(net->server_host), "%s", "cache.example");
   net->server_port = SHROOM_SERVER_PORT;
-  snprintf(net->chat_cache_path, sizeof(net->chat_cache_path), "%s",
-           SHROOM_CHAT_CACHE_DEFAULT_PATH);
+  IM_CHECK(ShroomChatCachePrepareDefaultPath(net->chat_cache_path,
+                                             sizeof(net->chat_cache_path), cached.timestamp_sec));
   snprintf(key.host, sizeof(key.host), "%s", net->server_host);
   snprintf(cached.sender_name, sizeof(cached.sender_name), "%s", "Player Seven");
   snprintf(cached.message, sizeof(cached.message), "%s", "still here after reconnect");
   IM_CHECK(ShroomChatCacheStoreMessage(net->chat_cache_path, &key, &cached, cached.timestamp_sec));
+  IM_CHECK(access(SHROOM_CHAT_CACHE_LEGACY_PATH, F_OK) != 0);
+  IM_CHECK(access(net->chat_cache_path, F_OK) == 0);
+
+  SetupOnlineGame();
+  net = &g_imgui_test_app.game.net;
+  snprintf(net->server_host, sizeof(net->server_host), "%s", "cache.example");
+  net->server_port = SHROOM_SERVER_PORT;
+  IM_CHECK(ShroomChatCachePrepareDefaultPath(net->chat_cache_path,
+                                             sizeof(net->chat_cache_path), cached.timestamp_sec));
 
   joined.lobby_id = key.lobby_id;
   joined.player_id = 1u;

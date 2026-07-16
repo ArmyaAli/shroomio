@@ -1,5 +1,8 @@
 #include "chat_cache.h"
 
+#include "client_paths.h"
+#include "client_storage.h"
+
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
@@ -334,9 +337,22 @@ static bool LoadCache(const char* path, uint32_t now_sec, ShroomChatCacheData* c
   return true;
 }
 
+static bool ValidateCacheFile(const char* path, const void* context) {
+  ShroomChatCacheData cache;
+  const uint32_t now_sec = context != NULL ? *(const uint32_t*)context : 0u;
+
+  return LoadCache(path, now_sec, &cache);
+}
+
+bool ShroomChatCachePrepareDefaultPath(char* destination, size_t destination_size,
+                                       uint32_t now_sec) {
+  return ShroomClientPathsPrepareCacheFile(
+      destination, destination_size, SHROOM_CHAT_CACHE_FILENAME, SHROOM_CHAT_CACHE_LEGACY_PATH,
+      SHROOM_CHAT_CACHE_MAX_FILE_BYTES, ValidateCacheFile, &now_sec);
+}
+
 static bool SaveCache(const char* path, const ShroomChatCacheData* cache) {
-  char temporary_path[512];
-  int path_length;
+  char temporary_path[SHROOM_CLIENT_PATH_MAX + 64u];
   int descriptor;
   FILE* file;
   bool write_failed = false;
@@ -344,17 +360,8 @@ static bool SaveCache(const char* path, const ShroomChatCacheData* cache) {
   if (path == NULL) {
     return false;
   }
-  path_length = snprintf(temporary_path, sizeof(temporary_path), "%s.tmp", path);
-  if ((path_length < 0) || ((size_t)path_length >= sizeof(temporary_path))) {
-    return false;
-  }
-#ifdef _WIN32
-  descriptor = _open(temporary_path, _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY | _O_NOINHERIT,
-                     _S_IREAD | _S_IWRITE);
-#else
-  descriptor = open(temporary_path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
-#endif
-  if (descriptor < 0) {
+  if (!ShroomClientStorageCreatePrivateTemporaryFile(path, temporary_path, sizeof(temporary_path),
+                                                     &descriptor)) {
     return false;
   }
   file =
@@ -412,11 +419,7 @@ static bool SaveCache(const char* path, const ShroomChatCacheData* cache) {
     remove(temporary_path);
     return false;
   }
-#ifdef _WIN32
-  if (!MoveFileExA(temporary_path, path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-#else
-  if (rename(temporary_path, path) != 0) {
-#endif
+  if (!ShroomClientStorageReplaceFile(temporary_path, path)) {
     remove(temporary_path);
     return false;
   }
