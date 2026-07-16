@@ -2066,6 +2066,157 @@ static void Test_GameplayOverlayStateToggles(ImGuiTestContext* ctx) {
   IM_CHECK_EQ(g_imgui_test_app.game.diagnostics_overlay_open, true);
 }
 
+/* Exploratory presentation pass: exercise dense world state and the HUD at
+ * the supported scale/density endpoints so visual regressions are isolated
+ * to a named gameplay test instead of hiding in a broad smoke run. */
+static void SeedDenseGameplayPresentation(void) {
+  ClientNetState* net = &g_imgui_test_app.game.net;
+
+  net->welcome_received = true;
+  net->match_entry_sent = true;
+  net->player_id = 1u;
+  net->entity_id = 100u;
+  net->match_phase = SHROOM_MATCH_PHASE_RUNNING;
+  net->game_mode = SHROOM_GAME_MODE_FFA;
+  net->match_time_remaining = 73.0f;
+  net->last_snapshot_tick = 900u;
+  g_imgui_test_app.game.snapshot_applied = false;
+  net->snapshot_player_count = 12u;
+  for (uint16_t index = 0u; index < net->snapshot_player_count; ++index) {
+    ShroomSnapshotPlayerState* player = &net->snapshot_players[index];
+    const float angle = (float)index * 0.57f;
+    const float radius = 280.0f + (float)(index % 4u) * 210.0f;
+
+    *player = (ShroomSnapshotPlayerState){
+        .player_id = (uint32_t)(index + 1u),
+        .entity_id = (uint32_t)(100u + index),
+        .position_x = SHROOM_WORLD_WIDTH * 0.5f + cosf(angle) * radius,
+        .position_y = SHROOM_WORLD_HEIGHT * 0.5f + sinf(angle) * radius,
+        .mass = SHROOM_DEFAULT_PLAYER_MASS + (float)index * 96.0f,
+        .radius = ShroomMassToRadius(SHROOM_DEFAULT_PLAYER_MASS + (float)index * 96.0f),
+        .alive = 1u,
+        .is_bot = index > 0u,
+        .piece_index = index % 3u,
+    };
+    snprintf(player->name, sizeof(player->name), "Colony %02u Exploratory",
+             (unsigned int)index);
+  }
+
+  net->spore_count = 24u;
+  for (uint16_t index = 0u; index < net->spore_count; ++index) {
+    const float angle = (float)index * 0.43f;
+    net->snapshot_spores[index] = (ShroomSnapshotSporeState){
+        .entity_id = (uint32_t)(500u + index),
+        .position_x = SHROOM_WORLD_WIDTH * 0.5f + cosf(angle) * (180.0f + index * 38.0f),
+        .position_y = SHROOM_WORLD_HEIGHT * 0.5f + sinf(angle) * (180.0f + index * 38.0f),
+        .value = (uint16_t)(8u + index),
+    };
+  }
+
+  net->powerup_count = 8u;
+  for (uint16_t index = 0u; index < net->powerup_count; ++index) {
+    net->snapshot_powerups[index] = (ShroomSnapshotPowerupState){
+        .entity_id = (uint32_t)(700u + index),
+        .position_x = SHROOM_WORLD_WIDTH * 0.5f + (float)((index % 4u) * 420u) - 630.0f,
+        .position_y = SHROOM_WORLD_HEIGHT * 0.5f + (float)((index / 4u) * 420u) - 210.0f,
+        .type = (uint8_t)(1u + (index % SHROOM_POWERUP_TYPE_COUNT)),
+        .active = 1u,
+    };
+  }
+}
+
+static void Test_GameplayVisualExplorationDensePresentation(ImGuiTestContext* ctx) {
+  const int scales[] = {80, 100, 160};
+  const ClientHudDensity densities[] = {CLIENT_HUD_MINIMAL, CLIENT_HUD_COMPACT,
+                                        CLIENT_HUD_FULL};
+
+  SetupOnlineGame();
+  SeedDenseGameplayPresentation();
+  for (size_t scale_index = 0u; scale_index < sizeof(scales) / sizeof(scales[0]); ++scale_index) {
+    for (size_t density_index = 0u;
+         density_index < sizeof(densities) / sizeof(densities[0]); ++density_index) {
+      g_imgui_test_app.game.settings.ui_scale_percent = scales[scale_index];
+      g_imgui_test_app.game.settings.hud_density = densities[density_index];
+      g_imgui_test_app.game.settings.chat_visible = true;
+      ShroomTeCtx_Yield(ctx, 3);
+
+      IM_CHECK_EQ(ShroomScreenManagerGetCurrentScreen(&g_imgui_test_app.screen_manager),
+                  SHROOM_SCREEN_GAME);
+      IM_CHECK(ShroomTeImGui_WindowFitsViewport("Chat"));
+      if (densities[density_index] == CLIENT_HUD_MINIMAL) {
+        IM_CHECK(ShroomTeImGui_WindowFitsViewport("HUD Minimal"));
+      } else if (densities[density_index] == CLIENT_HUD_COMPACT) {
+        IM_CHECK(ShroomTeImGui_WindowFitsViewport("HUD Compact"));
+      } else {
+        IM_CHECK(ShroomTeImGui_WindowFitsViewport("HUD Left"));
+        IM_CHECK(ShroomTeImGui_WindowFitsViewport("HUD Right"));
+      }
+
+      g_imgui_test_app.game.leaderboard_overlay_open = true;
+      ShroomTeCtx_Yield(ctx, 2);
+      IM_CHECK(ShroomTeImGui_WindowFitsViewport("Leaderboard"));
+      g_imgui_test_app.game.leaderboard_overlay_open = false;
+
+      g_imgui_test_app.game.diagnostics_overlay_open = true;
+      ShroomTeCtx_Yield(ctx, 2);
+      IM_CHECK(ShroomTeImGui_WindowFitsViewport("Diagnostics"));
+    }
+  }
+}
+
+static void Test_GameplayVisualExplorationOverlayStack(ImGuiTestContext* ctx) {
+  SetupOnlineGame();
+  g_imgui_test_app.game.settings.ui_scale_percent = 160;
+  g_imgui_test_app.game.settings.hud_density = CLIENT_HUD_FULL;
+  SeedDenseGameplayPresentation();
+  ShroomTeCtx_Yield(ctx, 3);
+
+  g_imgui_test_app.game.zone_callout_timer = 4.0f;
+  g_imgui_test_app.game.respawn_banner_timer = 4.0f;
+  g_imgui_test_app.game.notification_count = 1u;
+  g_imgui_test_app.game.notifications[0].active = true;
+  g_imgui_test_app.game.notifications[0].duration = 4.0f;
+  g_imgui_test_app.game.notifications[0].age = 1.0f;
+  g_imgui_test_app.game.inspect_overlay_progress = 1.0f;
+  g_imgui_test_app.game.inspect_prompt_timer = 1.0f;
+  g_imgui_test_app.game.selected_inspect_player_id = 2u;
+  g_imgui_test_app.game.inspect_target_count = 3;
+  g_imgui_test_app.game.selected_inspect_index = 1;
+  g_imgui_test_app.game.net.rtt_sample_count = 1u;
+  g_imgui_test_app.game.net.rtt_average_ms = SHROOM_LATENCY_UNPLAYABLE_MS;
+  g_imgui_test_app.game.net.rtt_ms = SHROOM_LATENCY_UNPLAYABLE_MS;
+  ShroomTeCtx_Yield(ctx, 3);
+
+  IM_CHECK(ShroomTeImGui_WindowFitsViewport("Zone Banner"));
+  IM_CHECK(ShroomTeImGui_WindowFitsViewport("Respawn Banner"));
+  IM_CHECK(ShroomTeImGui_WindowFitsViewport("Latency Warning"));
+  IM_CHECK(ShroomTeImGui_WindowFitsViewport("Player Intel"));
+  IM_CHECK(ShroomTeImGui_WindowFitsViewport("HUD Left"));
+  IM_CHECK(ShroomTeImGui_WindowFitsViewport("HUD Right"));
+  IM_CHECK(ShroomTeImGui_WindowFitsViewport("Chat"));
+}
+
+static void Test_LobbyVisualExplorationLongEntriesAtUiScale(ImGuiTestContext* ctx) {
+  const int scales[] = {80, 100, 160};
+  const char* long_name = "ABCDEFGHIJKLMNOPQRSTUVWXYZ12345";
+
+  for (size_t scale_index = 0u; scale_index < sizeof(scales) / sizeof(scales[0]); ++scale_index) {
+    SetupLobbyBrowser();
+    g_imgui_test_app.game.settings.ui_scale_percent = scales[scale_index];
+    InjectFakeLobbies(3);
+    for (uint8_t index = 0u; index < g_imgui_test_app.game.net.lobby_count; ++index) {
+      snprintf(g_imgui_test_app.game.net.lobby_list[index].name,
+               sizeof(g_imgui_test_app.game.net.lobby_list[index].name), "%s", long_name);
+      g_imgui_test_app.game.net.lobby_list[index].player_count = (uint16_t)(index * 4u);
+      g_imgui_test_app.game.net.lobby_list[index].max_players = 28u;
+    }
+    ShroomTeCtx_Yield(ctx, 3);
+
+    IM_CHECK(ShroomTeImGui_WindowFitsViewport("Lobby Browser"));
+    IM_CHECK_EQ(g_imgui_test_app.game.net.lobby_count, (uint8_t)3);
+  }
+}
+
 static void Test_LeaderboardAggregatesSplitColony(ImGuiTestContext* ctx) {
   LeaderboardEntry before[SHROOM_MAX_PLAYER_ENTITIES];
   LeaderboardEntry after[SHROOM_MAX_PLAYER_ENTITIES];
@@ -3830,6 +3981,10 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
                               Test_LobbyEmptyAndFullStatesRender);
   ShroomTeEngine_RegisterTest(engine, "screens", "gameplay_overlay_state_toggles",
                               Test_GameplayOverlayStateToggles);
+  ShroomTeEngine_RegisterTest(engine, "screens", "gameplay_visual_exploration_dense_presentation",
+                              Test_GameplayVisualExplorationDensePresentation);
+  ShroomTeEngine_RegisterTest(engine, "screens", "gameplay_visual_exploration_overlay_stack",
+                              Test_GameplayVisualExplorationOverlayStack);
   ShroomTeEngine_RegisterTest(engine, "screens", "leaderboard_aggregates_split_colony",
                               Test_LeaderboardAggregatesSplitColony);
   ShroomTeEngine_RegisterTest(engine, "screens", "gameplay_menu_overlay_actions",
@@ -3898,6 +4053,8 @@ void ShroomRegisterImGuiTests(ImGuiTestEngine* engine) {
   ShroomTeEngine_RegisterTest(engine, "lobby", "screen_renders", Test_LobbyScreenRenders);
   ShroomTeEngine_RegisterTest(engine, "lobby", "lobby_list_renders_entries",
                               Test_LobbyListRendersEntries);
+  ShroomTeEngine_RegisterTest(engine, "lobby", "visual_exploration_long_entries_at_ui_scale",
+                              Test_LobbyVisualExplorationLongEntriesAtUiScale);
   ShroomTeEngine_RegisterTest(engine, "lobby", "auto_join_picks_least_populated",
                               Test_LobbyAutoJoinPicksLeastPopulated);
   ShroomTeEngine_RegisterTest(engine, "lobby", "auto_join_transitions_to_roster",

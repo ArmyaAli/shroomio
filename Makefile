@@ -1113,7 +1113,7 @@ $(UNITY_DIR):
 # =============================================================================
 # 8. Test Targets
 # =============================================================================
-.PHONY: test e2e unit-test imgui-test directory-integration-test snapshot-rate-integration-test valgrind-test valgrind-unit-test valgrind-server-smoke valgrind-imgui-test test-coverage test-clean chat-log-integration-test
+.PHONY: test e2e unit-test imgui-test gameplay-visual-test directory-integration-test snapshot-rate-integration-test valgrind-test valgrind-unit-test valgrind-server-smoke valgrind-imgui-test test-coverage test-clean chat-log-integration-test
 
 test: unit-test imgui-test input-flood-test directory-integration-test snapshot-rate-integration-test server-health-test rest-integration-test graceful-shutdown-integration-test udp-auth-integration-test chat-log-integration-test
 
@@ -1147,6 +1147,10 @@ $(IMGUI_TEST_BIN): $(IMGUI_TEST_CLIENT_OBJECTS) $(IMGUI_TEST_C_OBJECTS) $(IMGUI_
 imgui-test: $(IMGUI_TEST_BIN)
 	@echo "Running ImGui tests..."
 	@if command -v xvfb-run >/dev/null 2>&1; then xvfb-run -a ./$(IMGUI_TEST_BIN); else ./$(IMGUI_TEST_BIN); fi
+
+gameplay-visual-test: $(IMGUI_TEST_BIN)
+	@echo "Running exploratory gameplay visual tests..."
+	@if command -v xvfb-run >/dev/null 2>&1; then SHROOM_IMGUI_TEST_FILTER='gameplay_visual_exploration,visual_exploration_long_entries' xvfb-run -a ./$(IMGUI_TEST_BIN); else SHROOM_IMGUI_TEST_FILTER='gameplay_visual_exploration,visual_exploration_long_entries' ./$(IMGUI_TEST_BIN); fi
 
 VALGRIND ?= valgrind
 VALGRIND_FLAGS ?= --leak-check=full --show-leak-kinds=definite,indirect --errors-for-leak-kinds=definite,indirect --error-exitcode=99 --track-origins=yes

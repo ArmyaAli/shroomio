@@ -26,7 +26,12 @@ If Docker access fails after a rebuild, reopen the workspace in the container so
 make client-linux # Builds dist/linux/client/shroomio
 make run         # Builds and launches the client
 make imgui-test  # Builds and runs the ImGui UI test harness
+make gameplay-visual-test  # Runs exploratory gameplay/HUD/overlay visual checks
 ```
+
+The exploratory target stresses dense core-gameplay presentation at the supported UI-scale and HUD-density
+endpoints, including long labels, collectibles, markers, overlays, and Lobby Browser entries. It uses the
+same headless ImGui harness as `make imgui-test`; failures identify the affected screen/component.
 
 #### WSLg audio recovery soak
 
