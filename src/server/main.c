@@ -137,6 +137,8 @@ static uint64_t g_server_event_budget_exhaustions;
 static uint64_t g_server_input_stale_rejections;
 static uint64_t g_server_input_rate_rejections;
 static uint64_t g_server_chat_message_id;
+static uint32_t g_server_chat_message_sequence;
+static uint32_t g_server_chat_message_epoch;
 static uint32_t g_lobby_roster_generation;
 
 static float g_match_duration_seconds = SHROOM_MATCH_DURATION_SECONDS;
@@ -1707,20 +1709,29 @@ static void ServerChatLogSink(void* context, ShroomChatLogOutcome outcome, const
   }
 }
 
-static void LogChatEvent(const ServerSession* session, size_t byte_length,
-                         ShroomChatLogOutcome outcome) {
+static uint64_t NextChatMessageId(void) {
+  if (g_server_chat_message_epoch == 0u) {
+    g_server_chat_message_epoch = (uint32_t)time(NULL);
+  }
+  g_server_chat_message_sequence += 1u;
+  if (g_server_chat_message_sequence == 0u) {
+    g_server_chat_message_sequence = 1u;
+  }
+  return ((uint64_t)g_server_chat_message_epoch << 32u) | g_server_chat_message_sequence;
+}
+
+static uint64_t LogChatEvent(const ServerSession* session, size_t byte_length,
+                             ShroomChatLogOutcome outcome) {
   ShroomChatLogEvent event = {
       .lobby_id = session != NULL ? session->lobby_id : 0u,
       .byte_length = byte_length,
       .outcome = outcome,
   };
 
-  g_server_chat_message_id += 1u;
-  if (g_server_chat_message_id == 0u) {
-    g_server_chat_message_id = 1u;
-  }
+  g_server_chat_message_id = NextChatMessageId();
   event.message_id = g_server_chat_message_id;
   (void)ShroomChatLogEmit(&event, ServerChatLogSink, NULL);
+  return event.message_id;
 }
 
 static void HandleChatPacket(ENetHost* host, ServerSession* session, const ENetPacket* enet_packet,
@@ -1769,7 +1780,8 @@ static void HandleChatPacket(ENetHost* host, ServerSession* session, const ENetP
   snprintf(broadcast.sender_name, sizeof(broadcast.sender_name), "%s",
            session->player->name[0] != '\0' ? session->player->name : "Unknown");
 
-  LogChatEvent(session, content_length, SHROOM_CHAT_LOG_ACCEPTED);
+  broadcast.timestamp_sec = (uint32_t)time(NULL);
+  broadcast.message_id = LogChatEvent(session, content_length, SHROOM_CHAT_LOG_ACCEPTED);
 
   /* Broadcast only to peers in the same lobby. */
   for (index = 0; index < host->peerCount; ++index) {

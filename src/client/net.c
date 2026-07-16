@@ -423,7 +423,12 @@ static void HandleChat(ClientNetState* net, const ENetPacket* enet_packet) {
     return;
   }
 
-  ChatMessage incoming = {.sender_id = packet->sender_id, .timestamp_sec = (uint32_t)time(NULL)};
+  ChatMessage incoming = {.sender_id = packet->sender_id,
+                          .message_id = packet->message_id,
+                          .timestamp_sec = packet->timestamp_sec};
+  if ((incoming.message_id == 0u) || (incoming.timestamp_sec == 0u)) {
+    return;
+  }
   memcpy(incoming.sender_name, packet->sender_name, sizeof(incoming.sender_name));
   incoming.sender_name[sizeof(incoming.sender_name) - 1u] = '\0';
   ShroomChatCacheSanitizeText(incoming.sender_name, sizeof(incoming.sender_name),
