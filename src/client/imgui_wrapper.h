@@ -88,6 +88,7 @@ bool ShroomImGui_InputTextPassword(const char* label, char* buffer, size_t buffe
 bool ShroomImGui_BeginChild(const char* id, float width, float height, bool border);
 void ShroomImGui_EndChild(void);
 void ShroomImGui_DrawZonePreview(float width, float height, float animation_time);
+void ShroomImGui_DrawControlPreview(float width, float height, float animation_time);
 void ShroomImGui_SetScrollHereY(float center_y_ratio);
 bool ShroomImGui_WantCaptureKeyboard(void);
 void ShroomImGui_SetKeyboardFocusHere(void);
