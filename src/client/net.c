@@ -1,4 +1,5 @@
 #include "net.h"
+#include "shared/chat_admission.h"
 #include "results_transition.h"
 #include "shared/player_identity.h"
 
@@ -418,6 +419,9 @@ static void HandleChat(ClientNetState* net, const ENetPacket* enet_packet) {
   }
 
   packet = (const ShroomChatPacket*)enet_packet->data;
+  if (memchr(packet->message, '\0', sizeof(packet->message)) == NULL) {
+    return;
+  }
 
   ChatMessage incoming = {.sender_id = packet->sender_id, .timestamp_sec = (uint32_t)time(NULL)};
   memcpy(incoming.sender_name, packet->sender_name, sizeof(incoming.sender_name));
@@ -428,7 +432,9 @@ static void HandleChat(ClientNetState* net, const ENetPacket* enet_packet) {
   msg_len = sizeof(packet->message);
   memcpy(incoming.message, packet->message, msg_len);
   incoming.message[sizeof(incoming.message) - 1u] = '\0';
-  ShroomChatCacheSanitizeText(incoming.message, sizeof(incoming.message), incoming.message);
+  if (!ShroomChatIsCanonicalMessage(incoming.message, sizeof(incoming.message))) {
+    return;
+  }
   if ((incoming.sender_name[0] == '\0') || (incoming.message[0] == '\0')) {
     return;
   }

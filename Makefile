@@ -276,7 +276,8 @@ CLIENT_SOURCES := \
 	$(SHARED_SRC_DIR)/net_telemetry.c \
 	$(SHARED_SRC_DIR)/snapshot_replication.c \
 	$(SHARED_SRC_DIR)/world_replication.c \
-	$(SHARED_SRC_DIR)/connection.c
+	$(SHARED_SRC_DIR)/connection.c \
+	$(SHARED_SRC_DIR)/chat_admission.c
 
 #Server source files
 SERVER_SOURCES := \
@@ -304,7 +305,8 @@ SERVER_SOURCES := \
 	$(SHARED_SRC_DIR)/snapshot_replication.c \
 	$(SHARED_SRC_DIR)/snapshot_scheduler.c \
 	$(SHARED_SRC_DIR)/world_replication.c \
-	$(SHARED_SRC_DIR)/connection.c
+	$(SHARED_SRC_DIR)/connection.c \
+	$(SHARED_SRC_DIR)/chat_admission.c
 
 #Shared headers(dependencies for all modules)
 SHARED_HEADERS := \
@@ -414,7 +416,8 @@ IMGUI_TEST_CLIENT_SOURCES := \
 	$(SHARED_SRC_DIR)/net_telemetry.c \
 	$(SHARED_SRC_DIR)/snapshot_replication.c \
 	$(SHARED_SRC_DIR)/world_replication.c \
-	$(SHARED_SRC_DIR)/connection.c
+	$(SHARED_SRC_DIR)/connection.c \
+	$(SHARED_SRC_DIR)/chat_admission.c
 # C test driver sources (plain C11 — no C++ in the test logic)
 IMGUI_TEST_C_SOURCES := $(IMGUI_TESTS_DIR)/main.c $(IMGUI_TESTS_DIR)/tests.c
 # C++ wrapper sources for the test harness (test engine C API bridge)
@@ -1294,7 +1297,7 @@ test_connection) \
 				$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/intermission.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_client_net) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) \
-				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/input_scheduler.c $(CLIENT_SRC_DIR)/chat_cache.c $(CLIENT_SRC_DIR)/client_paths.c $(CLIENT_SRC_DIR)/client_storage.c $(CLIENT_SRC_DIR)/results_transition.c $(SHARED_SRC_DIR)/net_telemetry.c $(SHARED_SRC_DIR)/snapshot_replication.c $(SHARED_SRC_DIR)/world_replication.c -o $$test_bin $(COVERAGE_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lenet ;; \
+				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/input_scheduler.c $(CLIENT_SRC_DIR)/chat_cache.c $(CLIENT_SRC_DIR)/client_paths.c $(CLIENT_SRC_DIR)/client_storage.c $(CLIENT_SRC_DIR)/results_transition.c $(SHARED_SRC_DIR)/chat_admission.c $(SHARED_SRC_DIR)/net_telemetry.c $(SHARED_SRC_DIR)/snapshot_replication.c $(SHARED_SRC_DIR)/world_replication.c -o $$test_bin $(COVERAGE_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lenet ;; \
 		test_snapshot_replication) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/snapshot_replication.c -o $$test_bin $(COVERAGE_LIBS) ;; \
@@ -1319,6 +1322,9 @@ test_connection) \
 		test_chat_cache) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/chat_cache.c $(CLIENT_SRC_DIR)/client_paths.c $(CLIENT_SRC_DIR)/client_storage.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+		test_chat_admission) \
+			$(LINUX_CC) $(COVERAGE_CFLAGS) \
+				$$src $(UNITY_SRC) $(SHARED_SRC_DIR)/chat_admission.c -o $$test_bin $(COVERAGE_LIBS) ;; \
 		test_chat_log) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(SERVER_SRC_DIR)/chat_log.c -o $$test_bin $(COVERAGE_LIBS) ;; \
@@ -1498,7 +1504,7 @@ $(TEST_BUILD_DIR)/test_prediction: $(UNIT_TESTS_DIR)/test_prediction.c $(UNITY_S
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
-$(TEST_BUILD_DIR)/test_client_net: $(UNIT_TESTS_DIR)/test_client_net.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/input_scheduler.c $(CLIENT_SRC_DIR)/chat_cache.c $(CLIENT_SRC_DIR)/client_paths.c $(CLIENT_SRC_DIR)/client_storage.c $(CLIENT_SRC_DIR)/results_transition.c $(SHARED_SRC_DIR)/net_telemetry.c $(SHARED_SRC_DIR)/snapshot_replication.c $(SHARED_SRC_DIR)/world_replication.c | $(UNITY_DIR)
+$(TEST_BUILD_DIR)/test_client_net: $(UNIT_TESTS_DIR)/test_client_net.c $(UNITY_SRC) $(CLIENT_SRC_DIR)/net.c $(CLIENT_SRC_DIR)/input_scheduler.c $(CLIENT_SRC_DIR)/chat_cache.c $(CLIENT_SRC_DIR)/client_paths.c $(CLIENT_SRC_DIR)/client_storage.c $(CLIENT_SRC_DIR)/results_transition.c $(SHARED_SRC_DIR)/chat_admission.c $(SHARED_SRC_DIR)/net_telemetry.c $(SHARED_SRC_DIR)/snapshot_replication.c $(SHARED_SRC_DIR)/world_replication.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) $^ -o $@ $(TEST_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lenet
 
@@ -1611,6 +1617,10 @@ $(TEST_BUILD_DIR)/test_powerups: $(UNIT_TESTS_DIR)/test_powerups.c $(UNITY_SRC) 
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
 $(TEST_BUILD_DIR)/test_split_steering: $(UNIT_TESTS_DIR)/test_split_steering.c $(UNITY_SRC) $(SHARED_SRC_DIR)/sim.c | $(UNITY_DIR)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_chat_admission: $(UNIT_TESTS_DIR)/test_chat_admission.c $(UNITY_SRC) $(SHARED_SRC_DIR)/chat_admission.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
 
