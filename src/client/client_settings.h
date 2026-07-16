@@ -5,7 +5,7 @@
 
 #include "shared/config.h"
 
-#define CLIENT_SETTINGS_SCHEMA_VERSION 3
+#define CLIENT_SETTINGS_SCHEMA_VERSION 4
 
 typedef enum ClientPalettePreset {
   CLIENT_PALETTE_CLASSIC = 0,
@@ -24,6 +24,12 @@ typedef enum ClientParticleQuality {
   CLIENT_PARTICLES_MEDIUM,
   CLIENT_PARTICLES_HIGH,
 } ClientParticleQuality;
+
+typedef enum ClientConnectionType {
+  CLIENT_CONNECTION_AUTO = 0,
+  CLIENT_CONNECTION_DIRECT,
+  CLIENT_CONNECTION_DIRECTORY,
+} ClientConnectionType;
 
 typedef enum ClientMushroomSpecies {
   CLIENT_MUSHROOM_AMANITA = 0,
@@ -66,6 +72,13 @@ typedef struct ClientSettings {
   int key_hud_toggle;
   int key_pause_menu;
   int key_push_to_talk;
+  int window_width;
+  int window_height;
+  bool fullscreen;
+  bool vsync;
+  int input_sensitivity_percent;
+  ClientConnectionType connection_type;
+  bool chat_visible;
 } ClientSettings;
 
 void ClientSettingsSetDefaults(ClientSettings* settings);

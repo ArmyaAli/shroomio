@@ -2,6 +2,7 @@
 #include "imgui_te_wrapper.h"
 
 #include "client/client_settings.h"
+#include "client/client_storage.h"
 #include "client/audio.h"
 #include "client/chat_cache.h"
 #include "client/client_paths.h"
@@ -190,6 +191,7 @@ int main(void) {
       return 1;
     }
     ShroomClientPathsSetTestCacheRoot(cache_root);
+    ShroomClientStorageSetTestConfigRoot(g_imgui_test_app.temp_dir);
   }
 
   InitWindow(1280, 720, "shroomio imgui tests");

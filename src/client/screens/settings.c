@@ -52,6 +52,13 @@ static const char* const kParticleItems[] = {
     "High",
 };
 
+static const char* const kResolutionItems[] = {
+    "1280 x 720", "1600 x 900", "1920 x 1080", "2560 x 1440",
+};
+static const int kResolutionWidths[] = {1280, 1600, 1920, 2560};
+static const int kResolutionHeights[] = {720, 900, 1080, 1440};
+static const char* const kConnectionItems[] = {"Auto", "Direct", "Directory"};
+
 static const ShroomMushroomSpeciesEntry* FindSpeciesEntry(const ClientNetState* net,
                                                           ClientMushroomSpecies species) {
   if ((net == NULL) || !net->mushroom_species_catalog_received) {
@@ -66,7 +73,18 @@ static const ShroomMushroomSpeciesEntry* FindSpeciesEntry(const ClientNetState* 
 }
 
 static void ApplySettings(Game* game, const ClientSettings* settings) {
+  const bool was_fullscreen = IsWindowFullscreen();
   game->settings = *settings;
+  if (!game->settings.chat_visible) {
+    game->chat_open = false;
+    game->chat_minimized = true;
+  }
+  if (GetScreenWidth() != settings->window_width || GetScreenHeight() != settings->window_height) {
+    SetWindowSize(settings->window_width, settings->window_height);
+  }
+  if (was_fullscreen != settings->fullscreen) {
+    ToggleFullscreen();
+  }
   ShroomClientAudioInit(&game->settings);
   ShroomVoiceSetSelfMuted(game->settings.voice_self_muted);
   ShroomVoiceSetOutputVolume(game->settings.voice_output_volume_percent);
@@ -254,6 +272,32 @@ static void SettingsDraw(ShroomScreenManager* manager) {
                         &g_settings_screen.session.pending.preferred_region_index, kRegionItems, 3);
   changed |= ShroomImGui_Combo("Palette", (int*)&g_settings_screen.session.pending.palette_preset,
                                kPaletteItems, 2);
+  {
+    int resolution = 0;
+    for (int index = 0; index < (int)(sizeof(kResolutionWidths) / sizeof(kResolutionWidths[0]));
+         ++index) {
+      if ((g_settings_screen.session.pending.window_width == kResolutionWidths[index]) &&
+          (g_settings_screen.session.pending.window_height == kResolutionHeights[index])) {
+        resolution = index;
+        break;
+      }
+    }
+    if (ShroomImGui_Combo("Resolution", &resolution, kResolutionItems,
+                          (int)(sizeof(kResolutionItems) / sizeof(kResolutionItems[0])))) {
+      g_settings_screen.session.pending.window_width = kResolutionWidths[resolution];
+      g_settings_screen.session.pending.window_height = kResolutionHeights[resolution];
+      changed = true;
+    }
+  }
+  changed |= ShroomImGui_Checkbox("Fullscreen", &g_settings_screen.session.pending.fullscreen);
+  changed |= ShroomImGui_Checkbox("VSync", &g_settings_screen.session.pending.vsync);
+  changed |= ShroomImGui_SliderInt("Input Sensitivity",
+                                   &g_settings_screen.session.pending.input_sensitivity_percent,
+                                   25, 200, "%d%%");
+  changed |= ShroomImGui_Combo("Connection Type",
+                               (int*)&g_settings_screen.session.pending.connection_type,
+                               kConnectionItems, 3);
+  changed |= ShroomImGui_Checkbox("Show Chat", &g_settings_screen.session.pending.chat_visible);
 
   ShroomImGui_Separator();
   ShroomImGui_Text("Audio");
@@ -416,7 +460,7 @@ static void SettingsDraw(ShroomScreenManager* manager) {
 
   ShroomImGui_Spacing();
   if (g_settings_screen.save_succeeded) {
-    ShroomImGui_Text("Settings applied and saved to client_settings.cfg");
+    ShroomImGui_Text("Settings applied and saved to platform config");
   } else if (g_settings_screen.save_failed) {
     ShroomImGui_TextColored((ShroomImGuiColor){1.0f, 0.45f, 0.4f, 1.0f},
                             "Save failed; current settings were not changed.");

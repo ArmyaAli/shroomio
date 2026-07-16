@@ -1498,7 +1498,7 @@ static void Test_MigratedSettingsSurviveCrossScreenWorkflow(ImGuiTestContext* ct
     IM_CHECK(fgets(schema_line, sizeof(schema_line), file) != NULL);
     fclose(file);
   }
-  IM_CHECK_STR_EQ(schema_line, "schema_version=3\n");
+  IM_CHECK_STR_EQ(schema_line, "schema_version=4\n");
   IM_CHECK_EQ(g_imgui_test_app.game.settings.ui_scale_percent, 110);
   IM_CHECK_EQ(g_imgui_test_app.game.settings.master_volume_percent, 63);
   IM_CHECK_EQ(g_imgui_test_app.game.settings.key_chat_open, KEY_Y);
