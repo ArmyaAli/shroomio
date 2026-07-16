@@ -1,4 +1,5 @@
 #include "client_settings.h"
+#include "client_storage.h"
 
 #include "raylib.h"
 #include "shared/player_identity.h"
@@ -8,6 +9,7 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -17,7 +19,13 @@
 #include <io.h>
 #endif
 
-static const char* kClientSettingsPath = "client_settings.cfg";
+static const char* kClientSettingsLegacyPath = "client_settings.cfg";
+
+static bool BuildDefaultSettingsPath(char* destination, size_t destination_size) {
+  return ShroomClientStorageDefaultFile(destination, destination_size,
+                                         SHROOM_CLIENT_STORAGE_CONFIG,
+                                         "client_settings.cfg");
+}
 
 void ClientSettingsSanitizePlayerName(char destination[SHROOM_MAX_NAME_LENGTH],
                                       const char* source) {
@@ -55,6 +63,13 @@ void ClientSettingsSetDefaults(ClientSettings* settings) {
       .key_hud_toggle = KEY_F2,
       .key_pause_menu = KEY_ESCAPE,
       .key_push_to_talk = KEY_V,
+      .window_width = 1280,
+      .window_height = 720,
+      .fullscreen = false,
+      .vsync = true,
+      .input_sensitivity_percent = 100,
+      .connection_type = CLIENT_CONNECTION_AUTO,
+      .chat_visible = true,
   };
 }
 
@@ -90,6 +105,20 @@ void ClientSettingsValidate(ClientSettings* settings) {
   }
   if ((settings->camera_zoom < 0.35f) || (settings->camera_zoom > 2.0f)) {
     settings->camera_zoom = 1.0f;
+  }
+  if ((settings->window_width < 640) || (settings->window_width > 7680)) {
+    settings->window_width = 1280;
+  }
+  if ((settings->window_height < 360) || (settings->window_height > 4320)) {
+    settings->window_height = 720;
+  }
+  if ((settings->input_sensitivity_percent < 25) ||
+      (settings->input_sensitivity_percent > 200)) {
+    settings->input_sensitivity_percent = 100;
+  }
+  if ((settings->connection_type < CLIENT_CONNECTION_AUTO) ||
+      (settings->connection_type > CLIENT_CONNECTION_DIRECTORY)) {
+    settings->connection_type = CLIENT_CONNECTION_AUTO;
   }
   if ((settings->palette_preset < CLIENT_PALETTE_CLASSIC) ||
       (settings->palette_preset > CLIENT_PALETTE_HIGH_CONTRAST)) {
@@ -128,11 +157,13 @@ void ClientSettingsValidate(ClientSettings* settings) {
 enum {
   CLIENT_SETTINGS_LEGACY_FIELD_COUNT = 20,
   CLIENT_SETTINGS_PREVIOUS_FIELD_COUNT = 24,
-  CLIENT_SETTINGS_FIELD_COUNT = 25,
+  CLIENT_SETTINGS_V3_FIELD_COUNT = 25,
+  CLIENT_SETTINGS_FIELD_COUNT = 32,
 };
-#define CLIENT_SETTINGS_LEGACY_MASK ((1u << CLIENT_SETTINGS_LEGACY_FIELD_COUNT) - 1u)
-#define CLIENT_SETTINGS_PREVIOUS_MASK ((1u << CLIENT_SETTINGS_PREVIOUS_FIELD_COUNT) - 1u)
-#define CLIENT_SETTINGS_REQUIRED_MASK ((1u << CLIENT_SETTINGS_FIELD_COUNT) - 1u)
+#define CLIENT_SETTINGS_LEGACY_MASK ((UINT64_C(1) << CLIENT_SETTINGS_LEGACY_FIELD_COUNT) - 1u)
+#define CLIENT_SETTINGS_PREVIOUS_MASK ((UINT64_C(1) << CLIENT_SETTINGS_PREVIOUS_FIELD_COUNT) - 1u)
+#define CLIENT_SETTINGS_V3_MASK ((UINT64_C(1) << CLIENT_SETTINGS_V3_FIELD_COUNT) - 1u)
+#define CLIENT_SETTINGS_REQUIRED_MASK ((UINT64_C(1) << CLIENT_SETTINGS_FIELD_COUNT) - 1u)
 
 static bool BuildSettingsSidePath(char* destination, size_t size, const char* path,
                                   const char* suffix) {
@@ -167,7 +198,7 @@ static bool ParseInteger(const char* text, int* value) {
 static bool ParseSettingsFile(const char* path, ClientSettings* settings, bool* unversioned) {
   FILE* file;
   char line[160];
-  unsigned int fields = 0u;
+  uint64_t fields = 0u;
   int schema_version = 0;
   bool schema_seen = false;
   bool valid = true;
@@ -288,6 +319,27 @@ static bool ParseSettingsFile(const char* path, ClientSettings* settings, bool* 
       } else if (strcmp(key, "account_features_enabled") == 0) {
         settings->account_features_enabled = value != 0;
         field = 24u;
+      } else if (strcmp(key, "window_width") == 0) {
+        settings->window_width = value;
+        field = 25u;
+      } else if (strcmp(key, "window_height") == 0) {
+        settings->window_height = value;
+        field = 26u;
+      } else if (strcmp(key, "fullscreen") == 0) {
+        settings->fullscreen = value != 0;
+        field = 27u;
+      } else if (strcmp(key, "vsync") == 0) {
+        settings->vsync = value != 0;
+        field = 28u;
+      } else if (strcmp(key, "input_sensitivity_percent") == 0) {
+        settings->input_sensitivity_percent = value;
+        field = 29u;
+      } else if (strcmp(key, "connection_type") == 0) {
+        settings->connection_type = (ClientConnectionType)value;
+        field = 30u;
+      } else if (strcmp(key, "chat_visible") == 0) {
+        settings->chat_visible = value != 0;
+        field = 31u;
       }
     }
     if (field < CLIENT_SETTINGS_FIELD_COUNT) {
@@ -307,8 +359,11 @@ static bool ParseSettingsFile(const char* path, ClientSettings* settings, bool* 
   const bool schema_one =
       schema_seen && (schema_version == 1) && (fields == CLIENT_SETTINGS_LEGACY_MASK);
   const bool schema_two =
-      schema_seen && (schema_version == 2) && (fields == CLIENT_SETTINGS_PREVIOUS_MASK);
-  valid = valid && (current_schema || unversioned_schema || schema_one || schema_two);
+      schema_seen && (schema_version == 2) &&
+      ((fields & CLIENT_SETTINGS_PREVIOUS_MASK) == CLIENT_SETTINGS_PREVIOUS_MASK);
+  const bool schema_three =
+      schema_seen && (schema_version == 3) && (fields == CLIENT_SETTINGS_V3_MASK);
+  valid = valid && (current_schema || unversioned_schema || schema_one || schema_two || schema_three);
   if (!valid) {
     ClientSettingsSetDefaults(settings);
     return false;
@@ -410,6 +465,13 @@ static bool WriteSettingsFile(const char* path, const ClientSettings* settings) 
       fprintf(file, "key_hud_toggle=%d\n", settings->key_hud_toggle) >= 0 &&
       fprintf(file, "key_pause_menu=%d\n", settings->key_pause_menu) >= 0 &&
       fprintf(file, "key_push_to_talk=%d\n", settings->key_push_to_talk) >= 0;
+  success = success && fprintf(file, "window_width=%d\n", settings->window_width) >= 0 &&
+            fprintf(file, "window_height=%d\n", settings->window_height) >= 0 &&
+            fprintf(file, "fullscreen=%d\n", settings->fullscreen ? 1 : 0) >= 0 &&
+            fprintf(file, "vsync=%d\n", settings->vsync ? 1 : 0) >= 0 &&
+            fprintf(file, "input_sensitivity_percent=%d\n", settings->input_sensitivity_percent) >= 0 &&
+            fprintf(file, "connection_type=%d\n", (int)settings->connection_type) >= 0 &&
+            fprintf(file, "chat_visible=%d\n", settings->chat_visible ? 1 : 0) >= 0;
   success = success && FlushSettingsFile(file);
   if (fclose(file) != 0) {
     success = false;
@@ -523,11 +585,27 @@ bool ClientSettingsLoadFromPath(ClientSettings* settings, const char* path) {
 }
 
 bool ClientSettingsLoad(ClientSettings* settings) {
-  return ClientSettingsLoadFromPath(settings, kClientSettingsPath);
+  char path[SHROOM_CLIENT_STORAGE_PATH_MAX];
+  if (!BuildDefaultSettingsPath(path, sizeof(path))) {
+    return ClientSettingsLoadFromPath(settings, kClientSettingsLegacyPath);
+  }
+  if (ClientSettingsLoadFromPath(settings, path)) {
+    return true;
+  }
+  if (ClientSettingsLoadFromPath(settings, kClientSettingsLegacyPath)) {
+    if (ClientSettingsSaveToPath(settings, path)) {
+      remove(kClientSettingsLegacyPath);
+    }
+    return true;
+  }
+  ClientSettingsSetDefaults(settings);
+  ClientSettingsValidate(settings);
+  return false;
 }
 
 bool ClientSettingsSave(const ClientSettings* settings) {
-  return ClientSettingsSaveToPath(settings, kClientSettingsPath);
+  char path[SHROOM_CLIENT_STORAGE_PATH_MAX];
+  return BuildDefaultSettingsPath(path, sizeof(path)) && ClientSettingsSaveToPath(settings, path);
 }
 
 bool ClientSettingsCommitPlayerNameToPath(ClientSettings* settings, const char* player_name,
@@ -547,7 +625,9 @@ bool ClientSettingsCommitPlayerNameToPath(ClientSettings* settings, const char* 
 }
 
 bool ClientSettingsCommitPlayerName(ClientSettings* settings, const char* player_name) {
-  return ClientSettingsCommitPlayerNameToPath(settings, player_name, kClientSettingsPath);
+  char path[SHROOM_CLIENT_STORAGE_PATH_MAX];
+  return BuildDefaultSettingsPath(path, sizeof(path)) &&
+         ClientSettingsCommitPlayerNameToPath(settings, player_name, path);
 }
 
 const char* ClientSettingsPreferredRegionLabel(int region_index) {

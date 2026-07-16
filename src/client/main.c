@@ -58,13 +58,19 @@ int main(void) {
   ShroomLifecycleInit(&g_lifecycle);
   ShroomLifecycleTransition(&g_lifecycle, SHROOM_LIFECYCLE_EVENT_INIT);
 
-  SetConfigFlags(FLAG_WINDOW_RESIZABLE);
-  InitWindow(screen_width, screen_height, "shroomio");
+  ClientSettingsSetDefaults(&g_game.settings);
+  (void)ClientSettingsLoad(&g_game.settings);
+  SetConfigFlags(FLAG_WINDOW_RESIZABLE | (g_game.settings.vsync ? FLAG_VSYNC_HINT : 0u));
+  InitWindow(g_game.settings.window_width > 0 ? g_game.settings.window_width : screen_width,
+             g_game.settings.window_height > 0 ? g_game.settings.window_height : screen_height,
+             "shroomio");
+  if (g_game.settings.fullscreen) {
+    ToggleFullscreen();
+  }
   SetExitKey(KEY_NULL);
   SetTargetFPS(60);
 
   ShroomImGui_Init();
-  ClientSettingsLoad(&g_game.settings);
   {
     const char* ca_certificate = getenv("SHROOM_REST_CA_CERT");
     const char* pinned_public_key = getenv("SHROOM_REST_PINNED_PUBLIC_KEY");

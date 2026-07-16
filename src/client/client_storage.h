@@ -19,4 +19,8 @@ bool ShroomClientStorageCreatePrivateTemporaryFile(const char* destination_path,
                                                    int* descriptor);
 bool ShroomClientStorageReplaceFile(const char* temporary_path, const char* destination_path);
 
+#ifdef TEST_MODE
+void ShroomClientStorageSetTestConfigRoot(const char* config_root);
+#endif
+
 #endif

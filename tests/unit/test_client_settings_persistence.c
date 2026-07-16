@@ -1,9 +1,13 @@
+#define _XOPEN_SOURCE 700
+
 #include "unity.h"
 
 #include "client/client_settings.h"
+#include "client/client_storage.h"
 #include "raylib.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -106,6 +110,13 @@ static bool RewriteAsSchemaTwo(const char* path) {
     if (strncmp(line, "account_features_enabled=", 25u) == 0) {
       continue;
     }
+    if (strncmp(line, "window_width=", 13u) == 0 || strncmp(line, "window_height=", 14u) == 0 ||
+        strncmp(line, "fullscreen=", 11u) == 0 || strncmp(line, "vsync=", 6u) == 0 ||
+        strncmp(line, "input_sensitivity_percent=", 27u) == 0 ||
+        strncmp(line, "connection_type=", 16u) == 0 ||
+        strncmp(line, "chat_visible=", 13u) == 0) {
+      continue;
+    }
     if (strncmp(line, "schema_version=", 15u) == 0) {
       success = success && (fputs("schema_version=2\n", output) >= 0);
     } else {
@@ -142,7 +153,7 @@ void test_versioned_round_trip_leaves_no_temporary_file(void) {
   TEST_ASSERT_TRUE(loaded.voice_self_muted);
   TEST_ASSERT_EQUAL_INT(37, loaded.voice_output_volume_percent);
   TEST_ASSERT_EQUAL_STRING("Studio Mic", loaded.voice_capture_device);
-  TEST_ASSERT_TRUE(FileContains(settings_path, "schema_version=3\n"));
+  TEST_ASSERT_TRUE(FileContains(settings_path, "schema_version=4\n"));
   TEST_ASSERT_FALSE(loaded.account_features_enabled);
   TEST_ASSERT_EQUAL_INT(0, stat(settings_path, &status));
   TEST_ASSERT_EQUAL_INT(0, status.st_mode & (S_IRWXG | S_IRWXO));
@@ -176,7 +187,7 @@ void test_complete_unversioned_file_migrates_to_current_schema(void) {
   TEST_ASSERT_FALSE(loaded.voice_self_muted);
   TEST_ASSERT_EQUAL_INT(80, loaded.voice_output_volume_percent);
   TEST_ASSERT_EQUAL_STRING("", loaded.voice_capture_device);
-  TEST_ASSERT_TRUE(FileContains(settings_path, "schema_version=3\n"));
+  TEST_ASSERT_TRUE(FileContains(settings_path, "schema_version=4\n"));
 }
 
 void test_corrupt_primary_recovers_prior_valid_backup(void) {
@@ -195,7 +206,7 @@ void test_corrupt_primary_recovers_prior_valid_backup(void) {
   TEST_ASSERT_TRUE(ClientSettingsLoadFromPath(&loaded, settings_path));
   TEST_ASSERT_EQUAL_INT(125, loaded.ui_scale_percent);
   TEST_ASSERT_EQUAL_STRING("Backup Player", loaded.player_name);
-  TEST_ASSERT_TRUE(FileContains(settings_path, "schema_version=3\n"));
+  TEST_ASSERT_TRUE(FileContains(settings_path, "schema_version=4\n"));
 }
 
 void test_truncated_files_fall_back_to_validated_defaults(void) {
@@ -257,7 +268,7 @@ void test_schema_two_migrates_with_account_features_disabled(void) {
   TEST_ASSERT_TRUE(RewriteAsSchemaTwo(settings_path));
   TEST_ASSERT_TRUE(ClientSettingsLoadFromPath(&loaded, settings_path));
   TEST_ASSERT_FALSE(loaded.account_features_enabled);
-  TEST_ASSERT_TRUE(FileContains(settings_path, "schema_version=3\n"));
+  TEST_ASSERT_TRUE(FileContains(settings_path, "schema_version=4\n"));
   TEST_ASSERT_TRUE(FileContains(settings_path, "account_features_enabled=0\n"));
 }
 
@@ -300,6 +311,65 @@ void test_player_name_commit_is_transactional_and_retryable_after_save_failure(v
   TEST_ASSERT_EQUAL_STRING("Moss Runner", loaded.player_name);
 }
 
+void test_next_version_display_and_connection_settings_round_trip_and_validate(void) {
+  ClientSettings saved = ExampleSettings(100, 80, "Next Version");
+  ClientSettings loaded;
+
+  saved.window_width = 1920;
+  saved.window_height = 1080;
+  saved.fullscreen = true;
+  saved.vsync = false;
+  saved.input_sensitivity_percent = 175;
+  saved.connection_type = CLIENT_CONNECTION_DIRECTORY;
+  saved.chat_visible = false;
+  TEST_ASSERT_TRUE(ClientSettingsSaveToPath(&saved, settings_path));
+  TEST_ASSERT_TRUE(ClientSettingsLoadFromPath(&loaded, settings_path));
+  TEST_ASSERT_EQUAL_INT(1920, loaded.window_width);
+  TEST_ASSERT_EQUAL_INT(1080, loaded.window_height);
+  TEST_ASSERT_TRUE(loaded.fullscreen);
+  TEST_ASSERT_FALSE(loaded.vsync);
+  TEST_ASSERT_EQUAL_INT(175, loaded.input_sensitivity_percent);
+  TEST_ASSERT_EQUAL_INT(CLIENT_CONNECTION_DIRECTORY, loaded.connection_type);
+  TEST_ASSERT_FALSE(loaded.chat_visible);
+
+  loaded.window_width = 1;
+  loaded.window_height = 1;
+  loaded.input_sensitivity_percent = 999;
+  loaded.connection_type = (ClientConnectionType)99;
+  ClientSettingsValidate(&loaded);
+  TEST_ASSERT_EQUAL_INT(1280, loaded.window_width);
+  TEST_ASSERT_EQUAL_INT(720, loaded.window_height);
+  TEST_ASSERT_EQUAL_INT(100, loaded.input_sensitivity_percent);
+  TEST_ASSERT_EQUAL_INT(CLIENT_CONNECTION_AUTO, loaded.connection_type);
+}
+
+void test_load_migrates_legacy_working_directory_file_to_config_path(void) {
+  char original_directory[512];
+  char migration_directory[] = "/tmp/shroomio-settings-migration-XXXXXX";
+  char config_path[512];
+  ClientSettings saved = ExampleSettings(135, 67, "Migrated");
+  ClientSettings loaded;
+
+  TEST_ASSERT_NOT_NULL(getcwd(original_directory, sizeof(original_directory)));
+  TEST_ASSERT_NOT_NULL(mkdtemp(migration_directory));
+  snprintf(config_path, sizeof(config_path), "%s/config", migration_directory);
+  TEST_ASSERT_EQUAL_INT(0, mkdir(config_path, 0700));
+  TEST_ASSERT_EQUAL_INT(0, chdir(migration_directory));
+  ShroomClientStorageSetTestConfigRoot(config_path);
+  TEST_ASSERT_TRUE(ClientSettingsSaveToPath(&saved, "client_settings.cfg"));
+  TEST_ASSERT_TRUE(ClientSettingsLoad(&loaded));
+  TEST_ASSERT_EQUAL_STRING("Migrated", loaded.player_name);
+  TEST_ASSERT_EQUAL_INT(-1, access("client_settings.cfg", F_OK));
+  TEST_ASSERT_GREATER_THAN_INT(0, snprintf(settings_path, sizeof(settings_path),
+                                           "%s/client_settings.cfg", config_path));
+  TEST_ASSERT_EQUAL_INT(0, access(settings_path, F_OK));
+  unlink(settings_path);
+  ShroomClientStorageSetTestConfigRoot(NULL);
+  TEST_ASSERT_EQUAL_INT(0, chdir(original_directory));
+  rmdir(config_path);
+  rmdir(migration_directory);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_versioned_round_trip_leaves_no_temporary_file);
@@ -312,5 +382,7 @@ int main(void) {
   RUN_TEST(test_schema_two_migrates_with_account_features_disabled);
   RUN_TEST(test_account_feature_opt_in_round_trips);
   RUN_TEST(test_player_name_commit_is_transactional_and_retryable_after_save_failure);
+  RUN_TEST(test_next_version_display_and_connection_settings_round_trip_and_validate);
+  RUN_TEST(test_load_migrates_legacy_working_directory_file_to_config_path);
   return UNITY_END();
 }

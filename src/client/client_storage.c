@@ -21,6 +21,10 @@ HRESULT WINAPI SHGetFolderPathA(void* owner, int folder, HANDLE token, DWORD fla
 #include <unistd.h>
 #endif
 
+#ifdef TEST_MODE
+static char g_test_config_root[SHROOM_CLIENT_STORAGE_PATH_MAX];
+#endif
+
 static bool IsSeparator(char character) { return (character == '/') || (character == '\\'); }
 
 static bool FilenameIsSafe(const char* filename) {
@@ -44,6 +48,12 @@ bool ShroomClientStorageDefaultFile(char* destination, size_t destination_size,
   if ((destination == NULL) || (destination_size == 0u) || !FilenameIsSafe(filename)) {
     return false;
   }
+#ifdef TEST_MODE
+  if ((location == SHROOM_CLIENT_STORAGE_CONFIG) && (g_test_config_root[0] != '\0')) {
+    length = snprintf(destination, destination_size, "%s/%s", g_test_config_root, filename);
+    return (length > 0) && ((size_t)length < destination_size);
+  }
+#endif
 #ifdef _WIN32
   const int folder =
       location == SHROOM_CLIENT_STORAGE_CACHE ? SHROOM_CSIDL_LOCAL_APPDATA : SHROOM_CSIDL_APPDATA;
@@ -70,6 +80,13 @@ bool ShroomClientStorageDefaultFile(char* destination, size_t destination_size,
 #endif
   return (length > 0) && ((size_t)length < destination_size);
 }
+
+#ifdef TEST_MODE
+void ShroomClientStorageSetTestConfigRoot(const char* config_root) {
+  snprintf(g_test_config_root, sizeof(g_test_config_root), "%s",
+           config_root != NULL ? config_root : "");
+}
+#endif
 
 static bool DirectoryIsUsable(const char* path, bool require_private) {
 #ifdef _WIN32

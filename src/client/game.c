@@ -3292,7 +3292,7 @@ static void DrawChatDock(Game* game) {
   const Color hud_accent = (Color){130, 210, 150, 255};
   const Color unread_accent = (Color){214, 178, 92, 255};
 
-  if (!IsOnlineMode(game->active_mode)) {
+  if (!IsOnlineMode(game->active_mode) || !game->settings.chat_visible) {
     return;
   }
 
@@ -3885,13 +3885,20 @@ static const ShroomPlayerState* GetInputReferencePlayer(const Game* game) {
   return input_ref;
 }
 
+static Vector2 GetSensitiveMousePosition(const Game* game) {
+  const Vector2 mouse = GetMousePosition();
+  const Vector2 center = {(float)GetScreenWidth() * 0.5f, (float)GetScreenHeight() * 0.5f};
+  const float sensitivity = game != NULL ? game->settings.input_sensitivity_percent / 100.0f : 1.0f;
+  return Vector2Add(center, Vector2Scale(Vector2Subtract(mouse, center), sensitivity));
+}
+
 static ShroomVec2 GetMovementInput(const Game* game) {
 #ifdef TEST_MODE
   if (g_test_movement_input_enabled) {
     return g_test_movement_input;
   }
 #endif
-  const Vector2 mouse_screen = GetMousePosition();
+  const Vector2 mouse_screen = GetSensitiveMousePosition(game);
   const Vector2 mouse_world = GetScreenToWorld2D(mouse_screen, game->camera);
   /* Use the focused piece as the movement origin so that after Tab-switching
    * to a split fragment the mouse direction is correct for that piece. */
@@ -3931,7 +3938,7 @@ static ShroomVec2 GetMovementInput(const Game* game) {
 }
 
 static ShroomVec2 GetSplitAimInput(const Game* game, ShroomVec2 fallback_direction) {
-  const Vector2 mouse_screen = GetMousePosition();
+  const Vector2 mouse_screen = GetSensitiveMousePosition(game);
   const Vector2 mouse_world = GetScreenToWorld2D(mouse_screen, game->camera);
   const ShroomPlayerState* input_ref = GetInputReferencePlayer(game);
   Vector2 player_world = {0.0f, 0.0f};
@@ -3961,7 +3968,7 @@ static ShroomVec2 GetSplitAimInput(const Game* game, ShroomVec2 fallback_directi
 static bool LocalCanConsumeMouseTarget(const Game* game) {
   const ShroomPlayerState* local = game != NULL ? GetInputReferencePlayer(game) : NULL;
   const Vector2 mouse_world =
-      game != NULL ? GetScreenToWorld2D(GetMousePosition(), game->camera) : (Vector2){0};
+      game != NULL ? GetScreenToWorld2D(GetSensitiveMousePosition(game), game->camera) : (Vector2){0};
   const ShroomVec2 mouse_pos = {mouse_world.x, mouse_world.y};
 
   if ((game == NULL) || (local == NULL) || !local->alive) {
@@ -4006,7 +4013,7 @@ static uint32_t FindHoveredLocalPieceEntity(const Game* game) {
   const ShroomPlayerId local_pid =
       game != NULL && game->local_player != NULL ? game->local_player->player_id : 0u;
   const Vector2 mouse_world =
-      game != NULL ? GetScreenToWorld2D(GetMousePosition(), game->camera) : (Vector2){0};
+      game != NULL ? GetScreenToWorld2D(GetSensitiveMousePosition(game), game->camera) : (Vector2){0};
   const ShroomVec2 mouse_pos = {mouse_world.x, mouse_world.y};
 
   if (local_pid == 0u) {
