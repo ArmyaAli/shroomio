@@ -3,6 +3,8 @@
 #include "imgui.h"
 #include "imgui_impl_raylib.h"
 
+#include <cmath>
+
 static ImGuiCond ToImGuiCond(int condition) {
   if ((condition & SHROOM_IMGUI_COND_ALWAYS) != 0) {
     return ImGuiCond_Always;
@@ -402,6 +404,31 @@ bool ShroomImGui_BeginChild(const char* id, float width, float height, bool bord
 }
 
 void ShroomImGui_EndChild(void) { ImGui::EndChild(); }
+
+void ShroomImGui_DrawZonePreview(float width, float height, float animation_time) {
+  const ImVec2 origin = ImGui::GetCursorScreenPos();
+  const ImVec2 center(origin.x + width * 0.5f, origin.y + height * 0.5f);
+  const float radius = (height < width ? height : width) * 0.42f;
+  const float pulse = 0.5f + 0.5f * std::sin(animation_time * 3.0f);
+  ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+  draw_list->AddRectFilled(origin, ImVec2(origin.x + width, origin.y + height),
+                           IM_COL32(20, 34, 25, 220), 8.0f);
+  draw_list->AddCircleFilled(center, radius, IM_COL32(52, 86, 58, 235), 64);
+  draw_list->AddCircleFilled(center, radius * 0.66f, IM_COL32(76, 124, 70, 235), 64);
+  draw_list->AddCircleFilled(center, radius * 0.33f,
+                             IM_COL32(154, 178, 75, (int)(210.0f + pulse * 35.0f)), 64);
+  draw_list->AddCircle(center, radius, IM_COL32(142, 204, 132, 230), 64, 2.0f);
+  draw_list->AddCircle(center, radius * 0.66f, IM_COL32(180, 220, 126, 220), 64, 2.0f);
+  draw_list->AddCircle(center, radius * 0.33f, IM_COL32(255, 230, 116, 235), 64, 2.0f);
+  draw_list->AddText(ImVec2(center.x - 24.0f, center.y - 8.0f), IM_COL32(255, 250, 220, 255),
+                     "CENTER");
+  draw_list->AddText(ImVec2(center.x + radius * 0.67f + 8.0f, center.y - 8.0f),
+                     IM_COL32(185, 235, 160, 255), "MID");
+  draw_list->AddText(ImVec2(origin.x + width - 66.0f, origin.y + height - 24.0f),
+                     IM_COL32(145, 205, 150, 255), "OUTER");
+  ImGui::Dummy(ImVec2(width, height));
+}
 
 void ShroomImGui_SetScrollHereY(float center_y_ratio) { ImGui::SetScrollHereY(center_y_ratio); }
 

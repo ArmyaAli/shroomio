@@ -302,6 +302,10 @@ static void HelpDraw(ShroomScreenManager* manager) {
              "Outer: consume at %.0f%% advantage; no reachable zone decay threshold.",
              (SHROOM_CONSUME_MASS_ADVANTAGE - 1.0f) * 100.0f);
     DrawSectionCard("Zones", (ShroomImGuiColor){0.92f, 0.70f, 0.28f, 1.0f}, items, 3);
+    ShroomImGui_Spacing();
+    ShroomImGui_Text("Zone risk preview");
+    ShroomImGui_DrawZonePreview(ShroomImGui_GetContentRegionAvailWidth(),
+                                ShroomLayoutMetric(170.0f), (float)GetTime());
   }
 
   if (g_help_active_tab == 3) {
