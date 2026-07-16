@@ -826,6 +826,7 @@ static void ShroomCollectSpores(ShroomWorldState* world, const ShroomSporeGridCe
             stats = ShroomWorldEnsureRoundStats(world, player->player_id);
             if (stats != NULL) {
               stats->spores_collected += 1u;
+              stats->mass_consumed += (float)spore->value;
             }
           }
         }
@@ -955,6 +956,8 @@ static void ShroomResolveConsumes(ShroomWorldState* world) {
       ShroomPlayerState* winner = &world->players[consumed_by[attacker_index]];
       const ShroomPlayerId victim_player_id = victim->player_id;
       ShroomRoundStats* stats;
+      ShroomRoundStats* victim_stats;
+      const float victim_mass = victim->mass;
 
       winner->mass = ShroomClamp(winner->mass + (victim->mass * SHROOM_CONSUME_MASS_GAIN_FACTOR),
                                  0.0f, SHROOM_MAX_PLAYER_MASS);
@@ -962,6 +965,14 @@ static void ShroomResolveConsumes(ShroomWorldState* world) {
       stats = ShroomWorldEnsureRoundStats(world, winner->player_id);
       if (stats != NULL) {
         stats->kills += 1u;
+        stats->mass_consumed += victim_mass * SHROOM_CONSUME_MASS_GAIN_FACTOR;
+      }
+      victim_stats = ShroomWorldEnsureRoundStats(world, victim_player_id);
+      if (victim_stats != NULL) {
+        victim_stats->mass_lost += victim_mass;
+        if (victim->piece_index == 0) {
+          victim_stats->deaths += 1u;
+        }
       }
       if (victim->piece_index == 0) {
         /* Primary piece consumed: respawn the player and remove any orphaned split pieces. */
@@ -1035,6 +1046,12 @@ static void ShroomApplyMassLoss(ShroomWorldState* world, ShroomPlayerState* play
   };
 
   player->mass = ShroomClamp(player->mass - mass_loss, 0.0f, SHROOM_MAX_PLAYER_MASS);
+  {
+    ShroomRoundStats* stats = ShroomWorldEnsureRoundStats(world, player->player_id);
+    if (stats != NULL) {
+      stats->mass_lost += mass_loss;
+    }
+  }
   player->decay_spore_accumulator += mass_loss;
   spore_value = (uint16_t)player->decay_spore_accumulator;
   if (spore_value > 0u) {
@@ -1910,6 +1927,12 @@ void ShroomWorldStep(ShroomWorldState* world, float delta_time) {
     velocity = ShroomVec2Scale(player->input_direction, speed * delta_time);
 
     player->position = ShroomVec2Add(player->position, velocity);
+    {
+      ShroomRoundStats* stats = ShroomWorldEnsureRoundStats(world, player->player_id);
+      if (stats != NULL) {
+        stats->distance_traveled += sqrtf(ShroomVec2LengthSqr(velocity));
+      }
+    }
     player->radius = ShroomMassToRadius(player->mass);
     player->position.x =
         ShroomClamp(player->position.x, player->radius, world->width - player->radius);

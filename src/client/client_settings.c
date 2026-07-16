@@ -531,6 +531,11 @@ bool ClientSettingsSaveToPath(const ClientSettings* settings, const char* path) 
       !BuildSettingsSidePath(backup_temporary, sizeof(backup_temporary), path, ".bak.tmp")) {
     return false;
   }
+  if ((strchr(path, '/') != NULL) || (strchr(path, '\\') != NULL)) {
+    if (!ShroomClientStorageEnsurePrivateParent(path)) {
+      return false;
+    }
+  }
   validated = *settings;
   ClientSettingsValidate(&validated);
   remove(temporary);

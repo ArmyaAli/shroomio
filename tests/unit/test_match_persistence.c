@@ -76,6 +76,19 @@ static void test_completed_match_persists_session_participants_events_and_lifeti
   TEST_ASSERT_EQUAL_INT64(1, ScalarInt64("SELECT total_sessions FROM players WHERE id=1"));
 }
 
+static void test_begin_creates_active_session_with_stable_uuid(void) {
+  const ShroomCompletedMatch match = MakeMatch("123e4567-e89b-12d3-a456-426614174000", NULL, 0u);
+
+  TEST_ASSERT_TRUE(ShroomMatchPersistenceBegin(db, &match));
+  TEST_ASSERT_EQUAL_INT64(1, ScalarInt64("SELECT count(*) FROM sessions WHERE status='active'"));
+  TEST_ASSERT_EQUAL_INT64(1, ScalarInt64("SELECT count(*) FROM sessions WHERE session_uuid='123e4567-e89b-12d3-a456-426614174000'"));
+  TEST_ASSERT_TRUE(ShroomMatchPersistenceBegin(db, &match));
+  TEST_ASSERT_EQUAL_INT64(1, ScalarInt64("SELECT count(*) FROM sessions"));
+  TEST_ASSERT_TRUE(ShroomMatchPersistenceRecordEvent(
+      db, match.session_uuid, "player_spawn", 12u, 1, 0, 100.0f, 10.0f, 20.0f, "{}"));
+  TEST_ASSERT_EQUAL_INT64(1, ScalarInt64("SELECT count(*) FROM match_events"));
+}
+
 static void test_duplicate_completion_is_idempotent(void) {
   const ShroomPersistedParticipant participant = {
       .database_player_id = 1,
@@ -176,6 +189,7 @@ static void test_interrupted_match_failure_rolls_back_every_row(void) {
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_completed_match_persists_session_participants_events_and_lifetime_stats);
+  RUN_TEST(test_begin_creates_active_session_with_stable_uuid);
   RUN_TEST(test_duplicate_completion_is_idempotent);
   RUN_TEST(test_failure_rolls_back_session_and_prior_participant_updates);
   RUN_TEST(test_disconnect_and_split_colony_summary_are_preserved);

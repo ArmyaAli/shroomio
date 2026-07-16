@@ -38,6 +38,14 @@ typedef enum ShroomMatchPersistenceResult {
   SHROOM_MATCH_PERSISTENCE_ALREADY_SAVED,
 } ShroomMatchPersistenceResult;
 
+bool ShroomMatchPersistenceBegin(sqlite3* db, const ShroomCompletedMatch* match);
+
+bool ShroomMatchPersistenceRecordEvent(sqlite3* db, const char* session_uuid,
+                                       const char* event_type, uint64_t tick_number,
+                                       int64_t actor_player_id, int64_t target_player_id,
+                                       float mass_value, float position_x, float position_y,
+                                       const char* metadata);
+
 ShroomMatchPersistenceResult ShroomMatchPersistenceSave(sqlite3* db,
                                                         const ShroomCompletedMatch* match);
 
