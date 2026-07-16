@@ -285,6 +285,7 @@ SERVER_SOURCES := \
 	$(SERVER_SRC_DIR)/main.c \
 	$(SERVER_SRC_DIR)/logger.c \
 	$(SERVER_SRC_DIR)/chat_log.c \
+	$(SERVER_SRC_DIR)/chat_history.c \
 	$(SERVER_SRC_DIR)/account_auth.c \
 	$(SERVER_SRC_DIR)/database.c \
 	$(SERVER_SRC_DIR)/directory_registry.c \
@@ -342,6 +343,7 @@ SHARED_HEADERS := \
 	$(SERVER_SRC_DIR)/match_persistence.h \
 	$(SERVER_SRC_DIR)/auth.h \
 	$(SERVER_SRC_DIR)/chat_log.h \
+	$(SERVER_SRC_DIR)/chat_history.h \
 	$(SERVER_SRC_DIR)/input_admission.h \
 	$(SERVER_SRC_DIR)/lobby_capacity.h \
 	$(SERVER_SRC_DIR)/session_cleanup.h \
@@ -1333,6 +1335,9 @@ test_connection) \
 		test_chat_log) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(SERVER_SRC_DIR)/chat_log.c -o $$test_bin $(COVERAGE_LIBS) ;; \
+		test_chat_history) \
+			$(LINUX_CC) $(COVERAGE_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) \
+				$$src $(UNITY_SRC) $(SERVER_SRC_DIR)/chat_history.c -o $$test_bin $(COVERAGE_LIBS) -lsqlite3 ;; \
 		test_client_paths) \
 			$(LINUX_CC) $(COVERAGE_CFLAGS) \
 				$$src $(UNITY_SRC) $(CLIENT_SRC_DIR)/client_paths.c $(CLIENT_SRC_DIR)/client_storage.c -o $$test_bin $(COVERAGE_LIBS) ;; \
@@ -1548,6 +1553,10 @@ $(TEST_BUILD_DIR)/test_client_paths: $(UNIT_TESTS_DIR)/test_client_paths.c $(UNI
 $(TEST_BUILD_DIR)/test_chat_log: $(UNIT_TESTS_DIR)/test_chat_log.c $(UNITY_SRC) $(SERVER_SRC_DIR)/chat_log.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
 	$(LINUX_CC) $(TEST_CFLAGS) $^ -o $@ $(TEST_LIBS)
+
+$(TEST_BUILD_DIR)/test_chat_history: $(UNIT_TESTS_DIR)/test_chat_history.c $(UNITY_SRC) $(SERVER_SRC_DIR)/chat_history.c | $(UNITY_DIR) $(VCPKG_LINUX_STAMP)
+	@$(MKDIR_P) $(dir $@)
+	$(LINUX_CC) $(TEST_CFLAGS) -I$(VCPKG_LINUX_INCLUDE_DIR) $^ -o $@ $(TEST_LIBS) -L$(VCPKG_LINUX_LIB_DIR) -lsqlite3
 
 $(TEST_BUILD_DIR)/test_net_telemetry: $(UNIT_TESTS_DIR)/test_net_telemetry.c $(UNITY_SRC) $(SHARED_SRC_DIR)/net_telemetry.c | $(UNITY_DIR)
 	@$(MKDIR_P) $(dir $@)
