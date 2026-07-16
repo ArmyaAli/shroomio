@@ -11,12 +11,12 @@
 #define SHROOM_CHAT_CACHE_MAX_MESSAGES 50u
 #define SHROOM_CHAT_CACHE_MAX_FILE_BYTES (256u * 1024u)
 #define SHROOM_CHAT_CACHE_RETENTION_SECONDS (7u * 24u * 60u * 60u)
-#define SHROOM_CHAT_CACHE_DUPLICATE_WINDOW_SECONDS 5u
 #define SHROOM_CHAT_CACHE_FILENAME "chat_history_cache.txt"
 #define SHROOM_CHAT_CACHE_LEGACY_PATH "chat_history_cache.txt"
 
 typedef struct ChatMessage {
   uint32_t sender_id;
+  uint64_t message_id;
   uint32_t timestamp_sec;
   char sender_name[SHROOM_MAX_NAME_LENGTH];
   char message[SHROOM_CHAT_MAX_MESSAGE_LENGTH + 1u];

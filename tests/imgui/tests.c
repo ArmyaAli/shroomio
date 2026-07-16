@@ -3245,6 +3245,8 @@ static void Test_ChatHistoryRendersIncoming(ImGuiTestContext* ctx) {
         &g_imgui_test_app.game.net.chat_history[g_imgui_test_app.game.net.chat_history_head %
                                                 SHROOM_CLIENT_CHAT_HISTORY_COUNT];
     slot->sender_id = (uint32_t)(i + 2);
+    slot->message_id = (uint64_t)(i + 1);
+    slot->timestamp_sec = (uint32_t)time(NULL);
     snprintf(slot->sender_name, sizeof(slot->sender_name), "Player%d", i + 1);
     snprintf(slot->message, sizeof(slot->message), "hello from player %d", i + 1);
     g_imgui_test_app.game.net.chat_history_head =
@@ -3271,6 +3273,8 @@ static void Test_ChatUnreadCountIncrements(ImGuiTestContext* ctx) {
         &g_imgui_test_app.game.net.chat_history[g_imgui_test_app.game.net.chat_history_head %
                                                 SHROOM_CLIENT_CHAT_HISTORY_COUNT];
     slot->sender_id = 2u;
+    slot->message_id = (uint64_t)(i + 1);
+    slot->timestamp_sec = (uint32_t)time(NULL);
     snprintf(slot->sender_name, sizeof(slot->sender_name), "Bot");
     snprintf(slot->message, sizeof(slot->message), "msg %d", i);
     g_imgui_test_app.game.net.chat_history_head =
@@ -3288,7 +3292,7 @@ static void Test_ChatUnreadCountIncrements(ImGuiTestContext* ctx) {
 static void Test_ChatHistoryRestoresOnReconnect(ImGuiTestContext* ctx) {
   ClientNetState* net;
   ShroomChatCacheKey key = {.port = SHROOM_SERVER_PORT, .lobby_id = 42u};
-  ChatMessage cached = {.sender_id = 7u, .timestamp_sec = (uint32_t)time(NULL)};
+  ChatMessage cached = {.sender_id = 7u, .message_id = 7001u, .timestamp_sec = (uint32_t)time(NULL)};
   ShroomLobbyJoinedPacket joined = {0};
   ShroomChatPacket chat = {0};
   ENetPacket joined_packet = {.data = (enet_uint8*)&joined, .dataLength = sizeof(joined)};
@@ -3325,6 +3329,8 @@ static void Test_ChatHistoryRestoresOnReconnect(ImGuiTestContext* ctx) {
   IM_CHECK_EQ(net->chat_unread_count, 0u);
 
   chat.sender_id = cached.sender_id;
+  chat.message_id = cached.message_id;
+  chat.timestamp_sec = cached.timestamp_sec;
   snprintf(chat.sender_name, sizeof(chat.sender_name), "%s", cached.sender_name);
   snprintf(chat.message, sizeof(chat.message), "%s", cached.message);
   ClientNetTestHandleChat(net, &chat_packet);
@@ -3332,6 +3338,7 @@ static void Test_ChatHistoryRestoresOnReconnect(ImGuiTestContext* ctx) {
   IM_CHECK_EQ(net->chat_unread_count, 0u);
 
   snprintf(chat.message, sizeof(chat.message), "%s", "a new live message");
+  chat.message_id = cached.message_id + 1u;
   ClientNetTestHandleChat(net, &chat_packet);
   IM_CHECK_EQ(net->chat_history_count, 2u);
   IM_CHECK_EQ(net->chat_unread_count, 1u);

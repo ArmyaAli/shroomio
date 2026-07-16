@@ -20,7 +20,7 @@ static ShroomChatCacheKey Key(const char* host, uint16_t port, uint32_t lobby_id
 
 static ChatMessage Message(uint32_t sender_id, uint32_t timestamp, const char* name,
                            const char* text) {
-  ChatMessage message = {.sender_id = sender_id, .timestamp_sec = timestamp};
+  ChatMessage message = {.sender_id = sender_id, .message_id = timestamp, .timestamp_sec = timestamp};
   snprintf(message.sender_name, sizeof(message.sender_name), "%s", name);
   snprintf(message.message, sizeof(message.message), "%s", text);
   return message;
@@ -73,17 +73,29 @@ void test_cache_separates_servers_ports_and_lobbies(void) {
 void test_cache_sanitizes_in_place_and_deduplicates_reconnect_overlap(void) {
   const ShroomChatCacheKey key = Key("safe.example", 7777u, 4u);
   ChatMessage first = Message(9u, kNow, "Bad\nName", "hello\r\nworld\x01");
-  ChatMessage duplicate = Message(9u, kNow + 2u, "Bad Name", "hello world");
+  ChatMessage duplicate = Message(9u, kNow, "Bad Name", "hello world");
   ChatMessage loaded[4];
   char in_place[32] = "  hello\n\tworld  ";
 
   ShroomChatCacheSanitizeText(in_place, sizeof(in_place), in_place);
   TEST_ASSERT_EQUAL_STRING("hello world", in_place);
   TEST_ASSERT_TRUE(ShroomChatCacheStoreMessage(kPath, &key, &first, kNow));
-  TEST_ASSERT_TRUE(ShroomChatCacheStoreMessage(kPath, &key, &duplicate, kNow + 2u));
-  TEST_ASSERT_EQUAL_size_t(1u, ShroomChatCacheLoadContext(kPath, &key, kNow + 2u, loaded, 4u));
+  TEST_ASSERT_TRUE(ShroomChatCacheStoreMessage(kPath, &key, &duplicate, kNow));
+  TEST_ASSERT_EQUAL_size_t(1u, ShroomChatCacheLoadContext(kPath, &key, kNow, loaded, 4u));
   TEST_ASSERT_EQUAL_STRING("Bad Name", loaded[0].sender_name);
   TEST_ASSERT_EQUAL_STRING("hello world", loaded[0].message);
+}
+
+void test_identical_text_with_distinct_ids_is_retained(void) {
+  const ShroomChatCacheKey key = Key("repeat.example", 7777u, 4u);
+  const ChatMessage first = Message(9u, kNow, "Player", "same reply");
+  const ChatMessage second = Message(9u, kNow + 1u, "Player", "same reply");
+  ChatMessage loaded[4];
+
+  TEST_ASSERT_TRUE(ShroomChatCacheStoreMessage(kPath, &key, &first, kNow));
+  TEST_ASSERT_TRUE(ShroomChatCacheStoreMessage(kPath, &key, &second, kNow + 1u));
+  TEST_ASSERT_EQUAL_size_t(2u,
+                           ShroomChatCacheLoadContext(kPath, &key, kNow + 1u, loaded, 4u));
 }
 
 void test_corrupt_and_oversized_cache_fail_closed(void) {
@@ -91,7 +103,7 @@ void test_corrupt_and_oversized_cache_fail_closed(void) {
   ChatMessage loaded[2];
   FILE* file = fopen(kPath, "w");
   TEST_ASSERT_NOT_NULL(file);
-  fputs("SHROOM_CHAT_CACHE_V1\nnot|a|valid|record\n", file);
+  fputs("SHROOM_CHAT_CACHE_V2\nnot|a|valid|record\n", file);
   fclose(file);
   TEST_ASSERT_EQUAL_size_t(0u, ShroomChatCacheLoadContext(kPath, &key, kNow, loaded, 2u));
 
@@ -167,6 +179,7 @@ int main(void) {
   RUN_TEST(test_cache_bounds_history_to_newest_messages);
   RUN_TEST(test_cache_separates_servers_ports_and_lobbies);
   RUN_TEST(test_cache_sanitizes_in_place_and_deduplicates_reconnect_overlap);
+  RUN_TEST(test_identical_text_with_distinct_ids_is_retained);
   RUN_TEST(test_corrupt_and_oversized_cache_fail_closed);
   RUN_TEST(test_retention_discards_expired_messages_and_rejects_future_data);
   RUN_TEST(test_future_timestamp_validation_does_not_wrap);
