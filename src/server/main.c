@@ -45,6 +45,7 @@ static const uint64_t kBotAdjustIntervalMs = 3000ull;
 
 typedef struct ShroomLobby {
   uint32_t lobby_id;
+  uint64_t chat_history_identity;
   char name[SHROOM_LOBBY_MAX_NAME_LENGTH];
   ShroomWorldState world;
   bool active;
@@ -1054,6 +1055,7 @@ static void SendLobbyJoined(ENetPeer* peer, const ServerSession* session,
 
   ShroomPacketHeaderInit(&packet.header, SHROOM_PACKET_LOBBY_JOINED, sizeof(packet));
   packet.lobby_id = lobby->lobby_id;
+  packet.chat_history_identity = lobby->chat_history_identity;
   packet.spectating = session->spectating ? 1u : 0u;
   packet.game_mode = (uint8_t)lobby->world.game_mode;
   packet.player_id = session->player_id;
@@ -1942,7 +1944,41 @@ static void AdjustLobbyBots(ShroomLobby* lobby, const ENetHost* host, uint32_t* 
   }
 }
 
-static ShroomLobby* CreateLobby(ShroomLobby* lobbies, uint32_t lobby_id, const char* name,
+static uint64_t GenerateLobbyHistoryIdentity(sqlite3* db, uint32_t lobby_id, bool is_dynamic) {
+  sqlite3_stmt* statement = NULL;
+  sqlite3_int64 identity = 0;
+
+  if ((db != NULL) && !is_dynamic &&
+      sqlite3_prepare_v2(db, "SELECT history_identity FROM lobby_history_identities WHERE lobby_id=?1",
+                         -1, &statement, NULL) == SQLITE_OK) {
+    sqlite3_bind_int64(statement, 1, lobby_id);
+    if (sqlite3_step(statement) == SQLITE_ROW) {
+      identity = sqlite3_column_int64(statement, 0);
+    }
+    sqlite3_finalize(statement);
+  }
+  if (identity <= 0) {
+    sqlite3_randomness((int)sizeof(identity), &identity);
+    identity &= INT64_MAX;
+    if (identity == 0) {
+      identity = 1;
+    }
+    if ((db != NULL) && !is_dynamic &&
+        sqlite3_prepare_v2(
+            db, "INSERT INTO lobby_history_identities(lobby_id, history_identity) VALUES(?1, ?2)",
+            -1, &statement, NULL) == SQLITE_OK) {
+      sqlite3_bind_int64(statement, 1, lobby_id);
+      sqlite3_bind_int64(statement, 2, identity);
+      if (sqlite3_step(statement) != SQLITE_DONE) {
+        LOG_WARN("failed to persist lobby history identity for lobby_id=%u", lobby_id);
+      }
+      sqlite3_finalize(statement);
+    }
+  }
+  return (uint64_t)identity;
+}
+
+static ShroomLobby* CreateLobby(ShroomLobby* lobbies, sqlite3* db, uint32_t lobby_id, const char* name,
                                 bool is_dynamic, ShroomGameMode game_mode,
                                 uint32_t* next_player_id) {
   size_t i;
@@ -1954,6 +1990,7 @@ static ShroomLobby* CreateLobby(ShroomLobby* lobbies, uint32_t lobby_id, const c
       *lobby = (ShroomLobby){0};
       lobby->active = true;
       lobby->lobby_id = lobby_id;
+      lobby->chat_history_identity = GenerateLobbyHistoryIdentity(db, lobby_id, is_dynamic);
       lobby->is_dynamic = is_dynamic;
       if (name != NULL && name[0] != '\0') {
         snprintf(lobby->name, sizeof(lobby->name), "%s", name);
@@ -2098,7 +2135,7 @@ static void HandleVoiceFramePacket(ENetHost* host, const ENetPeer* peer,
 
 static void HandleLobbyCreate(ENetPeer* peer, const ServerSession* session, ShroomLobby* lobbies,
                               const ENetPacket* enet_packet, uint32_t* next_player_id,
-                              uint32_t* next_lobby_id) {
+                              uint32_t* next_lobby_id, sqlite3* db) {
   const ShroomLobbyCreatePacket* packet = (const ShroomLobbyCreatePacket*)enet_packet->data;
   const ShroomLobby* lobby;
 
@@ -2110,7 +2147,7 @@ static void HandleLobbyCreate(ENetPeer* peer, const ServerSession* session, Shro
       (packet->game_mode != SHROOM_GAME_MODE_KING_OF_HILL)) {
     return;
   }
-  lobby = CreateLobby(lobbies, (*next_lobby_id)++, packet->name, true,
+  lobby = CreateLobby(lobbies, db, (*next_lobby_id)++, packet->name, true,
                       (ShroomGameMode)packet->game_mode, next_player_id);
   if (lobby == NULL) {
     return;
@@ -2203,7 +2240,8 @@ static void DispatchLobbyLeave(ServerPacketContext* context) {
 
 static void DispatchLobbyCreate(ServerPacketContext* context) {
   HandleLobbyCreate(context->peer, context->session, context->lobbies, context->enet_packet,
-                    context->next_player_id, context->next_lobby_id);
+                    context->next_player_id, context->next_lobby_id,
+                    context->auth_ctx != NULL ? context->auth_ctx->db : NULL);
 }
 
 static void DispatchReadyState(ServerPacketContext* context) {
@@ -2633,7 +2671,7 @@ int main(int argc, char** argv) {
       const ShroomGameMode mode = li < (SHROOM_LOBBY_DEFAULT_COUNT / 2u)
                                       ? SHROOM_GAME_MODE_FFA
                                       : SHROOM_GAME_MODE_KING_OF_HILL;
-      CreateLobby(lobbies, next_lobby_id++, NULL, false, mode, &next_player_id);
+      CreateLobby(lobbies, db, next_lobby_id++, NULL, false, mode, &next_player_id);
     }
   }
 

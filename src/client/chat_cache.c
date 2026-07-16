@@ -19,7 +19,7 @@
 #include <unistd.h>
 #endif
 
-#define SHROOM_CHAT_CACHE_HEADER "SHROOM_CHAT_CACHE_V2"
+#define SHROOM_CHAT_CACHE_HEADER "SHROOM_CHAT_CACHE_V3"
 #define SHROOM_CHAT_CACHE_LINE_BYTES 768u
 
 typedef struct ShroomChatCacheContext {
@@ -82,10 +82,11 @@ static bool NormalizeKey(ShroomChatCacheKey* destination, const ShroomChatCacheK
   size_t written = 0u;
 
   if ((destination == NULL) || (source == NULL) || (source->port == 0u) ||
-      (source->lobby_id == 0u)) {
+      (source->lobby_id == 0u) || (source->history_identity == 0u)) {
     return false;
   }
-  *destination = (ShroomChatCacheKey){.port = source->port, .lobby_id = source->lobby_id};
+  *destination = (ShroomChatCacheKey){
+      .port = source->port, .lobby_id = source->lobby_id, .history_identity = source->history_identity};
   for (const char* cursor = source->host;
        (*cursor != '\0') && (written + 1u < sizeof(destination->host)); ++cursor) {
     const unsigned char character = (unsigned char)*cursor;
@@ -100,6 +101,7 @@ static bool NormalizeKey(ShroomChatCacheKey* destination, const ShroomChatCacheK
 
 static bool KeysEqual(const ShroomChatCacheKey* left, const ShroomChatCacheKey* right) {
   return (left->port == right->port) && (left->lobby_id == right->lobby_id) &&
+         (left->history_identity == right->history_identity) &&
          (strcmp(left->host, right->host) == 0);
 }
 
@@ -200,13 +202,13 @@ static bool ParseUnsigned64(const char* text, uint64_t* value) {
 }
 
 static bool ParseRecord(char* line, ShroomChatCacheKey* key, ChatMessage* message) {
-  char* fields[8];
+  char* fields[9];
   char* cursor = line;
   unsigned long value;
 
-  for (size_t index = 0u; index < 8u; ++index) {
+  for (size_t index = 0u; index < 9u; ++index) {
     fields[index] = cursor;
-    if (index == 7u) {
+    if (index == 8u) {
       break;
     }
     cursor = strchr(cursor, '|');
@@ -215,7 +217,7 @@ static bool ParseRecord(char* line, ShroomChatCacheKey* key, ChatMessage* messag
     }
     *cursor++ = '\0';
   }
-  if (strchr(fields[7], '|') != NULL || !HexDecode(fields[0], key->host, sizeof(key->host)) ||
+  if (strchr(fields[8], '|') != NULL || !HexDecode(fields[0], key->host, sizeof(key->host)) ||
       !ParseUnsigned(fields[1], UINT16_MAX, &value)) {
     return false;
   }
@@ -224,19 +226,22 @@ static bool ParseRecord(char* line, ShroomChatCacheKey* key, ChatMessage* messag
     return false;
   }
   key->lobby_id = (uint32_t)value;
-  if (!ParseUnsigned(fields[3], UINT32_MAX, &value)) {
+  if (!ParseUnsigned64(fields[3], &key->history_identity) || key->history_identity == 0u) {
+    return false;
+  }
+  if (!ParseUnsigned(fields[4], UINT32_MAX, &value)) {
     return false;
   }
   message->sender_id = (uint32_t)value;
-  if (!ParseUnsigned64(fields[4], &message->message_id) || (message->message_id == 0u)) {
+  if (!ParseUnsigned64(fields[5], &message->message_id) || (message->message_id == 0u)) {
     return false;
   }
-  if (!ParseUnsigned(fields[5], UINT32_MAX, &value)) {
+  if (!ParseUnsigned(fields[6], UINT32_MAX, &value)) {
     return false;
   }
   message->timestamp_sec = (uint32_t)value;
-  return HexDecode(fields[6], message->sender_name, sizeof(message->sender_name)) &&
-         HexDecode(fields[7], message->message, sizeof(message->message));
+  return HexDecode(fields[7], message->sender_name, sizeof(message->sender_name)) &&
+         HexDecode(fields[8], message->message, sizeof(message->message));
 }
 
 static bool LoadCache(const char* path, uint32_t now_sec, ShroomChatCacheData* cache) {
@@ -405,10 +410,10 @@ static bool SaveCache(const char* path, const ShroomChatCacheData* cache) {
       char message_hex[sizeof(message->message) * 2u];
       if (!HexEncode(message->sender_name, name_hex, sizeof(name_hex)) ||
           !HexEncode(message->message, message_hex, sizeof(message_hex)) ||
-          fprintf(file, "%s|%u|%u|%u|%llu|%u|%s|%s\n", host_hex, context->key.port,
-                  context->key.lobby_id, message->sender_id,
-                  (unsigned long long)message->message_id, message->timestamp_sec, name_hex,
-                  message_hex) < 0) {
+          fprintf(file, "%s|%u|%u|%llu|%u|%llu|%u|%s|%s\n", host_hex, context->key.port,
+                  context->key.lobby_id, (unsigned long long)context->key.history_identity,
+                  message->sender_id, (unsigned long long)message->message_id,
+                  message->timestamp_sec, name_hex, message_hex) < 0) {
         fclose(file);
         remove(temporary_path);
         return false;

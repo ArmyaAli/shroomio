@@ -286,6 +286,7 @@ static void test_lobby_join_resets_world_replication_tick_and_collectibles(void)
   net.snapshot_spores[0].entity_id = 99u;
   ShroomPacketHeaderInit(&joined.header, SHROOM_PACKET_LOBBY_JOINED, sizeof(joined));
   joined.lobby_id = 7u;
+  joined.chat_history_identity = 7001u;
   joined.player_id = 1u;
   joined.entity_id = 2u;
   joined.server_tick_rate = 60u;
@@ -644,6 +645,7 @@ static void test_client_net_lobby_join_resets_round_scoped_intermission_state(vo
   };
   ShroomLobbyJoinedPacket joined = {
       .lobby_id = 9u,
+      .chat_history_identity = 9001u,
       .server_tick_rate = 60u,
       .snapshot_rate = 20u,
   };

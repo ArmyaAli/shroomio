@@ -3291,7 +3291,7 @@ static void Test_ChatUnreadCountIncrements(ImGuiTestContext* ctx) {
 /* chat: Reconnecting restores history without duplicating messages or unread state. */
 static void Test_ChatHistoryRestoresOnReconnect(ImGuiTestContext* ctx) {
   ClientNetState* net;
-  ShroomChatCacheKey key = {.port = SHROOM_SERVER_PORT, .lobby_id = 42u};
+  ShroomChatCacheKey key = {.port = SHROOM_SERVER_PORT, .lobby_id = 42u, .history_identity = 4201u};
   ChatMessage cached = {.sender_id = 7u, .message_id = 7001u, .timestamp_sec = (uint32_t)time(NULL)};
   ShroomLobbyJoinedPacket joined = {0};
   ShroomChatPacket chat = {0};
@@ -3319,6 +3319,7 @@ static void Test_ChatHistoryRestoresOnReconnect(ImGuiTestContext* ctx) {
                                              sizeof(net->chat_cache_path), cached.timestamp_sec));
 
   joined.lobby_id = key.lobby_id;
+  joined.chat_history_identity = key.history_identity;
   joined.player_id = 1u;
   joined.entity_id = 1u;
   joined.server_tick_rate = 30u;
@@ -3327,6 +3328,13 @@ static void Test_ChatHistoryRestoresOnReconnect(ImGuiTestContext* ctx) {
   ClientNetTestHandleLobbyJoined(net, &joined_packet);
   IM_CHECK_EQ(net->chat_history_count, 1u);
   IM_CHECK_EQ(net->chat_unread_count, 0u);
+
+  joined.chat_history_identity += 1u;
+  ClientNetTestHandleLobbyJoined(net, &joined_packet);
+  IM_CHECK_EQ(net->chat_history_count, 0u);
+  joined.chat_history_identity -= 1u;
+  ClientNetTestHandleLobbyJoined(net, &joined_packet);
+  IM_CHECK_EQ(net->chat_history_count, 1u);
 
   chat.sender_id = cached.sender_id;
   chat.message_id = cached.message_id;

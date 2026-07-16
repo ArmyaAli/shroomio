@@ -89,6 +89,7 @@ typedef struct ClientNetState {
   bool lobby_roster_received;
   bool lobby_match_started;
   uint32_t lobby_id;
+  uint64_t chat_history_identity;
   char lobby_name[SHROOM_LOBBY_MAX_NAME_LENGTH];
   uint16_t lobby_max_players;
   float world_width;

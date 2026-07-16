@@ -26,6 +26,7 @@ typedef struct ShroomChatCacheKey {
   char host[64];
   uint16_t port;
   uint32_t lobby_id;
+  uint64_t history_identity;
 } ShroomChatCacheKey;
 
 void ShroomChatCacheSanitizeText(char* destination, size_t destination_size, const char* source);
