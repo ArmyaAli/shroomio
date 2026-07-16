@@ -8,6 +8,7 @@
 #include "raylib.h"
 
 #include "client_settings.h"
+#include "settings_deferred.h"
 #include "net.h"
 #include "prediction.h"
 #include "quick_match.h"
@@ -109,6 +110,7 @@ typedef struct GameplayEvent {
 typedef struct Game {
   Camera2D camera;
   ClientSettings settings;
+  ShroomSettingsDeferred deferred_settings;
   ShroomAccountFlow* account_flow;
   ClientNetState net;
   ShroomWorldState world;
@@ -225,6 +227,7 @@ void GameDraw(Game* game);
 void GameUpdateVoice(Game* game);
 void GameSuspendForResults(Game* game);
 void GameShutdown(Game* game);
+bool GameFlushPendingSettings(Game* game);
 void GamePlayUiClickSound(const Game* game);
 void GamePlayUiErrorSound(const Game* game);
 void GameEnterSpectatorMode(Game* game);
