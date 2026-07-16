@@ -1052,6 +1052,12 @@ static void ResetMatchPresentation(Game* game) {
 
   memset(game->render_positions, 0, sizeof(game->render_positions));
   memset(game->render_position_initialized, 0, sizeof(game->render_position_initialized));
+  memset(game->render_spore_positions, 0, sizeof(game->render_spore_positions));
+  memset(game->render_spore_entity_ids, 0, sizeof(game->render_spore_entity_ids));
+  memset(game->render_spore_initialized, 0, sizeof(game->render_spore_initialized));
+  memset(game->render_powerup_positions, 0, sizeof(game->render_powerup_positions));
+  memset(game->render_powerup_entity_ids, 0, sizeof(game->render_powerup_entity_ids));
+  memset(game->render_powerup_initialized, 0, sizeof(game->render_powerup_initialized));
   game->focused_piece_entity_id = 0u;
   game->local_has_split = false;
   game->local_piece_count = game->local_player != NULL ? 1 : 0;
@@ -1840,6 +1846,50 @@ static void SyncRenderPositions(Game* game, float delta_time) {
     game->render_positions[index].y +=
         (player->position.y - game->render_positions[index].y) * blend;
   }
+
+  for (size_t index = 0; index < game->world.spore_count; ++index) {
+    const ShroomSporeState* spore = &game->world.spores[index];
+    if (!spore->active) {
+      game->render_spore_initialized[index] = false;
+      continue;
+    }
+    if (!game->render_spore_initialized[index] ||
+        (game->render_spore_entity_ids[index] != spore->entity_id)) {
+      game->render_spore_positions[index] = spore->position;
+      game->render_spore_entity_ids[index] = spore->entity_id;
+      game->render_spore_initialized[index] = true;
+      continue;
+    }
+    game->render_spore_positions[index].x +=
+        (spore->position.x - game->render_spore_positions[index].x) * blend;
+    game->render_spore_positions[index].y +=
+        (spore->position.y - game->render_spore_positions[index].y) * blend;
+  }
+  for (size_t index = game->world.spore_count; index < SHROOM_MAX_SPORES; ++index) {
+    game->render_spore_initialized[index] = false;
+  }
+
+  for (size_t index = 0; index < game->world.powerup_count; ++index) {
+    const ShroomPowerupState* powerup = &game->world.powerups[index];
+    if (!powerup->active) {
+      game->render_powerup_initialized[index] = false;
+      continue;
+    }
+    if (!game->render_powerup_initialized[index] ||
+        (game->render_powerup_entity_ids[index] != powerup->entity_id)) {
+      game->render_powerup_positions[index] = powerup->position;
+      game->render_powerup_entity_ids[index] = powerup->entity_id;
+      game->render_powerup_initialized[index] = true;
+      continue;
+    }
+    game->render_powerup_positions[index].x +=
+        (powerup->position.x - game->render_powerup_positions[index].x) * blend;
+    game->render_powerup_positions[index].y +=
+        (powerup->position.y - game->render_powerup_positions[index].y) * blend;
+  }
+  for (size_t index = game->world.powerup_count; index < SHROOM_MAX_POWERUPS; ++index) {
+    game->render_powerup_initialized[index] = false;
+  }
 }
 
 static void ApplyNetworkSnapshot(Game* game) {
@@ -2312,13 +2362,17 @@ static void DrawBoundaryConsumeWarning(const Game* game, Rectangle view_bounds) 
   }
 }
 
-static void DrawSpores(const ShroomWorldState* world, Rectangle view_bounds) {
+static void DrawSpores(const Game* game, Rectangle view_bounds) {
+  const ShroomWorldState* world = &game->world;
   float time = GetTime();
 
   for (size_t index = 0; index < world->spore_count; ++index) {
     const ShroomSporeState* spore = &world->spores[index];
 
-    const Vector2 position = {spore->position.x, spore->position.y};
+    const ShroomVec2 render_position = game->render_spore_initialized[index]
+                                           ? game->render_spore_positions[index]
+                                           : spore->position;
+    const Vector2 position = {render_position.x, render_position.y};
     if (!spore->active || !CircleIntersectsRect(position, 18.0f, view_bounds)) {
       continue;
     }
@@ -2356,14 +2410,18 @@ static Color GetPowerupColor(ShroomPowerupType type) {
   }
 }
 
-static void DrawPowerups(const ShroomWorldState* world, Rectangle view_bounds) {
+static void DrawPowerups(const Game* game, Rectangle view_bounds) {
+  const ShroomWorldState* world = &game->world;
   float time = GetTime();
 
   for (size_t index = 0; index < world->powerup_count; ++index) {
     const ShroomPowerupState* powerup = &world->powerups[index];
     const Color color = GetPowerupColor(powerup->type);
 
-    const Vector2 position = {powerup->position.x, powerup->position.y};
+    const ShroomVec2 render_position = game->render_powerup_initialized[index]
+                                           ? game->render_powerup_positions[index]
+                                           : powerup->position;
+    const Vector2 position = {render_position.x, render_position.y};
     if (!powerup->active ||
         !CircleIntersectsRect(position, SHROOM_POWERUP_RADIUS + 34.0f, view_bounds)) {
       continue;
@@ -3597,7 +3655,14 @@ static void DrawProximityMap(const Game* game) {
   const float pulse_phase = 0.5f + (0.5f * sinf(game->inspect_prompt_timer * 3.6f));
   const float pulse = 0.68f + (0.32f * pulse_phase);
   const float sweep_radius = inner_radius * (0.70f + 0.14f * pulse);
-  const ShroomVec2 local_position = game->local_player->position;
+  ShroomVec2 local_position = game->local_player->position;
+  for (size_t index = 0; index < game->world.player_count; ++index) {
+    if ((&game->world.players[index] == game->local_player) &&
+        game->render_position_initialized[index]) {
+      local_position = game->render_positions[index];
+      break;
+    }
+  }
 
   DrawFungalHudPanel(
       (Rectangle){center.x - kProximityMapRadius - 12.0f, center.y - kProximityMapRadius - 14.0f,
@@ -3625,7 +3690,10 @@ static void DrawProximityMap(const Game* game) {
                                              SHROOM_CLIENT_PROXIMITY_SPORE_DOT_BUDGET)) {
       continue;
     }
-    delta = ShroomVec2Sub(spore->position, local_position);
+    const ShroomVec2 render_position = game->render_spore_initialized[index]
+                                           ? game->render_spore_positions[index]
+                                           : spore->position;
+    delta = ShroomVec2Sub(render_position, local_position);
     distance_sqr = ShroomVec2LengthSqr(delta);
 
     if (!spore->active || (distance_sqr > (kProximityMapRange * kProximityMapRange))) {
@@ -3644,7 +3712,10 @@ static void DrawProximityMap(const Game* game) {
   for (size_t index = 0; index < game->world.player_count; ++index) {
     const ShroomPlayerState* player = &game->world.players[index];
     const PlayerThreatState threat_state = GetThreatState(&game->world, game->local_player, player);
-    const ShroomVec2 delta = ShroomVec2Sub(player->position, local_position);
+    const ShroomVec2 render_position = game->render_position_initialized[index]
+                                           ? game->render_positions[index]
+                                           : player->position;
+    const ShroomVec2 delta = ShroomVec2Sub(render_position, local_position);
     const float distance_sqr = ShroomVec2LengthSqr(delta);
     Vector2 map_position;
     float scale;
@@ -4482,8 +4553,8 @@ void GameDraw(Game* game) {
   DrawBoundaryConsumeWarning(game, view_bounds);
   DrawRectangleLines(0, 0, (int)game->world.width, (int)game->world.height, Fade(DARKGREEN, 0.7f));
   DrawGrid(80, 64.0f);
-  DrawSpores(&game->world, view_bounds);
-  DrawPowerups(&game->world, view_bounds);
+  DrawSpores(game, view_bounds);
+  DrawPowerups(game, view_bounds);
   DrawGameplayParticles(game, view_bounds);
   DrawPlayers(game, view_bounds);
   EndMode2D();
