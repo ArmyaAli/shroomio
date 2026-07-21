@@ -13,7 +13,7 @@
     "test:e2e": "npm run build && playwright test"
   },
   "dependencies": {
-    "astro": "7.0.9"
+    "astro": "7.1.0"
   },
   "devDependencies": {
     "@astrojs/check": "0.9.9",
